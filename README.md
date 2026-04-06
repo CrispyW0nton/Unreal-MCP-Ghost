@@ -230,9 +230,30 @@ The MCP tools will:
 
 ---
 
-## Suggested Additional Features
+## Book Coverage Summary (2nd Pass Research)
 
-After research, here are features I can add to the roadmap:
+**217 tools** covering every chapter of *Blueprints Visual Scripting for Unreal Engine 5*:
+
+| Chapter | Topic | Tools |
+|---------|-------|-------|
+| Ch. 1-2 | Blueprint Editor, Variables, Events, Macros, Functions | `blueprint_tools`, `node_tools` |
+| Ch. 3 | OOP, Gameplay Framework (Actor/Pawn/Character/GameMode/GameInstance) | `gameplay_tools` |
+| Ch. 4 | Communication (Dispatchers, Casting, Interfaces, Level BP) | `communication_tools` |
+| Ch. 5-6 | Object Interaction, Materials, Hit Detection, Sprint, Zoom, Timeline | `material_tools`, `advanced_node_tools` |
+| Ch. 7-8 | HUD/UMG, Health/Stamina Bars, Win/Lose Screens, Ammo Counter | `umg_tools`, `savegame_tools` |
+| Ch. 9-10 | AI Enemies, NavMesh, Behavior Trees, Blackboard, Patrol, Chase | `ai_tools`, `procedural_tools` |
+| Ch. 11 | Game States, SaveGame, Round System, Pause Menu, Player Death | `savegame_tools` |
+| Ch. 12 | Build & Publish (packaging handled by UE Editor natively) | - |
+| Ch. 13 | Arrays, Sets, Maps, Enums, Structs, DataTables, Flow Control | `data_tools` |
+| Ch. 14 | Math & Trace Nodes (Vectors, Transforms, Line/Shape Traces) | `advanced_node_tools` |
+| Ch. 15 | Blueprint Tips (Select, Teleport, Format Text, Math Expression, etc.) | `advanced_node_tools` |
+| Ch. 16 | VR Development (VRPawn, Teleport, Grab, Blueprint Interfaces) | `vr_tools` |
+| Ch. 17 | Animation Blueprints, State Machines, Blend Spaces | `animation_tools` |
+| Ch. 18 | Function/Macro Libraries, Actor/Scene Components, Timers | `library_tools` |
+| Ch. 19 | Procedural Generation, Splines, Editor Utilities | `procedural_tools` |
+| Ch. 20 | Variant Manager, Product Configurator, Level Variant Sets | `variant_tools` |
+
+## Suggested Additional Features (Beyond the Book)
 
 ### 🎮 Advanced Gameplay
 - **Physical Animation Component** - Ragdoll blending
@@ -241,10 +262,9 @@ After research, here are features I can add to the roadmap:
 - **Gameplay Abilities (GAS)** - AbilitySystemComponent setup
 
 ### 🌍 World & Level
-- **Procedural Generation** - Construction Script, Splines (Book Chapter 19)
 - **Level Streaming** - Load/unload sub-levels
 - **World Partition** - HLOD and streaming setup
-- **Actor Merging** - Combine static meshes
+- **Landscape & Foliage** - Blueprint-controlled terrain painting
 
 ### 📸 Cinematics
 - **Sequencer** - Create Level Sequences, add tracks
@@ -256,31 +276,20 @@ After research, here are features I can add to the roadmap:
 - **MetaSound** - Blueprint-controllable audio graphs  
 - **Spatialization** - 3D audio setup
 
-### 🖥️ Advanced UI
-- **Widget Animations** - UMG anim sequences via Blueprint
-- **Common UI** - Platform-aware UI framework setup
-- **Data-driven UI** - Widget with DataTable binding
-
-### 🥽 VR/XR (Book Chapter 16)
-- **VRPawn Blueprint** - Motion controller setup
-- **Teleportation** - VR locomotion system
-- **Object Grabbing** - Physics-based VR interaction
-
-### 🔧 Editor Utilities (Book Chapter 19)
-- **Editor Utility Blueprints** - ActorActionUtility, AssetActionUtility
-- **Blutility** - Right-click content browser actions
-- **Custom Asset Validators** - Pre-save validation
-
 ### 🤖 Enhanced AI
 - **EQS (Environment Query System)** - AI spatial queries
-- **AI Perception** - Sight, hearing, damage perception
+- **AI Perception** - Sight, hearing, damage perception component
 - **Navigation Invoker** - Dynamic navmesh generation
 - **Crowd Manager** - Flocking/crowd behavior
+
+### 🌐 Multiplayer
+- **Network Replication** - Mark variables/events as Replicated
+- **RPCs** - Server/Client/Multicast RPC nodes
+- **Online Subsystem** - Session management
 
 ### 📊 Debugging & Profiling
 - **Visual Logger** - Blueprint logging for timeline debugging
 - **Blueprint Profiler** - Identify performance bottlenecks
-- **Network Replication** - Mark variables as Replicated
 
 ---
 
@@ -299,10 +308,16 @@ unreal_mcp_server/
     ├── umg_tools.py              # Widget Blueprints
     ├── gameplay_tools.py         # GameMode, Character, etc.
     ├── communication_tools.py    # Dispatchers, Interfaces, Casting
-    ├── data_tools.py             # Structs, Enums, Arrays, Flow Control
-    ├── animation_tools.py        # AnimBP, State Machines
-    ├── ai_tools.py               # BehaviorTree, Blackboard, AI
-    └── advanced_node_tools.py    # Branch, Delay, Timeline, Math, etc.
+    ├── data_tools.py             # Structs, Enums, Arrays, Maps, Sets, DataTables, Flow Control
+    ├── animation_tools.py        # AnimBP, State Machines, Blend Spaces
+    ├── ai_tools.py               # BehaviorTree, Blackboard, AI Tasks/Decorators
+    ├── advanced_node_tools.py    # Branch, Delay, Timeline, Math, Select, Format Text, etc.
+    ├── material_tools.py         # Material creation, dynamic materials, hit swap (Ch. 5-6)
+    ├── savegame_tools.py         # SaveGame, LoadGame, pause, lose/win menus (Ch. 8, 11)
+    ├── library_tools.py          # Function Libraries, Macro Libraries, Actor/Scene Components (Ch. 18)
+    ├── procedural_tools.py       # Construction Script, ISM, Splines, Editor Utilities (Ch. 19)
+    ├── vr_tools.py               # VRPawn, Motion Controllers, Grab, Teleport, Interfaces (Ch. 16)
+    └── variant_tools.py          # Variant Manager, Level Variant Sets, Product Configurator (Ch. 20)
 
 unreal_plugin/
 ├── UnrealMCPBridge_Integration.patch
@@ -312,3 +327,4 @@ unreal_plugin/
     └── Private/Commands/
         └── UnrealMCPExtendedCommands.cpp
 ```
+

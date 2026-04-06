@@ -333,4 +333,458 @@ def register_data_tools(mcp: FastMCP):
             "node_position": node_position
         })
 
+    # ── Set Container Operations (Ch. 13) ─────────────────────────────────────
+
+    @mcp.tool()
+    def add_set_contains_node(
+        ctx: Context,
+        blueprint_name: str,
+        set_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Set CONTAINS node to check if an element exists in a Set.
+
+        From Ch. 13: Returns True if the set contains the specified element.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            set_variable: Set variable name
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_set_contains_node", {
+            "blueprint_name": blueprint_name,
+            "set_variable": set_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_set_union_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Set UNION node - combine two sets (removes duplicates).
+
+        From Ch. 13: Returns a new set containing all elements from both sets.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_set_operation_node", {
+            "blueprint_name": blueprint_name,
+            "operation": "Union",
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_set_intersection_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Set INTERSECTION node - elements common to both sets.
+
+        From Ch. 13: Returns elements that exist in BOTH input sets.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_set_operation_node", {
+            "blueprint_name": blueprint_name,
+            "operation": "Intersection",
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_set_difference_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Set DIFFERENCE node - elements in first set but not in second.
+
+        From Ch. 13: Returns elements from set A that are NOT in set B.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_set_operation_node", {
+            "blueprint_name": blueprint_name,
+            "operation": "Difference",
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_set_to_array_node(
+        ctx: Context,
+        blueprint_name: str,
+        set_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Set TO ARRAY node - convert a Set to an Array for iteration.
+
+        From Ch. 13: Sets don't have a GET element node, so convert to array
+        first if you need to iterate over elements. Note: copying large object
+        sets can be expensive.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            set_variable: Set variable name to convert
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_set_to_array_node", {
+            "blueprint_name": blueprint_name,
+            "set_variable": set_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_make_set_node(
+        ctx: Context,
+        blueprint_name: str,
+        element_type: str = "String",
+        num_pins: int = 3,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Make Set node to create a Set from individual variables.
+
+        From Ch. 13: Similar to Make Array but creates a Set (no duplicates).
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            element_type: Element type for the Set
+            num_pins: Number of input element pins
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_make_set_node", {
+            "blueprint_name": blueprint_name,
+            "element_type": element_type,
+            "num_pins": num_pins,
+            "node_position": node_position
+        })
+
+    # ── Map Container Operations (Ch. 13) ─────────────────────────────────────
+
+    @mcp.tool()
+    def add_map_find_node(
+        ctx: Context,
+        blueprint_name: str,
+        map_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Map FIND node - get a value by key (also checks key existence).
+
+        From Ch. 13: The FIND node is like CONTAINS but also returns the value.
+        Returns the Value associated with the key, and a bool indicating if the key was found.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            map_variable: Map variable name
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_map_find_node", {
+            "blueprint_name": blueprint_name,
+            "map_variable": map_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_map_contains_node(
+        ctx: Context,
+        blueprint_name: str,
+        map_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Map CONTAINS node - check if a key exists in a Map.
+
+        From Ch. 13: Returns True if the Map contains an element with the given key.
+        Does NOT return the value (use FIND for that).
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            map_variable: Map variable name
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_map_contains_node", {
+            "blueprint_name": blueprint_name,
+            "map_variable": map_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_map_keys_node(
+        ctx: Context,
+        blueprint_name: str,
+        map_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Map KEYS node - copy all Map keys to an Array.
+
+        From Ch. 13: Returns an array of all keys in the map.
+        Used to iterate over all entries in the map.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            map_variable: Map variable name
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_map_keys_node", {
+            "blueprint_name": blueprint_name,
+            "map_variable": map_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_map_values_node(
+        ctx: Context,
+        blueprint_name: str,
+        map_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Map VALUES node - copy all Map values to an Array.
+
+        From Ch. 13: Returns an array of all values in the map.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            map_variable: Map variable name
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_map_values_node", {
+            "blueprint_name": blueprint_name,
+            "map_variable": map_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_make_map_node(
+        ctx: Context,
+        blueprint_name: str,
+        key_type: str = "String",
+        value_type: str = "Float",
+        num_pairs: int = 3,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Make Map node to create a Map from key-value pairs.
+
+        From Ch. 13: Creates a Map literal from individual key-value pin inputs.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            key_type: Key type
+            value_type: Value type
+            num_pairs: Number of key-value pair input pins
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_make_map_node", {
+            "blueprint_name": blueprint_name,
+            "key_type": key_type,
+            "value_type": value_type,
+            "num_pairs": num_pairs,
+            "node_position": node_position
+        })
+
+    # ── Array Advanced Nodes (Ch. 13) ─────────────────────────────────────────
+
+    @mcp.tool()
+    def add_make_array_node(
+        ctx: Context,
+        blueprint_name: str,
+        element_type: str = "Actor",
+        num_pins: int = 3,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Make Array node to create an Array from individual variables.
+
+        From Ch. 13: Used to create point light arrays in Level Blueprints,
+        spawn point lists, or any array built from known variables.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            element_type: Array element type
+            num_pins: Number of input element pins
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_make_array_node", {
+            "blueprint_name": blueprint_name,
+            "element_type": element_type,
+            "num_pins": num_pins,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_random_array_item_node(
+        ctx: Context,
+        blueprint_name: str,
+        array_variable: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Random Array Item node to get a random element from an Array.
+
+        From Ch. 13 (BP_RandomSpawner): Returns a random element from the array.
+        Used to randomly select a spawn point from an array of Target Points.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            array_variable: Array variable name
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_random_array_item_node", {
+            "blueprint_name": blueprint_name,
+            "array_variable": array_variable,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def create_random_spawner_blueprint(
+        ctx: Context,
+        name: str = "BP_RandomSpawner",
+        folder_path: str = "/Game/Blueprints"
+    ) -> Dict[str, Any]:
+        """
+        Create the BP_RandomSpawner Blueprint from Ch. 13.
+
+        Creates a Blueprint that:
+        - Has a TargetPoints array (Actor Object Reference, Instance Editable)
+        - Has a SpawnClass variable (Actor Class Reference, Instance Editable)
+        - On BeginPlay: validates both, picks a random TargetPoint from the array,
+          gets its transform, and spawns an actor of the SpawnClass at that location
+
+        Args:
+            name: Blueprint name
+            folder_path: Content browser folder
+        """
+        return _send("create_random_spawner_blueprint", {
+            "name": name,
+            "folder_path": folder_path
+        })
+
+    # ── Struct / Enum / DataTable Extended Nodes (Ch. 13) ──────────────────────
+
+    @mcp.tool()
+    def add_break_struct_node(
+        ctx: Context,
+        blueprint_name: str,
+        struct_type: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Break [StructType] node to extract individual member values.
+
+        From Ch. 13: Break Struct takes a struct as input and exposes all
+        member variables as output pins. Used to read individual fields.
+
+        Also see Split Struct Pin (right-click a struct pin in the graph).
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            struct_type: Struct type name (e.g., \"FVector\", \"FEnemyData\", \"FHitResult\")
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_break_struct_node", {
+            "blueprint_name": blueprint_name,
+            "struct_type": struct_type,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_make_struct_node(
+        ctx: Context,
+        blueprint_name: str,
+        struct_type: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a Make [StructType] node to construct a struct from member values.
+
+        From Ch. 13: Make Struct takes all member variables as input pins
+        and outputs the assembled struct. Used to construct FTransform,
+        FVector, custom structs, etc.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            struct_type: Struct type name (e.g., \"FVector\", \"FTransform\", \"FEnemyData\")
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_make_struct_node", {
+            "blueprint_name": blueprint_name,
+            "struct_type": struct_type,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
+    def add_get_data_table_row_node(
+        ctx: Context,
+        blueprint_name: str,
+        data_table_variable: str = "",
+        row_name: str = "",
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a GetDataTableRow node to look up a row in a Data Table.
+
+        From Ch. 13: Retrieves a struct of data by row name from a Data Table.
+        Returns the row struct and a bool indicating if the row was found.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            data_table_variable: Data Table asset variable name or path
+            row_name: Default row name to look up
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_get_data_table_row_node", {
+            "blueprint_name": blueprint_name,
+            "data_table_variable": data_table_variable,
+            "row_name": row_name,
+            "node_position": node_position
+        })
+
     logger.info("Data tools registered")
