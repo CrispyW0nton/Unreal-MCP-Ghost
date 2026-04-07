@@ -31,14 +31,17 @@ Examples:
     python ue5cli.py exec_python code="1+1" mode=evaluate_statement
 """
 
+import os
 import sys
 import json
 import socket
 import argparse
 from typing import Any, Dict, Optional
 
-HOST = "127.0.0.1"
-PORT = 55557
+# ─── Configuration ────────────────────────────────────────────────────────────
+# Priority: --host/--port flags  >  UNREAL_HOST/UNREAL_PORT env vars  >  defaults
+HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
+PORT = int(os.environ.get("UNREAL_PORT", "55557"))
 TIMEOUT = 15
 
 # ── command catalogue ─────────────────────────────────────────────────────────
@@ -384,14 +387,14 @@ def main():
     )
     parser.add_argument(
         "--host",
-        default=HOST,
-        help=f"UE5 hostname (default: {HOST})",
+        default=None,
+        help="UE5 hostname — overrides UNREAL_HOST env var (default: 127.0.0.1)",
     )
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=PORT,
-        help=f"UnrealMCP port (default: {PORT})",
+        default=None,
+        help="UnrealMCP port — overrides UNREAL_PORT env var (default: 55557)",
     )
     parser.add_argument(
         "--raw", "-r",
@@ -400,8 +403,11 @@ def main():
     )
 
     args = parser.parse_args()
-    HOST = args.host
-    PORT = args.port
+    # --host/--port flags take priority over env vars (env vars already in module globals)
+    if args.host is not None:
+        HOST = args.host
+    if args.port is not None:
+        PORT = args.port
 
     # ── --list ────────────────────────────────────────────────────────────────
     if args.list:

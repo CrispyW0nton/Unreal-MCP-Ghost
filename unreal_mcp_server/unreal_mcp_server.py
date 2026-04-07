@@ -12,7 +12,9 @@ Architecture:
   - The C++ plugin (UnrealMCP) must be installed in your UE5 project
 """
 
+import argparse
 import logging
+import os
 import socket
 import sys
 import json
@@ -31,8 +33,9 @@ logging.basicConfig(
 logger = logging.getLogger("UnrealMCP")
 
 # ─── Configuration ──────────────────────────────────────────────────────────
-UNREAL_HOST = "127.0.0.1"
-UNREAL_PORT = 55557
+# Priority: --host/--port flags  >  UNREAL_HOST/UNREAL_PORT env vars  >  defaults
+UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
+UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55557"))
 
 
 # ─── Connection Class ────────────────────────────────────────────────────────
@@ -601,5 +604,14 @@ def info():
 
 
 if __name__ == "__main__":
-    logger.info("Starting Unreal MCP server with stdio transport")
+    # Parse --host/--port before handing off to FastMCP — these override env vars
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--host", default=None)
+    parser.add_argument("--port", type=int, default=None)
+    known, _ = parser.parse_known_args()
+    if known.host is not None:
+        UNREAL_HOST = known.host
+    if known.port is not None:
+        UNREAL_PORT = known.port
+    logger.info(f"Starting Unreal MCP server (target: {UNREAL_HOST}:{UNREAL_PORT}) with stdio transport")
     mcp.run(transport='stdio')
