@@ -39,8 +39,6 @@ uint32 FMCPServerRunnable::Run()
     
     while (bRunning)
     {
-        // UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Waiting for client connection..."));
-        
         bool bPending = false;
         if (ListenerSocket->HasPendingConnection(bPending) && bPending)
         {
@@ -57,11 +55,61 @@ uint32 FMCPServerRunnable::Run()
                 ClientSocket->SetSendBufferSize(SocketBufferSize, SocketBufferSize);
                 ClientSocket->SetReceiveBufferSize(SocketBufferSize, SocketBufferSize);
                 
+                // ---------------------------------------------------------------
+                // Playit.plus (and other TCP proxies/tunnels) send health-check
+                // probes: they open a connection but send zero bytes, then close.
+                // Previously the plugin would immediately break out of the recv
+                // loop on the first zero-byte read, causing the real command that
+                // arrives a moment later to be dropped.
+                //
+                // Fix: poll for pending data with a short wait (up to 5 s total,
+                // 50 ms intervals) before entering the blocking recv loop.  If
+                // no data arrives within that window the connection really is an
+                // empty probe and we close it gracefully.
+                // ---------------------------------------------------------------
+                const float kProbeTimeoutSecs = 5.0f;
+                const float kPollIntervalSecs = 0.05f;
+                float elapsed = 0.0f;
+                bool bGotData = false;
+
+                while (bRunning && elapsed < kProbeTimeoutSecs)
+                {
+                    uint32 PendingBytes = 0;
+                    if (ClientSocket->HasPendingData(PendingBytes) && PendingBytes > 0)
+                    {
+                        bGotData = true;
+                        break;
+                    }
+                    // Also check connection state — remote may have closed already
+                    if (ClientSocket->GetConnectionState() != SCS_Connected)
+                    {
+                        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Probe connection closed before sending data — ignoring"));
+                        break;
+                    }
+                    FPlatformProcess::Sleep(kPollIntervalSecs);
+                    elapsed += kPollIntervalSecs;
+                }
+
+                if (!bGotData)
+                {
+                    UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: No data received within %.1f s — treating as health-check probe, skipping"), kProbeTimeoutSecs);
+                    // Close the probe socket and loop back to accept the next real connection
+                    ClientSocket->Close();
+                    ClientSocket.Reset();
+                    FPlatformProcess::Sleep(0.1f);
+                    continue;
+                }
+
+                // Real data is pending — enter the message loop
+                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Data pending, entering message loop"));
+
                 uint8 Buffer[8192];
+                FString MessageBuffer;
+
                 while (bRunning)
                 {
                     int32 BytesRead = 0;
-                    if (ClientSocket->Recv(Buffer, sizeof(Buffer), BytesRead))
+                    if (ClientSocket->Recv(Buffer, sizeof(Buffer) - 1, BytesRead))
                     {
                         if (BytesRead == 0)
                         {
@@ -69,78 +117,102 @@ uint32 FMCPServerRunnable::Run()
                             break;
                         }
 
-                        // Convert received data to string
+                        // Null-terminate and convert to FString
                         Buffer[BytesRead] = '\0';
                         FString ReceivedText = UTF8_TO_TCHAR(Buffer);
                         UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Received: %s"), *ReceivedText);
 
-                        // Parse JSON
-                        TSharedPtr<FJsonObject> JsonObject;
-                        TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(ReceivedText);
-                        
-                        if (FJsonSerializer::Deserialize(Reader, JsonObject))
+                        // Accumulate into message buffer (newline-delimited protocol)
+                        MessageBuffer.Append(ReceivedText);
+
+                        // Process all complete newline-terminated messages
+                        while (MessageBuffer.Contains(TEXT("\n")))
                         {
-                            // Get command type
-                            FString CommandType;
-                            if (JsonObject->TryGetStringField(TEXT("type"), CommandType))
+                            int32 NewlineIdx;
+                            MessageBuffer.FindChar(TEXT('\n'), NewlineIdx);
+                            FString CompleteMessage = MessageBuffer.Left(NewlineIdx).TrimStartAndEnd();
+                            MessageBuffer = MessageBuffer.Mid(NewlineIdx + 1);
+
+                            if (CompleteMessage.IsEmpty())
+                                continue;
+
+                            UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Processing message: %s"), *CompleteMessage);
+
+                            // Parse JSON
+                            TSharedPtr<FJsonObject> JsonObject;
+                            TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(CompleteMessage);
+
+                            if (FJsonSerializer::Deserialize(Reader, JsonObject) && JsonObject.IsValid())
                             {
-                                // Execute command
-                                FString Response = Bridge->ExecuteCommand(CommandType, JsonObject->GetObjectField(TEXT("params")));
-                                
-                                // Log response for debugging
-                                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Sending response: %s"), *Response);
-                                
-                                // Send response
-                                int32 BytesSent = 0;
-                                if (!ClientSocket->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent))
+                                // Support both "type" (old format) and "command" (MCP format)
+                                FString CommandType;
+                                bool bHasCommand = JsonObject->TryGetStringField(TEXT("command"), CommandType);
+                                if (!bHasCommand)
                                 {
-                                    UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to send response"));
+                                    bHasCommand = JsonObject->TryGetStringField(TEXT("type"), CommandType);
                                 }
-                                else {
-                                    UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent successfully, bytes: %d"), BytesSent);
+
+                                if (bHasCommand)
+                                {
+                                    TSharedPtr<FJsonObject> Params = MakeShareable(new FJsonObject());
+                                    if (JsonObject->HasField(TEXT("params")))
+                                    {
+                                        TSharedPtr<FJsonValue> ParamsVal = JsonObject->TryGetField(TEXT("params"));
+                                        if (ParamsVal.IsValid() && ParamsVal->Type == EJson::Object)
+                                        {
+                                            Params = ParamsVal->AsObject();
+                                        }
+                                    }
+
+                                    FString Response = Bridge->ExecuteCommand(CommandType, Params);
+                                    UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Sending response: %s"), *Response);
+
+                                    // Ensure response is newline-terminated
+                                    if (!Response.EndsWith(TEXT("\n")))
+                                        Response += TEXT("\n");
+
+                                    int32 BytesSent = 0;
+                                    if (!ClientSocket->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent))
+                                    {
+                                        UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to send response"));
+                                    }
+                                    else
+                                    {
+                                        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent (%d bytes)"), BytesSent);
+                                    }
+                                }
+                                else
+                                {
+                                    UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Missing 'command'/'type' field in message"));
                                 }
                             }
                             else
                             {
-                                UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Missing 'type' field in command"));
+                                UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to parse JSON: %s"), *CompleteMessage);
                             }
-                        }
-                        else
-                        {
-                            UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to parse JSON from: %s"), *ReceivedText);
                         }
                     }
                     else
                     {
                         int32 LastError = (int32)ISocketSubsystem::Get()->GetLastErrorCode();
-                        // Don't break the connection for WouldBlock error, which is normal for non-blocking sockets
-                        bool bShouldBreak = true;
-                        
-                        // Check for "would block" error which isn't a real error for non-blocking sockets
-                        if (LastError == SE_EWOULDBLOCK) 
+                        if (LastError == SE_EWOULDBLOCK)
                         {
-                            UE_LOG(LogTemp, Verbose, TEXT("MCPServerRunnable: Socket would block, continuing..."));
-                            bShouldBreak = false;
-                            // Small sleep to prevent tight loop when no data
                             FPlatformProcess::Sleep(0.01f);
+                            continue;
                         }
-                        // Check for other transient errors we might want to tolerate
-                        else if (LastError == SE_EINTR) // Interrupted system call
+                        else if (LastError == SE_EINTR)
                         {
-                            UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Socket read interrupted, continuing..."));
-                            bShouldBreak = false;
+                            continue;
                         }
-                        else 
+                        else
                         {
-                            UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Client disconnected or error. Last error code: %d"), LastError);
-                        }
-                        
-                        if (bShouldBreak)
-                        {
+                            UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Client disconnected or error. Code: %d"), LastError);
                             break;
                         }
                     }
                 }
+
+                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Client session ended"));
             }
             else
             {
@@ -319,4 +391,4 @@ void FMCPServerRunnable::ProcessMessage(TSharedPtr<FSocket> Client, const FStrin
     {
         UE_LOG(LogTemp, Error, TEXT("MCPServerRunnable: Failed to send response"));
     }
-} 
+}

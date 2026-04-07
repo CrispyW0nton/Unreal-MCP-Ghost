@@ -1,4 +1,4 @@
-# Unreal Engine MCP Server - Enhanced Blueprint Visual Scripting Edition
+# Unreal Engine MCP Server — Enhanced Blueprint Visual Scripting Edition
 
 > **Built on top of:** [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp)  
 > **Extended with:** Full support for all topics in *Blueprints Visual Scripting for Unreal Engine 5* by Marcos Romero
@@ -18,48 +18,199 @@ Claude / Cursor / Windsurf
         │
         │ TCP JSON (port 55557)
         ▼
-  UnrealMCP C++ Plugin           ← Must be installed in your UE5 project
+  UnrealMCP C++ Plugin           ← Must be compiled into your UE5 project
         │
         │ UE5 Editor Subsystem
         ▼
-  Unreal Engine 5.5+
+  Unreal Engine 5.6+
 ```
 
 ---
 
-## Setup
+## Prerequisites
 
-### 1. Clone the repo
+Before starting, confirm you have all of the following installed:
+
+| Requirement | Version | Notes |
+|---|---|---|
+| Unreal Engine | 5.6.1+ | Via Epic Games Launcher |
+| Visual Studio | 2022 Community | **"Game Development with C++"** workload required |
+| Python | 3.10+ | `python --version` to confirm |
+| Git | Any | `git --version` to confirm |
+
+### Verify Visual Studio 2022 workload
+
+Open **Visual Studio Installer → Modify → Workloads** and confirm  
+**"Game Development with C++"** is checked.  
+Without this workload `UnrealBuildTool` cannot compile C++ plugins.
+
+### Verify UE5 engine location
+
+The build tools expect UE5 at:
+```
+C:\Program Files\Epic Games\UE_5.6\
+```
+Confirm with PowerShell:
+```powershell
+Test-Path "C:\Program Files\Epic Games\UE_5.6\Engine\Build\BatchFiles\Build.bat"
+```
+Expected output: `True`
+
+---
+
+## Full Setup Guide (First Time)
+
+### Step 1 — Clone this repository
+
+Keep dev tools organized in a dedicated folder, **not** on the Desktop:
 
 ```powershell
-# Keep dev tools organized — not on the Desktop
-cd C:\Users\NewAdmin\Documents\KotorMods\Tools
+# Create the tools folder if it doesn't exist yet
+New-Item -ItemType Directory -Force -Path "C:\Users\NewAdmin\Documents\KotorMods\Tools"
+
+cd "C:\Users\NewAdmin\Documents\KotorMods\Tools"
 git clone https://github.com/CrispyW0nton/Unreal-MCP-Ghost.git
 cd Unreal-MCP-Ghost
 git checkout genspark_ai_developer
 ```
 
-### 2. Install the C++ Plugin
+Verify the clone:
+```powershell
+dir "C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost\unreal_plugin\"
+```
+You should see: `UnrealMCP.uplugin`, `Source\`, `PLUGIN_SETUP.md`
+
+---
+
+### Step 2 — Copy the plugin into your UE5 project
+
+Replace `<YourProject>` with your actual `.uproject` folder, e.g.  
+`C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam115\UnrealProject\Lab3C`
 
 ```powershell
-# Create the Plugins folder and copy the plugin into your UE5 project
-New-Item -ItemType Directory -Force -Path "C:\path\to\YourProject\Plugins\UnrealMCP"
-Copy-Item -Recurse -Force "unreal_plugin\*" "C:\path\to\YourProject\Plugins\UnrealMCP\"
+$proj = "C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam115\UnrealProject\Lab3C"
+$repo = "C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost"
+
+# Create the plugin destination folder
+New-Item -ItemType Directory -Force -Path "$proj\Plugins\UnrealMCP"
+
+# Copy all plugin source files
+Copy-Item -Recurse -Force "$repo\unreal_plugin\*" "$proj\Plugins\UnrealMCP\"
 ```
 
-Then double-click the `.uproject` file — UE5 will detect missing binaries and prompt to rebuild. Click **Yes** and wait 3–8 minutes.
+Verify the copy:
+```powershell
+dir "$proj\Plugins\UnrealMCP\"
+```
+Expected output: `Source\`, `PLUGIN_SETUP.md`, `UnrealMCP.uplugin`  
+> **If you see a `Binaries\` folder** from a previous failed build, delete it:
+> ```powershell
+> Stop-Process -Name "UnrealEditor" -Force -ErrorAction SilentlyContinue
+> Start-Sleep 3
+> Remove-Item -Recurse -Force "$proj\Plugins\UnrealMCP\Binaries"
+> Remove-Item -Recurse -Force "$proj\Plugins\UnrealMCP\Intermediate"
+> ```
 
-### 3. Start the Python MCP Server
+---
+
+### Step 3 — Generate Visual Studio project files
 
 ```powershell
-cd C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost
+$proj = "C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam115\UnrealProject\Lab3C"
+$uproject = "$proj\Lab3C.uproject"
+
+cmd /c `"`"C:\Program Files\Epic Games\UE_5.6\Engine\Build\BatchFiles\GenerateProjectFiles.bat`" -project=`"$uproject`" -game -rocket`"
+```
+
+Alternatively, in **File Explorer**:
+1. Navigate to your project folder
+2. Right-click `Lab3C.uproject` → **"Generate Visual Studio project files"**
+3. Wait for the command window to finish
+
+This creates `Lab3C.sln` in your project folder.
+
+---
+
+### Step 4 — Compile the plugin in Visual Studio 2022
+
+1. Double-click `Lab3C.sln` (or `start "$proj\Lab3C.sln"`) to open in VS 2022
+2. Set the build target using the **two toolbar dropdowns**:
+   - Configuration: **`Development Editor`**
+   - Platform: **`Win64`**
+3. Press **`Ctrl+Shift+B`** (Build Solution)
+4. Watch the **Output** panel — first compile takes 5–20 minutes
+
+**Successful build output ends with:**
+```
+========== Build: 1 succeeded, 0 failed, 0 up-to-date, 0 skipped ==========
+```
+
+After a successful build, `Plugins\UnrealMCP\Binaries\Win64\UnrealEditor-UnrealMCP.dll`  
+will exist in your project folder.
+
+#### Common compile errors and fixes
+
+| Error message | Fix |
+|---|---|
+| `Cannot open include file: 'UserDefinedStructure/UserDefinedStructEditorUtils.h'` | Already fixed in this branch — re-pull and re-copy the `.cpp` files |
+| `'VariableDescriptions': is not a member of 'UUserDefinedStruct'` | Already fixed — re-pull and re-copy |
+| `PNGCompressImageArray: cannot convert TArray to TArray64` | Already fixed — re-pull and re-copy |
+| `VariantManager` module not found | Already fixed in `Build.cs` — re-pull and re-copy |
+| `'Game Development with C++' workload missing` | Open VS Installer → Modify → add the workload |
+| Build exits with code 6 | Check the Output panel for the specific `error C` line and paste it here |
+
+---
+
+### Step 5 — Open the project and verify the plugin loads
+
+1. Open UE5 from the `.uproject` file (double-click `Lab3C.uproject` in Explorer)
+2. The editor will compile shaders on first launch — wait until 100%
+3. Go to **Edit → Plugins**, search for **"UnrealMCP"** — it should show **Enabled** ✓
+4. Open **Window → Output Log** and search for:
+   ```
+   UnrealMCPBridge: Server started on 127.0.0.1:55557
+   ```
+   If you see this line, the TCP server is running.
+
+**Test the port from PowerShell** (UE5 must be open):
+```powershell
+python -c "import socket; s=socket.socket(); s.settimeout(2); r=s.connect_ex(('127.0.0.1',55557)); s.close(); print('PORT OPEN - plugin running!' if r==0 else 'PORT CLOSED - plugin not loaded')"
+```
+
+---
+
+### Step 6 — Run the Python MCP Server
+
+```powershell
+cd "C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost"
 pip install mcp fastmcp
 python unreal_mcp_server\unreal_mcp_server.py
 ```
 
-### 4. Configure Your MCP Client
+Expected console output:
+```
+[MCP] Unreal MCP Server starting...
+[MCP] 283 tools registered across 18 modules
+[MCP] Server ready — connect your AI client
+```
 
-**Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`):
+---
+
+### Step 7 — Test the CLI
+
+With UE5 open and the Python server running:
+```powershell
+cd "C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost"
+python unreal_mcp_server\ue5cli.py get_actors_in_level
+```
+
+Expected: a JSON list of every actor in the currently open level (WorldInfo, Brush, lights, meshes, etc.).
+
+---
+
+### Step 8 — Configure your MCP client
+
+**Claude Desktop** — edit `%APPDATA%\Claude\claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
@@ -71,16 +222,115 @@ python unreal_mcp_server\unreal_mcp_server.py
 }
 ```
 
-**Cursor** (`.cursor/mcp.json` in project root):
+**Cursor** — create/edit `%APPDATA%\Cursor\User\mcp.json`:
 ```json
 {
   "mcpServers": {
-    "unrealMCP": {
-      "command": "uv",
-      "args": ["--directory", "/path/to/unreal_mcp_server", "run", "unreal_mcp_server.py"]
+    "unreal-mcp": {
+      "command": "python",
+      "args": ["C:/Users/NewAdmin/Documents/KotorMods/Tools/Unreal-MCP-Ghost/unreal_mcp_server/unreal_mcp_server.py"]
     }
   }
 }
+```
+
+Restart Claude Desktop or Cursor after saving. The AI client will now have all 283 UE5 tools available.
+
+---
+
+## Updating the plugin source
+
+When new fixes are pushed to this repo, update your project in three steps:
+
+```powershell
+# 1. Pull latest fixes
+cd "C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost"
+git pull origin genspark_ai_developer
+
+# 2. Copy updated source files to your project
+$src = "C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost\unreal_plugin\Source\UnrealMCP\Private"
+$dst = "C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam115\UnrealProject\Lab3C\Plugins\UnrealMCP\Source\UnrealMCP\Private"
+Copy-Item -Recurse -Force "$src\*" "$dst\"
+
+# 3. Rebuild in Visual Studio 2022 (Ctrl+Shift+B)
+```
+
+---
+
+## Remote Access via Playit Tunnel
+
+The plugin server listens only on `127.0.0.1:55557` by default.  
+To access it from outside the machine (e.g. via an AI assistant running in a cloud sandbox),  
+use a [Playit.gg](https://playit.gg/) TCP tunnel.
+
+### Setup
+
+1. Download `playit.exe` from [playit.gg](https://playit.gg/)
+2. Create a **TCP tunnel** pointing to `localhost:55557`
+3. Note your assigned address (e.g. `lie-instability.with.playit.plus:5462`)
+
+### Keep it running
+
+```powershell
+Start-Process "C:\playit\playit.exe"
+```
+
+Leave this window open whenever you want remote access.
+
+### Testing the tunnel
+
+With UE5 open, playit running, and Python server running:
+```powershell
+python -c "
+import socket, json
+host, port = 'lie-instability.with.playit.plus', 5462
+msg = json.dumps({'command':'get_actors_in_level','params':{}}) + '\n'
+s = socket.socket()
+s.settimeout(10)
+s.connect((host, port))
+s.sendall(msg.encode())
+print(s.recv(65536).decode())
+s.close()
+"
+```
+
+### How the proxy-probe fix works
+
+Playit (and other TCP proxies) periodically open a TCP connection, send zero bytes,  
+then close it — these are health-check probes.  
+The previous plugin code immediately disconnected on the first zero-byte read,  
+which caused real commands arriving through the tunnel to be silently dropped.
+
+**The fix** (in `MCPServerRunnable.cpp`): after accepting a connection the plugin now  
+polls for pending data for up to 5 seconds (50 ms intervals).  
+If data arrives in that window, it proceeds normally.  
+If no data arrives within 5 seconds, the connection is classified as a probe and  
+closed gracefully without blocking the next real connection.
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `PORT CLOSED` in PowerShell test | Plugin not loaded or UE5 not running | Open UE5, check Output Log for `Server started on 127.0.0.1:55557` |
+| Plugin shows as disabled in Edit → Plugins | Binaries not compiled | Follow Steps 3–4 to compile |
+| `The following modules are missing` dialog | Expected — plugin needs compilation | Click **Yes** to rebuild (or use VS2022) |
+| UE5 says `could not be compiled` | C++ error during build | Open VS2022, build manually, check Output for `error C` lines |
+| `VariantManager not found` error | Missing optional module | Fixed in `Build.cs` on `genspark_ai_developer` — re-pull |
+| CLI returns `Communication error: Expecting value` | UE5 not open or playit not running | Start UE5 first, verify port, then start playit |
+| Tunnel receives zero bytes | Proxy health-check probe | Fixed in `MCPServerRunnable.cpp` — re-pull, re-copy, recompile |
+| Port 55557 already in use | Another process | `netstat -ano \| findstr 55557` then `taskkill /PID <id> /F` |
+
+### Finding the engine log
+
+```powershell
+Get-Content "C:\Users\NewAdmin\AppData\Local\UnrealEngine\5.6\Saved\Logs\Unreal.log" -Tail 30
+```
+
+Search for plugin messages:
+```powershell
+Select-String -Path "C:\Users\NewAdmin\AppData\Local\UnrealEngine\5.6\Saved\Logs\Unreal.log" -Pattern "UnrealMCP"
 ```
 
 ---
@@ -234,9 +484,9 @@ The MCP tools will:
 
 ---
 
-## Book Coverage Summary (2nd Pass Research)
+## Book Coverage Summary
 
-**217 tools** covering every chapter of *Blueprints Visual Scripting for Unreal Engine 5*:
+**283 tools** covering every chapter of *Blueprints Visual Scripting for Unreal Engine 5*:
 
 | Chapter | Topic | Tools |
 |---------|-------|-------|
@@ -256,44 +506,6 @@ The MCP tools will:
 | Ch. 18 | Function/Macro Libraries, Actor/Scene Components, Timers | `library_tools` |
 | Ch. 19 | Procedural Generation, Splines, Editor Utilities | `procedural_tools` |
 | Ch. 20 | Variant Manager, Product Configurator, Level Variant Sets | `variant_tools` |
-
-## Suggested Additional Features (Beyond the Book)
-
-### 🎮 Advanced Gameplay
-- **Physical Animation Component** - Ragdoll blending
-- **Chaos Physics** - Procedural destruction Blueprint nodes
-- **Gameplay Tags** - Add/query/filter by tags
-- **Gameplay Abilities (GAS)** - AbilitySystemComponent setup
-
-### 🌍 World & Level
-- **Level Streaming** - Load/unload sub-levels
-- **World Partition** - HLOD and streaming setup
-- **Landscape & Foliage** - Blueprint-controlled terrain painting
-
-### 📸 Cinematics
-- **Sequencer** - Create Level Sequences, add tracks
-- **Camera Rigs** - Camera shake, crane shots
-- **Cinematic Blueprint nodes** - Play/stop sequences
-
-### 🔊 Audio
-- **Sound Cue Blueprints** - Procedural audio
-- **MetaSound** - Blueprint-controllable audio graphs  
-- **Spatialization** - 3D audio setup
-
-### 🤖 Enhanced AI
-- **EQS (Environment Query System)** - AI spatial queries
-- **AI Perception** - Sight, hearing, damage perception component
-- **Navigation Invoker** - Dynamic navmesh generation
-- **Crowd Manager** - Flocking/crowd behavior
-
-### 🌐 Multiplayer
-- **Network Replication** - Mark variables/events as Replicated
-- **RPCs** - Server/Client/Multicast RPC nodes
-- **Online Subsystem** - Session management
-
-### 📊 Debugging & Profiling
-- **Visual Logger** - Blueprint logging for timeline debugging
-- **Blueprint Profiler** - Identify performance bottlenecks
 
 ---
 
@@ -324,11 +536,32 @@ unreal_mcp_server/
     └── variant_tools.py          # Variant Manager, Level Variant Sets, Product Configurator (Ch. 20)
 
 unreal_plugin/
-├── UnrealMCPBridge_Integration.patch
+├── UnrealMCP.uplugin             # Plugin descriptor (UE5.6, Editor module)
+├── PLUGIN_SETUP.md               # Quick-reference for plugin-only setup
 └── Source/UnrealMCP/
-    ├── Public/Commands/
-    │   └── UnrealMCPExtendedCommands.h
-    └── Private/Commands/
-        └── UnrealMCPExtendedCommands.cpp
+    ├── UnrealMCP.Build.cs        # Module build rules (VariantManager removed for UE5.6 compat)
+    ├── Public/
+    │   ├── UnrealMCPModule.h
+    │   ├── UnrealMCPBridge.h     # UEditorSubsystem — starts TCP server on port 55557
+    │   ├── MCPServerRunnable.h
+    │   └── Commands/
+    │       ├── UnrealMCPBlueprintCommands.h
+    │       ├── UnrealMCPBlueprintNodeCommands.h
+    │       ├── UnrealMCPCommonUtils.h
+    │       ├── UnrealMCPEditorCommands.h
+    │       ├── UnrealMCPExtendedCommands.h
+    │       ├── UnrealMCPProjectCommands.h
+    │       └── UnrealMCPUMGCommands.h
+    └── Private/
+        ├── UnrealMCPModule.cpp
+        ├── UnrealMCPBridge.cpp
+        ├── MCPServerRunnable.cpp  # TCP accept loop + Playit probe-fix
+        └── Commands/
+            ├── UnrealMCPBlueprintCommands.cpp
+            ├── UnrealMCPBlueprintNodeCommands.cpp
+            ├── UnrealMCPCommonUtils.cpp
+            ├── UnrealMCPEditorCommands.cpp
+            ├── UnrealMCPExtendedCommands.cpp
+            ├── UnrealMCPProjectCommands.cpp
+            └── UnrealMCPUMGCommands.cpp
 ```
-
