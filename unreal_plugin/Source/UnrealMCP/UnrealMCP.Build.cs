@@ -99,16 +99,12 @@ public class UnrealMCP : ModuleRules
         // ── Editor-only dependencies ──────────────────────────────────────────
         if (Target.bBuildEditor)
         {
-            PrivateDependencyModuleNames.AddRange(
-                new string[]
-                {
-                    // Variant Manager (extended — Chapter 20)
-                    // NOTE: Comment these two lines out if your UE install
-                    // does not include the Variant Manager plugin.
-                    "VariantManager",
-                    "VariantManagerContent",
-                }
-            );
+            // VariantManager is an optional plugin — only add if it is installed.
+            // Standard UE5 installs from the Epic Launcher do NOT include it.
+            // If you see a "Module VariantManager could not be found" error,
+            // these two lines are already commented out for you.
+            // "VariantManager",
+            // "VariantManagerContent",
         }
 
         DynamicallyLoadedModuleNames.AddRange(
