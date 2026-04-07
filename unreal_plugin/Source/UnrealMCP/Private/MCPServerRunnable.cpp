@@ -12,7 +12,8 @@
 #include "HAL/PlatformTime.h"
 
 // Buffer size for receiving data
-const int32 BufferSize = 8192;
+// Renamed to avoid hiding the global BufferSize declared in UE5.6 engine headers
+const int32 MCP_BufferSize = 8192;
 
 FMCPServerRunnable::FMCPServerRunnable(UUnrealMCPBridge* InBridge, TSharedPtr<FSocket> InListenerSocket)
     : Bridge(InBridge)

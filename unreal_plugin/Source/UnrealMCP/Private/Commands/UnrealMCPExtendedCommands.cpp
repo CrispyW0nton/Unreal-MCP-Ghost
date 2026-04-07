@@ -76,8 +76,9 @@
 #include "Engine/UserDefinedEnum.h"
 #include "Engine/DataTable.h"
 #include "Factories/DataTableFactory.h"
-// UserDefinedStructFactory/UserDefinedEnumFactory removed; use editor utils directly:
-#include "UserDefinedStructure/UserDefinedStructEditorUtils.h"
+// UserDefinedStructFactory/UserDefinedEnumFactory removed; use editor utils directly.
+// UE5.6: header path — use Kismet2/StructureEditorUtils.h (new location in UE 5.4+)
+#include "Kismet2/StructureEditorUtils.h"
 #include "Kismet2/EnumEditorUtils.h"
 
 // Timeline (forward-declare only; UTimelineTemplate is internal in UE 5.6)
