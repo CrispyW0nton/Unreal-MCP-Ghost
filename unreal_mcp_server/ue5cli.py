@@ -20,6 +20,16 @@ try:
     import readline  # noqa: F401 — up/down arrow history (Unix only, optional)
 except ImportError:
     pass  # Windows — no readline, that's fine
+
+# Enable ANSI escape codes on Windows 10+ (needed for colours in cmd/PowerShell)
+import os as _os
+if _os.name == "nt":
+    import ctypes as _ctypes
+    try:
+        kernel32 = _ctypes.windll.kernel32
+        kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+    except Exception:
+        pass
 from typing import Optional, Dict, Any
 
 HOST = "127.0.0.1"
@@ -218,9 +228,13 @@ def repl():
 
     raw_mode = False
 
+    # Use a plain ASCII prompt on Windows — ANSI bold codes in input()
+    # can leak back into the buffer on terminals without VT processing.
+    _prompt = "ue5> " if _os.name == "nt" else BOLD("ue5> ")
+
     while True:
         try:
-            line = input(BOLD("ue5> ")).strip()
+            line = input(_prompt).strip()
         except (EOFError, KeyboardInterrupt):
             print()
             break
