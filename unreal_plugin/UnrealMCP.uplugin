@@ -1,0 +1,30 @@
+{
+	"FileVersion": 3,
+	"Version": 1,
+	"VersionName": "1.0.0",
+	"FriendlyName": "UnrealMCP",
+	"Description": "Model Context Protocol (MCP) bridge for Unreal Engine 5.6. Enables AI assistants (Claude, Cursor, etc.) to create and manipulate Blueprints, actors, materials, AI, UMG widgets, save systems, VR, procedural generation, and more via 283 registered tools covering all 20 chapters of Blueprints Visual Scripting for UE5.",
+	"Category": "AI Tools",
+	"CreatedBy": "CrispyW0nton",
+	"CreatedByURL": "https://github.com/CrispyW0nton/Unreal-MCP-Ghost",
+	"DocsURL": "https://github.com/CrispyW0nton/Unreal-MCP-Ghost/blob/main/README.md",
+	"MarketplaceURL": "",
+	"SupportURL": "https://github.com/CrispyW0nton/Unreal-MCP-Ghost/issues",
+	"EngineVersion": "5.6.0",
+	"CanContainContent": false,
+	"IsBetaVersion": false,
+	"IsExperimentalVersion": false,
+	"Installed": false,
+	"Modules": [
+		{
+			"Name": "UnrealMCP",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"AdditionalDependencies": [
+				"CoreUObject",
+				"Engine",
+				"UnrealEd"
+			]
+		}
+	]
+}
