@@ -1166,14 +1166,19 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateStruct(
                         }
                         
                         FStructureEditorUtils::AddVariable(NewStruct, PinType);
-                        // Rename the last added variable
-                        int32 NewVarIdx = NewStruct->VariableDescriptions.Num() - 1;
-                        if (NewVarIdx >= 0)
+                        // UE5.6: VariableDescriptions removed — use FStructureEditorUtils::GetVarDesc()
+                        // RenameVariable now takes (UUserDefinedStruct*, FGuid, FString)
                         {
-                            FStructureEditorUtils::RenameVariable(
-                                NewStruct,
-                                NewStruct->VariableDescriptions[NewVarIdx].VarName,
-                                FieldName);
+                            const TArray<FStructVariableDescription>& VarDescs =
+                                FStructureEditorUtils::GetVarDesc(NewStruct);
+                            int32 NewVarIdx = VarDescs.Num() - 1;
+                            if (NewVarIdx >= 0)
+                            {
+                                FStructureEditorUtils::RenameVariable(
+                                    NewStruct,
+                                    VarDescs[NewVarIdx].VarGuid,
+                                    FieldName);
+                            }
                         }
                     }
                 }
@@ -1204,10 +1209,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEnum(
     if (Path.IsEmpty()) Path = TEXT("/Game/Data");
     
     // UE5.6: UserDefinedEnumFactory removed; use FEnumEditorUtils directly
+    // CreateUserDefinedEnum returns UEnum* in UE5.6 — cast to UUserDefinedEnum*
     FString PackagePath = Path + TEXT("/");
     UPackage* Package = CreatePackage(*(PackagePath + EnumName));
-    UUserDefinedEnum* NewEnum = FEnumEditorUtils::CreateUserDefinedEnum(
-        Package, FName(*EnumName), RF_Public | RF_Standalone | RF_Transactional);
+    UUserDefinedEnum* NewEnum = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(
+        Package, FName(*EnumName), RF_Public | RF_Standalone | RF_Transactional));
     
     if (NewEnum)
     {
