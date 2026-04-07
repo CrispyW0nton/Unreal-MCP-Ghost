@@ -16,7 +16,10 @@ import sys
 import json
 import socket
 import textwrap
-import readline  # noqa: F401 — gives up/down arrow history on most platforms
+try:
+    import readline  # noqa: F401 — up/down arrow history (Unix only, optional)
+except ImportError:
+    pass  # Windows — no readline, that's fine
 from typing import Optional, Dict, Any
 
 HOST = "127.0.0.1"
