@@ -141,14 +141,27 @@ def _delete_bp_if_exists(name: str):
     pass  # UE5 doesn't expose a delete_blueprint command — user cleans up manually
 
 
+def _extract_actors(r: dict) -> list:
+    """Pull the actors list out of whatever response shape UE5 returns."""
+    # Shape 1: {"status":"success","result":{"actors":[...]}}
+    result = r.get("result", {})
+    if isinstance(result, dict) and "actors" in result:
+        return result["actors"]
+    # Shape 2: {"actors":[...]}  (direct)
+    if "actors" in r:
+        return r["actors"]
+    # Shape 3: result is already the list
+    if isinstance(result, list):
+        return result
+    return []
+
+
 def _actor_exists(name: str) -> bool:
     r = send("find_actors_by_name", {"pattern": name})
     if not is_ok(r):
         return False
-    actors = r.get("result", r.get("actors", []))
-    if isinstance(actors, list):
-        return any(name in str(a) for a in actors)
-    return False
+    actors = _extract_actors(r)
+    return any(name in str(a) for a in actors)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -196,8 +209,9 @@ def test_malformed_params_handled():
 def test_get_actors_returns_list():
     r = send("get_actors_in_level", {})
     assert is_ok(r), f"get_actors_in_level failed: {get_err(r)}"
-    actors = r.get("result", r.get("actors", []))
+    actors = _extract_actors(r)
     assert isinstance(actors, list), f"Expected list, got {type(actors)}: {r}"
+    assert len(actors) > 0, "Expected at least one actor in the level"
 
 
 def test_find_actors_by_name_wildcard():
@@ -210,10 +224,8 @@ def test_find_actors_by_name_wildcard():
 def test_find_actors_no_match():
     r = send("find_actors_by_name", {"pattern": "__NoSuchActorEver__"})
     assert r is not None
-    # Either empty list or success:false — both acceptable
-    actors = r.get("result", r.get("actors", []))
-    if isinstance(actors, list):
-        assert len(actors) == 0, f"Expected no matches, got {actors}"
+    actors = _extract_actors(r)
+    assert len(actors) == 0, f"Expected no matches, got {actors}"
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -233,8 +245,8 @@ def test_spawn_actor():
 def test_spawned_actor_appears_in_level():
     r = send("get_actors_in_level", {})
     assert is_ok(r), get_err(r)
-    actors = r.get("result", r.get("actors", []))
-    names = [str(a) for a in actors]
+    actors = _extract_actors(r)
+    names = [str(a.get("name", a)) for a in actors]
     found = any(ACTOR_NAME in n for n in names)
     assert found, f"{ACTOR_NAME} not found in level after spawn. Actors: {names[:10]}"
 
@@ -281,11 +293,11 @@ def test_delete_actor():
 
 
 def test_deleted_actor_gone():
-    time.sleep(0.3)   # give UE5 a tick to process
+    time.sleep(1.0)   # give UE5 time to process the deletion
     r = send("get_actors_in_level", {})
     assert is_ok(r), get_err(r)
-    actors = r.get("result", r.get("actors", []))
-    names = [str(a) for a in actors]
+    actors = _extract_actors(r)
+    names = [str(a.get("name", a)) for a in actors]
     still_there = any(ACTOR_NAME in n and ACTOR_NAME_2 not in n for n in names)
     assert not still_there, f"{ACTOR_NAME} still in level after delete"
 
@@ -333,9 +345,10 @@ def test_compile_blueprint():
 # GROUP 5: Blueprint components
 # ═══════════════════════════════════════════════════════════════════════════════
 def test_add_static_mesh_component():
+    # Use full UE path so FindObject resolves correctly
     r = send("add_component_to_blueprint", {
         "blueprint_name": BP_ACTOR,
-        "component_type": "StaticMeshComponent",
+        "component_type": "/Script/Engine.StaticMeshComponent",
         "component_name": "TestMesh",
         "location": [0.0, 0.0, 0.0],
         "rotation": [0.0, 0.0, 0.0],
@@ -347,7 +360,7 @@ def test_add_static_mesh_component():
 def test_add_camera_component():
     r = send("add_component_to_blueprint", {
         "blueprint_name": BP_ACTOR,
-        "component_type": "CameraComponent",
+        "component_type": "/Script/Engine.CameraComponent",
         "component_name": "TestCam",
         "location": [0.0, 0.0, 90.0]
     })
@@ -357,7 +370,7 @@ def test_add_camera_component():
 def test_add_point_light_component():
     r = send("add_component_to_blueprint", {
         "blueprint_name": BP_ACTOR,
-        "component_type": "PointLightComponent",
+        "component_type": "/Script/Engine.PointLightComponent",
         "component_name": "TestLight",
         "location": [0.0, 0.0, 50.0]
     })
@@ -452,9 +465,10 @@ def test_add_tick_event():
 
 
 def test_add_print_string_node():
+    # Full script path needed for FindObject to resolve KismetSystemLibrary
     r = send("add_blueprint_function_node", {
         "blueprint_name": BP_ACTOR,
-        "target": "UKismetSystemLibrary",
+        "target": "/Script/Engine.KismetSystemLibrary",
         "function_name": "PrintString",
         "params": {},
         "node_position": [300, 0]
@@ -478,7 +492,7 @@ def test_connect_begin_play_to_print():
     # Get PrintString node id
     print_r = send("add_blueprint_function_node", {
         "blueprint_name": BP_ACTOR,
-        "target": "UKismetSystemLibrary",
+        "target": "/Script/Engine.KismetSystemLibrary",
         "function_name": "PrintString",
         "params": {},
         "node_position": [350, 400]
@@ -499,9 +513,11 @@ def test_connect_begin_play_to_print():
 
 
 def test_find_blueprint_nodes():
+    # node_type must be capitalised "Event" and event_name is required
     r = send("find_blueprint_nodes", {
         "blueprint_name": BP_ACTOR,
-        "node_type": "event"
+        "node_type": "Event",
+        "event_name": "ReceiveBeginPlay"
     })
     assert is_ok(r), f"find_blueprint_nodes failed: {get_err(r)}"
     result = r.get("result", r)
@@ -519,8 +535,9 @@ def test_compile_final():
 # ═══════════════════════════════════════════════════════════════════════════════
 def test_spawn_blueprint_actor():
     _delete_actor_if_exists(f"{_PREFIX}BPInstance")
+    # Plugin requires "actor_name", not "name"
     r = send("spawn_blueprint_actor", {
-        "name": f"{_PREFIX}BPInstance",
+        "actor_name": f"{_PREFIX}BPInstance",
         "blueprint_name": BP_ACTOR,
         "location": [500.0, 0.0, 100.0],
         "rotation": [0.0, 0.0, 0.0]
@@ -529,11 +546,11 @@ def test_spawn_blueprint_actor():
 
 
 def test_spawned_bp_actor_in_level():
-    time.sleep(0.3)
+    time.sleep(1.0)
     r = send("get_actors_in_level", {})
     assert is_ok(r), get_err(r)
-    actors = r.get("result", r.get("actors", []))
-    names = [str(a) for a in actors]
+    actors = _extract_actors(r)
+    names = [str(a.get("name", a)) for a in actors]
     found = any(f"{_PREFIX}BPInstance" in n for n in names)
     assert found, f"{_PREFIX}BPInstance not found in level: {names[:10]}"
 

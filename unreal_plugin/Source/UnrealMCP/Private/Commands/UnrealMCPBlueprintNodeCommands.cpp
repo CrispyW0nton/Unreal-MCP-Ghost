@@ -355,17 +355,46 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         // Special case handling for common classes like UGameplayStatics
         if (!TargetClass && Target == TEXT("UGameplayStatics"))
         {
-            // For UGameplayStatics, use a direct reference to known class
             TargetClass = FindObject<UClass>(nullptr, TEXT("UGameplayStatics"));
             if (!TargetClass)
             {
-                // Try loading it from its known package
                 TargetClass = LoadObject<UClass>(nullptr, TEXT("/Script/Engine.GameplayStatics"));
                 UE_LOG(LogTemp, Display, TEXT("Explicitly loading GameplayStatics: %s"), 
                        TargetClass ? TEXT("Success") : TEXT("Failed"));
             }
         }
-        
+
+        // Special case: KismetSystemLibrary (short name, with or without U prefix)
+        if (!TargetClass && (Target == TEXT("KismetSystemLibrary") || Target == TEXT("UKismetSystemLibrary")))
+        {
+            TargetClass = LoadObject<UClass>(nullptr, TEXT("/Script/Engine.KismetSystemLibrary"));
+            UE_LOG(LogTemp, Display, TEXT("Explicitly loading KismetSystemLibrary: %s"),
+                   TargetClass ? TEXT("Success") : TEXT("Failed"));
+        }
+
+        // Special case: KismetMathLibrary
+        if (!TargetClass && (Target == TEXT("KismetMathLibrary") || Target == TEXT("UKismetMathLibrary")))
+        {
+            TargetClass = LoadObject<UClass>(nullptr, TEXT("/Script/Engine.KismetMathLibrary"));
+            UE_LOG(LogTemp, Display, TEXT("Explicitly loading KismetMathLibrary: %s"),
+                   TargetClass ? TEXT("Success") : TEXT("Failed"));
+        }
+
+        // General fallback: try LoadObject with /Script/Engine.<ClassName> (strips leading U if present)
+        if (!TargetClass)
+        {
+            FString StrippedName = Target.StartsWith(TEXT("U")) ? Target.Mid(1) : Target;
+            TargetClass = LoadObject<UClass>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *StrippedName));
+            if (!TargetClass)
+                TargetClass = LoadObject<UClass>(nullptr, *FString::Printf(TEXT("/Script/Engine.%s"), *Target));
+        }
+
+        // If caller passed the full object path (e.g. "/Script/Engine.KismetSystemLibrary"), load directly
+        if (!TargetClass && Target.StartsWith(TEXT("/")))
+        {
+            TargetClass = LoadObject<UClass>(nullptr, *Target);
+        }
+
         // If we found a target class, look for the function there
         if (TargetClass)
         {
@@ -892,33 +921,51 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleFindBlueprintNode
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get event graph"));
     }
 
-    // Create a JSON array for the node GUIDs
+    // Normalise node_type to lower-case for case-insensitive comparison
+    FString NodeTypeLower = NodeType.ToLower();
+
+    // Create JSON arrays — we return both node_guids (legacy) and nodes (rich objects)
     TArray<TSharedPtr<FJsonValue>> NodeGuidArray;
-    
-    // Filter nodes by the exact requested type
-    if (NodeType == TEXT("Event"))
+    TArray<TSharedPtr<FJsonValue>> NodesArray;
+
+    // Filter nodes by the requested type (case-insensitive)
+    if (NodeTypeLower == TEXT("event"))
     {
         FString EventName;
         if (!Params->TryGetStringField(TEXT("event_name"), EventName))
         {
             return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'event_name' parameter for Event node search"));
         }
-        
-        // Look for nodes with exact event name (e.g., ReceiveBeginPlay)
+
+        // Look for nodes with matching event name (e.g., ReceiveBeginPlay)
         for (UEdGraphNode* Node : EventGraph->Nodes)
         {
             UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node);
             if (EventNode && EventNode->EventReference.GetMemberName() == FName(*EventName))
             {
-                UE_LOG(LogTemp, Display, TEXT("Found event node with name %s: %s"), *EventName, *EventNode->NodeGuid.ToString());
-                NodeGuidArray.Add(MakeShared<FJsonValueString>(EventNode->NodeGuid.ToString()));
+                FString GuidStr = EventNode->NodeGuid.ToString();
+                UE_LOG(LogTemp, Display, TEXT("Found event node with name %s: %s"), *EventName, *GuidStr);
+
+                // Add GUID to legacy array
+                NodeGuidArray.Add(MakeShared<FJsonValueString>(GuidStr));
+
+                // Add rich node object to new array
+                TSharedPtr<FJsonObject> NodeObj = MakeShared<FJsonObject>();
+                NodeObj->SetStringField(TEXT("node_id"),   GuidStr);
+                NodeObj->SetStringField(TEXT("node_type"), TEXT("Event"));
+                NodeObj->SetStringField(TEXT("event_name"), EventName);
+                NodeObj->SetNumberField(TEXT("pos_x"), (double)EventNode->NodePosX);
+                NodeObj->SetNumberField(TEXT("pos_y"), (double)EventNode->NodePosY);
+                NodesArray.Add(MakeShared<FJsonValueObject>(NodeObj));
             }
         }
     }
-    // Add other node types as needed (InputAction, etc.)
-    
+    // Add other node types as needed (InputAction, CallFunction, etc.)
+
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    // Return both keys so old and new callers both work
     ResultObj->SetArrayField(TEXT("node_guids"), NodeGuidArray);
-    
+    ResultObj->SetArrayField(TEXT("nodes"),      NodesArray);
+
     return ResultObj;
 } 

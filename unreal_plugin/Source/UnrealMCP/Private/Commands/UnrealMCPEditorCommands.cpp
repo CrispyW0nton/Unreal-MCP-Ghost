@@ -181,23 +181,26 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnActor(const TShared
     FActorSpawnParameters SpawnParams;
     SpawnParams.Name = *ActorName;
 
-    if (ActorType == TEXT("StaticMeshActor"))
+    // Normalise type string to canonical mixed-case for comparison
+    FString ActorTypeNorm = ActorType.ToLower();
+
+    if (ActorTypeNorm == TEXT("staticmeshactor"))
     {
         NewActor = World->SpawnActor<AStaticMeshActor>(AStaticMeshActor::StaticClass(), Location, Rotation, SpawnParams);
     }
-    else if (ActorType == TEXT("PointLight"))
+    else if (ActorTypeNorm == TEXT("pointlight"))
     {
         NewActor = World->SpawnActor<APointLight>(APointLight::StaticClass(), Location, Rotation, SpawnParams);
     }
-    else if (ActorType == TEXT("SpotLight"))
+    else if (ActorTypeNorm == TEXT("spotlight"))
     {
         NewActor = World->SpawnActor<ASpotLight>(ASpotLight::StaticClass(), Location, Rotation, SpawnParams);
     }
-    else if (ActorType == TEXT("DirectionalLight"))
+    else if (ActorTypeNorm == TEXT("directionallight"))
     {
         NewActor = World->SpawnActor<ADirectionalLight>(ADirectionalLight::StaticClass(), Location, Rotation, SpawnParams);
     }
-    else if (ActorType == TEXT("CameraActor"))
+    else if (ActorTypeNorm == TEXT("cameraactor"))
     {
         NewActor = World->SpawnActor<ACameraActor>(ACameraActor::StaticClass(), Location, Rotation, SpawnParams);
     }
