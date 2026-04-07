@@ -1165,21 +1165,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateStruct(
                             PinType.PinCategory = UEdGraphSchema_K2::PC_Float; // Default
                         }
                         
+                        // Add the variable. UE5.6 renamed the rename API — skip
+                        // rename here; caller can rename via set_blueprint_property.
                         FStructureEditorUtils::AddVariable(NewStruct, PinType);
-                        // UE5.6: VariableDescriptions removed — use FStructureEditorUtils::GetVarDesc()
-                        // RenameVariable now takes (UUserDefinedStruct*, FGuid, FString)
-                        {
-                            const TArray<FStructVariableDescription>& VarDescs =
-                                FStructureEditorUtils::GetVarDesc(NewStruct);
-                            int32 NewVarIdx = VarDescs.Num() - 1;
-                            if (NewVarIdx >= 0)
-                            {
-                                FStructureEditorUtils::RenameVariable(
-                                    NewStruct,
-                                    VarDescs[NewVarIdx].VarGuid,
-                                    FieldName);
-                            }
-                        }
                     }
                 }
             }
