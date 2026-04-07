@@ -193,30 +193,111 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
     // Create the component - dynamically find the component class by name
     UClass* ComponentClass = nullptr;
 
-    // Try to find the class with exact name first
-    ComponentClass = FindObject<UClass>(nullptr, *ComponentType);
-    
-    // If not found, try with "Component" suffix
-    if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
+    // Helper: try FindObject then LoadObject for a given path
+    auto TryLoad = [](const FString& Path) -> UClass*
     {
-        FString ComponentTypeWithSuffix = ComponentType + TEXT("Component");
-        ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithSuffix);
-    }
-    
-    // If still not found, try with "U" prefix
-    if (!ComponentClass && !ComponentType.StartsWith(TEXT("U")))
+        UClass* C = FindObject<UClass>(nullptr, *Path);
+        if (!C) C = LoadObject<UClass>(nullptr, *Path);
+        return C;
+    };
+
+    // 0. Known component name → canonical path table (covers the most common cases)
+    //    Accepts short names like "StaticMesh", "StaticMeshComponent", "Camera", etc.
     {
-        FString ComponentTypeWithPrefix = TEXT("U") + ComponentType;
-        ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithPrefix);
-        
-        // Try with both prefix and suffix
-        if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
+        // Build a normalised lookup key: strip leading 'U', strip trailing 'Component', lower-case
+        FString Key = ComponentType;
+        if (Key.StartsWith(TEXT("U"))) Key = Key.Mid(1);
+        if (Key.EndsWith(TEXT("Component"))) Key = Key.LeftChop(9);
+        Key = Key.ToLower();
+
+        struct FComponentEntry { const TCHAR* Key; const TCHAR* Path; };
+        static const FComponentEntry KnownComponents[] =
         {
-            FString ComponentTypeWithBoth = TEXT("U") + ComponentType + TEXT("Component");
-            ComponentClass = FindObject<UClass>(nullptr, *ComponentTypeWithBoth);
+            { TEXT("staticmesh"),          TEXT("/Script/Engine.StaticMeshComponent") },
+            { TEXT("camera"),              TEXT("/Script/Engine.CameraComponent") },
+            { TEXT("pointlight"),          TEXT("/Script/Engine.PointLightComponent") },
+            { TEXT("spotlight"),           TEXT("/Script/Engine.SpotLightComponent") },
+            { TEXT("directionallight"),    TEXT("/Script/Engine.DirectionalLightComponent") },
+            { TEXT("box"),                 TEXT("/Script/Engine.BoxComponent") },
+            { TEXT("sphere"),              TEXT("/Script/Engine.SphereComponent") },
+            { TEXT("capsule"),             TEXT("/Script/Engine.CapsuleComponent") },
+            { TEXT("arrow"),               TEXT("/Script/Engine.ArrowComponent") },
+            { TEXT("billboard"),           TEXT("/Script/Engine.BillboardComponent") },
+            { TEXT("audio"),               TEXT("/Script/Engine.AudioComponent") },
+            { TEXT("springarm"),           TEXT("/Script/Engine.SpringArmComponent") },
+            { TEXT("skeletalmesh"),        TEXT("/Script/Engine.SkeletalMeshComponent") },
+            { TEXT("scene"),               TEXT("/Script/Engine.SceneComponent") },
+            { TEXT("childactor"),          TEXT("/Script/Engine.ChildActorComponent") },
+            { TEXT("decal"),               TEXT("/Script/Engine.DecalComponent") },
+            { TEXT("particlesystem"),      TEXT("/Script/Engine.ParticleSystemComponent") },
+            { TEXT("niagara"),             TEXT("/Script/Niagara.NiagaraComponent") },
+            { TEXT("navmeshboundsvolume"), TEXT("/Script/NavigationSystem.NavMeshBoundsVolume") },
+            { TEXT("timeline"),            TEXT("/Script/Engine.TimelineComponent") },
+            { TEXT("widget"),              TEXT("/Script/UMG.WidgetComponent") },
+            { TEXT("charactermovement"),   TEXT("/Script/Engine.CharacterMovementComponent") },
+            { TEXT("projectilemovement"),  TEXT("/Script/Engine.ProjectileMovementComponent") },
+            { TEXT("floatingpawnmovement"),TEXT("/Script/Engine.FloatingPawnMovement") },
+            { TEXT("rotatingmovement"),    TEXT("/Script/Engine.RotatingMovementComponent") },
+        };
+
+        for (const FComponentEntry& Entry : KnownComponents)
+        {
+            if (Key == Entry.Key)
+            {
+                ComponentClass = TryLoad(FString(Entry.Path));
+                UE_LOG(LogTemp, Display, TEXT("AddComponent: resolved '%s' → '%s' (%s)"),
+                    *ComponentType, Entry.Path, ComponentClass ? TEXT("OK") : TEXT("FAILED"));
+                break;
+            }
         }
     }
-    
+
+    // 1. Exact name / full path as provided (e.g. "/Script/Engine.StaticMeshComponent")
+    if (!ComponentClass)
+        ComponentClass = TryLoad(ComponentType);
+
+    // 2. Short name without prefix: try /Script/Engine.<Name>
+    if (!ComponentClass)
+    {
+        FString EngineClassPath = FString::Printf(TEXT("/Script/Engine.%s"), *ComponentType);
+        ComponentClass = TryLoad(EngineClassPath);
+    }
+
+    // 3. Short name without "Component" suffix: append it, then retry /Script/Engine path
+    if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
+    {
+        FString WithSuffix = ComponentType + TEXT("Component");
+        ComponentClass = TryLoad(WithSuffix);
+        if (!ComponentClass)
+            ComponentClass = TryLoad(FString::Printf(TEXT("/Script/Engine.%s"), *WithSuffix));
+    }
+
+    // 4. Strip leading "U" prefix and retry
+    if (!ComponentClass && ComponentType.StartsWith(TEXT("U")))
+    {
+        FString WithoutPrefix = ComponentType.Mid(1);
+        ComponentClass = TryLoad(FString::Printf(TEXT("/Script/Engine.%s"), *WithoutPrefix));
+        if (!ComponentClass && !WithoutPrefix.EndsWith(TEXT("Component")))
+        {
+            ComponentClass = TryLoad(FString::Printf(TEXT("/Script/Engine.%sComponent"), *WithoutPrefix));
+        }
+    }
+
+    // 5. Add "U" prefix and retry
+    if (!ComponentClass && !ComponentType.StartsWith(TEXT("U")))
+    {
+        FString WithPrefix = TEXT("U") + ComponentType;
+        ComponentClass = TryLoad(WithPrefix);
+        if (!ComponentClass)
+            ComponentClass = TryLoad(FString::Printf(TEXT("/Script/Engine.%s"), *WithPrefix));
+        if (!ComponentClass && !ComponentType.EndsWith(TEXT("Component")))
+        {
+            ComponentClass = TryLoad(TEXT("U") + ComponentType + TEXT("Component"));
+            if (!ComponentClass)
+                ComponentClass = TryLoad(FString::Printf(TEXT("/Script/Engine.U%sComponent"), *ComponentType));
+        }
+    }
+
     // Verify that the class is a valid component type
     if (!ComponentClass || !ComponentClass->IsChildOf(UActorComponent::StaticClass()))
     {
@@ -860,9 +941,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSpawnBlueprintActor(c
     }
 
     FString ActorName;
+    // Accept both "actor_name" (canonical) and "name" (convenience alias)
     if (!Params->TryGetStringField(TEXT("actor_name"), ActorName))
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'actor_name' parameter"));
+        if (!Params->TryGetStringField(TEXT("name"), ActorName))
+        {
+            return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'actor_name' parameter"));
+        }
     }
 
     // Find the blueprint
