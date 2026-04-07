@@ -82,6 +82,11 @@ public class UnrealMCP : ModuleRules
                 // Procedural Mesh (extended — Chapter 19)
                 "ProceduralMeshComponent",
 
+                // Python scripting — required for exec_python command
+                // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
+                // The user must have the "Python Editor Script Plugin" enabled in UE5.
+                "PythonScriptPlugin",
+
                 // All of FStructureEditorUtils, FEnumEditorUtils, UEdGraphNode_Comment,
                 // UDataTableFactory, and UAnimationStateMachineSchema are provided by
                 // UnrealEd and AnimGraph which are already listed above.

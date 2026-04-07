@@ -27,6 +27,8 @@ Examples:
     python ue5cli.py find_blueprint_nodes blueprint_name=BP_Hero node_type=Event event_name=ReceiveBeginPlay
     python ue5cli.py spawn_blueprint_actor blueprint_name=BP_Hero actor_name=Hero1 location=[0,0,0]
     python ue5cli.py take_screenshot filepath=C:/screenshot.png
+    python ue5cli.py exec_python code="import unreal; print(unreal.SystemLibrary.get_engine_version())"
+    python ue5cli.py exec_python code="1+1" mode=evaluate_statement
 """
 
 import sys
@@ -217,6 +219,28 @@ COMMANDS = [
         "blueprint_name=BP_Hero actor_name=Hero1 location=[500,0,100]",
         ["blueprint_name", "actor_name"],
         # NOTE: use 'actor_name' (not 'name') for the instance label
+    ),
+    # ─ Python execution ────────────────────────────────────────────────────────
+    (
+        "exec_python",
+        "Execute arbitrary Python code inside the UE5 editor  (requires Python Editor Script Plugin)",
+        r'code="import unreal; print(unreal.SystemLibrary.get_engine_version())"',
+        ["code"],
+        # mode (optional):
+        #   execute_file       (default) run multi-line scripts; \n = newline
+        #   execute_statement  run one statement and print its result
+        #   evaluate_statement evaluate one expression and return its value
+        #
+        # Multi-line example:
+        #   python ue5cli.py exec_python code="import unreal\nactors = unreal.EditorLevelLibrary.get_all_level_actors()\nprint(len(actors))"
+        #
+        # Single expression example:
+        #   python ue5cli.py exec_python code="1+1" mode=evaluate_statement
+        #
+        # Response fields:
+        #   output         - captured log (info/warning/error lines)
+        #   command_result - expression value (evaluate_statement only)
+        #   success        - true/false
     ),
 ]
 

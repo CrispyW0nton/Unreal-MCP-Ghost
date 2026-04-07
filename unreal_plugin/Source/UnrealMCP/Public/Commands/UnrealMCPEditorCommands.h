@@ -31,4 +31,7 @@ private:
     // Editor viewport commands
     TSharedPtr<FJsonObject> HandleFocusViewport(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleTakeScreenshot(const TSharedPtr<FJsonObject>& Params);
+
+    // Python scripting
+    TSharedPtr<FJsonObject> HandleExecPython(const TSharedPtr<FJsonObject>& Params);
 }; 

@@ -1,5 +1,9 @@
 #include "Commands/UnrealMCPEditorCommands.h"
 #include "Commands/UnrealMCPCommonUtils.h"
+
+// Python scripting plugin interface
+#include "IPythonScriptPlugin.h"
+
 #include "Editor.h"
 #include "EditorViewportClient.h"
 #include "LevelEditorViewport.h"
@@ -73,6 +77,10 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     else if (CommandType == TEXT("take_screenshot"))
     {
         return HandleTakeScreenshot(Params);
+    }
+    else if (CommandType == TEXT("exec_python"))
+    {
+        return HandleExecPython(Params);
     }
     
     return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown editor command: %s"), *CommandType));
@@ -600,4 +608,116 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleTakeScreenshot(const TSh
     }
     
     return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to take screenshot"));
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// exec_python — execute arbitrary Python code inside the UE editor context
+//
+// Request params:
+//   code        (string, required) — the Python source to execute.
+//               Multi-line code must use \n as line separator.
+//   mode        (string, optional) — execution mode:
+//                 "execute_file"      (default) run as a script / file
+//                 "execute_statement" run a single statement (prints result)
+//                 "evaluate_statement" evaluate an expression, return its value
+//
+// Response fields on success:
+//   output      (string) — captured log output from the Python run
+//   result      (string) — expression result (only for evaluate_statement mode)
+//   success     (bool)   — true
+//
+// Response on failure:
+//   error       (string) — Python traceback / error description
+//   success     (bool)   — false
+// ─────────────────────────────────────────────────────────────────────────────
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TSharedPtr<FJsonObject>& Params)
+{
+    // ── 1. Check that Python scripting is available ───────────────────────────
+    IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
+    if (!PythonPlugin || !PythonPlugin->IsPythonAvailable())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Python scripting is not available. Enable the 'Python Editor Script Plugin' in Edit → Plugins."));
+    }
+
+    // ── 2. Get required 'code' parameter ────────────────────────────────────
+    FString Code;
+    if (!Params->TryGetStringField(TEXT("code"), Code))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'code' parameter"));
+    }
+
+    if (Code.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'code' parameter must not be empty"));
+    }
+
+    // ── 3. Parse optional 'mode' parameter ──────────────────────────────────
+    //  "execute_file"      → EPythonCommandExecutionMode::ExecuteFile      (default)
+    //  "execute_statement" → EPythonCommandExecutionMode::ExecuteStatement
+    //  "evaluate_statement"→ EPythonCommandExecutionMode::EvaluateStatement
+    FString ModeStr;
+    Params->TryGetStringField(TEXT("mode"), ModeStr);
+
+    EPythonCommandExecutionMode ExecMode = EPythonCommandExecutionMode::ExecuteFile;
+    if (ModeStr == TEXT("execute_statement"))
+    {
+        ExecMode = EPythonCommandExecutionMode::ExecuteStatement;
+    }
+    else if (ModeStr == TEXT("evaluate_statement"))
+    {
+        ExecMode = EPythonCommandExecutionMode::EvaluateStatement;
+    }
+    // else default: execute_file (runs multi-line scripts)
+
+    UE_LOG(LogTemp, Display, TEXT("exec_python: running mode=%s, code length=%d"),
+           *ModeStr, Code.Len());
+
+    // ── 4. Execute ────────────────────────────────────────────────────────────
+    FPythonCommandEx Command;
+    Command.Command  = Code;
+    Command.ExecutionMode = ExecMode;
+    Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
+
+    const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
+
+    // ── 5. Collect log output into a single string ───────────────────────────
+    FString LogOutput;
+    for (const FPythonLogOutputEntry& Entry : Command.LogOutput)
+    {
+        switch (Entry.Type)
+        {
+            case EPythonLogOutputType::Info:
+                LogOutput += TEXT("[Info] ");  break;
+            case EPythonLogOutputType::Warning:
+                LogOutput += TEXT("[Warning] "); break;
+            case EPythonLogOutputType::Error:
+                LogOutput += TEXT("[Error] ");  break;
+            default:
+                LogOutput += TEXT("[Log] ");    break;
+        }
+        LogOutput += Entry.Output + TEXT("\n");
+    }
+    LogOutput = LogOutput.TrimEnd();
+
+    // ── 6. Build response ─────────────────────────────────────────────────────
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), bOk);
+    ResultObj->SetStringField(TEXT("output"), LogOutput);
+    ResultObj->SetStringField(TEXT("command_result"), Command.CommandResult);
+
+    if (!bOk)
+    {
+        // Include both the command_result (which holds the traceback) and
+        // the collected log as the error field so it bubbles up as an error.
+        FString ErrorDetail = Command.CommandResult.IsEmpty() ? LogOutput : Command.CommandResult;
+        ResultObj->SetStringField(TEXT("error"), ErrorDetail);
+        UE_LOG(LogTemp, Error, TEXT("exec_python failed: %s"), *ErrorDetail);
+    }
+    else
+    {
+        UE_LOG(LogTemp, Display, TEXT("exec_python succeeded. result=%s"), *Command.CommandResult);
+    }
+
+    return ResultObj;
 } 
