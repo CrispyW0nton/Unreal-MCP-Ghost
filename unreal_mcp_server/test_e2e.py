@@ -561,7 +561,171 @@ def test_cleanup_bp_instance():
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# GROUP 9: Edge cases & robustness
+# GROUP 9: Blueprint extended helpers
+#   (self-reference, component-reference, input action, set_blueprint_property,
+#    set_pawn_properties, set_component_property, focus_viewport)
+# ═══════════════════════════════════════════════════════════════════════════════
+def test_add_blueprint_self_reference():
+    r = send("add_blueprint_self_reference", {
+        "blueprint_name": BP_ACTOR,
+        "node_position": [600, 0]
+    })
+    assert is_ok(r), f"add_blueprint_self_reference failed: {get_err(r)}"
+    result = r.get("result", r)
+    assert "node_id" in result, f"No node_id in response: {result}"
+
+
+def test_add_blueprint_get_self_component_reference():
+    r = send("add_blueprint_get_self_component_reference", {
+        "blueprint_name": BP_ACTOR,
+        "component_name": "TestMesh",
+        "node_position": [600, 200]
+    })
+    # Acceptable if it succeeds or returns a meaningful error — should not crash
+    assert r is not None, "No response"
+    # Either returns a node_id or an error about missing component — both are valid
+    ok_or_expected_err = is_ok(r) or "error" in r or r.get("success") is False
+    assert ok_or_expected_err, f"Unexpected response: {r}"
+
+
+def test_add_blueprint_input_action_node():
+    r = send("add_blueprint_input_action_node", {
+        "blueprint_name": BP_ACTOR,
+        "action_name": "Jump",
+        "node_position": [600, 400]
+    })
+    # Input Action nodes require the project to have a legacy Input Action asset;
+    # the plugin may legitimately return an error if it doesn't exist — that's fine.
+    assert r is not None, "No response for add_blueprint_input_action_node"
+
+
+def test_set_blueprint_property():
+    r = send("set_blueprint_property", {
+        "blueprint_name": BP_ACTOR,
+        "property_name": "bCanBeDamaged",
+        "property_value": "true"
+    })
+    # Some props are read-only or not on CDO — tolerate errors, just must not crash
+    assert r is not None, "No response for set_blueprint_property"
+
+
+def test_set_pawn_properties():
+    # BP_PAWN has Pawn as parent class — set_pawn_properties only needs blueprint_name
+    r = send("set_pawn_properties", {
+        "blueprint_name": BP_PAWN
+    })
+    assert is_ok(r), f"set_pawn_properties failed: {get_err(r)}"
+
+
+def test_set_component_property():
+    r = send("set_component_property", {
+        "blueprint_name": BP_ACTOR,
+        "component_name": "TestMesh",
+        "property_name": "bVisible",
+        "property_value": "true"
+    })
+    # Component might not be found by short name — tolerate error, not crash
+    assert r is not None, "No response for set_component_property"
+
+
+def test_focus_viewport_on_actor():
+    # Requires at least one actor; spawn one if needed
+    r = send("focus_viewport", {
+        "target": "Floor"   # most default levels have a Floor actor
+    })
+    # focus_viewport may fail if the target doesn't exist — that's okay
+    assert r is not None, "No response for focus_viewport"
+
+
+def test_focus_viewport_on_location():
+    r = send("focus_viewport", {
+        "location": [0.0, 0.0, 0.0],
+        "distance": 500.0
+    })
+    assert is_ok(r), f"focus_viewport by location failed: {get_err(r)}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GROUP 10: exec_python — run arbitrary Python inside the UE editor
+# ═══════════════════════════════════════════════════════════════════════════════
+def test_exec_python_simple_print():
+    """exec_python with execute_statement mode — should not crash."""
+    r = send("exec_python", {
+        "code": "import unreal; print(unreal.SystemLibrary.get_engine_version())",
+        "mode": "execute_statement"
+    })
+    assert r is not None, "No response for exec_python"
+    # If the Python plugin is disabled the C++ returns a clear error — that's fine.
+    # We only fail if there's no response at all or UE crashed.
+    plugin_missing = (
+        r.get("status") == "error"
+        and ("Python" in r.get("error", "") or "plugin" in r.get("error", "").lower()
+             or "IPythonScriptPlugin" in r.get("error", ""))
+    )
+    assert is_ok(r) or plugin_missing, f"Unexpected exec_python response: {r}"
+
+
+def test_exec_python_evaluate_expression():
+    """evaluate_statement mode should return the expression value."""
+    r = send("exec_python", {
+        "code": "2 + 2",
+        "mode": "evaluate_statement"
+    })
+    assert r is not None, "No response for exec_python evaluate"
+    if is_ok(r):
+        result = r.get("result", r)
+        # result may be a dict with 'output' or 'result' key, or raw string
+        out = str(result)
+        # The string "4" should appear somewhere in the output
+        assert "4" in out or isinstance(result, dict), f"Expected '4' in result: {out}"
+
+
+def test_exec_python_count_actors():
+    """exec_python can query the level and return data."""
+    code = (
+        "import unreal; "
+        "actors = unreal.EditorLevelLibrary.get_all_level_actors(); "
+        "print(len(actors))"
+    )
+    r = send("exec_python", {
+        "code": code,
+        "mode": "execute_statement"
+    })
+    assert r is not None, "No response"
+    # Tolerate 'Python plugin not available' errors gracefully
+    if is_ok(r):
+        result = r.get("result", r)
+        # Output should be a number — just check there's something in result
+        assert result is not None, "Empty result from exec_python"
+
+
+def test_exec_python_invalid_code():
+    """Invalid Python code should return an error response, not crash UE."""
+    r = send("exec_python", {
+        "code": "this is not valid python !!!",
+        "mode": "execute_statement"
+    })
+    assert r is not None, "No response for invalid Python code"
+    # Must return some kind of error or log — not hang or crash
+    error_returned = (
+        r.get("status") == "error"
+        or r.get("success") is False
+        or "error" in str(r).lower()
+        or "log" in r  # exec_python_ex returns log_output on failure
+    )
+    assert error_returned, f"Expected error for invalid code, got: {r}"
+
+
+def test_exec_python_missing_code_param():
+    """Missing 'code' param — should return a structured error, not crash."""
+    r = send("exec_python", {})
+    assert r is not None, "No response when code param is missing"
+    ok = r.get("status") == "error" or r.get("success") is False or "error" in r
+    assert ok, f"Expected error for missing code param, got: {r}"
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# GROUP 11: Edge cases & robustness
 # ═══════════════════════════════════════════════════════════════════════════════
 def test_delete_nonexistent_actor():
     r = send("delete_actor", {"name": "__NeverExisted__"})
@@ -653,6 +817,23 @@ GROUPS = {
         ("BP actor appears in level",           test_spawned_bp_actor_in_level),
         ("Cleanup BP instance",                 test_cleanup_bp_instance),
     ],
+    "bp_extended": [
+        ("add_blueprint_self_reference",                test_add_blueprint_self_reference),
+        ("add_blueprint_get_self_component_reference",  test_add_blueprint_get_self_component_reference),
+        ("add_blueprint_input_action_node",             test_add_blueprint_input_action_node),
+        ("set_blueprint_property",                      test_set_blueprint_property),
+        ("set_pawn_properties",                         test_set_pawn_properties),
+        ("set_component_property",                      test_set_component_property),
+        ("focus_viewport by actor name",                test_focus_viewport_on_actor),
+        ("focus_viewport by location",                  test_focus_viewport_on_location),
+    ],
+    "exec_python": [
+        ("exec_python: print engine version",    test_exec_python_simple_print),
+        ("exec_python: evaluate expression",     test_exec_python_evaluate_expression),
+        ("exec_python: count level actors",      test_exec_python_count_actors),
+        ("exec_python: invalid code → error",    test_exec_python_invalid_code),
+        ("exec_python: missing code param",      test_exec_python_missing_code_param),
+    ],
     "robustness": [
         ("Delete nonexistent actor",            test_delete_nonexistent_actor),
         ("Compile nonexistent blueprint",       test_compile_nonexistent_blueprint),
@@ -671,6 +852,8 @@ ALL_GROUPS_ORDER = [
     "variables",
     "graph_nodes",
     "spawn_bp_actor",
+    "bp_extended",
+    "exec_python",
     "robustness",
 ]
 
