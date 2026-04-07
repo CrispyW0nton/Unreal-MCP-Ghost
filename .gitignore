@@ -1,3 +1,13 @@
 __pycache__/
 *.pyc
 *.log
+*.mp4
+*.mp3
+*.jpg
+*.jpeg
+*.png
+frame_*.jpg
+preview_*
+fix_*.py
+*_ORIGINAL.cpp
+*.patch
