@@ -207,7 +207,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
 # ─── MCP Server ──────────────────────────────────────────────────────────────
 mcp = FastMCP(
     "UnrealMCP",
-    description="Full Unreal Engine 5 Blueprint Visual Scripting via Model Context Protocol",
+    instructions="Full Unreal Engine 5 Blueprint Visual Scripting via Model Context Protocol",
     lifespan=server_lifespan
 )
 

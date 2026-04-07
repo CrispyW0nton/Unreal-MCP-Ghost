@@ -81,6 +81,13 @@ public class UnrealMCP : ModuleRules
 
                 // Procedural Mesh (extended — Chapter 19)
                 "ProceduralMeshComponent",
+
+                // All of FStructureEditorUtils, FEnumEditorUtils, UEdGraphNode_Comment,
+                // UDataTableFactory, and UAnimationStateMachineSchema are provided by
+                // UnrealEd and AnimGraph which are already listed above.
+                // "StructureEditor" — does not exist as a standalone module in UE 5.6
+                // "DataTableEditor" — UDataTableFactory is in UnrealEd, not DataTableEditor
+                // "GraphEditor"     — does not exist as a standalone module in UE 5.6
             }
         );
 
