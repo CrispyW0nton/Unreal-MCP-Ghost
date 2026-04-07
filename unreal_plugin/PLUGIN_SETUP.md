@@ -115,9 +115,12 @@ LogTemp: Display: UnrealMCPBridge: Server started on 127.0.0.1:55557
 ## 🐍 Step 4: Run the Python MCP Server
 
 Clone this repo if you haven't already:
-```bash
+```powershell
+# Recommended location — keeps dev tools organized, off the Desktop
+cd C:\Users\NewAdmin\Documents\KotorMods\Tools
 git clone https://github.com/CrispyW0nton/Unreal-MCP-Ghost.git
 cd Unreal-MCP-Ghost
+git checkout genspark_ai_developer
 ```
 
 Install dependencies and start the server:
@@ -159,8 +162,8 @@ Keep this terminal window open while you work.
 }
 ```
 
-Replace `C:/path/to/` with the actual path where you cloned the repo.
-On macOS use forward slashes: `/Users/yourname/Unreal-MCP-Ghost/...`
+Replace the path with your actual clone location, e.g.:
+`C:/Users/NewAdmin/Documents/KotorMods/Tools/Unreal-MCP-Ghost/unreal_mcp_server/unreal_mcp_server.py`
 
 4. **Restart Cursor**
 5. Open the AI chat panel — you should see "unreal-mcp" listed as an available tool

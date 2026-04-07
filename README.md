@@ -29,39 +29,43 @@ Claude / Cursor / Windsurf
 
 ## Setup
 
-### 1. Install the C++ Plugin
+### 1. Clone the repo
 
-1. Clone [unreal-mcp](https://github.com/chongdashu/unreal-mcp)
-2. Copy `MCPGameProject/Plugins/UnrealMCP` to your project's `Plugins/` folder
-3. **Add the extended commands** (see `unreal_plugin/` in this repo):
-   - Copy `UnrealMCPExtendedCommands.h` → `Plugins/UnrealMCP/Source/UnrealMCP/Public/Commands/`
-   - Copy `UnrealMCPExtendedCommands.cpp` → `Plugins/UnrealMCP/Source/UnrealMCP/Private/Commands/`
-   - Apply the integration steps in `UnrealMCPBridge_Integration.patch`
-4. Regenerate Visual Studio project files and build
+```powershell
+# Keep dev tools organized — not on the Desktop
+cd C:\Users\NewAdmin\Documents\KotorMods\Tools
+git clone https://github.com/CrispyW0nton/Unreal-MCP-Ghost.git
+cd Unreal-MCP-Ghost
+git checkout genspark_ai_developer
+```
 
-### 2. Start the Python MCP Server
+### 2. Install the C++ Plugin
 
-```bash
-cd unreal_mcp_server
+```powershell
+# Create the Plugins folder and copy the plugin into your UE5 project
+New-Item -ItemType Directory -Force -Path "C:\path\to\YourProject\Plugins\UnrealMCP"
+Copy-Item -Recurse -Force "unreal_plugin\*" "C:\path\to\YourProject\Plugins\UnrealMCP\"
+```
+
+Then double-click the `.uproject` file — UE5 will detect missing binaries and prompt to rebuild. Click **Yes** and wait 3–8 minutes.
+
+### 3. Start the Python MCP Server
+
+```powershell
+cd C:\Users\NewAdmin\Documents\KotorMods\Tools\Unreal-MCP-Ghost
 pip install mcp fastmcp
-python unreal_mcp_server.py
+python unreal_mcp_server\unreal_mcp_server.py
 ```
 
-Or with `uv`:
-```bash
-cd unreal_mcp_server
-uv run unreal_mcp_server.py
-```
+### 4. Configure Your MCP Client
 
-### 3. Configure Your MCP Client
-
-**Claude Desktop** (`~/.config/claude-desktop/mcp.json`):
+**Claude Desktop** (`%APPDATA%\Claude\claude_desktop_config.json`):
 ```json
 {
   "mcpServers": {
     "unrealMCP": {
       "command": "python",
-      "args": ["/path/to/unreal_mcp_server/unreal_mcp_server.py"]
+      "args": ["C:/Users/NewAdmin/Documents/KotorMods/Tools/Unreal-MCP-Ghost/unreal_mcp_server/unreal_mcp_server.py"]
     }
   }
 }
