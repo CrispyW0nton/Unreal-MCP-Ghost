@@ -256,6 +256,7 @@ UK2Node_Event* FUnrealMCPCommonUtils::CreateEventNode(UEdGraph* Graph, const FSt
         EventNode->EventReference.SetExternalMember(FName(*EventName), BlueprintClass);
         EventNode->NodePosX = Position.X;
         EventNode->NodePosY = Position.Y;
+        EventNode->CreateNewGuid();
         Graph->AddNode(EventNode, true);
         EventNode->PostPlacedNewNode();
         EventNode->AllocateDefaultPins();
@@ -281,8 +282,8 @@ UK2Node_CallFunction* FUnrealMCPCommonUtils::CreateFunctionCallNode(UEdGraph* Gr
     FunctionNode->SetFromFunction(Function);
     FunctionNode->NodePosX = Position.X;
     FunctionNode->NodePosY = Position.Y;
-    Graph->AddNode(FunctionNode, true);
     FunctionNode->CreateNewGuid();
+    Graph->AddNode(FunctionNode, true);
     FunctionNode->PostPlacedNewNode();
     FunctionNode->AllocateDefaultPins();
     
@@ -306,6 +307,7 @@ UK2Node_VariableGet* FUnrealMCPCommonUtils::CreateVariableGetNode(UEdGraph* Grap
         VariableGetNode->VariableReference.SetFromField<FProperty>(Property, false);
         VariableGetNode->NodePosX = Position.X;
         VariableGetNode->NodePosY = Position.Y;
+        VariableGetNode->CreateNewGuid();
         Graph->AddNode(VariableGetNode, true);
         VariableGetNode->PostPlacedNewNode();
         VariableGetNode->AllocateDefaultPins();
@@ -333,6 +335,7 @@ UK2Node_VariableSet* FUnrealMCPCommonUtils::CreateVariableSetNode(UEdGraph* Grap
         VariableSetNode->VariableReference.SetFromField<FProperty>(Property, false);
         VariableSetNode->NodePosX = Position.X;
         VariableSetNode->NodePosY = Position.Y;
+        VariableSetNode->CreateNewGuid();
         Graph->AddNode(VariableSetNode, true);
         VariableSetNode->PostPlacedNewNode();
         VariableSetNode->AllocateDefaultPins();
@@ -354,8 +357,8 @@ UK2Node_InputAction* FUnrealMCPCommonUtils::CreateInputActionNode(UEdGraph* Grap
     InputActionNode->InputActionName = FName(*ActionName);
     InputActionNode->NodePosX = Position.X;
     InputActionNode->NodePosY = Position.Y;
-    Graph->AddNode(InputActionNode, true);
     InputActionNode->CreateNewGuid();
+    Graph->AddNode(InputActionNode, true);
     InputActionNode->PostPlacedNewNode();
     InputActionNode->AllocateDefaultPins();
     
@@ -372,8 +375,8 @@ UK2Node_Self* FUnrealMCPCommonUtils::CreateSelfReferenceNode(UEdGraph* Graph, co
     UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(Graph);
     SelfNode->NodePosX = Position.X;
     SelfNode->NodePosY = Position.Y;
-    Graph->AddNode(SelfNode, true);
     SelfNode->CreateNewGuid();
+    Graph->AddNode(SelfNode, true);
     SelfNode->PostPlacedNewNode();
     SelfNode->AllocateDefaultPins();
     
