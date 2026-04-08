@@ -1,6 +1,8 @@
 #include "Commands/UnrealMCPBlueprintCommands.h"
 #include "Commands/UnrealMCPCommonUtils.h"
 #include "Engine/Blueprint.h"
+#include "KismetCompiler.h"
+#include "Logging/TokenizedMessage.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Factories/BlueprintFactory.h"
 #include "EdGraphSchema_K2.h"
@@ -922,12 +924,54 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
         return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
     }
 
-    // Compile the blueprint
-    FKismetEditorUtilities::CompileBlueprint(Blueprint);
+    // Compile the blueprint and collect errors/warnings via the message log.
+    FCompilerResultsLog ResultsLog;
+    ResultsLog.bSilentMode = true;         // suppress noisy log output
+    ResultsLog.bAnnotateMentionedNodes = false;
+    FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &ResultsLog);
+
+    // EBlueprintStatus::BS_Error means there were compile errors.
+    bool bHadErrors   = (Blueprint->Status == BS_Error);
+    bool bHadWarnings = (ResultsLog.NumWarnings > 0);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
-    ResultObj->SetStringField(TEXT("name"), BlueprintName);
-    ResultObj->SetBoolField(TEXT("compiled"), true);
+    ResultObj->SetStringField(TEXT("name"),      BlueprintName);
+    ResultObj->SetBoolField(TEXT("compiled"),    !bHadErrors);
+    ResultObj->SetBoolField(TEXT("had_errors"),  bHadErrors);
+    ResultObj->SetBoolField(TEXT("had_warnings"), bHadWarnings);
+    ResultObj->SetNumberField(TEXT("error_count"),   (double)ResultsLog.NumErrors);
+    ResultObj->SetNumberField(TEXT("warning_count"), (double)ResultsLog.NumWarnings);
+
+    // Collect individual error/warning messages (up to 20) so the caller can
+    // display them without having to open the Blueprint editor.
+    TArray<TSharedPtr<FJsonValue>> Messages;
+    int32 MsgCount = 0;
+    for (const TSharedRef<FTokenizedMessage>& Msg : ResultsLog.Messages)
+    {
+        if (MsgCount >= 20) break;
+        EMessageSeverity::Type Sev = Msg->GetSeverity();
+        if (Sev == EMessageSeverity::Error || Sev == EMessageSeverity::Warning ||
+            Sev == EMessageSeverity::CriticalError)
+        {
+            TSharedPtr<FJsonObject> MObj = MakeShared<FJsonObject>();
+            MObj->SetStringField(TEXT("severity"),
+                Sev == EMessageSeverity::Error || Sev == EMessageSeverity::CriticalError
+                    ? TEXT("error") : TEXT("warning"));
+            MObj->SetStringField(TEXT("message"), Msg->ToText().ToString());
+            Messages.Add(MakeShared<FJsonValueObject>(MObj));
+            ++MsgCount;
+        }
+    }
+    ResultObj->SetArrayField(TEXT("messages"), Messages);
+
+    if (bHadErrors)
+    {
+        // Return an error-style response so Python callers see status="error"
+        FString Summary = FString::Printf(
+            TEXT("Blueprint '%s' compiled with %d error(s). Check 'messages' for details."),
+            *BlueprintName, ResultsLog.NumErrors);
+        return FUnrealMCPCommonUtils::CreateErrorResponse(Summary);
+    }
     return ResultObj;
 }
 

@@ -139,14 +139,20 @@ class UnrealConnection:
             response = json.loads(response_data.decode('utf-8'))
             logger.info(f"Response: {str(response)[:300]}")
 
-            # Normalize error formats
+            # ── Normalize response envelope ──────────────────────────────
+            # The C++ bridge always wraps successful results as:
+            #   {"status": "success", "result": { ... actual data ... }}
+            # Unwrap that so every caller gets the flat data dict directly.
+            # Error responses keep their shape: {"status":"error","error":"..."}
             if response.get("status") == "error":
                 error_message = response.get("error") or response.get("message", "Unknown error")
-                if "error" not in response:
-                    response["error"] = error_message
+                response["error"] = error_message
             elif response.get("success") is False:
                 error_message = response.get("error") or response.get("message", "Unknown error")
                 response = {"status": "error", "error": error_message}
+            elif response.get("status") == "success" and "result" in response:
+                # Unwrap: return the inner result object directly
+                response = response["result"]
 
             try:
                 self.socket.close()

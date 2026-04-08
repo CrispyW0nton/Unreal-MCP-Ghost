@@ -153,8 +153,46 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprint(const FString& BlueprintName)
 
 UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
+    // 1) Try the legacy hardcoded path first for backwards compatibility
     FString AssetPath = TEXT("/Game/Blueprints/") + BlueprintName;
-    return LoadObject<UBlueprint>(nullptr, *AssetPath);
+    UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
+    if (BP) return BP;
+
+    // 2) Try direct /Game/<Name> path (asset sitting at content root)
+    AssetPath = TEXT("/Game/") + BlueprintName;
+    BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
+    if (BP) return BP;
+
+    // 3) Use the Asset Registry to search the entire /Game tree by asset name
+    FAssetRegistryModule& ARModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+    IAssetRegistry& AR = ARModule.Get();
+
+    FARFilter Filter;
+    Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+    Filter.PackagePaths.Add(TEXT("/Game"));
+    Filter.bRecursivePaths = true;
+
+    TArray<FAssetData> Assets;
+    AR.GetAssets(Filter, Assets);
+
+    for (const FAssetData& Asset : Assets)
+    {
+        // Match on asset name (case-insensitive)
+        if (Asset.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
+        {
+            BP = Cast<UBlueprint>(Asset.GetAsset());
+            if (BP)
+            {
+                UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
+                    *BlueprintName, *Asset.GetObjectPathString());
+                return BP;
+            }
+        }
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("FindBlueprintByName: could not find blueprint '%s' anywhere under /Game"),
+        *BlueprintName);
+    return nullptr;
 }
 
 UEdGraph* FUnrealMCPCommonUtils::FindOrCreateEventGraph(UBlueprint* Blueprint)
@@ -345,21 +383,70 @@ UK2Node_Self* FUnrealMCPCommonUtils::CreateSelfReferenceNode(UEdGraph* Graph, co
 bool FUnrealMCPCommonUtils::ConnectGraphNodes(UEdGraph* Graph, UEdGraphNode* SourceNode, const FString& SourcePinName, 
                                            UEdGraphNode* TargetNode, const FString& TargetPinName)
 {
+    FString Discard;
+    return ConnectGraphNodes(Graph, SourceNode, SourcePinName, TargetNode, TargetPinName, Discard);
+}
+
+bool FUnrealMCPCommonUtils::ConnectGraphNodes(UEdGraph* Graph, UEdGraphNode* SourceNode, const FString& SourcePinName,
+                                           UEdGraphNode* TargetNode, const FString& TargetPinName, FString& OutError)
+{
+    OutError.Empty();
+
     if (!Graph || !SourceNode || !TargetNode)
     {
+        OutError = TEXT("ConnectGraphNodes: null Graph, SourceNode, or TargetNode");
         return false;
     }
     
+    // Try directional search first; retry direction-agnostic if not found.
+    // Each pin is retried INDEPENDENTLY so that finding one doesn't block the other.
     UEdGraphPin* SourcePin = FindPin(SourceNode, SourcePinName, EGPD_Output);
+    if (!SourcePin) SourcePin = FindPin(SourceNode, SourcePinName, EGPD_MAX);
+
     UEdGraphPin* TargetPin = FindPin(TargetNode, TargetPinName, EGPD_Input);
-    
-    if (SourcePin && TargetPin)
+    if (!TargetPin) TargetPin = FindPin(TargetNode, TargetPinName, EGPD_MAX);
+
+    if (!SourcePin)
     {
-        SourcePin->MakeLinkTo(TargetPin);
+        OutError = FString::Printf(TEXT("Pin '%s' not found on source node '%s'"),
+            *SourcePinName, *SourceNode->GetName());
+        return false;
+    }
+    if (!TargetPin)
+    {
+        OutError = FString::Printf(TEXT("Pin '%s' not found on target node '%s'"),
+            *TargetPinName, *TargetNode->GetName());
+        return false;
+    }
+
+    // Prefer schema-based connection — it handles type compatibility, breaks
+    // existing exclusive links (exec pins), and fires property-change notifies.
+    const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
+    if (K2Schema)
+    {
+        // CanCreateConnection returns a response with a Message on failure.
+        const FPinConnectionResponse Response = K2Schema->CanCreateConnection(SourcePin, TargetPin);
+        if (Response.Response == CONNECT_RESPONSE_DISALLOW)
+        {
+            // Schema explicitly forbids this connection.  Do NOT fall back to
+            // raw MakeLinkTo — that produces broken graphs that crash on compile.
+            OutError = FString::Printf(
+                TEXT("Schema disallows '%s'.'%s' -> '%s'.'%s': %s"),
+                *SourceNode->GetName(), *SourcePinName,
+                *TargetNode->GetName(), *TargetPinName,
+                *Response.Message.ToString());
+            UE_LOG(LogTemp, Warning, TEXT("ConnectGraphNodes: %s"), *OutError);
+            return false;
+        }
+
+        // TryCreateConnection also calls BreakSinglePinLink for exclusive connections.
+        K2Schema->TryCreateConnection(SourcePin, TargetPin);
         return true;
     }
-    
-    return false;
+
+    // Fallback: raw link (no type validation — only reached when no K2 schema)
+    SourcePin->MakeLinkTo(TargetPin);
+    return true;
 }
 
 UEdGraphPin* FUnrealMCPCommonUtils::FindPin(UEdGraphNode* Node, const FString& PinName, EEdGraphPinDirection Direction)
@@ -378,34 +465,59 @@ UEdGraphPin* FUnrealMCPCommonUtils::FindPin(UEdGraphNode* Node, const FString& P
         UE_LOG(LogTemp, Display, TEXT("  - Available pin: '%s', Direction: %d, Category: %s"), 
                *Pin->PinName.ToString(), (int32)Pin->Direction, *Pin->PinType.PinCategory.ToString());
     }
-    
-    // First try exact match
-    for (UEdGraphPin* Pin : Node->Pins)
+
+    // ----------------------------------------------------------------
+    // Build alias list: some callers say "execute" when the pin is named
+    // "then" and vice-versa, or use alternate capitalisation.
+    // ----------------------------------------------------------------
+    TArray<FString> Candidates;
+    Candidates.Add(PinName);
+
+    // Common exec-pin alias pairs
+    FString PinLower = PinName.ToLower();
+    if      (PinLower == TEXT("execute") || PinLower == TEXT("exec"))
+        Candidates.Add(TEXT("execute")), Candidates.Add(TEXT("exec")), Candidates.Add(TEXT("then"));
+    else if (PinLower == TEXT("then"))
+        Candidates.Add(TEXT("execute")), Candidates.Add(TEXT("exec"));
+    // "return value" variants
+    else if (PinLower == TEXT("returnvalue") || PinLower == TEXT("return_value") || PinLower == TEXT("return value"))
+        Candidates.Add(TEXT("ReturnValue")), Candidates.Add(TEXT("return value"));
+
+    // ---- 1. Exact name match (with aliases) ----
+    for (const FString& Candidate : Candidates)
     {
-        if (Pin->PinName.ToString() == PinName && (Direction == EGPD_MAX || Pin->Direction == Direction))
+        for (UEdGraphPin* Pin : Node->Pins)
         {
-            UE_LOG(LogTemp, Display, TEXT("  - Found exact matching pin: '%s'"), *Pin->PinName.ToString());
-            return Pin;
+            if (Pin && Pin->PinName.ToString() == Candidate &&
+                (Direction == EGPD_MAX || Pin->Direction == Direction))
+            {
+                UE_LOG(LogTemp, Display, TEXT("  - Found exact matching pin: '%s'"), *Pin->PinName.ToString());
+                return Pin;
+            }
         }
     }
-    
-    // If no exact match and we're looking for a component reference, try case-insensitive match
-    for (UEdGraphPin* Pin : Node->Pins)
+
+    // ---- 2. Case-insensitive match (with aliases) ----
+    for (const FString& Candidate : Candidates)
     {
-        if (Pin->PinName.ToString().Equals(PinName, ESearchCase::IgnoreCase) && 
-            (Direction == EGPD_MAX || Pin->Direction == Direction))
+        for (UEdGraphPin* Pin : Node->Pins)
         {
-            UE_LOG(LogTemp, Display, TEXT("  - Found case-insensitive matching pin: '%s'"), *Pin->PinName.ToString());
-            return Pin;
+            if (Pin && Pin->PinName.ToString().Equals(Candidate, ESearchCase::IgnoreCase) &&
+                (Direction == EGPD_MAX || Pin->Direction == Direction))
+            {
+                UE_LOG(LogTemp, Display, TEXT("  - Found case-insensitive matching pin: '%s'"), *Pin->PinName.ToString());
+                return Pin;
+            }
         }
     }
-    
-    // If we're looking for a component output and didn't find it by name, try to find the first data output pin
+
+    // ---- 3. Fallback: first data output pin on VariableGet nodes ----
     if (Direction == EGPD_Output && Cast<UK2Node_VariableGet>(Node) != nullptr)
     {
         for (UEdGraphPin* Pin : Node->Pins)
         {
-            if (Pin->Direction == EGPD_Output && Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
+            if (Pin && Pin->Direction == EGPD_Output &&
+                Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
             {
                 UE_LOG(LogTemp, Display, TEXT("  - Found fallback data output pin: '%s'"), *Pin->PinName.ToString());
                 return Pin;

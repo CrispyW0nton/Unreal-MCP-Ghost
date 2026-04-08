@@ -255,15 +255,24 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                 ResultJson = BlueprintCommands->HandleCommand(CommandType, Params);
             }
             // Blueprint Node Commands
-            else if (CommandType == TEXT("connect_blueprint_nodes") || 
-                     CommandType == TEXT("add_blueprint_get_self_component_reference") ||
-                     CommandType == TEXT("add_blueprint_self_reference") ||
+            else if (CommandType == TEXT("get_blueprint_nodes") ||
                      CommandType == TEXT("find_blueprint_nodes") ||
+                     CommandType == TEXT("get_blueprint_graphs") ||
+                     CommandType == TEXT("get_node_by_id") ||
+                     CommandType == TEXT("connect_blueprint_nodes") ||
+                     CommandType == TEXT("disconnect_blueprint_nodes") ||
+                     CommandType == TEXT("delete_blueprint_node") ||
+                     CommandType == TEXT("set_node_pin_value") ||
                      CommandType == TEXT("add_blueprint_event_node") ||
-                     CommandType == TEXT("add_blueprint_input_action_node") ||
                      CommandType == TEXT("add_blueprint_function_node") ||
-                     CommandType == TEXT("add_blueprint_get_component_node") ||
-                     CommandType == TEXT("add_blueprint_variable"))
+                     CommandType == TEXT("add_blueprint_variable_get_node") ||
+                     CommandType == TEXT("add_blueprint_variable_set_node") ||
+                     CommandType == TEXT("add_blueprint_variable") ||
+                     CommandType == TEXT("add_blueprint_input_action_node") ||
+                     CommandType == TEXT("add_blueprint_enhanced_input_action_node") ||
+                     CommandType == TEXT("add_blueprint_self_reference") ||
+                     CommandType == TEXT("add_blueprint_get_self_component_reference") ||
+                     CommandType == TEXT("add_blueprint_get_component_node"))
             {
                 ResultJson = BlueprintNodeCommands->HandleCommand(CommandType, Params);
             }
