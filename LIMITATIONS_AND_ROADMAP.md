@@ -649,6 +649,22 @@ This fix prevents all future occurrences of:
 - Broken node references that require manual cleanup
 - Similar issues in Event, Function, InputAction, and Self nodes
 
+**Follow-up fix (commit `a7e2337`):**  
+After fixing the GUID generation order, variable GET/SET nodes were still creating with
+invalid "Target (self)" pins that caused ERROR! markers. The root cause was using
+`SetFromField<FProperty>(Property, false)` instead of the simpler `SetSelfMember(FName)`.
+
+```cpp
+// WRONG (creates invalid Target pin):
+Node->VariableReference.SetFromField<FProperty>(Property, false);
+
+// CORRECT (clean variable node):
+Node->VariableReference.SetSelfMember(FName(*VariableName));
+```
+
+This matches how Unreal creates variable nodes when dragging from the Variables panel,
+producing clean nodes without extra Target pins.
+
 ---
 
 ## Roadmap
