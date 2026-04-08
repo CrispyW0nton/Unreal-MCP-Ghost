@@ -340,10 +340,25 @@ The AI should call `get_actors_in_level` and return a list of actors. If it inst
 
 When fixes or new features are pushed to this repo, update your local copy and rebuild.
 
+### If `git pull` gives a conflict error
+
+If you see `error: Pulling is not possible because you have unmerged files` or any other conflict, run this single command to discard all local changes and reset to the latest remote version:
+
+```powershell
+cd "C:\Dev\Unreal-MCP"
+git fetch origin
+git reset --hard origin/genspark_ai_developer
+```
+
+This is always safe — the plugin source files should never be edited locally. All fixes come from this repo.
+
+### Normal update (no conflicts)
+
 ```powershell
 # Step 1 — Pull latest changes
 cd "C:\Dev\Unreal-MCP"
-git pull origin genspark_ai_developer
+git fetch origin
+git reset --hard origin/genspark_ai_developer
 
 # Step 2 — Copy updated source files into your project
 $REPO    = "C:\Dev\Unreal-MCP"
@@ -355,7 +370,7 @@ Copy-Item -Recurse -Force "$REPO\unreal_plugin\Source\" "$PROJECT\Plugins\Unreal
 #   Open MyGame.sln → Development Editor | Win64 → Ctrl+Shift+B
 ```
 
-> **Tip:** You do not need to close UE5 before copying source files. You do need to rebuild before the changes take effect.
+> **Tip:** Use `git reset --hard` instead of `git pull` every time — it is conflict-proof and always gives you a clean copy of the latest remote state.
 
 ---
 
