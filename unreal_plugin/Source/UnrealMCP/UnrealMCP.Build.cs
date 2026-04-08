@@ -1,5 +1,5 @@
 // Copyright 2024 CrispyW0nton. All Rights Reserved.
-// UnrealMCP.Build.cs — Standalone plugin for Unreal Engine 5.6
+// UnrealMCP.Build.cs ? Standalone plugin for Unreal Engine 5.6
 // Merges base unreal-mcp dependencies with extended Blueprint Visual Scripting tools.
 
 using UnrealBuildTool;
@@ -19,7 +19,7 @@ public class UnrealMCP : ModuleRules
             new string[] { }
         );
 
-        // ── Public dependencies (available to dependent modules) ─────────────
+        // ?? Public dependencies (available to dependent modules) ?????????????
         PublicDependencyModuleNames.AddRange(
             new string[]
             {
@@ -36,7 +36,7 @@ public class UnrealMCP : ModuleRules
             }
         );
 
-        // ── Private dependencies (internal to this plugin) ───────────────────
+        // ?? Private dependencies (internal to this plugin) ???????????????????
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {
@@ -64,25 +64,25 @@ public class UnrealMCP : ModuleRules
                 "UMG",
                 "UMGEditor",
 
-                // AI / Behavior Tree (extended — Chapters 9, 10)
+                // AI / Behavior Tree (extended ? Chapters 9, 10)
                 "AIModule",
                 "BehaviorTreeEditor",
                 "GameplayTasks",
 
-                // Animation Blueprint (extended — Chapter 17)
+                // Animation Blueprint (extended ? Chapter 17)
                 "AnimGraph",
                 "AnimGraphRuntime",
 
-                // Enhanced Input (extended — Chapter 6, input nodes)
+                // Enhanced Input (extended ? Chapter 6, input nodes)
                 "EnhancedInput",
 
-                // Physics / Collision (extended — Chapter 14)
+                // Physics / Collision (extended ? Chapter 14)
                 "PhysicsCore",
 
-                // Procedural Mesh (extended — Chapter 19)
+                // Procedural Mesh (extended ? Chapter 19)
                 "ProceduralMeshComponent",
 
-                // Python scripting — required for exec_python command
+                // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
                 // The user must have the "Python Editor Script Plugin" enabled in UE5.
                 "PythonScriptPlugin",
@@ -90,16 +90,16 @@ public class UnrealMCP : ModuleRules
                 // All of FStructureEditorUtils, FEnumEditorUtils, UEdGraphNode_Comment,
                 // UDataTableFactory, and UAnimationStateMachineSchema are provided by
                 // UnrealEd and AnimGraph which are already listed above.
-                // "StructureEditor" — does not exist as a standalone module in UE 5.6
-                // "DataTableEditor" — UDataTableFactory is in UnrealEd, not DataTableEditor
-                // "GraphEditor"     — does not exist as a standalone module in UE 5.6
+                // "StructureEditor" ? does not exist as a standalone module in UE 5.6
+                // "DataTableEditor" ? UDataTableFactory is in UnrealEd, not DataTableEditor
+                // "GraphEditor"     ? does not exist as a standalone module in UE 5.6
             }
         );
 
-        // ── Editor-only dependencies ──────────────────────────────────────────
+        // ?? Editor-only dependencies ??????????????????????????????????????????
         if (Target.bBuildEditor)
         {
-            // VariantManager is an optional plugin — only add if it is installed.
+            // VariantManager is an optional plugin ? only add if it is installed.
             // Standard UE5 installs from the Epic Launcher do NOT include it.
             // If you see a "Module VariantManager could not be found" error,
             // these two lines are already commented out for you.
