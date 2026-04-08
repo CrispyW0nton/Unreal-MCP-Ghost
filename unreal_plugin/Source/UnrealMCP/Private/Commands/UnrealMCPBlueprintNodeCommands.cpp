@@ -2110,8 +2110,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSpawn
     Node->CreateNewGuid();
     Graph->AddNode(Node);
     Node->PostPlacedNewNode();
-    Node->AllocateDefaultPins();
-    Node->ReconstructNode();
+    // NOTE: AllocateDefaultPins() crashes for UK2Node_SpawnActorFromClass
+    // because it needs special initialization. Let PostPlacedNewNode handle it.
+    // Node->AllocateDefaultPins();
+    // Node->ReconstructNode();
 
     // Optionally set the class pin default
     if (!ActorClassName.IsEmpty())
