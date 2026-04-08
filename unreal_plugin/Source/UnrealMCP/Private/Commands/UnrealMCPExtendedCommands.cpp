@@ -38,6 +38,11 @@
 #include "K2Node_InputAction.h"
 #include "K2Node_CommutativeAssociativeBinaryOperator.h"
 
+// Enhanced Input
+#include "InputMappingContext.h"
+#include "InputAction.h"
+#include "EnhancedActionKeyMapping.h"
+
 // Kismet utilities
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
@@ -180,6 +185,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     // Enhanced Input
     if (CommandType == TEXT("create_enhanced_input_action"))  return HandleCreateEnhancedInputAction(Params);
     if (CommandType == TEXT("create_input_mapping_context"))  return HandleCreateInputMappingContext(Params);
+    if (CommandType == TEXT("add_input_mapping"))              return HandleAddInputMapping(Params);
 
     return nullptr; // Not our command
 }
@@ -1869,4 +1875,92 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateInputMappingCont
     }
     
     return CreateErrorResponse(TEXT("Failed to create Input Mapping Context"));
+}
+
+// ============================================================
+// add_input_mapping
+// Adds a key mapping to an existing Input Mapping Context.
+// Params: imc_name, action_name, key, [triggers], [modifiers]
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInputMapping(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString IMCName, ActionName, KeyName;
+    if (!Params->TryGetStringField(TEXT("imc_name"), IMCName))
+        return CreateErrorResponse(TEXT("Missing 'imc_name'"));
+    if (!Params->TryGetStringField(TEXT("action_name"), ActionName))
+        return CreateErrorResponse(TEXT("Missing 'action_name'"));
+    if (!Params->TryGetStringField(TEXT("key"), KeyName))
+        return CreateErrorResponse(TEXT("Missing 'key'"));
+
+    // Find the Input Mapping Context
+    FAssetRegistryModule& ARModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+    IAssetRegistry& AR = ARModule.Get();
+
+    FARFilter IMCFilter;
+    IMCFilter.ClassPaths.Add(UInputMappingContext::StaticClass()->GetClassPathName());
+    IMCFilter.PackagePaths.Add(TEXT("/Game"));
+    IMCFilter.bRecursivePaths = true;
+
+    TArray<FAssetData> IMCAssets;
+    AR.GetAssets(IMCFilter, IMCAssets);
+
+    UInputMappingContext* IMC = nullptr;
+    for (const FAssetData& Asset : IMCAssets)
+    {
+        if (Asset.AssetName.ToString().Equals(IMCName, ESearchCase::IgnoreCase))
+        {
+            IMC = Cast<UInputMappingContext>(Asset.GetAsset());
+            if (IMC) break;
+        }
+    }
+
+    if (!IMC)
+        return CreateErrorResponse(FString::Printf(TEXT("Input Mapping Context not found: '%s'"), *IMCName));
+
+    // Find the Input Action
+    FARFilter ActionFilter;
+    ActionFilter.ClassPaths.Add(UInputAction::StaticClass()->GetClassPathName());
+    ActionFilter.PackagePaths.Add(TEXT("/Game"));
+    ActionFilter.bRecursivePaths = true;
+
+    TArray<FAssetData> ActionAssets;
+    AR.GetAssets(ActionFilter, ActionAssets);
+
+    UInputAction* InputAction = nullptr;
+    for (const FAssetData& Asset : ActionAssets)
+    {
+        if (Asset.AssetName.ToString().Equals(ActionName, ESearchCase::IgnoreCase))
+        {
+            InputAction = Cast<UInputAction>(Asset.GetAsset());
+            if (InputAction) break;
+        }
+    }
+
+    if (!InputAction)
+        return CreateErrorResponse(FString::Printf(TEXT("Input Action not found: '%s'"), *ActionName));
+
+    // Parse the key
+    FKey Key = FKey(*KeyName);
+    if (!Key.IsValid())
+        return CreateErrorResponse(FString::Printf(TEXT("Invalid key: '%s'"), *KeyName));
+
+    // Create the mapping
+    FEnhancedActionKeyMapping NewMapping;
+    NewMapping.Action = InputAction;
+    NewMapping.Key = Key;
+
+    // Add the mapping to the IMC
+    IMC->Mappings.Add(NewMapping);
+
+    // Mark the asset as dirty so it gets saved
+    IMC->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("imc_name"), IMCName);
+    Result->SetStringField(TEXT("action_name"), ActionName);
+    Result->SetStringField(TEXT("key"), KeyName);
+    Result->SetNumberField(TEXT("mapping_index"), IMC->Mappings.Num() - 1);
+    return Result;
 }

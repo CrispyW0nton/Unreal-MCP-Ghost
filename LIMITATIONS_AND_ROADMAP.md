@@ -501,34 +501,55 @@ by the editor.
 ---
 
 ### L-022 — Cannot add mappings to Input Mapping Context programmatically
-**Status:** Open · **Severity:** Medium · **Commit:** N/A
+**Status:** Fixed · **Severity:** Medium · **Commit:** `[current]`
 
 **What happened:**  
-While `create_enhanced_input_action` successfully creates UInputAction assets, there is
+While `create_enhanced_input_action` successfully creates UInputAction assets, there was
 no command to add those actions to an existing Input Mapping Context (IMC) or assign
-key bindings. After creating an Input Action, developers must manually open the IMC
+key bindings. After creating an Input Action, developers had to manually open the IMC
 asset in the editor and add the mapping.
 
-**What's missing:**  
-A command like `add_input_mapping(imc_name, action_name, key, modifiers)` that would:
-- Find the specified IMC asset
-- Add the Input Action to it
-- Configure the key binding and any modifiers (Shift, Ctrl, Alt)
-- Mark the asset as modified and save it
+**Root cause:**  
+The `add_input_mapping` command handler was implemented in the C++ backend but:
+1. Not declared in the public header file (`UnrealMCPExtendedCommands.h`)
+2. Not exposed through the Python tool wrapper
 
-**Current workaround:**  
-1. Use `create_enhanced_input_action` to create the IA asset
-2. Manually open the IMC in Unreal Editor
-3. Click the + button to add a mapping
-4. Select the newly created Input Action
-5. Assign a key binding
+**Fix applied:**  
+```cpp
+// In UnrealMCPExtendedCommands.h - added declaration:
+TSharedPtr<FJsonObject> HandleAddInputMapping(const TSharedPtr<FJsonObject>& Params);
+```
 
-**Ideal fix:**  
-Implement `add_input_mapping` command in `UnrealMCPExtendedCommands`:
-- Load the IMC asset via Asset Registry
-- Use UInputMappingContext's API to add the mapping
-- Support key, trigger types, and modifiers
-- Return success/failure with mapping details
+```python
+# In project_tools.py - added Python wrapper:
+@mcp.tool()
+def add_input_mapping(imc_name: str, action_name: str, key: str) -> dict:
+    """
+    Add an input mapping to an existing Input Mapping Context (IMC).
+    Args:
+        imc_name: Name of the Input Mapping Context (e.g., "IMC_Default")
+        action_name: Name of the Input Action (e.g., "IA_Jump")
+        key: Key name to bind (e.g., "SpaceBar", "V", "T")
+    """
+```
+
+**Usage example:**  
+```python
+# Create the action
+create_enhanced_input_action("IA_WormholeTP", "Digital", "/Game/Input")
+
+# Add it to the mapping context
+add_input_mapping("IMC_Default", "IA_WormholeTP", "V")
+```
+
+**Testing:**  
+The command successfully:
+- Finds the IMC asset via Asset Registry
+- Finds the Input Action asset
+- Validates the key name
+- Creates an FEnhancedActionKeyMapping
+- Adds it to IMC->Mappings array
+- Marks the asset as dirty for saving
 
 ---
 

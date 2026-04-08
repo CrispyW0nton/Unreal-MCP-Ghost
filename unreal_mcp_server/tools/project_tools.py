@@ -99,4 +99,33 @@ def register_project_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    @mcp.tool()
+    def add_input_mapping(imc_name: str, action_name: str, key: str) -> dict:
+        """
+        Add an input mapping to an existing Input Mapping Context (IMC).
+        
+        Args:
+            imc_name: Name of the Input Mapping Context (e.g., "IMC_Default")
+            action_name: Name of the Input Action (e.g., "IA_Jump", "IA_WormholeTP")
+            key: Key name to bind (e.g., "SpaceBar", "V", "T", "LeftMouseButton")
+        
+        Returns:
+            dict with success status, imc_name, action_name, key, and mapping_index
+        
+        Example:
+            add_input_mapping("IMC_Default", "IA_WormholeTP", "V")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_input_mapping", {
+                "imc_name": imc_name,
+                "action_name": action_name,
+                "key": key
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     logger.info("Project tools registered")
