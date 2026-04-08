@@ -272,7 +272,9 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("add_blueprint_enhanced_input_action_node") ||
                      CommandType == TEXT("add_blueprint_self_reference") ||
                      CommandType == TEXT("add_blueprint_get_self_component_reference") ||
-                     CommandType == TEXT("add_blueprint_get_component_node"))
+                     CommandType == TEXT("add_blueprint_get_component_node") ||
+                     CommandType == TEXT("add_blueprint_branch_node") ||
+                     CommandType == TEXT("add_blueprint_cast_node"))
             {
                 ResultJson = BlueprintNodeCommands->HandleCommand(CommandType, Params);
             }

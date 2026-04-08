@@ -819,4 +819,78 @@ def register_blueprint_node_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    @mcp.tool()
+    def add_blueprint_branch_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a Branch (If/Then/Else) node to a Blueprint graph.
+
+        This is the standard UE5 Branch node with Condition (bool) input,
+        True exec output, and False exec output.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', and 'pins'
+            (execute, Condition, True, False).
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_branch_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_cast_node(
+        ctx: Context,
+        blueprint_name: str,
+        cast_target_class: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a Cast node (K2Node_DynamicCast) to a Blueprint graph.
+
+        Args:
+            blueprint_name:    Asset name of the Blueprint.
+            cast_target_class: Class to cast to. Accepts short names like
+                               'AIController', 'ThePlayerCharacter', or full
+                               paths like '/Script/AIModule.AIController'.
+            graph_name:        Graph to add to. Default 'EventGraph'.
+            node_position:     Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'cast_class', and 'pins'
+            (execute, Object, then/cast-success, CastFailed, As<ClassName>).
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_cast_node", {
+                "blueprint_name":    blueprint_name,
+                "cast_target_class": cast_target_class,
+                "graph_name":        graph_name,
+                "node_position":     node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     logger.info("Blueprint node tools registered")

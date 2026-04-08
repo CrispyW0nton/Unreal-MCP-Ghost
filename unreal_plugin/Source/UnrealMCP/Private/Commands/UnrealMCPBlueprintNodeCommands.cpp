@@ -17,6 +17,8 @@
 #include "K2Node_VariableSet.h"
 #include "K2Node_InputAction.h"
 #include "K2Node_Self.h"
+#include "K2Node_IfThenElse.h"
+#include "K2Node_DynamicCast.h"
 
 // Enhanced Input
 #include "EnhancedInputComponent.h"
@@ -64,6 +66,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleCommand(
     if (CommandType == TEXT("add_blueprint_self_reference"))                 return HandleAddBlueprintSelfReference(Params);
     if (CommandType == TEXT("add_blueprint_get_self_component_reference"))   return HandleAddBlueprintGetSelfComponentReference(Params);
     if (CommandType == TEXT("add_blueprint_get_component_node"))             return HandleAddBlueprintGetComponentNode(Params);
+    if (CommandType == TEXT("add_blueprint_branch_node"))                    return HandleAddBlueprintBranchNode(Params);
+    if (CommandType == TEXT("add_blueprint_cast_node"))                      return HandleAddBlueprintCastNode(Params);
 
     return FUnrealMCPCommonUtils::CreateErrorResponse(
         FString::Printf(TEXT("Unknown blueprint node command: %s"), *CommandType));
@@ -1608,5 +1612,104 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintGetCo
     for (UEdGraphPin* P : Node->Pins)
         if (P && !P->bHidden) PinsArr.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
     R->SetArrayField(TEXT("pins"), PinsArr);
+    return R;
+}
+
+// ============================================================
+// add_blueprint_branch_node
+// Adds a K2Node_IfThenElse (Branch) node to a graph.
+// Params: blueprint_name, [graph_name], [node_position]
+// Returns: node_id, node_name, pins (execute, Condition, then, else)
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintBranchNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString Err;
+    UEdGraph* Graph = ResolveGraph(Params, Err);
+    if (!Graph) return FUnrealMCPCommonUtils::CreateErrorResponse(Err);
+
+    FVector2D Pos(0, 0);
+    if (Params->HasField(TEXT("node_position")))
+        Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
+
+    UK2Node_IfThenElse* Node = NewObject<UK2Node_IfThenElse>(Graph);
+    if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create K2Node_IfThenElse"));
+
+    Node->NodePosX = (int32)Pos.X;
+    Node->NodePosY = (int32)Pos.Y;
+    Graph->AddNode(Node);
+    Node->CreateNewGuid();
+    Node->PostPlacedNewNode();
+    Node->AllocateDefaultPins();
+    Node->ReconstructNode();
+
+    UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
+    R->SetStringField(TEXT("node_name"), Node->GetName());
+    TArray<TSharedPtr<FJsonValue>> BranchPins;
+    for (UEdGraphPin* P : Node->Pins)
+        if (P && !P->bHidden) BranchPins.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
+    R->SetArrayField(TEXT("pins"), BranchPins);
+    return R;
+}
+
+// ============================================================
+// add_blueprint_cast_node
+// Adds a K2Node_DynamicCast targeting a given class.
+// Params: blueprint_name, cast_target_class (short name like "AIController"
+//         or full path "/Script/AIModule.AIController"),
+//         [graph_name], [node_position]
+// Returns: node_id, node_name, cast_class, pins
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCastNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString Err;
+    UEdGraph* Graph = ResolveGraph(Params, Err);
+    if (!Graph) return FUnrealMCPCommonUtils::CreateErrorResponse(Err);
+
+    FString TargetClassName;
+    if (!Params->TryGetStringField(TEXT("cast_target_class"), TargetClassName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'cast_target_class' parameter"));
+
+    FVector2D Pos(0, 0);
+    if (Params->HasField(TEXT("node_position")))
+        Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
+
+    // Resolve the target class - try full path, then short name
+    UClass* TargetClass = FindObject<UClass>(nullptr, *TargetClassName);
+    if (!TargetClass)
+        TargetClass = LoadObject<UClass>(nullptr, *TargetClassName);
+    if (!TargetClass)
+        TargetClass = FindFirstObject<UClass>(*TargetClassName, EFindFirstObjectOptions::None);
+
+    UK2Node_DynamicCast* Node = NewObject<UK2Node_DynamicCast>(Graph);
+    if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create K2Node_DynamicCast"));
+
+    if (TargetClass)
+        Node->TargetType = TargetClass;
+
+    Node->NodePosX = (int32)Pos.X;
+    Node->NodePosY = (int32)Pos.Y;
+    Graph->AddNode(Node);
+    Node->CreateNewGuid();
+    Node->PostPlacedNewNode();
+    Node->AllocateDefaultPins();
+    Node->ReconstructNode();
+
+    UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetStringField(TEXT("node_id"),    Node->NodeGuid.ToString());
+    R->SetStringField(TEXT("node_name"),  Node->GetName());
+    R->SetStringField(TEXT("cast_class"), TargetClass ? TargetClass->GetName() : TargetClassName);
+    TArray<TSharedPtr<FJsonValue>> CastPins;
+    for (UEdGraphPin* P : Node->Pins)
+        if (P && !P->bHidden) CastPins.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
+    R->SetArrayField(TEXT("pins"), CastPins);
     return R;
 }
