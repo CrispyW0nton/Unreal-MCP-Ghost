@@ -500,6 +500,79 @@ by the editor.
 
 ---
 
+### L-022 — Cannot add mappings to Input Mapping Context programmatically
+**Status:** Open · **Severity:** Medium · **Commit:** N/A
+
+**What happened:**  
+While `create_enhanced_input_action` successfully creates UInputAction assets, there is
+no command to add those actions to an existing Input Mapping Context (IMC) or assign
+key bindings. After creating an Input Action, developers must manually open the IMC
+asset in the editor and add the mapping.
+
+**What's missing:**  
+A command like `add_input_mapping(imc_name, action_name, key, modifiers)` that would:
+- Find the specified IMC asset
+- Add the Input Action to it
+- Configure the key binding and any modifiers (Shift, Ctrl, Alt)
+- Mark the asset as modified and save it
+
+**Current workaround:**  
+1. Use `create_enhanced_input_action` to create the IA asset
+2. Manually open the IMC in Unreal Editor
+3. Click the + button to add a mapping
+4. Select the newly created Input Action
+5. Assign a key binding
+
+**Ideal fix:**  
+Implement `add_input_mapping` command in `UnrealMCPExtendedCommands`:
+- Load the IMC asset via Asset Registry
+- Use UInputMappingContext's API to add the mapping
+- Support key, trigger types, and modifiers
+- Return success/failure with mapping details
+
+---
+
+### L-023 — Enhanced Input Action nodes fell back to legacy nodes
+**Status:** Fixed · **Severity:** High · **Commit:** `9510f6c`
+
+**What happened:**  
+When calling `add_blueprint_enhanced_input_action_node`, the plugin would fail to find
+the `UK2Node_EnhancedInputAction` class at runtime and fall back to creating a legacy
+`K2Node_InputAction` node instead. This resulted in nodes that didn't support the full
+Enhanced Input system features (triggers, modifiers, action values).
+
+**Root cause:**  
+Two issues:
+1. **Missing module dependency**: The `InputBlueprintNodes` module was not included in
+   `UnrealMCP.Build.cs`, so the K2Node_EnhancedInputAction class wasn't available.
+2. **Missing include**: The header `K2Node_EnhancedInputAction.h` was not included in
+   the source file.
+3. **Dynamic class finding**: Code used runtime class lookup (`FindObject<UClass>`)
+   instead of direct instantiation, which failed silently.
+
+**Fix applied:**  
+1. Added `InputBlueprintNodes` to PrivateDependencyModuleNames in Build.cs
+2. Added `#include "K2Node_EnhancedInputAction.h"` to the source file
+3. Replaced dynamic class finding with direct `NewObject<UK2Node_EnhancedInputAction>()`
+4. Set the `InputAction` property directly instead of using reflection
+5. Removed the legacy fallback path entirely
+
+```cpp
+// Before (failed):
+UClass* EIANodeClass = FindObject<UClass>(nullptr, TEXT("/Script/EnhancedInput.K2Node_EnhancedInputAction"));
+UEdGraphNode* RawNode = NewObject<UEdGraphNode>(Graph, EIANodeClass);
+
+// After (works):
+UK2Node_EnhancedInputAction* Node = NewObject<UK2Node_EnhancedInputAction>(Graph);
+Node->InputAction = InputAction;
+```
+
+**Testing:**  
+Enhanced Input Action nodes now create properly with all pins (Triggered, Started,
+Ongoing, Completed, Canceled) and support for action value types.
+
+---
+
 ## Roadmap
 
 Derived from the limitations above, grouped by release priority.
