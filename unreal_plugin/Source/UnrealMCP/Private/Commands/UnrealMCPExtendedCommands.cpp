@@ -1950,8 +1950,21 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInputMapping(
     NewMapping.Action = InputAction;
     NewMapping.Key = Key;
 
-    // Add the mapping to the IMC
-    IMC->Mappings.Add(NewMapping);
+    // Access the protected Mappings array via reflection
+    FArrayProperty* MappingsProp = FindFProperty<FArrayProperty>(
+        UInputMappingContext::StaticClass(), TEXT("Mappings"));
+    
+    if (!MappingsProp)
+        return CreateErrorResponse(TEXT("Failed to find Mappings property on UInputMappingContext"));
+
+    // Get the array helper to safely access the protected member
+    FScriptArrayHelper ArrayHelper(MappingsProp, MappingsProp->ContainerPtrToValuePtr<void>(IMC));
+    
+    // Add the new mapping to the array
+    int32 NewIndex = ArrayHelper.AddValue();
+    FEnhancedActionKeyMapping* MappingPtr = reinterpret_cast<FEnhancedActionKeyMapping*>(
+        ArrayHelper.GetRawPtr(NewIndex));
+    *MappingPtr = NewMapping;
 
     // Mark the asset as dirty so it gets saved
     IMC->MarkPackageDirty();
@@ -1961,6 +1974,6 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInputMapping(
     Result->SetStringField(TEXT("imc_name"), IMCName);
     Result->SetStringField(TEXT("action_name"), ActionName);
     Result->SetStringField(TEXT("key"), KeyName);
-    Result->SetNumberField(TEXT("mapping_index"), IMC->Mappings.Num() - 1);
+    Result->SetNumberField(TEXT("mapping_index"), NewIndex);
     return Result;
 }
