@@ -289,7 +289,7 @@ def send_command(command: str, params: Dict[str, Any] = None) -> Optional[Dict]:
         return {"status": "error", "error": str(e)}
 
     try:
-        payload = json.dumps({"type": command, "params": params or {}})
+        payload = json.dumps({"type": command, "params": params or {}}) + "\n"
         sock.sendall(payload.encode("utf-8"))
         raw = _recv(sock)
         return json.loads(raw.decode("utf-8"))

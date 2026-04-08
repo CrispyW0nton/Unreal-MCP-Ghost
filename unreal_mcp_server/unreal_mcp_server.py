@@ -131,7 +131,7 @@ class UnrealConnection:
                 "type": command,
                 "params": params or {}
             }
-            command_json = json.dumps(command_obj)
+            command_json = json.dumps(command_obj) + "\n"
             logger.info(f"Sending command: {command_json[:200]}...")
             self.socket.sendall(command_json.encode('utf-8'))
 
