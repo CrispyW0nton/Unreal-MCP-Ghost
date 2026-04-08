@@ -23,7 +23,7 @@
 #include "K2Node_ForEachElementInEnum.h"
 #include "K2Node_Composite.h"
 #include "K2Node_SpawnActorFromClass.h"
-#include "EdGraph/EdGraphNode_Comment.h"
+#include "EdGraphNode_Comment.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
 #include "NavigationSystem.h"
 #include "AI/NavigationSystemBase.h"

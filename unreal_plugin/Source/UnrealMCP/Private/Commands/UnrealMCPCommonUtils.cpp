@@ -825,8 +825,8 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
             // Try to find the class by name (short name or full path)
             UClass* FoundClass = nullptr;
 
-            // First try as a full object path
-            FoundClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+            // First try as a full object path (nullptr outer searches all packages in UE5.6+)
+            FoundClass = FindObject<UClass>(nullptr, *ClassName);
 
             // If not found, try searching all loaded classes by short name
             if (!FoundClass)
@@ -865,7 +865,7 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
         if (SoftClassProp && Value->Type == EJson::String)
         {
             FString ClassName = Value->AsString();
-            UClass* FoundClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+            UClass* FoundClass = FindObject<UClass>(nullptr, *ClassName);
             if (!FoundClass)
             {
                 for (TObjectIterator<UClass> It; It; ++It)

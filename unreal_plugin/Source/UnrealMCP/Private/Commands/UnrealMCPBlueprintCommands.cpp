@@ -1329,8 +1329,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintAIControl
     // Find the controller class by short name or full path
     UClass* ControllerClass = nullptr;
 
-    // Try full path first
-    ControllerClass = FindObject<UClass>(ANY_PACKAGE, *ControllerClassName);
+    // Try full path first (nullptr outer searches all packages)
+    ControllerClass = FindObject<UClass>(nullptr, *ControllerClassName);
 
     // Fall back to iterating all loaded classes
     if (!ControllerClass)
