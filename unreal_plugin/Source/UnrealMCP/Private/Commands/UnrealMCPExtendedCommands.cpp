@@ -913,6 +913,41 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMacroNode(
         }
     }
     
+    // If not found in blueprint, search standard macros
+    if (!MacroGraph)
+    {
+        // Search in Engine's standard macro library
+        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+        
+        FARFilter Filter;
+        Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+        Filter.PackagePaths.Add(TEXT("/Engine/EditorBlueprintResources"));
+        Filter.bRecursivePaths = true;
+        
+        TArray<FAssetData> AssetList;
+        AssetRegistry.GetAssets(Filter, AssetList);
+        
+        for (const FAssetData& Asset : AssetList)
+        {
+            if (UBlueprint* MacroLibrary = Cast<UBlueprint>(Asset.GetAsset()))
+            {
+                if (MacroLibrary->BlueprintType == BPTYPE_MacroLibrary)
+                {
+                    for (UEdGraph* MGraph : MacroLibrary->MacroGraphs)
+                    {
+                        if (MGraph && MGraph->GetName().Contains(MacroName))
+                        {
+                            MacroGraph = MGraph;
+                            break;
+                        }
+                    }
+                    if (MacroGraph) break;
+                }
+            }
+        }
+    }
+    
     if (!MacroGraph)
         return CreateErrorResponse(FString::Printf(TEXT("Macro not found: %s"), *MacroName));
     
@@ -920,8 +955,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMacroNode(
     MacroNode->SetMacroGraph(MacroGraph);
     MacroNode->NodePosX = Pos.X;
     MacroNode->NodePosY = Pos.Y;
-    Graph->AddNode(MacroNode);
     MacroNode->CreateNewGuid();
+    Graph->AddNode(MacroNode);
     MacroNode->PostPlacedNewNode();
     MacroNode->AllocateDefaultPins();
     
