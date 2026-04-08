@@ -594,6 +594,63 @@ Ongoing, Completed, Canceled) and support for action value types.
 
 ---
 
+### L-024 — Node creation functions missing or incorrectly placed CreateNewGuid() calls
+**Status:** Fixed · **Severity:** Critical · **Commit:** `245cf77`
+
+**What happened:**  
+Multiple node creation helper functions in `FUnrealMCPCommonUtils` were creating nodes with
+all-zeros GUIDs (00000000000000000000000000000000), causing ERROR! messages in the Blueprint
+editor with broken "Target" references. This manifested as:
+- GET/SET variable nodes showing "ERROR!" with empty Target fields
+- Nodes appearing disconnected or unstable in the editor
+- Compile failures due to invalid node references
+- Broken connections that couldn't be fixed without manual intervention
+
+**Root cause:**  
+Six helper functions had incorrect or missing GUID generation:
+1. **CreateEventNode** - Missing `CreateNewGuid()` entirely
+2. **CreateVariableGetNode** - Missing `CreateNewGuid()` entirely
+3. **CreateVariableSetNode** - Missing `CreateNewGuid()` entirely
+4. **CreateFunctionCallNode** - Called `CreateNewGuid()` AFTER `AddNode()` (wrong order)
+5. **CreateInputActionNode** - Called `CreateNewGuid()` AFTER `AddNode()` (wrong order)
+6. **CreateSelfReferenceNode** - Called `CreateNewGuid()` AFTER `AddNode()` (wrong order)
+
+When `AddNode()` is called without a valid GUID, Unreal generates a temporary or zeroed
+GUID, which then gets overwritten by the late `CreateNewGuid()` call, causing
+inconsistencies between the graph's node registry and the node's actual GUID.
+
+**Fix applied:**  
+Corrected the node creation order for all six functions:
+```cpp
+// CORRECT order:
+UK2Node_VariableGet* Node = NewObject<UK2Node_VariableGet>(Graph);
+Node->VariableReference.SetFromField<FProperty>(Property, false);
+Node->NodePosX = Position.X;
+Node->NodePosY = Position.Y;
+Node->CreateNewGuid();           // ← MUST be BEFORE AddNode!
+Graph->AddNode(Node, true);
+Node->PostPlacedNewNode();
+Node->AllocateDefaultPins();
+```
+
+**Correct node creation sequence:**  
+1. `NewObject<NodeType>(Graph)` - Create the node object
+2. Set position: `NodePosX`, `NodePosY`
+3. Set node-specific properties (variable reference, function, etc.)
+4. **`CreateNewGuid()`** ← Must be called BEFORE AddNode!
+5. `Graph->AddNode(Node)` - Register node with graph
+6. `PostPlacedNewNode()` - Post-placement initialization
+7. `AllocateDefaultPins()` - Create the node's pins
+
+**Impact:**  
+This fix prevents all future occurrences of:
+- All-zeros GUID issues in variable GET/SET nodes
+- ERROR! messages in Blueprint graphs
+- Broken node references that require manual cleanup
+- Similar issues in Event, Function, InputAction, and Self nodes
+
+---
+
 ## Roadmap
 
 Derived from the limitations above, grouped by release priority.
