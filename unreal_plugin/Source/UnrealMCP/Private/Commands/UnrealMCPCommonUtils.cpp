@@ -419,7 +419,7 @@ bool FUnrealMCPCommonUtils::ConnectGraphNodes(UEdGraph* Graph, UEdGraphNode* Sou
         return false;
     }
 
-    // Prefer schema-based connection — it handles type compatibility, breaks
+    // Prefer schema-based connection  -  it handles type compatibility, breaks
     // existing exclusive links (exec pins), and fires property-change notifies.
     const UEdGraphSchema_K2* K2Schema = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
     if (K2Schema)
@@ -429,7 +429,7 @@ bool FUnrealMCPCommonUtils::ConnectGraphNodes(UEdGraph* Graph, UEdGraphNode* Sou
         if (Response.Response == CONNECT_RESPONSE_DISALLOW)
         {
             // Schema explicitly forbids this connection.  Do NOT fall back to
-            // raw MakeLinkTo — that produces broken graphs that crash on compile.
+            // raw MakeLinkTo  -  that produces broken graphs that crash on compile.
             OutError = FString::Printf(
                 TEXT("Schema disallows '%s'.'%s' -> '%s'.'%s': %s"),
                 *SourceNode->GetName(), *SourcePinName,
@@ -444,7 +444,7 @@ bool FUnrealMCPCommonUtils::ConnectGraphNodes(UEdGraph* Graph, UEdGraphNode* Sou
         return true;
     }
 
-    // Fallback: raw link (no type validation — only reached when no K2 schema)
+    // Fallback: raw link (no type validation  -  only reached when no K2 schema)
     SourcePin->MakeLinkTo(TargetPin);
     return true;
 }

@@ -926,8 +926,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
 
     // Compile the blueprint and collect errors/warnings via the message log.
     FCompilerResultsLog ResultsLog;
-    ResultsLog.bSilentMode = true;         // suppress noisy log output
-    ResultsLog.bAnnotateMentionedNodes = false;
+    // Suppress verbose log output; bAnnotateMentionedNodes was removed in UE5.6.
+    ResultsLog.bSilentMode = true;
     FKismetEditorUtilities::CompileBlueprint(Blueprint, EBlueprintCompileOptions::None, &ResultsLog);
 
     // EBlueprintStatus::BS_Error means there were compile errors.
@@ -950,12 +950,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
     {
         if (MsgCount >= 20) break;
         EMessageSeverity::Type Sev = Msg->GetSeverity();
-        if (Sev == EMessageSeverity::Error || Sev == EMessageSeverity::Warning ||
-            Sev == EMessageSeverity::CriticalError)
+        // Note: EMessageSeverity::CriticalError was removed in UE5.6.
+        // We treat Error and Warning as the only two filter categories.
+        if (Sev == EMessageSeverity::Error || Sev == EMessageSeverity::Warning)
         {
             TSharedPtr<FJsonObject> MObj = MakeShared<FJsonObject>();
             MObj->SetStringField(TEXT("severity"),
-                Sev == EMessageSeverity::Error || Sev == EMessageSeverity::CriticalError
+                Sev == EMessageSeverity::Error
                     ? TEXT("error") : TEXT("warning"));
             MObj->SetStringField(TEXT("message"), Msg->ToText().ToString());
             Messages.Add(MakeShared<FJsonValueObject>(MObj));

@@ -348,12 +348,12 @@ bool FUnrealMCPBlueprintNodeCommands::ApplyPinValue(
 }
 
 // ============================================================
-// get_blueprint_nodes  — return ALL nodes in a graph
+// get_blueprint_nodes   -  return ALL nodes in a graph
 // Params: blueprint_name, [graph_name], [include_hidden_pins=false]
 //
 // graph_name special values:
-//   "EventGraph" (default)   — main event graph
-//   "*" or "all"             — every graph (EventGraph + functions + macros)
+//   "EventGraph" (default)    -  main event graph
+//   "*" or "all"              -  every graph (EventGraph + functions + macros)
 //                              Nodes are grouped per graph in the response.
 // ============================================================
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintNodes(
@@ -484,7 +484,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintNodes
 }
 
 // ============================================================
-// find_blueprint_nodes — filtered search
+// find_blueprint_nodes  -  filtered search
 // Params: blueprint_name, [graph_name], node_type (or "all"), [event_name], [function_name],
 //         [variable_name], [input_action_name], [node_name]
 // ============================================================
@@ -883,7 +883,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
     if (Params->HasField(TEXT("node_position")))
         Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
 
-    // ── Duplicate guard ──────────────────────────────────────────────────────
+    // -- Duplicate guard ------------------------------------------------------
     // If the caller doesn't pass allow_duplicates=true (default false), check
     // whether an identical function-call node already exists near the requested
     // position.  "Near" = within 32 units on both axes (tolerates rounding).
@@ -917,7 +917,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
             }
         }
     }
-    // ────────────────────────────────────────────────────────────────────────
+    // ------------------------------------------------------------------------
 
     // Resolve function
     UFunction* Func = ResolveFunction(FunctionName, TargetClass, Blueprint);
@@ -1476,7 +1476,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintEnhan
 
 // ============================================================
 // get_node_by_id
-// Fast single-node lookup — returns full pin data for one node.
+// Fast single-node lookup  -  returns full pin data for one node.
 // Avoids fetching the entire graph just to inspect one node.
 //
 // Params:
@@ -1523,7 +1523,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetNodeById(
 // Creates a VariableGet node for a named component that lives in
 // the Blueprint's SimpleConstructionScript (SCS).  This is the
 // C++ equivalent of dragging a component from the Components panel
-// into the Event Graph — the node type is exactly the same as
+// into the Event Graph  -  the node type is exactly the same as
 // add_blueprint_get_self_component_reference, but this variant
 // searches the SCS to validate the component exists and returns
 // the component's actual class as additional metadata.
