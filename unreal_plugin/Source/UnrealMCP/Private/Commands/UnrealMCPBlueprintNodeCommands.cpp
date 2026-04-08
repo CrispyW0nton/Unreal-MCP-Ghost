@@ -16,6 +16,7 @@
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "K2Node_InputAction.h"
+#include "K2Node_EnhancedInputAction.h"  // For Enhanced Input support
 #include "K2Node_Self.h"
 #include "K2Node_IfThenElse.h"
 #include "K2Node_DynamicCast.h"
@@ -1488,78 +1489,34 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintEnhan
         return FUnrealMCPCommonUtils::CreateErrorResponse(
             FString::Printf(TEXT("UInputAction asset not found: '%s'"), *ActionAssetPath));
 
-    // --- Find the K2Node_EnhancedInputAction class ---
-    // It lives in the EnhancedInput plugin module "EnhancedInputEditor" or "BlueprintGraph".
-    UClass* EIANodeClass = FindObject<UClass>(
-        nullptr, TEXT("/Script/EnhancedInput.K2Node_EnhancedInputAction"));
-    if (!EIANodeClass)
-        EIANodeClass = FindObject<UClass>(
-            nullptr, TEXT("/Script/BlueprintGraph.K2Node_EnhancedInputAction"));
-    if (!EIANodeClass)
-        EIANodeClass = LoadObject<UClass>(
-            nullptr, TEXT("/Script/EnhancedInput.K2Node_EnhancedInputAction"));
+    // Create the K2Node_EnhancedInputAction node directly
+    UK2Node_EnhancedInputAction* Node = NewObject<UK2Node_EnhancedInputAction>(Graph);
+    if (!Node)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create K2Node_EnhancedInputAction"));
 
-    if (!EIANodeClass)
-    {
-        // Fall back to the legacy K2Node_InputAction
-        UE_LOG(LogMCPNode, Warning, TEXT("K2Node_EnhancedInputAction class not found; "
-            "falling back to legacy K2Node_InputAction"));
-        UK2Node_InputAction* LegacyNode = FUnrealMCPCommonUtils::CreateInputActionNode(
-            Graph, InputAction->GetName(), Pos);
-        if (!LegacyNode)
-            return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create legacy InputAction node"));
-
-        UBlueprint* LBP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-        if (LBP) FBlueprintEditorUtils::MarkBlueprintAsModified(LBP);
-
-        TSharedPtr<FJsonObject> LR = MakeShared<FJsonObject>();
-        LR->SetStringField(TEXT("node_id"),   LegacyNode->NodeGuid.ToString());
-        LR->SetStringField(TEXT("node_name"), LegacyNode->GetName());
-        LR->SetStringField(TEXT("note"), TEXT("Used legacy K2Node_InputAction because K2Node_EnhancedInputAction class was unavailable"));
-        TArray<TSharedPtr<FJsonValue>> LPinsArr;
-        for (UEdGraphPin* P : LegacyNode->Pins)
-            if (P && !P->bHidden) LPinsArr.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
-        LR->SetArrayField(TEXT("pins"), LPinsArr);
-        return LR;
-    }
-
-    // Construct the enhanced input action node
-    UEdGraphNode* RawNode = NewObject<UEdGraphNode>(Graph, EIANodeClass);
-    if (!RawNode)
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to NewObject K2Node_EnhancedInputAction"));
-
-    RawNode->NodePosX = (int32)Pos.X;
-    RawNode->NodePosY = (int32)Pos.Y;
-    RawNode->CreateNewGuid();
-    Graph->AddNode(RawNode);
+    Node->NodePosX = (int32)Pos.X;
+    Node->NodePosY = (int32)Pos.Y;
+    Node->CreateNewGuid();
+    Graph->AddNode(Node);
 
     // Set the InputAction property on the node
-    // The property is named "InputAction" on K2Node_EnhancedInputAction.
-    FObjectProperty* IAProp = FindFProperty<FObjectProperty>(EIANodeClass, TEXT("InputAction"));
-    if (IAProp)
-    {
-        IAProp->SetObjectPropertyValue_InContainer(RawNode, InputAction);
-        UE_LOG(LogMCPNode, Display, TEXT("Set InputAction property to '%s'"), *InputAction->GetName());
-    }
-    else
-    {
-        UE_LOG(LogMCPNode, Warning, TEXT("Could not find 'InputAction' FObjectProperty on K2Node_EnhancedInputAction"));
-    }
-
-    RawNode->PostPlacedNewNode();
-    RawNode->AllocateDefaultPins();
-    RawNode->ReconstructNode();
+    Node->InputAction = InputAction;
+    
+    // Initialize the node
+    Node->PostPlacedNewNode();
+    Node->AllocateDefaultPins();
+    Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     if (BP) FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
-    R->SetStringField(TEXT("node_id"),         RawNode->NodeGuid.ToString());
-    R->SetStringField(TEXT("node_name"),       RawNode->GetName());
+    R->SetStringField(TEXT("node_id"),         Node->NodeGuid.ToString());
+    R->SetStringField(TEXT("node_name"),       Node->GetName());
     R->SetStringField(TEXT("input_action"),    InputAction->GetName());
     R->SetStringField(TEXT("input_action_path"), InputAction->GetPathName());
     TArray<TSharedPtr<FJsonValue>> PinsArr;
-    for (UEdGraphPin* P : RawNode->Pins)
+    for (UEdGraphPin* P : Node->Pins)
         if (P && !P->bHidden) PinsArr.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
     R->SetArrayField(TEXT("pins"), PinsArr);
     return R;

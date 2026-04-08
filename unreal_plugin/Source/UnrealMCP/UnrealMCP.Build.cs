@@ -76,6 +76,7 @@ public class UnrealMCP : ModuleRules
 
                 // Enhanced Input (extended ? Chapter 6, input nodes)
                 "EnhancedInput",
+                "InputBlueprintNodes",  // For K2Node_EnhancedInputAction
 
                 // Physics / Collision (extended ? Chapter 14)
                 "PhysicsCore",
