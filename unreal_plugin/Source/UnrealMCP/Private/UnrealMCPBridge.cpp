@@ -275,7 +275,26 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("add_blueprint_get_self_component_reference") ||
                      CommandType == TEXT("add_blueprint_get_component_node") ||
                      CommandType == TEXT("add_blueprint_branch_node") ||
-                     CommandType == TEXT("add_blueprint_cast_node"))
+                     CommandType == TEXT("add_blueprint_cast_node") ||
+                     // Phase 2: structural nodes (L-012)
+                     CommandType == TEXT("add_blueprint_for_loop_node") ||
+                     CommandType == TEXT("add_blueprint_for_each_loop_node") ||
+                     CommandType == TEXT("add_blueprint_sequence_node") ||
+                     CommandType == TEXT("add_blueprint_do_once_node") ||
+                     CommandType == TEXT("add_blueprint_gate_node") ||
+                     CommandType == TEXT("add_blueprint_flip_flop_node") ||
+                     CommandType == TEXT("add_blueprint_switch_on_int_node") ||
+                     CommandType == TEXT("add_blueprint_spawn_actor_node") ||
+                     // Phase 2: comment + reposition (L-018, L-019)
+                     CommandType == TEXT("add_blueprint_comment_node") ||
+                     CommandType == TEXT("move_blueprint_node") ||
+                     // Phase 3: variable defaults (L-013)
+                     CommandType == TEXT("get_blueprint_variable_defaults") ||
+                     CommandType == TEXT("set_blueprint_variable_default") ||
+                     // Phase 4: component inspection (L-020)
+                     CommandType == TEXT("get_blueprint_components") ||
+                     // Phase 5: NavMesh (L-014)
+                     CommandType == TEXT("setup_navmesh"))
             {
                 ResultJson = BlueprintNodeCommands->HandleCommand(CommandType, Params);
             }

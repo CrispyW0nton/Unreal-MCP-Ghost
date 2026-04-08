@@ -64,8 +64,9 @@ public class UnrealMCP : ModuleRules
                 "UMG",
                 "UMGEditor",
 
-                // AI / Behavior Tree (extended ? Chapters 9, 10)
+                // AI / Behavior Tree / Navigation (extended - Chapters 9, 10)
                 "AIModule",
+                "NavigationSystem",
                 "BehaviorTreeEditor",
                 "GameplayTasks",
 

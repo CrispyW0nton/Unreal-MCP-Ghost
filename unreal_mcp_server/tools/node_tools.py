@@ -893,4 +893,542 @@ def register_blueprint_node_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    # ===================================================================
+    # Phase 2: Structural flow-control nodes (L-012)
+    # ===================================================================
+
+    @mcp.tool()
+    def add_blueprint_for_loop_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        first_index: int = 0,
+        last_index: int = 9,
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a standard ForLoop macro node to a Blueprint graph.
+
+        Pins: execute, First Index (int), Last Index (int),
+              Loop Body (exec), Index (int), Completed (exec).
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            first_index:    Starting index (default 0).
+            last_index:     Ending index (default 9).
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_for_loop_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "first_index":    first_index,
+                "last_index":     last_index,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_for_each_loop_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a ForEachLoop macro node to a Blueprint graph.
+
+        Pins: execute, Array (wildcard array), Loop Body (exec),
+              Array Element (wildcard), Array Index (int), Completed (exec).
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_for_each_loop_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_sequence_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a Sequence macro node to a Blueprint graph.
+
+        A Sequence node executes multiple outputs in order (Then 0, Then 1, ...).
+        Additional outputs can be added manually in the Blueprint editor.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_sequence_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_do_once_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a DoOnce macro node to a Blueprint graph.
+
+        The DoOnce node only fires the Completed output once until Reset is triggered.
+        Pins: execute, Reset (exec), Completed (exec), bIsOpen (bool).
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_do_once_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_gate_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        start_closed: bool = False,
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a Gate macro node to a Blueprint graph.
+
+        A Gate passes execution through its Exit pin only when open.
+        Pins: execute, Open (exec), Close (exec), Toggle (exec),
+              Start Closed (bool), Exit (exec).
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            start_closed:   Whether the gate starts closed (default False).
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_gate_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "start_closed":   start_closed,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_flip_flop_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a FlipFlop macro node to a Blueprint graph.
+
+        Alternates between A and B exec outputs on each trigger.
+        Pins: execute, A (exec), B (exec), IsA (bool).
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_flip_flop_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_switch_on_int_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a Switch on Int node (K2Node_SwitchInteger) to a Blueprint graph.
+
+        Routes execution to Case 0, Case 1, ... Default based on an integer input.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_switch_on_int_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def add_blueprint_spawn_actor_node(
+        ctx: Context,
+        blueprint_name: str,
+        actor_class: str = "",
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a SpawnActorFromClass node (K2Node_SpawnActorFromClass) to a Blueprint graph.
+
+        Spawns a new actor of the given class at a given transform.
+        Pins: execute, Class, SpawnTransform, CollisionHandlingOverride,
+              Owner, Instigator, then, ReturnValue (actor ref).
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            actor_class:    Short class name to pin as default (e.g. 'BP_AggroBot1').
+                            Leave empty to leave the Class pin unwired.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'node_type', 'actor_class', and 'pins'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_spawn_actor_node", {
+                "blueprint_name": blueprint_name,
+                "actor_class":    actor_class,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ===================================================================
+    # Phase 2: Comment nodes and node repositioning (L-018, L-019)
+    # ===================================================================
+
+    @mcp.tool()
+    def add_blueprint_comment_node(
+        ctx: Context,
+        blueprint_name: str,
+        comment_text: str = "Comment",
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+        width: float = 400.0,
+        height: float = 200.0,
+        color: Optional[List[float]] = None,
+    ) -> Dict:
+        """Add a comment box (UEdGraphNode_Comment) to a Blueprint graph.
+
+        Comment boxes are visual organisers that group related nodes.
+        They do not affect logic.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            comment_text:   Text shown in the comment header.
+            graph_name:     Graph to add to. Default 'EventGraph'.
+            node_position:  [X, Y] top-left corner of the comment box.
+            width:          Width in units (default 400).
+            height:         Height in units (default 200).
+            color:          Optional [R, G, B, A] color in 0..1 range.
+                            Defaults to white semi-transparent.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'comment_text',
+            'pos_x', 'pos_y', 'width', 'height'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            params: Dict = {
+                "blueprint_name": blueprint_name,
+                "comment_text":   comment_text,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
+                "width":          width,
+                "height":         height,
+            }
+            if color is not None:
+                params["color"] = color
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_comment_node", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def move_blueprint_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        node_position: List[float],
+        graph_name: str = "EventGraph",
+    ) -> Dict:
+        """Reposition an existing node on the Blueprint graph canvas.
+
+        Useful for tidying up a graph after programmatic construction.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            node_id:        GUID or short name of the node to move.
+            node_position:  New [X, Y] canvas position.
+            graph_name:     Graph containing the node. Default 'EventGraph'.
+
+        Returns:
+            Dict with 'node_id', 'node_name', 'new_pos_x', 'new_pos_y'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("move_blueprint_node", {
+                "blueprint_name": blueprint_name,
+                "node_id":        node_id,
+                "node_position":  node_position,
+                "graph_name":     graph_name,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ===================================================================
+    # Phase 3: Variable default values (L-013)
+    # ===================================================================
+
+    @mcp.tool()
+    def get_blueprint_variable_defaults(
+        ctx: Context,
+        blueprint_name: str,
+        variable_name: str = "",
+    ) -> Dict:
+        """Read the default value(s) of Blueprint member variables.
+
+        Returns both the FBPVariableDescription.DefaultValue (the value
+        stored in the Blueprint asset) and the live CDO value exported as text.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            variable_name:  If specified, only return this variable.
+                            Leave empty to return ALL variables.
+
+        Returns:
+            Dict with 'blueprint', 'count', and 'variables' array.
+            Each variable entry has: 'variable_name', 'variable_type',
+            'default_value', 'tooltip', and optionally 'cdo_value'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            params: Dict = {"blueprint_name": blueprint_name}
+            if variable_name:
+                params["variable_name"] = variable_name
+            return unreal.send_command("get_blueprint_variable_defaults", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def set_blueprint_variable_default(
+        ctx: Context,
+        blueprint_name: str,
+        variable_name: str,
+        default_value: str,
+    ) -> Dict:
+        """Set the default value of a Blueprint member variable.
+
+        Updates both the FBPVariableDescription record and the CDO
+        property via ImportText so changes are visible immediately
+        without a full recompile.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            variable_name:  Exact name of the variable to update.
+            default_value:  New default value as a string (e.g. '42', 'true',
+                            '(X=1.0,Y=2.0,Z=3.0)' for vectors).
+
+        Returns:
+            Dict with 'blueprint', 'variable_name', 'default_value', 'success'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("set_blueprint_variable_default", {
+                "blueprint_name": blueprint_name,
+                "variable_name":  variable_name,
+                "default_value":  default_value,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ===================================================================
+    # Phase 4: Blueprint component inspection (L-020)
+    # ===================================================================
+
+    @mcp.tool()
+    def get_blueprint_components(
+        ctx: Context,
+        blueprint_name: str,
+    ) -> Dict:
+        """List all components of a Blueprint (SCS + native C++ components).
+
+        For each SCS component the response includes its class name and
+        any properties that differ from the component class defaults.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+
+        Returns:
+            Dict with 'blueprint', 'count', and 'components' array.
+            Each component entry has: 'name', 'source' ('SCS' or 'NativeC++'),
+            'class', and optionally 'modified_properties' (dict of prop -> value).
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("get_blueprint_components", {
+                "blueprint_name": blueprint_name,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ===================================================================
+    # Phase 5: NavMesh setup (L-014)
+    # ===================================================================
+
+    @mcp.tool()
+    def setup_navmesh(
+        ctx: Context,
+        extent: Optional[List[float]] = None,
+        location: Optional[List[float]] = None,
+        rebuild: bool = True,
+    ) -> Dict:
+        """Spawn or resize a NavMeshBoundsVolume in the current editor level.
+
+        If a NavMeshBoundsVolume already exists it will be resized and
+        repositioned instead of creating a duplicate.  After placement the
+        navigation system is optionally rebuilt so AI characters can
+        immediately use the navmesh.
+
+        Args:
+            extent:   Half-extents [X, Y, Z] in cm (default [5000, 5000, 500]).
+                      The volume will cover a 2*X by 2*Y by 2*Z area.
+            location: Centre location [X, Y, Z] in cm (default [0, 0, 0]).
+            rebuild:  Trigger a nav-system rebuild after placement (default True).
+
+        Returns:
+            Dict with 'action' ('created' or 'resized_existing'),
+            'actor' (volume name), 'rebuilt', 'success'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if extent is None:
+                extent = [5000.0, 5000.0, 500.0]
+            if location is None:
+                location = [0.0, 0.0, 0.0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("setup_navmesh", {
+                "extent":   extent,
+                "location": location,
+                "rebuild":  rebuild,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     logger.info("Blueprint node tools registered")

@@ -972,12 +972,24 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
 
     if (bHadErrors)
     {
-        // Return an error-style response so Python callers see status="error"
+        // L-017: surface full error details to the CLI caller.
+        // We set success=false AND include the messages array so the Python
+        // tool can forward the per-node error strings to the AI.
         FString Summary = FString::Printf(
-            TEXT("Blueprint '%s' compiled with %d error(s). Check 'messages' for details."),
-            *BlueprintName, ResultsLog.NumErrors);
-        return FUnrealMCPCommonUtils::CreateErrorResponse(Summary);
+            TEXT("Blueprint '%s' compiled with %d error(s) and %d warning(s)."),
+            *BlueprintName, ResultsLog.NumErrors, ResultsLog.NumWarnings);
+        ResultObj->SetBoolField(TEXT("success"), false);
+        ResultObj->SetStringField(TEXT("error"), Summary);
+        return ResultObj;
     }
+
+    // Build a first-error summary for convenience even on success-with-warnings
+    if (bHadWarnings && Messages.Num() > 0)
+    {
+        FString FirstWarn = Messages[0]->AsObject()->GetStringField(TEXT("message"));
+        ResultObj->SetStringField(TEXT("first_warning"), FirstWarn);
+    }
+
     return ResultObj;
 }
 

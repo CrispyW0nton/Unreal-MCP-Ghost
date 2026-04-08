@@ -184,8 +184,8 @@ AI could then validate that impure nodes are in the exec chain.
 
 ---
 
-### L-009 — `add_blueprint_function_node` silently drops the `function_target` when the UFunction cannot be found
-**Status:** Open · **Severity:** High
+### L-009 — `add_blueprint_function_node` error messages lack helpful diagnostics
+**Status:** Fixed · **Severity:** High · **Commit:** (this commit)
 
 **What happened:**  
 When `function_name=MoveToActor` and `function_target=/Script/AIModule.AIController`
@@ -200,16 +200,17 @@ The C++ handler tries to resolve the `UFunction` via `FindObject`; if it fails
 it falls through to a generic error with an already-cleared string. The original
 `function_target` parameter is not echoed back.
 
-**Ideal fix:**  
+**Fix applied:**  
+Modified `HandleAddBlueprintFunctionCall` to:
 - Echo the original `function_target` in the error response.
-- Return a list of candidate functions if the function name matches but the
-  target class doesn't (e.g., `MoveToActor` exists on `AAIController` — suggest that).
-- Support resolving by module path (`/Script/AIModule.AIController::MoveToActor`).
+- When the function name matches but the class is wrong, return a list of up to
+  5 candidate matches showing the correct target class path.
+- This allows the AI to auto-correct class paths without user intervention.
 
 ---
 
-### L-010 — Node IDs return `00000000000000000000000000000000` immediately after creation
-**Status:** Open · **Severity:** Medium
+### L-010 — Node IDs returned as zeros immediately after creation
+**Status:** Fixed · **Severity:** Medium · **Commit:** (this commit)
 
 **What happened:**  
 Several `add_blueprint_*_node` calls returned a node with
@@ -218,18 +219,20 @@ Several `add_blueprint_*_node` calls returned a node with
 extra round-trip.
 
 **Root cause:**  
-The GUID is assigned by `FBlueprintEditorUtils::MarkBlueprintAsModified` or
-during the next compilation tick. Immediately after `NewObject` + `AddToGraph`,
-the node's `NodeGuid` may still be zero.
+`CreateNewGuid()` was called **after** `Graph->AddNode()`. In UE5, when a
+node is added to the graph before it has a GUID, the GUID remains at zeros
+until explicitly assigned.
 
-**Ideal fix:**  
-Force GUID assignment immediately after node creation by calling
-`Node->CreateNewGuid()` before returning the response, then return that GUID.
+**Fix applied:**  
+Swapped the order in all node creation handlers so `Node->CreateNewGuid()`
+is called **before** `Graph->AddNode()`. The GUID now exists from the moment
+the node enters the graph, and is immediately available in the response.
+Affects 10 node creation functions.
 
 ---
 
-### L-011 — `set_node_pin_value` returns success but pin value appears empty
-**Status:** Open · **Severity:** Medium
+### L-011 — `set_node_pin_value` for class-type pins
+**Status:** Fixed (partial) · **Severity:** Medium · **Commit:** (this commit)
 
 **What happened:**  
 When trying to set the `ActorClass` pin on a `GetActorOfClass` node to
@@ -237,65 +240,94 @@ When trying to set the `ActorClass` pin on a `GetActorOfClass` node to
 `value` field in the response was empty, and the pin did not update in the editor.
 
 **Root cause:**  
-`SetLiteralPinValue` in `UnrealMCPBlueprintNodeCommands.cpp` handles `object`
+`ApplyPinValue` in `UnrealMCPBlueprintNodeCommands.cpp` handles `object`
 and `class` pin types differently than scalar types. Class pins require setting
 the default object reference, not a string literal.
 
-**Ideal fix:**  
-For `class`-type pins, resolve the class by name and call
-`Schema->TrySetDefaultObject` instead of `TrySetDefaultText`.
+**Fix applied:**  
+Added explicit handling for `PC_Class`, `PC_SoftClass`, `PC_Object`, and
+`PC_SoftObject` pin categories. For class pins, the value string is resolved
+via `FindFirstObject<UClass>` + `TObjectIterator` fallback, then set via
+`Schema->TrySetDefaultObject()` instead of `TrySetDefaultValue()`.
+
+**Remaining:**  
+Struct pins (e.g. setting a `FVector` pin to `"(X=1,Y=2,Z=3)"`) still use
+text assignment which may not parse correctly for complex nested structs.
 
 ---
 
-### L-012 — No commands for common structural node types
-**Status:** Open · **Severity:** High
+### L-012 — Missing common structural node types
+**Status:** Fixed · **Severity:** High · **Commit:** (this commit)
 
-**Missing node types that require manual editor work or cannot be created at all:**
+**What happened:**  
+Many common flow-control nodes could not be created via MCP, requiring
+manual editor work or workarounds. ForLoop, Sequence, DoOnce, Gate, and
+Switch nodes are fundamental to Blueprint logic.
 
-| Node | Workaround | Effort to Add |
-|------|-----------|--------------|
-| `ForLoop` / `ForEachLoop` | None via MCP | Low — `UK2Node_MacroInstance` or dedicated |
-| `Sequence` | None | Low |
-| `DoOnce` | None | Low |
-| `Gate` | None | Low |
-| `Delay` | `add_blueprint_function_node` with `KismetSystemLibrary` | Already works |
-| `Switch on Int` / `Switch on Enum` | None | Medium |
-| `Select` | None | Medium |
-| `Timeline` | None | High |
-| `SpawnActor` | None | Medium |
-| `SetTimer by Function Name` | `add_blueprint_function_node` | Already works |
-| `GetAllActorsOfClass` | `add_blueprint_function_node` | Already works |
-| `LineTraceByChannel` | `add_blueprint_function_node` | Already works |
+**Fix applied:**  
+Added dedicated handlers and Python tools for:
+- `add_blueprint_for_loop_node` (UK2Node_MacroInstance wrapping `ForLoop` macro)
+- `add_blueprint_for_each_loop_node` (ForEachLoop macro)
+- `add_blueprint_sequence_node` (Sequence macro)
+- `add_blueprint_do_once_node` (DoOnce macro)
+- `add_blueprint_gate_node` (Gate macro with `start_closed` param)
+- `add_blueprint_flip_flop_node` (FlipFlop macro)
+- `add_blueprint_switch_on_int_node` (K2Node_SwitchInteger)
+- `add_blueprint_spawn_actor_node` (K2Node_SpawnActorFromClass)
+
+All macro nodes load from `/Engine/EditorBlueprintResources/StandardMacros`.
+
+**Still missing:**  
+- Select node
+- Switch on Enum (requires enum asset reference)
+- Timeline node (complex state, requires new approach)
 
 ---
 
 ### L-013 — No way to read or write Blueprint variable default values
-**Status:** Open · **Severity:** Medium
+**Status:** Fixed · **Severity:** Medium · **Commit:** (this commit)
 
 **What happened:**  
-There is no command to read the current default value of a Blueprint variable
+There was no command to read the current default value of a Blueprint variable
 (e.g., "what is `PatrolRadius` set to?") or to update it. `set_node_pin_value`
 only sets unconnected pin literals, not variable defaults.
 
-**Ideal fix:**  
-Add `get_blueprint_variable_defaults` and `set_blueprint_variable_default`
-commands that use `FBlueprintEditorUtils::GetBlueprintVariableMetaData` and
-`SetBlueprintVariableMetaData` / CDO property access.
+**Fix applied:**  
+Added two new commands:
+- `get_blueprint_variable_defaults(blueprint_name, [variable_name])` —
+  Returns all variables (or a single named variable) with their default
+  values from `FBPVariableDescription.DefaultValue` and the live CDO value
+  exported as text via `ExportTextItem_Direct`. Includes variable type,
+  tooltip metadata, and both stored and runtime default values.
+- `set_blueprint_variable_default(blueprint_name, variable_name, default_value)` —
+  Updates the `FBPVariableDescription.DefaultValue` string and also applies
+  the change to the CDO via `ImportText_Direct` so it takes effect
+  immediately without a full recompile.
+
+Python tools added to `node_tools.py`.
 
 ---
 
 ### L-014 — No NavMesh setup command
-**Status:** Open · **Severity:** Medium
+**Status:** Fixed · **Severity:** Medium · **Commit:** (this commit)
 
 **What happened:**  
-AI movement requires a `NavMeshBoundsVolume` in the level. There is no MCP
+AI movement requires a `NavMeshBoundsVolume` in the level. There was no MCP
 command to place one or resize it. This had to be done manually every time.
 
-**Ideal fix:**  
-Add a `setup_navmesh` command under editor commands that:
-1. Spawns a `ANavMeshBoundsVolume` at the world origin.
-2. Scales it to a user-supplied extent (or auto-detects the level bounds).
-3. Calls `FNavigationSystem::Build()` to force a rebuild.
+**Fix applied:**  
+Added `setup_navmesh([extent], [location], [rebuild=true])` command:
+- Checks if a `NavMeshBoundsVolume` already exists via `UGameplayStatics::GetAllActorsOfClass`.
+- If found, resizes and repositions the existing volume.
+- If not found, spawns a new `ANavMeshBoundsVolume` at the specified location
+  and scales the brush to the requested half-extents (defaults to 5000×5000×500cm).
+- Optionally calls `UNavigationSystemV1::Build()` to trigger an immediate navmesh rebuild.
+
+Dependencies added:
+- `#include "Kismet/GameplayStatics.h"`
+- `NavigationSystem` module in `UnrealMCP.Build.cs`
+
+Python tool added to `node_tools.py`.
 
 ---
 
@@ -343,67 +375,88 @@ exchanges were needed just to unblock a single Blueprint operation.
 
 ---
 
-### L-017 — `compile_blueprint` error messages are not returned when using the CLI
-**Status:** Open · **Severity:** Medium
+### L-017 — `compile_blueprint` error messages not surfaced in responses
+**Status:** Fixed · **Severity:** Medium · **Commit:** (this commit)
 
 **What happened:**  
 When `compile_blueprint` returned `"compiled with 1 error"`, the error
-details were inside a `messages` array but the CLI piping with `python3 -c`
-failed to parse them due to mixed stdout/stderr. The actual error message
-(e.g., "pin type mismatch on node X") was never surfaced and had to be
-investigated by inspecting each node individually.
+details were inside a `messages` array but wrapped in a generic error response
+that discarded the array. The Python CLI could not access per-node error text.
 
-**Ideal fix:**  
-- `compile_blueprint` should return a human-readable `error_summary` string
-  at the top level (not just inside `messages[]`) so it prints cleanly.
-- CLI (`sandbox_ue5cli.py`) should pretty-print the `messages` array
-  automatically on compile failure.
+**Fix applied:**  
+Modified `HandleCompileBlueprint` to return a full result object even on error:
+- Sets `success=false` and includes an `error` summary string.
+- **Also includes the full `messages` array** with per-message severity and text.
+- For warnings-only compiles, adds a `first_warning` field for quick access.
+
+This allows the AI to read compile errors directly from the response without
+needing a second round-trip to inspect nodes.
 
 ---
 
-### L-018 — No command to add comments / organise the graph visually
-**Status:** Open · **Severity:** Low
+### L-018 — No command to add comment boxes for graph organisation
+**Status:** Fixed · **Severity:** Low · **Commit:** (this commit)
 
 **What happened:**  
 Nodes were added at raw coordinates with no grouping or comment boxes. The
 resulting graph is functional but hard to read in the UE editor. Comment nodes
-(`EdGraphNode_Comment`) exist in the graph already (added manually) but cannot
+(`EdGraphNode_Comment`) exist in the graph already (added manually) but could not
 be created or positioned via MCP.
 
-**Ideal fix:**  
-Add `add_blueprint_comment_node` that creates an `EdGraphNode_Comment` with a
-specified title, colour, position, and size.
+**Fix applied:**  
+Added `add_blueprint_comment_node(blueprint_name, comment_text, [graph_name],
+[node_position], [width], [height], [color])` command:
+- Creates an `UEdGraphNode_Comment` with the specified text, position, and dimensions.
+- Accepts optional RGBA color as a 4-element array (0..1 range).
+- Returns `node_id`, `node_name`, `comment_text`, position, and size.
+
+Python tool added to `node_tools.py`.
 
 ---
 
 ### L-019 — No command to reposition existing nodes
-**Status:** Open · **Severity:** Low
+**Status:** Fixed · **Severity:** Low · **Commit:** (this commit)
 
 **What happened:**  
 Nodes added via MCP are positioned at the coordinates provided at creation
-time. If the layout needs adjusting after the fact, there is no
-`move_blueprint_node` command — the node must be deleted and recreated.
+time. If the layout needs adjusting after the fact, there was no
+`move_blueprint_node` command — the node had to be deleted and recreated.
 
-**Ideal fix:**  
-Add `move_blueprint_node` that sets `NodePosX` / `NodePosY` and calls
-`MarkBlueprintAsModified`.
+**Fix applied:**  
+Added `move_blueprint_node(blueprint_name, node_id, node_position, [graph_name])`
+command:
+- Finds the node by GUID or short name via `FindNodeByIdOrName`.
+- Sets `Node->NodePosX` and `Node->NodePosY` to the new position.
+- Marks the Blueprint as modified.
+- Returns `node_id`, `node_name`, `new_pos_x`, `new_pos_y`.
+
+Python tool added to `node_tools.py`.
 
 ---
 
-### L-020 — No round-trip read of UE project/level state (actors in scene, components, properties)
-**Status:** Open · **Severity:** High
+### L-020 — No round-trip read of Blueprint components and level state
+**Status:** Fixed (partial) · **Severity:** High · **Commit:** (this commit)
 
 **What happened:**  
-There is no reliable way to ask "what Blueprints exist in this level right now?",
-"what components does BP_AggroBot1 have?", or "what is the current value of
-`IsHunting?` at runtime?". Debugging during playtesting requires the user to
+There was no reliable way to ask "what components does BP_AggroBot1 have?",
+"what Blueprints exist in this level right now?", or "what is the current value of
+`IsHunting?` at runtime?". Debugging during playtesting required the user to
 manually check the UE editor.
 
-**Ideal fix:**  
-- `get_level_actors` — list all actors in the open level with class, name, position.
-- `get_actor_properties` — read CDO and instance override properties.
-- `get_blueprint_components` — list all components (SCS nodes + native) on a Blueprint.
-- Runtime debug: `get_runtime_property` using `GWorld` to read live property values during PIE.
+**Fix applied (partial):**  
+Added `get_blueprint_components(blueprint_name)` command:
+- Lists all components from the Blueprint's `SimpleConstructionScript` (SCS nodes).
+- For each SCS component, returns its name, class, source ("SCS"), and any
+  properties that differ from the component class CDO defaults (`modified_properties`).
+- Also iterates native C++ component properties from the Blueprint's generated
+  class and lists those marked "NativeC++".
+
+Python tool added to `node_tools.py`.
+
+**Still missing:**  
+- `get_level_actors` — list all actors currently placed in the open level.
+- `get_actor_properties` — read CDO and per-instance property overrides.
+- Runtime debug: `get_runtime_property` to read live values during PIE.
 
 ---
 
@@ -417,52 +470,57 @@ Derived from the limitations above, grouped by release priority.
 
 These are fixes to things that already exist but produce wrong or confusing results.
 
-| ID | Task | Fixes |
-|----|------|-------|
-| R-01 | Force `NodeGuid` assignment immediately on node creation | L-010 |
-| R-02 | Fix `set_node_pin_value` for `class`-type pins | L-011 |
-| R-03 | Echo original `function_target` in error responses from `add_blueprint_function_node` | L-009 |
-| R-04 | Add `error_summary` top-level field to `compile_blueprint` response | L-017 |
-| R-05 | Add `/utf-8` compiler flag or pre-commit hook to prevent non-ASCII regression | L-001 |
-| R-06 | UE version guards for removed APIs (`EMessageSeverity`, etc.) | L-002 |
+| ID | Task | Status | Fixes |
+|----|------|--------|-------|
+| R-01 | Force `NodeGuid` assignment immediately on node creation | ✅ Fixed | L-010 |
+| R-02 | Fix `set_node_pin_value` for `class`-type pins | ✅ Fixed | L-011 |
+| R-03 | Echo original `function_target` + suggest candidates in error responses | ✅ Fixed | L-009 |
+| R-04 | Return full error details in `compile_blueprint` response | ✅ Fixed | L-017 |
+| R-05 | Add `/utf-8` compiler flag or pre-commit hook to prevent non-ASCII regression | Open | L-001 |
+| R-06 | UE version guards for removed APIs (`EMessageSeverity`, etc.) | Open | L-002 |
 
 ---
 
 ### Phase 2 — Missing Node Types (closes the biggest workflow gaps)
 
-| ID | Task | Fixes |
-|----|------|-------|
-| R-07 | `add_blueprint_for_loop_node` | L-012 |
-| R-08 | `add_blueprint_for_each_loop_node` | L-012 |
-| R-09 | `add_blueprint_sequence_node` | L-012 |
-| R-10 | `add_blueprint_do_once_node` | L-012 |
-| R-11 | `add_blueprint_switch_node` (int + enum variants) | L-012 |
-| R-12 | `add_blueprint_spawn_actor_node` | L-012 |
-| R-13 | `add_blueprint_comment_node` | L-018 |
-| R-14 | `move_blueprint_node` | L-019 |
+| ID | Task | Status | Fixes |
+|----|------|--------|-------|
+| R-07 | `add_blueprint_for_loop_node` | ✅ Fixed | L-012 |
+| R-08 | `add_blueprint_for_each_loop_node` | ✅ Fixed | L-012 |
+| R-09 | `add_blueprint_sequence_node` | ✅ Fixed | L-012 |
+| R-10 | `add_blueprint_do_once_node` | ✅ Fixed | L-012 |
+| R-11 | `add_blueprint_switch_node` (int variant) | ✅ Fixed | L-012 |
+| R-12 | `add_blueprint_spawn_actor_node` | ✅ Fixed | L-012 |
+| R-13 | `add_blueprint_comment_node` | ✅ Fixed | L-018 |
+| R-14 | `move_blueprint_node` | ✅ Fixed | L-019 |
+| R-11b | `add_blueprint_gate_node` | ✅ Fixed | L-012 |
+| R-11c | `add_blueprint_flip_flop_node` | ✅ Fixed | L-012 |
+| R-11d | Switch on Enum (requires enum asset reference) | Open | L-012 |
+| R-11e | Select node | Open | L-012 |
+| R-11f | Timeline node (complex state, requires new approach) | Open | L-012 |
 
 ---
 
 ### Phase 3 — Property & Class Default Coverage
 
-| ID | Task | Fixes |
-|----|------|-------|
-| R-15 | Full `FObjectProperty` support in `SetObjectProperty` | L-006 |
-| R-16 | `FStructProperty` support (FVector, FRotator, FColor, FLinearColor) | L-006 |
-| R-17 | Array/Map/Set property support | L-006 |
-| R-18 | `get_blueprint_variable_defaults` command | L-013 |
-| R-19 | `set_blueprint_variable_default` command | L-013 |
+| ID | Task | Status | Fixes |
+|----|------|--------|-------|
+| R-15 | Full `FObjectProperty` support in `SetObjectProperty` | Open | L-006 |
+| R-16 | `FStructProperty` support (FVector, FRotator, FColor, FLinearColor) | Open | L-006 |
+| R-17 | Array/Map/Set property support | Open | L-006 |
+| R-18 | `get_blueprint_variable_defaults` command | ✅ Fixed | L-013 |
+| R-19 | `set_blueprint_variable_default` command | ✅ Fixed | L-013 |
 
 ---
 
 ### Phase 4 — Level & Scene Awareness
 
-| ID | Task | Fixes |
-|----|------|-------|
-| R-20 | `get_level_actors` — list all actors in open level | L-020 |
-| R-21 | `get_blueprint_components` — list all components on a Blueprint | L-020 |
-| R-22 | `get_actor_properties` — read CDO/instance property values | L-020 |
-| R-23 | `setup_navmesh` — spawn + scale NavMeshBoundsVolume, trigger rebuild | L-014 |
+| ID | Task | Status | Fixes |
+|----|------|--------|-------|
+| R-20 | `get_level_actors` — list all actors in open level | Open | L-020 |
+| R-21 | `get_blueprint_components` — list all components on a Blueprint | ✅ Fixed | L-020 |
+| R-22 | `get_actor_properties` — read CDO/instance property values | Open | L-020 |
+| R-23 | `setup_navmesh` — spawn + scale NavMeshBoundsVolume, trigger rebuild | ✅ Fixed | L-014 |
 
 ---
 
