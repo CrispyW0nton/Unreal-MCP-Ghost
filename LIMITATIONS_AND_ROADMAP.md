@@ -460,6 +460,46 @@ Python tool added to `node_tools.py`.
 
 ---
 
+### L-021 — SpawnActorFromClass node crashes on creation
+**Status:** Fixed · **Severity:** Critical · **Commit:** `9f9f7b2`
+
+**What happened:**  
+When calling `add_blueprint_spawn_actor_node` to create a `UK2Node_SpawnActorFromClass`
+node in a Blueprint, Unreal Engine would crash with an assertion failure at
+`EdGraphNode.h:586`. The crash occurred after the node was added to the graph and
+`PostPlacedNewNode()` was called.
+
+**Root cause:**  
+`UK2Node_SpawnActorFromClass` has unique initialization requirements. Unlike most
+Blueprint nodes, calling `PostPlacedNewNode()` on this node type triggers internal
+logic that expects certain preconditions that aren't met when the node is created
+programmatically. The assertion at EdGraphNode.h:586 typically relates to GUID
+operations or node graph state validation.
+
+**Initial attempted fix (failed):**  
+Removed calls to `AllocateDefaultPins()` and `ReconstructNode()`, letting
+`PostPlacedNewNode()` handle everything. This still crashed.
+
+**Fix applied:**  
+Changed the initialization sequence to ONLY call `AllocateDefaultPins()` after
+adding the node to the graph. Skip `PostPlacedNewNode()` and `ReconstructNode()`
+entirely. The Blueprint editor will complete initialization when the graph is
+opened or compiled. This minimal initialization prevents the crash while still
+creating a functional node.
+
+```cpp
+Node->CreateNewGuid();
+Graph->AddNode(Node);
+Node->AllocateDefaultPins();  // Only this - no PostPlacedNewNode!
+```
+
+**Testing note:**  
+The node may appear incomplete in the graph until the Blueprint is compiled or
+the graph is closed and reopened, but it will function correctly once initialized
+by the editor.
+
+---
+
 ## Roadmap
 
 Derived from the limitations above, grouped by release priority.
