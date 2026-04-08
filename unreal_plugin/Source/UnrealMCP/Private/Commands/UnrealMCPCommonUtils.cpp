@@ -298,24 +298,15 @@ UK2Node_VariableGet* FUnrealMCPCommonUtils::CreateVariableGetNode(UEdGraph* Grap
     }
     
     UK2Node_VariableGet* VariableGetNode = NewObject<UK2Node_VariableGet>(Graph);
+    VariableGetNode->VariableReference.SetSelfMember(FName(*VariableName));
+    VariableGetNode->NodePosX = Position.X;
+    VariableGetNode->NodePosY = Position.Y;
+    VariableGetNode->CreateNewGuid();
+    Graph->AddNode(VariableGetNode, true);
+    VariableGetNode->PostPlacedNewNode();
+    VariableGetNode->AllocateDefaultPins();
     
-    FName VarName(*VariableName);
-    FProperty* Property = FindFProperty<FProperty>(Blueprint->GeneratedClass, VarName);
-    
-    if (Property)
-    {
-        VariableGetNode->VariableReference.SetFromField<FProperty>(Property, false);
-        VariableGetNode->NodePosX = Position.X;
-        VariableGetNode->NodePosY = Position.Y;
-        VariableGetNode->CreateNewGuid();
-        Graph->AddNode(VariableGetNode, true);
-        VariableGetNode->PostPlacedNewNode();
-        VariableGetNode->AllocateDefaultPins();
-        
-        return VariableGetNode;
-    }
-    
-    return nullptr;
+    return VariableGetNode;
 }
 
 UK2Node_VariableSet* FUnrealMCPCommonUtils::CreateVariableSetNode(UEdGraph* Graph, UBlueprint* Blueprint, const FString& VariableName, const FVector2D& Position)
@@ -326,24 +317,15 @@ UK2Node_VariableSet* FUnrealMCPCommonUtils::CreateVariableSetNode(UEdGraph* Grap
     }
     
     UK2Node_VariableSet* VariableSetNode = NewObject<UK2Node_VariableSet>(Graph);
+    VariableSetNode->VariableReference.SetSelfMember(FName(*VariableName));
+    VariableSetNode->NodePosX = Position.X;
+    VariableSetNode->NodePosY = Position.Y;
+    VariableSetNode->CreateNewGuid();
+    Graph->AddNode(VariableSetNode, true);
+    VariableSetNode->PostPlacedNewNode();
+    VariableSetNode->AllocateDefaultPins();
     
-    FName VarName(*VariableName);
-    FProperty* Property = FindFProperty<FProperty>(Blueprint->GeneratedClass, VarName);
-    
-    if (Property)
-    {
-        VariableSetNode->VariableReference.SetFromField<FProperty>(Property, false);
-        VariableSetNode->NodePosX = Position.X;
-        VariableSetNode->NodePosY = Position.Y;
-        VariableSetNode->CreateNewGuid();
-        Graph->AddNode(VariableSetNode, true);
-        VariableSetNode->PostPlacedNewNode();
-        VariableSetNode->AllocateDefaultPins();
-        
-        return VariableSetNode;
-    }
-    
-    return nullptr;
+    return VariableSetNode;
 }
 
 UK2Node_InputAction* FUnrealMCPCommonUtils::CreateInputActionNode(UEdGraph* Graph, const FString& ActionName, const FVector2D& Position)
