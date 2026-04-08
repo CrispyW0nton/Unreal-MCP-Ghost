@@ -667,6 +667,60 @@ producing clean nodes without extra Target pins.
 
 ---
 
+### Enhancement — Organized Graph Layout System
+**Status:** Added · **Commit:** TBD
+
+**What was added:**  
+Created a comprehensive graph layout system (`graph_layout.py`) that automatically positions
+nodes in a clean, professional manner following Unreal Engine best practices:
+
+**Features:**
+1. **GraphLayout class** - Manages automatic node positioning with:
+   - Consistent horizontal/vertical spacing
+   - Left-to-right execution flow
+   - No crossed wires
+   - Data/reference nodes positioned below execution chain
+   
+2. **NodeBuilder class** - High-level API for creating organized graphs:
+   - Automatic positioning for events, functions, and reference nodes
+   - Built-in connection management
+   - Pin value setting
+   - Compilation helpers
+
+3. **Helper functions** - Pre-built patterns for common tasks:
+   - `create_simple_movement_graph()` - Standard Tick-based movement
+   - More patterns can be added as needed
+
+**Usage example:**
+```python
+from unreal_mcp_server.tools.graph_layout import NodeBuilder, GraphLayout
+
+layout = GraphLayout(start_x=-800, start_y=0, x_spacing=320, y_spacing=120)
+builder = NodeBuilder(connection, "BP_MyBlueprint", layout=layout)
+
+# Create nodes with automatic positioning
+tick_id = builder.add_event("ReceiveTick")
+multiply_id = builder.add_function("Multiply_VectorFloat", target="KismetMathLibrary")
+offset_id = builder.add_function("K2_AddActorLocalOffset")
+self_id = builder.add_self_ref(below_column=2)
+
+# Connect and configure
+builder.connect(tick_id, "then", offset_id, "execute")
+builder.set_pin_value(multiply_id, "A", "100.0, 0.0, 0.0")
+# ... more connections
+
+# Compile
+builder.compile()
+```
+
+**Result:** Clean, maintainable Blueprint graphs that follow professional organization standards.
+
+**Key fix discovered:** The `move_blueprint_node` command requires `node_position` as an
+**array** `[-800, 0]`, not a dict `{"x": -800, "y": 0}`. The C++ code uses
+`TryGetArrayField` to parse positions.
+
+---
+
 ## Roadmap
 
 Derived from the limitations above, grouped by release priority.
