@@ -924,7 +924,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleFindBlueprintNode
     // Normalise node_type to lower-case for case-insensitive comparison
     FString NodeTypeLower = NodeType.ToLower();
 
-    // Create JSON arrays — we return both node_guids (legacy) and nodes (rich objects)
+    // Create JSON arrays ? we return both node_guids (legacy) and nodes (rich objects)
     TArray<TSharedPtr<FJsonValue>> NodeGuidArray;
     TArray<TSharedPtr<FJsonValue>> NodesArray;
 

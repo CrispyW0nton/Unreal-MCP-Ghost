@@ -433,7 +433,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
 
     if (!FPackageName::DoesPackageExist(AssetPath))
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint '%s' not found – it must reside under /Game/Blueprints"), *BlueprintName));
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint '%s' not found ? it must reside under /Game/Blueprints"), *BlueprintName));
     }
 
     UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
@@ -613,37 +613,37 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleTakeScreenshot(const TSh
     return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to take screenshot"));
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// exec_python — execute arbitrary Python code inside the UE editor context
+// ?????????????????????????????????????????????????????????????????????????????
+// exec_python ? execute arbitrary Python code inside the UE editor context
 //
 // Request params:
-//   code        (string, required) — the Python source to execute.
+//   code        (string, required) ? the Python source to execute.
 //               Multi-line code must use \n as line separator.
-//   mode        (string, optional) — execution mode:
+//   mode        (string, optional) ? execution mode:
 //                 "execute_file"      (default) run as a script / file
 //                 "execute_statement" run a single statement (prints result)
 //                 "evaluate_statement" evaluate an expression, return its value
 //
 // Response fields on success:
-//   output      (string) — captured log output from the Python run
-//   result      (string) — expression result (only for evaluate_statement mode)
-//   success     (bool)   — true
+//   output      (string) ? captured log output from the Python run
+//   result      (string) ? expression result (only for evaluate_statement mode)
+//   success     (bool)   ? true
 //
 // Response on failure:
-//   error       (string) — Python traceback / error description
-//   success     (bool)   — false
-// ─────────────────────────────────────────────────────────────────────────────
+//   error       (string) ? Python traceback / error description
+//   success     (bool)   ? false
+// ?????????????????????????????????????????????????????????????????????????????
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TSharedPtr<FJsonObject>& Params)
 {
-    // ── 1. Check that Python scripting is available ───────────────────────────
+    // ?? 1. Check that Python scripting is available ???????????????????????????
     IPythonScriptPlugin* PythonPlugin = IPythonScriptPlugin::Get();
     if (!PythonPlugin || !PythonPlugin->IsPythonAvailable())
     {
         return FUnrealMCPCommonUtils::CreateErrorResponse(
-            TEXT("Python scripting is not available. Enable the 'Python Editor Script Plugin' in Edit → Plugins."));
+            TEXT("Python scripting is not available. Enable the 'Python Editor Script Plugin' in Edit ? Plugins."));
     }
 
-    // ── 2. Get required 'code' parameter ────────────────────────────────────
+    // ?? 2. Get required 'code' parameter ????????????????????????????????????
     FString Code;
     if (!Params->TryGetStringField(TEXT("code"), Code))
     {
@@ -655,10 +655,10 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'code' parameter must not be empty"));
     }
 
-    // ── 3. Parse optional 'mode' parameter ──────────────────────────────────
-    //  "execute_file"      → EPythonCommandExecutionMode::ExecuteFile      (default)
-    //  "execute_statement" → EPythonCommandExecutionMode::ExecuteStatement
-    //  "evaluate_statement"→ EPythonCommandExecutionMode::EvaluateStatement
+    // ?? 3. Parse optional 'mode' parameter ??????????????????????????????????
+    //  "execute_file"      ? EPythonCommandExecutionMode::ExecuteFile      (default)
+    //  "execute_statement" ? EPythonCommandExecutionMode::ExecuteStatement
+    //  "evaluate_statement"? EPythonCommandExecutionMode::EvaluateStatement
     FString ModeStr;
     Params->TryGetStringField(TEXT("mode"), ModeStr);
 
@@ -676,7 +676,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     UE_LOG(LogTemp, Display, TEXT("exec_python: running mode=%s, code length=%d"),
            *ModeStr, Code.Len());
 
-    // ── 4. Execute ────────────────────────────────────────────────────────────
+    // ?? 4. Execute ????????????????????????????????????????????????????????????
     FPythonCommandEx Command;
     Command.Command  = Code;
     Command.ExecutionMode = ExecMode;
@@ -684,7 +684,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
 
     const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
 
-    // ── 5. Collect log output into a single string ───────────────────────────
+    // ?? 5. Collect log output into a single string ???????????????????????????
     FString LogOutput;
     for (const FPythonLogOutputEntry& Entry : Command.LogOutput)
     {
@@ -703,7 +703,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     }
     LogOutput = LogOutput.TrimEnd();
 
-    // ── 6. Build response ─────────────────────────────────────────────────────
+    // ?? 6. Build response ?????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetBoolField(TEXT("success"), bOk);
     ResultObj->SetStringField(TEXT("output"), LogOutput);

@@ -80,10 +80,10 @@ uint32 FMCPServerRunnable::Run()
                         bGotData = true;
                         break;
                     }
-                    // Also check connection state — remote may have closed already
+                    // Also check connection state - remote may have closed already
                     if (ClientSocket->GetConnectionState() != SCS_Connected)
                     {
-                        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Probe connection closed before sending data — ignoring"));
+                        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Probe connection closed before sending data - ignoring"));
                         break;
                     }
                     FPlatformProcess::Sleep(kPollIntervalSecs);
@@ -92,7 +92,7 @@ uint32 FMCPServerRunnable::Run()
 
                 if (!bGotData)
                 {
-                    UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: No data received within %.1f s — treating as health-check probe, skipping"), kProbeTimeoutSecs);
+                    UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: No data received within %.1f s - treating as health-check probe, skipping"), kProbeTimeoutSecs);
                     // Close the probe socket and loop back to accept the next real connection
                     ClientSocket->Close();
                     ClientSocket.Reset();
@@ -100,7 +100,7 @@ uint32 FMCPServerRunnable::Run()
                     continue;
                 }
 
-                // Real data is pending — enter the message loop
+                // Real data is pending - enter the message loop
                 UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Data pending, entering message loop"));
 
                 uint8 Buffer[8192];

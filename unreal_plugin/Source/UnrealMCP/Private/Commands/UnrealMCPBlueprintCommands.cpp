@@ -201,7 +201,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
         return C;
     };
 
-    // 0. Known component name → canonical path table (covers the most common cases)
+    // 0. Known component name ? canonical path table (covers the most common cases)
     //    Accepts short names like "StaticMesh", "StaticMeshComponent", "Camera", etc.
     {
         // Build a normalised lookup key: strip leading 'U', strip trailing 'Component', lower-case
@@ -245,7 +245,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
             if (Key == Entry.Key)
             {
                 ComponentClass = TryLoad(FString(Entry.Path));
-                UE_LOG(LogTemp, Display, TEXT("AddComponent: resolved '%s' → '%s' (%s)"),
+                UE_LOG(LogTemp, Display, TEXT("AddComponent: resolved '%s' ? '%s' (%s)"),
                     *ComponentType, Entry.Path, ComponentClass ? TEXT("OK") : TEXT("FAILED"));
                 break;
             }

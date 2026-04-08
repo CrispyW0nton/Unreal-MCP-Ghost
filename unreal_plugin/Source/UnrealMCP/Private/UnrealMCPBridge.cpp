@@ -282,7 +282,7 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
             {
                 ResultJson = UMGCommands->HandleCommand(CommandType, Params);
             }
-            // Extended Commands — all 283 tools from Blueprints Visual Scripting for UE5
+            // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())
             {
                 TSharedPtr<FJsonObject> ExtResult = ExtendedCommands->HandleCommand(CommandType, Params);
