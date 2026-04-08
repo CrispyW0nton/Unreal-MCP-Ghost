@@ -815,6 +815,85 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
         }
     }
     
+    else if (Property->IsA<FClassProperty>())
+    {
+        FClassProperty* ClassProp = CastField<FClassProperty>(Property);
+        if (ClassProp && Value->Type == EJson::String)
+        {
+            FString ClassName = Value->AsString();
+
+            // Try to find the class by name (short name or full path)
+            UClass* FoundClass = nullptr;
+
+            // First try as a full object path
+            FoundClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+
+            // If not found, try searching all loaded classes by short name
+            if (!FoundClass)
+            {
+                for (TObjectIterator<UClass> It; It; ++It)
+                {
+                    if (It->GetName() == ClassName || It->GetFName() == FName(*ClassName))
+                    {
+                        // Make sure the class is compatible with the property's meta class
+                        if (!ClassProp->MetaClass || It->IsChildOf(ClassProp->MetaClass))
+                        {
+                            FoundClass = *It;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (FoundClass)
+            {
+                ClassProp->SetPropertyValue(PropertyAddr, FoundClass);
+                UE_LOG(LogTemp, Display, TEXT("Setting class property %s to class: %s"),
+                       *PropertyName, *FoundClass->GetName());
+                return true;
+            }
+            else
+            {
+                OutErrorMessage = FString::Printf(TEXT("Could not find class: %s for property %s"), *ClassName, *PropertyName);
+                return false;
+            }
+        }
+    }
+    else if (Property->IsA<FSoftClassProperty>())
+    {
+        FSoftClassProperty* SoftClassProp = CastField<FSoftClassProperty>(Property);
+        if (SoftClassProp && Value->Type == EJson::String)
+        {
+            FString ClassName = Value->AsString();
+            UClass* FoundClass = FindObject<UClass>(ANY_PACKAGE, *ClassName);
+            if (!FoundClass)
+            {
+                for (TObjectIterator<UClass> It; It; ++It)
+                {
+                    if (It->GetName() == ClassName)
+                    {
+                        if (!SoftClassProp->MetaClass || It->IsChildOf(SoftClassProp->MetaClass))
+                        {
+                            FoundClass = *It;
+                            break;
+                        }
+                    }
+                }
+            }
+            if (FoundClass)
+            {
+                FSoftObjectPtr SoftPtr(FoundClass);
+                SoftClassProp->SetPropertyValue(PropertyAddr, SoftPtr);
+                return true;
+            }
+            else
+            {
+                OutErrorMessage = FString::Printf(TEXT("Could not find class: %s for property %s"), *ClassName, *PropertyName);
+                return false;
+            }
+        }
+    }
+
     OutErrorMessage = FString::Printf(TEXT("Unsupported property type: %s for property %s"), 
                                     *Property->GetClass()->GetName(), *PropertyName);
     return false;

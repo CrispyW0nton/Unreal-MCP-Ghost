@@ -22,6 +22,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
+#include "AIController.h"
 
 FUnrealMCPBlueprintCommands::FUnrealMCPBlueprintCommands()
 {
@@ -64,6 +65,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     else if (CommandType == TEXT("set_pawn_properties"))
     {
         return HandleSetPawnProperties(Params);
+    }
+    else if (CommandType == TEXT("set_blueprint_ai_controller"))
+    {
+        return HandleSetBlueprintAIController(Params);
     }
     
     return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));
@@ -1287,4 +1292,82 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
     ResponseObj->SetBoolField(TEXT("success"), bAnyPropertiesSet);
     ResponseObj->SetObjectField(TEXT("results"), ResultsObj);
     return ResponseObj;
-} 
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintAIController(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    FString ControllerClassName;
+    if (!Params->TryGetStringField(TEXT("controller_class"), ControllerClassName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'controller_class' parameter"));
+    }
+
+    UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+    }
+
+    // Find the controller class by short name or full path
+    UClass* ControllerClass = nullptr;
+
+    // Try full path first
+    ControllerClass = FindObject<UClass>(ANY_PACKAGE, *ControllerClassName);
+
+    // Fall back to iterating all loaded classes
+    if (!ControllerClass)
+    {
+        for (TObjectIterator<UClass> It; It; ++It)
+        {
+            if (It->GetName() == ControllerClassName && It->IsChildOf(AAIController::StaticClass()))
+            {
+                ControllerClass = *It;
+                break;
+            }
+        }
+    }
+
+    // Last resort: try base AIController
+    if (!ControllerClass && (ControllerClassName == TEXT("AIController") || ControllerClassName.IsEmpty()))
+    {
+        ControllerClass = AAIController::StaticClass();
+    }
+
+    if (!ControllerClass)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Could not find AI controller class: %s"), *ControllerClassName));
+    }
+
+    // Set the AIControllerClass on the Blueprint's parent class CDO
+    // The canonical place is Blueprint->GeneratedClass->GetDefaultObject<APawn>()
+    UObject* DefaultObject = Blueprint->GeneratedClass ? Blueprint->GeneratedClass->GetDefaultObject() : nullptr;
+    if (!DefaultObject)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get blueprint default object"));
+    }
+
+    APawn* DefaultPawn = Cast<APawn>(DefaultObject);
+    if (!DefaultPawn)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint is not a Pawn subclass"));
+    }
+
+    DefaultPawn->AIControllerClass = ControllerClass;
+    FBlueprintEditorUtils::MarkBlueprintAsModified(Blueprint);
+
+    UE_LOG(LogTemp, Display, TEXT("Set AIControllerClass on %s to %s"),
+           *BlueprintName, *ControllerClass->GetName());
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("blueprint"), BlueprintName);
+    ResultObj->SetStringField(TEXT("ai_controller_class"), ControllerClass->GetName());
+    ResultObj->SetBoolField(TEXT("success"), true);
+    return ResultObj;
+}
