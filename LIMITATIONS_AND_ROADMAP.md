@@ -741,7 +741,7 @@ don't work for Blueprint classes because Blueprints are assets with a separate
 
 **Fix (commit d51050d):**
 1. Added Blueprint class resolution fallback in `HandleAddBlueprintCastNode`
-2. If standard UClass lookup fails, try `FindBlueprintByShortName`
+2. If standard UClass lookup fails, try `FindBlueprintByName`
 3. Extract the `GeneratedClass` from the Blueprint asset
 4. Set `Node->TargetType = TargetBP->GeneratedClass`
 5. Added error reporting when class resolution completely fails
@@ -752,7 +752,7 @@ don't work for Blueprint classes because Blueprints are assets with a separate
 // After standard UClass lookup attempts...
 if (!TargetClass)
 {
-    UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByShortName(TargetClassName);
+    UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByName(TargetClassName);
     if (TargetBP && TargetBP->GeneratedClass)
         TargetClass = TargetBP->GeneratedClass;
 }
