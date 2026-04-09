@@ -410,51 +410,70 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             Blueprint->GeneratedClass ? *Blueprint->GeneratedClass->GetName() : TEXT("NULL"));
     }
 
-    // Find the component
+    // Find the component - try SCS (user-added) components first
+    UObject* ComponentTemplate = nullptr;
     USCS_Node* ComponentNode = nullptr;
     UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Searching for component %s in blueprint nodes"), *ComponentName);
     
-    if (!Blueprint->SimpleConstructionScript)
+    if (Blueprint->SimpleConstructionScript)
     {
-        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - SimpleConstructionScript is NULL for blueprint %s"), *BlueprintName);
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Invalid blueprint construction script"));
-    }
-    
-    for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
-    {
-        if (Node)
+        for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
         {
-            UE_LOG(LogTemp, Verbose, TEXT("SetComponentProperty - Found node: %s"), *Node->GetVariableName().ToString());
-            if (Node->GetVariableName().ToString() == ComponentName)
+            if (Node)
             {
-                ComponentNode = Node;
-                break;
+                UE_LOG(LogTemp, Verbose, TEXT("SetComponentProperty - Found SCS node: %s"), *Node->GetVariableName().ToString());
+                if (Node->GetVariableName().ToString() == ComponentName)
+                {
+                    ComponentNode = Node;
+                    ComponentTemplate = Node->ComponentTemplate;
+                    UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Found SCS component: %s"), *ComponentName);
+                    break;
+                }
             }
-        }
-        else
-        {
-            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Found NULL node in blueprint"));
         }
     }
 
-    if (!ComponentNode)
+    // If not found in SCS, try native C++ components from GeneratedClass CDO
+    if (!ComponentTemplate && Blueprint->GeneratedClass)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Searching native components in GeneratedClass"));
+        UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
+        UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - CDO pointer: %s"), CDO ? TEXT("VALID") : TEXT("NULL"));
+        
+        if (CDO)
+        {
+            // Iterate over object properties to find component properties
+            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Starting search for native component: %s"), *ComponentName);
+            int32 ComponentCount = 0;
+            for (TFieldIterator<FObjectProperty> PropIt(Blueprint->GeneratedClass, EFieldIteratorFlags::IncludeSuper); PropIt; ++PropIt)
+            {
+                if (!PropIt->PropertyClass) continue;
+                if (!PropIt->PropertyClass->IsChildOf(UActorComponent::StaticClass())) continue;
+                
+                ComponentCount++;
+                UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - [%d] Found native component property: %s (looking for: %s)"), ComponentCount, *PropIt->GetName(), *ComponentName);
+                
+                if (PropIt->GetName() == ComponentName)
+                {
+                    // Get the actual component instance from the CDO
+                    ComponentTemplate = PropIt->GetObjectPropertyValue_InContainer(CDO);
+                    UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - MATCH FOUND! Component: %s (Class: %s)"),
+                        *ComponentName,
+                        ComponentTemplate ? *ComponentTemplate->GetClass()->GetName() : TEXT("NULL"));
+                    break;
+                }
+            }
+            
+            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Search complete. Total native components found: %d, ComponentTemplate: %s"), 
+                ComponentCount, 
+                ComponentTemplate ? TEXT("FOUND") : TEXT("NOT FOUND"));
+        }
+    }
+
+    if (!ComponentTemplate)
     {
         UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Component not found: %s"), *ComponentName);
         return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Component not found: %s"), *ComponentName));
-    }
-    else
-    {
-        UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Component found: %s (Class: %s)"), 
-            *ComponentName, 
-            ComponentNode->ComponentTemplate ? *ComponentNode->ComponentTemplate->GetClass()->GetName() : TEXT("NULL"));
-    }
-
-    // Get the component template
-    UObject* ComponentTemplate = ComponentNode->ComponentTemplate;
-    if (!ComponentTemplate)
-    {
-        UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Component template is NULL for %s"), *ComponentName);
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Invalid component template"));
     }
 
     // Check if this is a Spring Arm component and log special debug info
