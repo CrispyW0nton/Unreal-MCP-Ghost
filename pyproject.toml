@@ -1,0 +1,33 @@
+[project]
+name = "unreal-mcp"
+version = "1.0.0"
+description = "Unreal Engine 5 MCP server - AI-assisted Blueprint authoring"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    # fastmcp 2.x changed `description=` to `instructions=` (already patched in server).
+    # fastmcp 3.x keeps the same API. Both work with our fix.
+    "fastmcp>=2.0.0",
+    "mcp>=1.2.0",
+    # pydantic-core >=2.28.0 ships pre-built wheels for Python 3.14.
+    # Earlier versions (2.27.x) tried to compile from source via PyO3 which
+    # only supports up to Python 3.13, causing the cargo build failure.
+    "pydantic-core>=2.28.0",
+]
+
+[project.scripts]
+unreal-mcp = "unreal_mcp_server:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+# The actual server lives in the Python/ subdirectory of the repo.
+# uv run / pip install from repo root will find it via the script entry-point.
+packages = ["Python/tools"]
+
+[tool.uv]
+# Don't treat the root as an installable package; just use it for dependency
+# resolution so `uv run` picks up the pinned versions automatically.
+package = false

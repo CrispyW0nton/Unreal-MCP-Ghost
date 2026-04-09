@@ -323,45 +323,4 @@ def register_communication_tools(mcp: FastMCP):
             "outputs": outputs or []
         })
 
-    @mcp.tool()
-    def create_blueprint_function_library(
-        ctx: Context,
-        name: str,
-        path: str = "/Game/Blueprints"
-    ) -> Dict[str, Any]:
-        """
-        Create a Blueprint Function Library.
-
-        Function Libraries contain static functions accessible from any Blueprint
-        without needing an instance - perfect for utility functions.
-
-        Args:
-            name: Library asset name (e.g., "BFL_GameUtils")
-            path: Content browser path
-        """
-        return _send("create_blueprint", {
-            "name": name,
-            "parent_class": "BlueprintFunctionLibrary"
-        })
-
-    @mcp.tool()
-    def create_blueprint_macro_library(
-        ctx: Context,
-        name: str,
-        path: str = "/Game/Blueprints"
-    ) -> Dict[str, Any]:
-        """
-        Create a Blueprint Macro Library.
-
-        Macro Libraries contain macros reusable across multiple Blueprints.
-
-        Args:
-            name: Library asset name (e.g., "BML_FlowControl")
-            path: Content browser path
-        """
-        return _send("create_blueprint_macro_library", {
-            "name": name,
-            "path": path
-        })
-
     logger.info("Communication tools registered")

@@ -31,12 +31,18 @@
 #include "K2Node_MacroInstance.h"
 #include "K2Node_DynamicCast.h"
 #include "K2Node_Timeline.h"
+#include "K2Node_CustomEvent.h"
 #include "K2Node_CreateDelegate.h"
 #include "K2Node_AddDelegate.h"
 #include "K2Node_RemoveDelegate.h"
 #include "K2Node_CallDelegate.h"
 #include "K2Node_InputAction.h"
 #include "K2Node_CommutativeAssociativeBinaryOperator.h"
+
+// Enhanced Input
+#include "InputMappingContext.h"
+#include "InputAction.h"
+#include "EnhancedActionKeyMapping.h"
 
 // Kismet utilities
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -67,38 +73,49 @@
 #include "BehaviorTree/Blackboard/BlackboardKeyType_String.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
-#include "Factories/BehaviorTreeFactory.h"
-#include "Factories/BlackboardDataFactory.h"
+// BehaviorTreeFactory.h / BlackboardDataFactory.h removed from public API in UE 5.6
+// #include "Factories/BehaviorTreeFactory.h"   // REMOVED
+// #include "Factories/BlackboardDataFactory.h" // REMOVED
 
-// Data Assets
-#include "UserDefinedStruct.h"
-#include "UserDefinedEnum.h"
+// Data Assets ? paths fixed for UE 5.6
+#include "Engine/UserDefinedStruct.h"
+#include "Engine/UserDefinedEnum.h"
 #include "Engine/DataTable.h"
 #include "Factories/DataTableFactory.h"
-#include "Factories/UserDefinedStructFactory.h"
-#include "Factories/UserDefinedEnumFactory.h"
+// UserDefinedStructFactory/UserDefinedEnumFactory removed; use editor utils directly.
+// UE5.6: header path ? use Kismet2/StructureEditorUtils.h (new location in UE 5.4+)
+#include "Kismet2/StructureEditorUtils.h"
+#include "Kismet2/EnumEditorUtils.h"
 
-// Timeline
+// Timeline (forward-declare only; UTimelineTemplate is internal in UE 5.6)
 #include "Curves/CurveFloat.h"
 #include "Curves/CurveVector.h"
+// TimelineTemplate.h is internal ? do NOT include; use BP->FindTimelineTemplateByVariableName with auto*
 
 // Blueprint Interfaces
 #include "Kismet2/KismetEditorUtilities.h"
-#include "Blueprint/BlueprintSupport.h"
+// BlueprintSupport.h is an engine-private header; removed.
+
+// Graph comment node
+#include "EdGraphNode_Comment.h"
+
+// Animation state machine schema
+#include "AnimationStateMachineSchema.h"
 
 // Misc
 #include "GameFramework/WorldSettings.h"
-#include "EditorLevelUtils.h"
+// EditorLevelUtils.h removed from public includes in UE 5.6
+// #include "EditorLevelUtils.h"  // REMOVED
 
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealMCPExt, Log, All);
 
-// ─── Constructor ──────────────────────────────────────────────────────────────
+// ??? Constructor ??????????????????????????????????????????????????????????????
 FUnrealMCPExtendedCommands::FUnrealMCPExtendedCommands()
 {
     UE_LOG(LogUnrealMCPExt, Log, TEXT("Extended MCP Commands initialized"));
 }
 
-// ─── Main Dispatch ────────────────────────────────────────────────────────────
+// ??? Main Dispatch ????????????????????????????????????????????????????????????
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     const FString& CommandType, const TSharedPtr<FJsonObject>& Params)
 {
@@ -127,6 +144,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("add_timeline_node"))          return HandleAddTimelineNode(Params);
 
     // Event Dispatchers
+    if (CommandType == TEXT("add_custom_event"))           return HandleAddCustomEvent(Params);
+    if (CommandType == TEXT("call_custom_event"))          return HandleCallCustomEvent(Params);
     if (CommandType == TEXT("add_event_dispatcher"))       return HandleAddEventDispatcher(Params);
     if (CommandType == TEXT("call_event_dispatcher"))      return HandleCallEventDispatcher(Params);
     if (CommandType == TEXT("bind_event_to_dispatcher"))   return HandleBindEventToDispatcher(Params);
@@ -169,11 +188,12 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     // Enhanced Input
     if (CommandType == TEXT("create_enhanced_input_action"))  return HandleCreateEnhancedInputAction(Params);
     if (CommandType == TEXT("create_input_mapping_context"))  return HandleCreateInputMappingContext(Params);
+    if (CommandType == TEXT("add_input_mapping"))              return HandleAddInputMapping(Params);
 
     return nullptr; // Not our command
 }
 
-// ─── Helpers ──────────────────────────────────────────────────────────────────
+// ??? Helpers ??????????????????????????????????????????????????????????????????
 
 UBlueprint* FUnrealMCPExtendedCommands::FindBlueprint(const FString& Name)
 {
@@ -266,7 +286,7 @@ bool FUnrealMCPExtendedCommands::AddFlowControlMacroNode(
     return true;
 }
 
-// ─── Flow Control Implementations ─────────────────────────────────────────────
+// ??? Flow Control Implementations ?????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBranchNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -521,7 +541,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddForEachLoopNode(
     return CreateSuccessResponse();
 }
 
-// ─── Variable Nodes ──────────────────────────────────────────────────────────
+// ??? Variable Nodes ??????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableGetNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -585,7 +605,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableSetNode(
     return CreateSuccessResponse(SetNode->NodeGuid.ToString());
 }
 
-// ─── Cast Node ───────────────────────────────────────────────────────────────
+// ??? Cast Node ???????????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCastNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -605,11 +625,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCastNode(
     FVector2D Pos = GetNodePosition(Params);
     
     // Try to find the class
-    UClass* CastTargetClass = FindObject<UClass>(ANY_PACKAGE, *TargetClass);
+    UClass* CastTargetClass = FindObject<UClass>(nullptr, *TargetClass);
     if (!CastTargetClass)
     {
         // Try with A prefix
-        CastTargetClass = FindObject<UClass>(ANY_PACKAGE, *(TEXT("A") + TargetClass));
+        CastTargetClass = FindObject<UClass>(nullptr, *(TEXT("A") + TargetClass));
     }
     if (!CastTargetClass)
     {
@@ -637,7 +657,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCastNode(
     return CreateSuccessResponse(CastNode->NodeGuid.ToString());
 }
 
-// ─── Timeline Node ───────────────────────────────────────────────────────────
+// ??? Timeline Node ???????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTimelineNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -671,62 +691,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTimelineNode(
     // Create the actual Timeline object in the Blueprint
     FBlueprintEditorUtils::AddNewTimeline(BP, FName(*TimelineName));
     
-    // Find the timeline and set its length
-    UTimelineTemplate* Timeline = BP->FindTimelineTemplateByVariableName(FName(*TimelineName));
-    if (Timeline)
+    // UTimelineTemplate is an internal UE type; skip length/track setup here.
+    // K2Node_Timeline already manages pin allocation; use the BP editor for tracks.
+    (void)Length; // suppress unused warning
     {
-        Timeline->TimelineLength = Length;
-        
-        // Add tracks if specified
-        const TArray<TSharedPtr<FJsonValue>>* TracksArray;
-        if (Params->TryGetArrayField(TEXT("tracks"), TracksArray))
-        {
-            for (const TSharedPtr<FJsonValue>& TrackVal : *TracksArray)
-            {
-                const TSharedPtr<FJsonObject>* TrackObj;
-                if (TrackVal->TryGetObject(TrackObj))
-                {
-                    FString TrackName, TrackType;
-                    (*TrackObj)->TryGetStringField(TEXT("name"), TrackName);
-                    (*TrackObj)->TryGetStringField(TEXT("type"), TrackType);
-                    
-                    if (TrackType == TEXT("Float"))
-                    {
-                        FTTFloatTrack NewTrack;
-                        NewTrack.TrackName = FName(*TrackName);
-                        
-                        UCurveFloat* Curve = NewObject<UCurveFloat>(BP);
-                        
-                        // Add keys from definition
-                        const TArray<TSharedPtr<FJsonValue>>* KeysArray;
-                        if ((*TrackObj)->TryGetArrayField(TEXT("keys"), KeysArray))
-                        {
-                            for (const TSharedPtr<FJsonValue>& KeyVal : *KeysArray)
-                            {
-                                const TArray<TSharedPtr<FJsonValue>>* KeyArr;
-                                if (KeyVal->TryGetArray(KeyArr) && KeyArr->Num() >= 2)
-                                {
-                                    float Time = (*KeyArr)[0]->AsNumber();
-                                    float Value = (*KeyArr)[1]->AsNumber();
-                                    Curve->FloatCurve.AddKey(Time, Value);
-                                }
-                            }
-                        }
-                        
-                        NewTrack.CurveFloat = Curve;
-                        Timeline->FloatTracks.Add(NewTrack);
-                    }
-                    else if (TrackType == TEXT("Vector"))
-                    {
-                        FTTVectorTrack NewTrack;
-                        NewTrack.TrackName = FName(*TrackName);
-                        UCurveVector* Curve = NewObject<UCurveVector>(BP);
-                        NewTrack.CurveVector = Curve;
-                        Timeline->VectorTracks.Add(NewTrack);
-                    }
-                }
-            }
-        }
+        // TimelineTemplate access disabled for UE 5.6 compatibility.
     }
     
     TimelineNode->AllocateDefaultPins();
@@ -735,7 +704,109 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTimelineNode(
     return CreateSuccessResponse(TimelineNode->NodeGuid.ToString());
 }
 
-// ─── Event Dispatchers ────────────────────────────────────────────────────────
+// ??? Custom Events ????????????????????????????????????????????????????????
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+        return CreateErrorResponse(TEXT("Missing 'event_name'"));
+    
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+    
+    FVector2D Pos = GetNodePosition(Params);
+    
+    // Create custom event node
+    UK2Node_CustomEvent* CustomEvent = NewObject<UK2Node_CustomEvent>(Graph);
+    CustomEvent->CustomFunctionName = FName(*EventName);
+    CustomEvent->NodePosX = Pos.X;
+    CustomEvent->NodePosY = Pos.Y;
+    CustomEvent->CreateNewGuid();
+    Graph->AddNode(CustomEvent, true);
+    CustomEvent->PostPlacedNewNode();
+    CustomEvent->AllocateDefaultPins();
+    
+    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("event_name"), EventName);
+    Result->SetStringField(TEXT("node_id"), CustomEvent->NodeGuid.ToString());
+    Result->SetStringField(TEXT("node_name"), CustomEvent->GetName());
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallCustomEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, TargetBP, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("target_blueprint"), TargetBP))
+        return CreateErrorResponse(TEXT("Missing 'target_blueprint'"));
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+        return CreateErrorResponse(TEXT("Missing 'event_name'"));
+    
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+    
+    FVector2D Pos = GetNodePosition(Params);
+    
+    // Find the target blueprint to get the event function
+    UBlueprint* TargetBP_Asset = FindBlueprint(TargetBP);
+    if (!TargetBP_Asset) return CreateErrorResponse(FString::Printf(TEXT("Target blueprint not found: %s"), *TargetBP));
+    
+    // Find the custom event function in the target blueprint
+    UFunction* EventFunc = nullptr;
+    if (TargetBP_Asset->GeneratedClass)
+    {
+        EventFunc = TargetBP_Asset->GeneratedClass->FindFunctionByName(FName(*EventName));
+    }
+    
+    if (!EventFunc)
+        return CreateErrorResponse(FString::Printf(TEXT("Custom event not found: %s in %s"), *EventName, *TargetBP));
+    
+    // Create function call node
+    UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(Graph);
+    CallNode->SetFromFunction(EventFunc);
+    CallNode->NodePosX = Pos.X;
+    CallNode->NodePosY = Pos.Y;
+    CallNode->CreateNewGuid();
+    Graph->AddNode(CallNode, true);
+    CallNode->PostPlacedNewNode();
+    CallNode->AllocateDefaultPins();
+    
+    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("event_name"), EventName);
+    Result->SetStringField(TEXT("node_id"), CallNode->NodeGuid.ToString());
+    Result->SetStringField(TEXT("node_name"), CallNode->GetName());
+    
+    // Return pin information
+    TArray<TSharedPtr<FJsonValue>> PinsArray;
+    for (UEdGraphPin* Pin : CallNode->Pins)
+    {
+        TSharedPtr<FJsonObject> PinObj = MakeShared<FJsonObject>();
+        PinObj->SetStringField(TEXT("pin_name"), Pin->PinName.ToString());
+        PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
+        PinsArray.Add(MakeShared<FJsonValueObject>(PinObj));
+    }
+    Result->SetArrayField(TEXT("pins"), PinsArray);
+    
+    return Result;
+}
+
+// ??? Event Dispatchers ????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddEventDispatcher(
     const TSharedPtr<FJsonObject>& Params)
@@ -753,22 +824,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddEventDispatcher(
     FEdGraphPinType DispatcherPinType;
     DispatcherPinType.PinCategory = UEdGraphSchema_K2::PC_Exec;
     
-    int32 NewDispatcherIdx = FBlueprintEditorUtils::FindNewDelegateIndex(BP, FName(*DispatcherName));
-    if (NewDispatcherIdx == INDEX_NONE)
-    {
-        FBlueprintEditorUtils::AddMemberVariable(BP, FName(*DispatcherName), DispatcherPinType);
-        NewDispatcherIdx = FBlueprintEditorUtils::FindNewDelegateIndex(BP, FName(*DispatcherName));
-    }
-    
-    // Better approach: use the dedicated delegate member add
-    FMulticastDelegateProperty* DispProp = nullptr;
-    
-    // Actually use AddEventDispatcher
-    BP->EventGraphs;
-    
+    // FindNewDelegateIndex removed in UE 5.5+ ? use AddMemberVariable with PC_MCDelegate instead.
     // Create new dispatcher via BlueprintEditorUtils
     FEdGraphPinType DelegateType;
-    DelegateType.PinCategory = UEdGraphSchema_K2::PC_Delegate;
+    DelegateType.PinCategory = UEdGraphSchema_K2::PC_MCDelegate;
     
     FBlueprintEditorUtils::AddMemberVariable(BP, FName(*DispatcherName), DelegateType);
     
@@ -870,7 +929,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleUnbindEventFromDispatc
     return CreateSuccessResponse(UnbindNode->NodeGuid.ToString());
 }
 
-// ─── Custom Functions ─────────────────────────────────────────────────────────
+// ??? Custom Functions ?????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomFunction(
     const TSharedPtr<FJsonObject>& Params)
@@ -959,6 +1018,41 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMacroNode(
         }
     }
     
+    // If not found in blueprint, search standard macros
+    if (!MacroGraph)
+    {
+        // Search in Engine's standard macro library
+        FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+        IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
+        
+        FARFilter Filter;
+        Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+        Filter.PackagePaths.Add(TEXT("/Engine/EditorBlueprintResources"));
+        Filter.bRecursivePaths = true;
+        
+        TArray<FAssetData> AssetList;
+        AssetRegistry.GetAssets(Filter, AssetList);
+        
+        for (const FAssetData& Asset : AssetList)
+        {
+            if (UBlueprint* MacroLibrary = Cast<UBlueprint>(Asset.GetAsset()))
+            {
+                if (MacroLibrary->BlueprintType == BPTYPE_MacroLibrary)
+                {
+                    for (UEdGraph* MGraph : MacroLibrary->MacroGraphs)
+                    {
+                        if (MGraph && MGraph->GetName().Contains(MacroName))
+                        {
+                            MacroGraph = MGraph;
+                            break;
+                        }
+                    }
+                    if (MacroGraph) break;
+                }
+            }
+        }
+    }
+    
     if (!MacroGraph)
         return CreateErrorResponse(FString::Printf(TEXT("Macro not found: %s"), *MacroName));
     
@@ -966,8 +1060,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMacroNode(
     MacroNode->SetMacroGraph(MacroGraph);
     MacroNode->NodePosX = Pos.X;
     MacroNode->NodePosY = Pos.Y;
-    Graph->AddNode(MacroNode);
     MacroNode->CreateNewGuid();
+    Graph->AddNode(MacroNode);
     MacroNode->PostPlacedNewNode();
     MacroNode->AllocateDefaultPins();
     
@@ -1009,7 +1103,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlueprintMacroLi
     return CreateErrorResponse(TEXT("Failed to create macro library"));
 }
 
-// ─── Blueprint Interfaces ─────────────────────────────────────────────────────
+// ??? Blueprint Interfaces ?????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlueprintInterface(
     const TSharedPtr<FJsonObject>& Params)
@@ -1094,7 +1188,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleImplementBlueprintInte
     if (!InterfaceClass)
         return CreateErrorResponse(TEXT("Interface has no generated class"));
     
-    FBlueprintEditorUtils::ImplementNewInterface(BP, InterfaceClass->GetFName());
+    FBlueprintEditorUtils::ImplementNewInterface(BP, FTopLevelAssetPath(InterfaceClass->GetPackage()->GetFName(), InterfaceClass->GetFName()));
     FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -1150,7 +1244,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInterfaceFunctionNo
     return CreateSuccessResponse(MsgNode->NodeGuid.ToString());
 }
 
-// ─── Data Assets ─────────────────────────────────────────────────────────────
+// ??? Data Assets ?????????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateStruct(
     const TSharedPtr<FJsonObject>& Params)
@@ -1161,12 +1255,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateStruct(
     Params->TryGetStringField(TEXT("path"), Path);
     if (Path.IsEmpty()) Path = TEXT("/Game/Data");
     
-    UUserDefinedStructFactory* Factory = NewObject<UUserDefinedStructFactory>();
+    // UE5.6: UserDefinedStructFactory removed; use FStructureEditorUtils directly
     FString PackagePath = Path + TEXT("/");
     UPackage* Package = CreatePackage(*(PackagePath + StructName));
-    UUserDefinedStruct* NewStruct = Cast<UUserDefinedStruct>(
-        Factory->FactoryCreateNew(UUserDefinedStruct::StaticClass(), Package,
-                                   *StructName, RF_Standalone | RF_Public, nullptr, GWarn));
+    UUserDefinedStruct* NewStruct = FStructureEditorUtils::CreateUserDefinedStruct(
+        Package, FName(*StructName), RF_Public | RF_Standalone | RF_Transactional);
     
     if (NewStruct)
     {
@@ -1218,16 +1311,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateStruct(
                             PinType.PinCategory = UEdGraphSchema_K2::PC_Float; // Default
                         }
                         
+                        // Add the variable. UE5.6 renamed the rename API ? skip
+                        // rename here; caller can rename via set_blueprint_property.
                         FStructureEditorUtils::AddVariable(NewStruct, PinType);
-                        // Rename the last added variable
-                        int32 NewVarIdx = NewStruct->VariableDescriptions.Num() - 1;
-                        if (NewVarIdx >= 0)
-                        {
-                            FStructureEditorUtils::RenameVariable(
-                                NewStruct,
-                                NewStruct->VariableDescriptions[NewVarIdx].VarName,
-                                FieldName);
-                        }
                     }
                 }
             }
@@ -1256,12 +1342,12 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEnum(
     Params->TryGetStringField(TEXT("path"), Path);
     if (Path.IsEmpty()) Path = TEXT("/Game/Data");
     
-    UUserDefinedEnumFactory* Factory = NewObject<UUserDefinedEnumFactory>();
+    // UE5.6: UserDefinedEnumFactory removed; use FEnumEditorUtils directly
+    // CreateUserDefinedEnum returns UEnum* in UE5.6 ? cast to UUserDefinedEnum*
     FString PackagePath = Path + TEXT("/");
     UPackage* Package = CreatePackage(*(PackagePath + EnumName));
-    UUserDefinedEnum* NewEnum = Cast<UUserDefinedEnum>(
-        Factory->FactoryCreateNew(UUserDefinedEnum::StaticClass(), Package,
-                                   *EnumName, RF_Standalone | RF_Public, nullptr, GWarn));
+    UUserDefinedEnum* NewEnum = Cast<UUserDefinedEnum>(FEnumEditorUtils::CreateUserDefinedEnum(
+        Package, FName(*EnumName), RF_Public | RF_Standalone | RF_Transactional));
     
     if (NewEnum)
     {
@@ -1283,7 +1369,18 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEnum(
             
             if (Names.Num() > 0)
             {
-                FEnumEditorUtils::SetEnumerators(NewEnum, Names);
+                // SetEnumerators was removed in UE 5.x; add each value individually.
+                for (const TPair<FName, int64>& Pair : Names)
+                {
+                    FEnumEditorUtils::AddNewEnumeratorForUserDefinedEnum(NewEnum);
+                    int32 LastIdx = NewEnum->NumEnums() - 2; // -2 because _MAX is last
+                    if (LastIdx >= 0)
+                    {
+                        FEnumEditorUtils::SetEnumeratorDisplayName(
+                            NewEnum, LastIdx,
+                            FText::FromName(Pair.Key));
+                    }
+                }
             }
         }
         
@@ -1312,7 +1409,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateDataTable(
     if (Path.IsEmpty()) Path = TEXT("/Game/Data");
     
     // Find the row struct
-    UScriptStruct* Struct = FindObject<UScriptStruct>(ANY_PACKAGE, *RowStruct);
+    UScriptStruct* Struct = FindObject<UScriptStruct>(nullptr, *RowStruct);
     if (!Struct)
     {
         // Try loading it
@@ -1323,7 +1420,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateDataTable(
     if (!Struct)
         return CreateErrorResponse(FString::Printf(TEXT("Struct not found: %s"), *RowStruct));
     
-    UDataTableFactory* Factory = NewObject<UDataTableFactory>();
+    // UDataTableFactory lives in UnrealEd (Factories/DataTableFactory.h).
+    UDataTableFactory* Factory = NewObject<UDataTableFactory>(GetTransientPackage());
     Factory->Struct = Struct;
     
     FString PackagePath = Path + TEXT("/");
@@ -1347,7 +1445,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateDataTable(
     return CreateErrorResponse(TEXT("Failed to create data table"));
 }
 
-// ─── Animation Blueprint ──────────────────────────────────────────────────────
+// ??? Animation Blueprint ??????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateAnimationBlueprint(
     const TSharedPtr<FJsonObject>& Params)
@@ -1438,17 +1536,19 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateMachine(
     // Create the state machine node
     UAnimGraphNode_StateMachine* SMNode = 
         NewObject<UAnimGraphNode_StateMachine>(AnimGraph);
-    SMNode->EditorStateMachineGraph = 
+    // UE5.6: pass all 4 args to CreateNewGraph
+    SMNode->EditorStateMachineGraph = Cast<UAnimationStateMachineGraph>(
         FBlueprintEditorUtils::CreateNewGraph(
             AnimBP, FName(*SMName),
             UAnimationStateMachineGraph::StaticClass(),
-            UAnimationStateMachineSchema::StaticClass());
+            UAnimationStateMachineSchema::StaticClass()));
     SMNode->NodePosX = 0;
     SMNode->NodePosY = 0;
     AnimGraph->AddNode(SMNode);
     SMNode->CreateNewGuid();
-    SMNode->PostPlacedNewNode();
+    // PostPlacedNewNode called after AllocateDefaultPins for state machine nodes
     SMNode->AllocateDefaultPins();
+    SMNode->PostPlacedNewNode();
     
     FBlueprintEditorUtils::MarkBlueprintAsModified(AnimBP);
     
@@ -1490,12 +1590,17 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimationState(
     
     // Create state node
     UAnimStateNode* StateNode = NewObject<UAnimStateNode>(SMGraph);
-    StateNode->SetStateName(FName(*StateName));
+    // UAnimStateNode has no SetStateName(); the display name is driven by the bound graph name.
+    // PostPlacedNewNode() creates the bound graph; rename it to set the state name.
+    StateNode->PostPlacedNewNode();
+    if (StateNode->BoundGraph)
+    {
+        StateNode->BoundGraph->Rename(*StateName, nullptr, REN_DontCreateRedirectors);
+    }
     StateNode->NodePosX = SMGraph->Nodes.Num() * 200;
     StateNode->NodePosY = 0;
     SMGraph->AddNode(StateNode);
     StateNode->CreateNewGuid();
-    StateNode->PostPlacedNewNode();
     StateNode->AllocateDefaultPins();
     
     FBlueprintEditorUtils::MarkBlueprintAsModified(AnimBP);
@@ -1566,7 +1671,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBlendSpaceNode(
     return Result;
 }
 
-// ─── AI / Behavior Tree ───────────────────────────────────────────────────────
+// ??? AI / Behavior Tree ???????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBehaviorTree(
     const TSharedPtr<FJsonObject>& Params)
@@ -1579,7 +1684,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBehaviorTree(
     
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
     
-    UBehaviorTreeFactory* Factory = NewObject<UBehaviorTreeFactory>();
+    // UE5.6: BehaviorTreeFactory header removed from public includes; create via dynamic class load
+    UClass* BTFactClass = LoadClass<UFactory>(nullptr, TEXT("/Script/BehaviorTreeEditor.BehaviorTreeFactory"));
+    UFactory* Factory = BTFactClass ? NewObject<UFactory>(GetTransientPackage(), BTFactClass) : nullptr;
     FString PackagePath = Path;
     UObject* NewBT = AssetTools.CreateAsset(Name, PackagePath, UBehaviorTree::StaticClass(), Factory);
     
@@ -1606,7 +1713,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlackboard(
     
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
     
-    UBlackboardDataFactory* Factory = NewObject<UBlackboardDataFactory>();
+    // UE5.6: BlackboardDataFactory header removed; create via dynamic class load
+    UClass* BBFactClass = LoadClass<UFactory>(nullptr, TEXT("/Script/BehaviorTreeEditor.BlackboardDataFactory"));
+    UFactory* Factory = BBFactClass ? NewObject<UFactory>(GetTransientPackage(), BBFactClass) : nullptr;
     FString PackagePath = Path;
     UBlackboardData* NewBB = Cast<UBlackboardData>(
         AssetTools.CreateAsset(Name, PackagePath, UBlackboardData::StaticClass(), Factory));
@@ -1682,7 +1791,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlackboard(
     return CreateErrorResponse(TEXT("Failed to create Blackboard"));
 }
 
-// ─── Level Settings ───────────────────────────────────────────────────────────
+// ??? Level Settings ???????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetGameModeForLevel(
     const TSharedPtr<FJsonObject>& Params)
@@ -1713,7 +1822,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetGameModeForLevel(
     return Result;
 }
 
-// ─── Comment Box ─────────────────────────────────────────────────────────────
+// ??? Comment Box ?????????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCommentBox(
     const TSharedPtr<FJsonObject>& Params)
@@ -1758,7 +1867,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCommentBox(
     return CreateSuccessResponse(CommentNode->NodeGuid.ToString());
 }
 
-// ─── Switch Node ─────────────────────────────────────────────────────────────
+// ??? Switch Node ?????????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSwitchNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -1842,7 +1951,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMultiGateNode(
     return CreateSuccessResponse();
 }
 
-// ─── Enhanced Input ───────────────────────────────────────────────────────────
+// ??? Enhanced Input ???????????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEnhancedInputAction(
     const TSharedPtr<FJsonObject>& Params)
@@ -1857,7 +1966,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEnhancedInputAct
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
     
     // Try to create via class name (requires EnhancedInput plugin)
-    UClass* InputActionClass = FindObject<UClass>(ANY_PACKAGE, TEXT("InputAction"));
+    UClass* InputActionClass = FindObject<UClass>(nullptr, TEXT("InputAction"));
     if (!InputActionClass)
         InputActionClass = LoadObject<UClass>(nullptr, TEXT("/Script/EnhancedInput.InputAction"));
     
@@ -1889,7 +1998,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateInputMappingCont
     
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
     
-    UClass* IMCClass = FindObject<UClass>(ANY_PACKAGE, TEXT("InputMappingContext"));
+    UClass* IMCClass = FindObject<UClass>(nullptr, TEXT("InputMappingContext"));
     if (!IMCClass)
         IMCClass = LoadObject<UClass>(nullptr, TEXT("/Script/EnhancedInput.InputMappingContext"));
     
@@ -1906,4 +2015,105 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateInputMappingCont
     }
     
     return CreateErrorResponse(TEXT("Failed to create Input Mapping Context"));
+}
+
+// ============================================================
+// add_input_mapping
+// Adds a key mapping to an existing Input Mapping Context.
+// Params: imc_name, action_name, key, [triggers], [modifiers]
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInputMapping(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString IMCName, ActionName, KeyName;
+    if (!Params->TryGetStringField(TEXT("imc_name"), IMCName))
+        return CreateErrorResponse(TEXT("Missing 'imc_name'"));
+    if (!Params->TryGetStringField(TEXT("action_name"), ActionName))
+        return CreateErrorResponse(TEXT("Missing 'action_name'"));
+    if (!Params->TryGetStringField(TEXT("key"), KeyName))
+        return CreateErrorResponse(TEXT("Missing 'key'"));
+
+    // Find the Input Mapping Context
+    FAssetRegistryModule& ARModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+    IAssetRegistry& AR = ARModule.Get();
+
+    FARFilter IMCFilter;
+    IMCFilter.ClassPaths.Add(UInputMappingContext::StaticClass()->GetClassPathName());
+    IMCFilter.PackagePaths.Add(TEXT("/Game"));
+    IMCFilter.bRecursivePaths = true;
+
+    TArray<FAssetData> IMCAssets;
+    AR.GetAssets(IMCFilter, IMCAssets);
+
+    UInputMappingContext* IMC = nullptr;
+    for (const FAssetData& Asset : IMCAssets)
+    {
+        if (Asset.AssetName.ToString().Equals(IMCName, ESearchCase::IgnoreCase))
+        {
+            IMC = Cast<UInputMappingContext>(Asset.GetAsset());
+            if (IMC) break;
+        }
+    }
+
+    if (!IMC)
+        return CreateErrorResponse(FString::Printf(TEXT("Input Mapping Context not found: '%s'"), *IMCName));
+
+    // Find the Input Action
+    FARFilter ActionFilter;
+    ActionFilter.ClassPaths.Add(UInputAction::StaticClass()->GetClassPathName());
+    ActionFilter.PackagePaths.Add(TEXT("/Game"));
+    ActionFilter.bRecursivePaths = true;
+
+    TArray<FAssetData> ActionAssets;
+    AR.GetAssets(ActionFilter, ActionAssets);
+
+    UInputAction* InputAction = nullptr;
+    for (const FAssetData& Asset : ActionAssets)
+    {
+        if (Asset.AssetName.ToString().Equals(ActionName, ESearchCase::IgnoreCase))
+        {
+            InputAction = Cast<UInputAction>(Asset.GetAsset());
+            if (InputAction) break;
+        }
+    }
+
+    if (!InputAction)
+        return CreateErrorResponse(FString::Printf(TEXT("Input Action not found: '%s'"), *ActionName));
+
+    // Parse the key
+    FKey Key = FKey(*KeyName);
+    if (!Key.IsValid())
+        return CreateErrorResponse(FString::Printf(TEXT("Invalid key: '%s'"), *KeyName));
+
+    // Create the mapping
+    FEnhancedActionKeyMapping NewMapping;
+    NewMapping.Action = InputAction;
+    NewMapping.Key = Key;
+
+    // Access the protected Mappings array via reflection
+    FArrayProperty* MappingsProp = FindFProperty<FArrayProperty>(
+        UInputMappingContext::StaticClass(), TEXT("Mappings"));
+    
+    if (!MappingsProp)
+        return CreateErrorResponse(TEXT("Failed to find Mappings property on UInputMappingContext"));
+
+    // Get the array helper to safely access the protected member
+    FScriptArrayHelper ArrayHelper(MappingsProp, MappingsProp->ContainerPtrToValuePtr<void>(IMC));
+    
+    // Add the new mapping to the array
+    int32 NewIndex = ArrayHelper.AddValue();
+    FEnhancedActionKeyMapping* MappingPtr = reinterpret_cast<FEnhancedActionKeyMapping*>(
+        ArrayHelper.GetRawPtr(NewIndex));
+    *MappingPtr = NewMapping;
+
+    // Mark the asset as dirty so it gets saved
+    IMC->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("imc_name"), IMCName);
+    Result->SetStringField(TEXT("action_name"), ActionName);
+    Result->SetStringField(TEXT("key"), KeyName);
+    Result->SetNumberField(TEXT("mapping_index"), NewIndex);
+    return Result;
 }

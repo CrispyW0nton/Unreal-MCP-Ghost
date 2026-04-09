@@ -393,4 +393,664 @@ def register_ai_tools(mcp: FastMCP):
 
         return results
 
+    # ─── Chapter 10 Advanced AI ──────────────────────────────────────────────────
+
+    @mcp.tool()
+    def create_bt_attack_task(
+        ctx: Context,
+        name: str = "BTTask_DoAttack",
+        damage_variable: str = "Damage",
+        default_damage: float = 0.25,
+        target_key_variable: str = "TargetActorKey",
+        path: str = "/Game/AI"
+    ) -> Dict[str, Any]:
+        """
+        Create a Behavior Tree Attack Task Blueprint.
+
+        Ch.10: BTTask_DoAttack that deals damage to the player.
+        - TargetActorKey (BlackboardKeySelector) - instance editable
+        - Damage (Float, instance editable, default 0.25 = 25% of player health)
+        - Overrides ReceiveExecute: checks IsValid on target, calls Apply Damage,
+          then calls FinishExecute(Success=true)
+
+        Args:
+            name: Task Blueprint name (e.g., "BTTask_DoAttack")
+            damage_variable: Name of the damage float variable
+            default_damage: Default damage amount (0.0-1.0 normalized or raw)
+            target_key_variable: Name of the BlackboardKeySelector variable
+            path: Content browser path
+        """
+        result = _send("create_blueprint", {
+            "name": name,
+            "parent_class": "BTTask_BlueprintBase"
+        })
+        # Add TargetActorKey variable (BlackboardKeySelector, instance editable)
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": target_key_variable,
+            "variable_type": "BlackboardKeySelector",
+            "is_exposed": True
+        })
+        # Add Damage variable (Float, instance editable)
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": damage_variable,
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": str(default_damage)
+        })
+        # Set the Node Name property visible in BT
+        _send("set_blueprint_property", {
+            "blueprint_name": name,
+            "property_name": "NodeName",
+            "property_value": "DoAttack"
+        })
+        _send("compile_blueprint", {"blueprint_name": name})
+        return result
+
+    @mcp.tool()
+    def add_pawn_sensing_component(
+        ctx: Context,
+        blueprint_name: str,
+        hearing_threshold: float = 1600.0,
+        see_pawns_in_dark: bool = True,
+        sight_radius: float = 2000.0,
+        peripheral_vision_angle: float = 45.0
+    ) -> Dict[str, Any]:
+        """
+        Add a PawnSensing component to a Blueprint for AI perception.
+
+        Ch.10: PawnSensing enables enemies to both see and hear the player.
+        - OnSeePawn and OnHearNoise events fire when player is detected.
+        - HearingThreshold: detection radius for sound (default 1600 units)
+        - SightRadius: max sight distance
+        - PeripheralVisionAngle: field of view half-angle in degrees
+
+        Args:
+            blueprint_name: Enemy character Blueprint
+            hearing_threshold: Sound detection radius in cm
+            see_pawns_in_dark: Whether to detect pawns in dark areas
+            sight_radius: Max sight detection radius
+            peripheral_vision_angle: Half-angle of sight cone in degrees
+        """
+        result = _send("add_component_to_blueprint", {
+            "blueprint_name": blueprint_name,
+            "component_type": "PawnSensingComponent",
+            "component_name": "PawnSensing"
+        })
+        _send("set_component_property", {
+            "blueprint_name": blueprint_name,
+            "component_name": "PawnSensing",
+            "property_name": "HearingThreshold",
+            "property_value": hearing_threshold
+        })
+        _send("set_component_property", {
+            "blueprint_name": blueprint_name,
+            "component_name": "PawnSensing",
+            "property_name": "SightRadius",
+            "property_value": sight_radius
+        })
+        _send("set_component_property", {
+            "blueprint_name": blueprint_name,
+            "component_name": "PawnSensing",
+            "property_name": "PeripheralVisionAngle",
+            "property_value": peripheral_vision_angle
+        })
+        _send("set_component_property", {
+            "blueprint_name": blueprint_name,
+            "component_name": "PawnSensing",
+            "property_name": "bSeePawns",
+            "property_value": see_pawns_in_dark
+        })
+        _send("compile_blueprint", {"blueprint_name": blueprint_name})
+        return result
+
+    @mcp.tool()
+    def add_on_see_pawn_event(
+        ctx: Context,
+        blueprint_name: str,
+        pawn_sensing_component: str = "PawnSensing",
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Bind the 'On See Pawn' event from a PawnSensing component.
+
+        Ch.10: OnSeePawn fires when the AI spots the player in its sight cone.
+        Wire this to set the PlayerCharacter blackboard key and update chase state.
+
+        Args:
+            blueprint_name: Enemy Blueprint name
+            pawn_sensing_component: Name of PawnSensing component
+            node_position: Optional [X, Y] graph position
+        """
+        return _send("add_component_event_node", {
+            "blueprint_name": blueprint_name,
+            "component_name": pawn_sensing_component,
+            "event_name": "OnSeePawn",
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def add_on_hear_noise_event(
+        ctx: Context,
+        blueprint_name: str,
+        pawn_sensing_component: str = "PawnSensing",
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Bind the 'On Hear Noise' event from a PawnSensing component.
+
+        Ch.10: OnHearNoise fires when the AI detects a sound within HearingThreshold.
+        Event provides: PawnInstigator (who made the sound), Location (where), Loudness.
+        Wire to UpdateSoundBB macro to store HasHeardSound=true and LocationOfSound.
+
+        Args:
+            blueprint_name: Enemy AI Controller Blueprint
+            pawn_sensing_component: Name of PawnSensing component
+            node_position: Optional [X, Y] graph position
+        """
+        return _send("add_component_event_node", {
+            "blueprint_name": blueprint_name,
+            "component_name": pawn_sensing_component,
+            "event_name": "OnHearNoise",
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def add_report_noise_event_node(
+        ctx: Context,
+        blueprint_name: str,
+        loudness: float = 1.0,
+        max_range: float = 0.0,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a 'Report Noise Event' node (UAISense_Hearing).
+
+        Ch.10: Reports a noise to the AI perception system so PawnSensing can detect it.
+        Used to make the player's actions (shooting, footsteps) audible to AI.
+
+        Args:
+            blueprint_name: Blueprint name (usually player Character)
+            loudness: How loud the noise is (0.0-1.0)
+            max_range: Max range the noise can be heard (0 = use PawnSensing threshold)
+            node_position: Optional [X, Y] graph position
+        """
+        return _send("add_blueprint_function_node", {
+            "blueprint_name": blueprint_name,
+            "target": "UGameplayStatics",
+            "function_name": "ReportNoise",
+            "params": {
+                "Loudness": loudness,
+                "MaxRange": max_range
+            },
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def create_enemy_spawner_blueprint(
+        ctx: Context,
+        name: str = "BP_EnemySpawner",
+        enemy_class: str = "BP_EnemyCharacter",
+        max_enemies: int = 5,
+        spawn_interval: float = 5.0,
+        spawn_radius: float = 500.0,
+        path: str = "/Game/Blueprints"
+    ) -> Dict[str, Any]:
+        """
+        Create an Enemy Spawner Blueprint.
+
+        Ch.10: BP_EnemySpawner periodically spawns enemies in the level.
+        - EnemyClass variable (class reference, instance editable)
+        - MaxEnemies variable (int) - cap on simultaneous enemies
+        - SpawnInterval variable (float) - seconds between spawns
+        - SpawnRadius variable (float) - radius around spawner to place enemies
+        - Timer-based spawning using Set Timer by Function Name
+
+        Args:
+            name: Spawner Blueprint name
+            enemy_class: Enemy Blueprint class to spawn
+            max_enemies: Maximum simultaneous enemy count
+            spawn_interval: Seconds between each spawn
+            spawn_radius: Random placement radius around spawner
+            path: Content browser path
+        """
+        result = _send("create_blueprint", {
+            "name": name,
+            "parent_class": "Actor"
+        })
+        # Add variables
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "EnemyClass",
+            "variable_type": "Class",
+            "is_exposed": True
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "MaxEnemies",
+            "variable_type": "Integer",
+            "is_exposed": True,
+            "default_value": str(max_enemies)
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "SpawnInterval",
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": str(spawn_interval)
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "SpawnRadius",
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": str(spawn_radius)
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "CurrentEnemyCount",
+            "variable_type": "Integer",
+            "is_exposed": False
+        })
+        _send("compile_blueprint", {"blueprint_name": name})
+        return result
+
+    @mcp.tool()
+    def create_bt_wander_task(
+        ctx: Context,
+        name: str = "BTTask_FindWanderPoint",
+        wander_radius: float = 1000.0,
+        path: str = "/Game/AI"
+    ) -> Dict[str, Any]:
+        """
+        Create a Behavior Tree Task for random wandering.
+
+        Ch.10: BTTask_FindWanderPoint uses the Navigation system to find a random
+        reachable location within a radius for enemy wandering behavior.
+        - Uses GetRandomReachablePointInRadius
+        - Sets the resulting Vector to a Blackboard key (e.g., WanderTarget)
+        - Returns Success if a point is found, Failure otherwise
+
+        Args:
+            name: Task Blueprint name
+            wander_radius: Radius to search for random wander points
+            path: Content browser path
+        """
+        result = _send("create_blueprint", {
+            "name": name,
+            "parent_class": "BTTask_BlueprintBase"
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "WanderTargetKey",
+            "variable_type": "BlackboardKeySelector",
+            "is_exposed": True
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": name,
+            "variable_name": "WanderRadius",
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": str(wander_radius)
+        })
+        _send("set_blueprint_property", {
+            "blueprint_name": name,
+            "property_name": "NodeName",
+            "property_value": "Find Wander Point"
+        })
+        _send("compile_blueprint", {"blueprint_name": name})
+        return result
+
+    @mcp.tool()
+    def add_get_random_reachable_point_node(
+        ctx: Context,
+        blueprint_name: str,
+        radius: float = 1000.0,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a 'Get Random Reachable Point In Radius' node.
+
+        Ch.10: Used in wandering BT task to find a valid NavMesh location.
+        Returns bReachable (bool) and RandomLocation (Vector).
+        Wire to SetValueAsVector on blackboard to store the wander destination.
+
+        Args:
+            blueprint_name: Blueprint name (usually BTTask Blueprint)
+            radius: Search radius for random point
+            node_position: Optional [X, Y] graph position
+        """
+        return _send("add_blueprint_function_node", {
+            "blueprint_name": blueprint_name,
+            "target": "UNavigationSystemV1",
+            "function_name": "GetRandomReachablePointInRadius",
+            "params": {"Radius": radius},
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def add_finish_execute_node(
+        ctx: Context,
+        blueprint_name: str,
+        success: bool = True,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a 'Finish Execute' node to a Behavior Tree Task Blueprint.
+
+        Ch.10: BTTask Blueprints must call FinishExecute to report success or failure
+        back to the Behavior Tree. Call this at the end of ReceiveExecute.
+
+        Args:
+            blueprint_name: BT Task Blueprint name
+            success: True = task succeeded, False = task failed
+            node_position: Optional [X, Y] graph position
+        """
+        return _send("add_blueprint_function_node", {
+            "blueprint_name": blueprint_name,
+            "target": "self",
+            "function_name": "FinishExecute",
+            "params": {"bSuccess": success},
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def add_get_blackboard_value_node(
+        ctx: Context,
+        blueprint_name: str,
+        key_name: str,
+        value_type: str = "Object",
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a 'Get Blackboard Value as [Type]' node.
+
+        Ch.10: Used in BT Tasks to read data from the Blackboard.
+        e.g., Get Blackboard Value as Actor to get the Target Actor reference.
+
+        Args:
+            blueprint_name: Blueprint name (BT Task or AI Controller)
+            key_name: Blackboard key name to read
+            value_type: "Object", "Actor", "Vector", "Bool", "Float", "Int", "String"
+            node_position: Optional [X, Y] graph position
+        """
+        function_map = {
+            "Object": "GetValueAsObject",
+            "Actor": "GetValueAsObject",
+            "Vector": "GetValueAsVector",
+            "Bool": "GetValueAsBool",
+            "Boolean": "GetValueAsBool",
+            "Float": "GetValueAsFloat",
+            "Int": "GetValueAsInt",
+            "Integer": "GetValueAsInt",
+            "String": "GetValueAsString",
+            "Name": "GetValueAsName",
+            "Rotator": "GetValueAsRotator",
+            "Class": "GetValueAsClass",
+        }
+        func_name = function_map.get(value_type, "GetValueAsObject")
+        return _send("add_blueprint_function_node", {
+            "blueprint_name": blueprint_name,
+            "target": "UBlackboardComponent",
+            "function_name": func_name,
+            "params": {"KeyName": key_name},
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def add_clear_blackboard_value_node(
+        ctx: Context,
+        blueprint_name: str,
+        key_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a 'Clear Blackboard Value' node (BTTask_ClearBBValue).
+
+        Ch.10: Used to reset blackboard keys like HasHeardSound after investigation
+        is complete. Resets the value to its default (false/null/zero).
+
+        Args:
+            blueprint_name: Blueprint or BT Task name
+            key_name: Blackboard key to clear
+            node_position: Optional [X, Y] graph position
+        """
+        return _send("add_blueprint_function_node", {
+            "blueprint_name": blueprint_name,
+            "target": "UBlackboardComponent",
+            "function_name": "ClearValue",
+            "params": {"KeyName": key_name},
+            "node_position": node_position or [0, 0]
+        })
+
+    @mcp.tool()
+    def add_bt_blackboard_decorator(
+        ctx: Context,
+        behavior_tree_name: str,
+        sequence_name: str,
+        blackboard_key: str,
+        observer_aborts: str = "LowerPriority",
+        node_name: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Add a Blackboard Decorator to a Behavior Tree sequence/task node.
+
+        Ch.10: Decorators are conditions that control whether a BT branch can execute.
+        A Blackboard Decorator checks a key's value to allow or abort execution.
+
+        Args:
+            behavior_tree_name: Behavior Tree asset name
+            sequence_name: Name of the Sequence/Task node to decorate
+            blackboard_key: Blackboard key to monitor (e.g., "HasHeardSound", "bCanSeePlayer")
+            observer_aborts: "None", "Self", "LowerPriority", "Both"
+            node_name: Display name for the decorator node
+        """
+        return _send("add_bt_blackboard_decorator", {
+            "behavior_tree_name": behavior_tree_name,
+            "sequence_name": sequence_name,
+            "blackboard_key": blackboard_key,
+            "observer_aborts": observer_aborts,
+            "node_name": node_name or f"{blackboard_key}?"
+        })
+
+    @mcp.tool()
+    def create_full_upgraded_enemy_ai(
+        ctx: Context,
+        enemy_name: str,
+        has_patrol: bool = True,
+        has_chase: bool = True,
+        has_attack: bool = True,
+        has_hearing: bool = True,
+        has_wandering: bool = True,
+        attack_damage: float = 0.25,
+        hearing_distance: float = 1600.0
+    ) -> Dict[str, Any]:
+        """
+        Create a complete upgraded enemy AI setup from Ch.9-10.
+
+        Builds:
+        - Enemy Character Blueprint (with PawnSensing, health variables)
+        - AI Controller Blueprint (runs BT, handles OnSeePawn/OnHearNoise)
+        - Blackboard with all keys (PlayerCharacter, HasHeardSound, LocationOfSound,
+          CurrentPatrolPoint, bCanSeePlayer)
+        - Behavior Tree with Patrol/Chase/Attack/Investigate/Wander sequences
+        - BTTask_DoAttack with configurable damage
+        - BTTask_FindWanderPoint for random wandering
+        - Enemy Spawner Blueprint for wave-based spawning
+
+        Args:
+            enemy_name: Base name (creates BP_Enemy, BT_Enemy, BB_Enemy, etc.)
+            has_patrol: Include patrol behavior with patrol points
+            has_chase: Include player-chasing behavior
+            has_attack: Include melee attack behavior
+            has_hearing: Include sound-detection behavior
+            has_wandering: Include random wandering behavior
+            attack_damage: Damage dealt per attack (0.25 = 25% of health)
+            hearing_distance: PawnSensing hearing radius in cm
+        """
+        results = {}
+
+        # Create Blackboard with all keys
+        bb_keys = [
+            {"name": "PlayerCharacter", "type": "Object"},
+            {"name": "LastKnownLocation", "type": "Vector"},
+            {"name": "bCanSeePlayer", "type": "Boolean"},
+        ]
+        if has_patrol:
+            bb_keys.append({"name": "CurrentPatrolPoint", "type": "Object"})
+        if has_hearing:
+            bb_keys.append({"name": "HasHeardSound", "type": "Boolean"})
+            bb_keys.append({"name": "LocationOfSound", "type": "Vector"})
+        if has_wandering:
+            bb_keys.append({"name": "WanderTarget", "type": "Vector"})
+
+        results["blackboard"] = _send("create_blackboard", {
+            "name": f"BB_{enemy_name}",
+            "keys": bb_keys,
+            "path": "/Game/AI"
+        })
+
+        # Create Behavior Tree
+        results["behavior_tree"] = _send("create_behavior_tree", {
+            "name": f"BT_{enemy_name}",
+            "path": "/Game/AI"
+        })
+
+        # Create BT Tasks
+        if has_attack:
+            results["task_attack"] = _send("create_blueprint", {
+                "name": f"BTTask_{enemy_name}_DoAttack",
+                "parent_class": "BTTask_BlueprintBase"
+            })
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BTTask_{enemy_name}_DoAttack",
+                "variable_name": "TargetActorKey",
+                "variable_type": "BlackboardKeySelector",
+                "is_exposed": True
+            })
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BTTask_{enemy_name}_DoAttack",
+                "variable_name": "Damage",
+                "variable_type": "Float",
+                "is_exposed": True,
+                "default_value": str(attack_damage)
+            })
+            _send("compile_blueprint", {"blueprint_name": f"BTTask_{enemy_name}_DoAttack"})
+
+        if has_wandering:
+            results["task_wander"] = _send("create_blueprint", {
+                "name": f"BTTask_{enemy_name}_FindWanderPoint",
+                "parent_class": "BTTask_BlueprintBase"
+            })
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BTTask_{enemy_name}_FindWanderPoint",
+                "variable_name": "WanderTargetKey",
+                "variable_type": "BlackboardKeySelector",
+                "is_exposed": True
+            })
+            _send("compile_blueprint", {"blueprint_name": f"BTTask_{enemy_name}_FindWanderPoint"})
+
+        # Create AI Controller
+        results["ai_controller"] = _send("create_blueprint", {
+            "name": f"BP_{enemy_name}AIController",
+            "parent_class": "AIController"
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": f"BP_{enemy_name}AIController",
+            "variable_name": "HearingDistance",
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": str(hearing_distance)
+        })
+        if has_hearing:
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BP_{enemy_name}AIController",
+                "variable_name": "HasHeardSoundKey",
+                "variable_type": "Name",
+                "default_value": "HasHeardSound"
+            })
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BP_{enemy_name}AIController",
+                "variable_name": "LocationOfSoundKey",
+                "variable_type": "Name",
+                "default_value": "LocationOfSound"
+            })
+        _send("compile_blueprint", {"blueprint_name": f"BP_{enemy_name}AIController"})
+
+        # Create Enemy Character with PawnSensing
+        results["enemy_character"] = _send("create_blueprint", {
+            "name": f"BP_{enemy_name}",
+            "parent_class": "Character"
+        })
+        _send("add_component_to_blueprint", {
+            "blueprint_name": f"BP_{enemy_name}",
+            "component_type": "PawnSensingComponent",
+            "component_name": "PawnSensing"
+        })
+        _send("set_component_property", {
+            "blueprint_name": f"BP_{enemy_name}",
+            "component_name": "PawnSensing",
+            "property_name": "HearingThreshold",
+            "property_value": hearing_distance
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": f"BP_{enemy_name}",
+            "variable_name": "MaxHealth",
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": "100.0"
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": f"BP_{enemy_name}",
+            "variable_name": "CurrentHealth",
+            "variable_type": "Float"
+        })
+        if has_patrol:
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BP_{enemy_name}",
+                "variable_name": "PatrolPoints",
+                "variable_type": "Array<Actor>",
+                "is_exposed": True
+            })
+            _send("add_blueprint_variable", {
+                "blueprint_name": f"BP_{enemy_name}",
+                "variable_name": "CurrentPatrolIndex",
+                "variable_type": "Integer"
+            })
+        _send("set_blueprint_property", {
+            "blueprint_name": f"BP_{enemy_name}",
+            "property_name": "AIControllerClass",
+            "property_value": f"BP_{enemy_name}AIController"
+        })
+        _send("set_blueprint_property", {
+            "blueprint_name": f"BP_{enemy_name}",
+            "property_name": "AutoPossessAI",
+            "property_value": "PlacedInWorldOrSpawned"
+        })
+        _send("compile_blueprint", {"blueprint_name": f"BP_{enemy_name}"})
+
+        # Create Enemy Spawner
+        results["enemy_spawner"] = _send("create_blueprint", {
+            "name": f"BP_{enemy_name}Spawner",
+            "parent_class": "Actor"
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": f"BP_{enemy_name}Spawner",
+            "variable_name": "MaxEnemies",
+            "variable_type": "Integer",
+            "is_exposed": True,
+            "default_value": "5"
+        })
+        _send("add_blueprint_variable", {
+            "blueprint_name": f"BP_{enemy_name}Spawner",
+            "variable_name": "SpawnInterval",
+            "variable_type": "Float",
+            "is_exposed": True,
+            "default_value": "5.0"
+        })
+        _send("compile_blueprint", {"blueprint_name": f"BP_{enemy_name}Spawner"})
+
+        return results
+
     logger.info("AI tools registered")

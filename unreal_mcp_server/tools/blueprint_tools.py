@@ -228,4 +228,35 @@ def register_blueprint_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    @mcp.tool()
+    def set_blueprint_ai_controller(
+        blueprint_name: str,
+        controller_class: str = "AIController"
+    ) -> dict:
+        """
+        Set the AIControllerClass on a Pawn/Character Blueprint.
+
+        This sets the AI Controller Class in the Blueprint's Class Defaults,
+        which is required for AI movement (MoveToActor, SimpleMoveToActor) to work.
+
+        Args:
+            blueprint_name:   Name of the Blueprint (must be a Pawn or Character subclass).
+            controller_class: Short class name like 'AIController' (default) or a custom
+                              controller class name.
+
+        Returns:
+            Dict with 'blueprint', 'ai_controller_class', and 'success'.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("set_blueprint_ai_controller", {
+                "blueprint_name": blueprint_name,
+                "controller_class": controller_class,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     logger.info("Blueprint tools registered")
