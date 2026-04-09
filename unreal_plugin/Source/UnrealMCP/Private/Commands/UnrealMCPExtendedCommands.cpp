@@ -31,6 +31,7 @@
 #include "K2Node_MacroInstance.h"
 #include "K2Node_DynamicCast.h"
 #include "K2Node_Timeline.h"
+#include "K2Node_CustomEvent.h"
 #include "K2Node_CreateDelegate.h"
 #include "K2Node_AddDelegate.h"
 #include "K2Node_RemoveDelegate.h"
@@ -143,6 +144,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("add_timeline_node"))          return HandleAddTimelineNode(Params);
 
     // Event Dispatchers
+    if (CommandType == TEXT("add_custom_event"))           return HandleAddCustomEvent(Params);
+    if (CommandType == TEXT("call_custom_event"))          return HandleCallCustomEvent(Params);
     if (CommandType == TEXT("add_event_dispatcher"))       return HandleAddEventDispatcher(Params);
     if (CommandType == TEXT("call_event_dispatcher"))      return HandleCallEventDispatcher(Params);
     if (CommandType == TEXT("bind_event_to_dispatcher"))   return HandleBindEventToDispatcher(Params);
@@ -699,6 +702,108 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTimelineNode(
     
     FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
     return CreateSuccessResponse(TimelineNode->NodeGuid.ToString());
+}
+
+// ??? Custom Events ????????????????????????????????????????????????????????
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+        return CreateErrorResponse(TEXT("Missing 'event_name'"));
+    
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    
+    UEdGraph* Graph = FUnrealMCPCommonUtils::GetEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+    
+    FVector2D Pos = GetNodePosition(Params);
+    
+    // Create custom event node
+    UK2Node_CustomEvent* CustomEvent = NewObject<UK2Node_CustomEvent>(Graph);
+    CustomEvent->CustomFunctionName = FName(*EventName);
+    CustomEvent->NodePosX = Pos.X;
+    CustomEvent->NodePosY = Pos.Y;
+    CustomEvent->CreateNewGuid();
+    Graph->AddNode(CustomEvent, true);
+    CustomEvent->PostPlacedNewNode();
+    CustomEvent->AllocateDefaultPins();
+    
+    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("event_name"), EventName);
+    Result->SetStringField(TEXT("node_id"), CustomEvent->NodeGuid.ToString());
+    Result->SetStringField(TEXT("node_name"), CustomEvent->GetName());
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallCustomEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, TargetBP, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("target_blueprint"), TargetBP))
+        return CreateErrorResponse(TEXT("Missing 'target_blueprint'"));
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+        return CreateErrorResponse(TEXT("Missing 'event_name'"));
+    
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    
+    UEdGraph* Graph = FUnrealMCPCommonUtils::GetEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+    
+    FVector2D Pos = GetNodePosition(Params);
+    
+    // Find the target blueprint to get the event function
+    UBlueprint* TargetBP_Asset = FindBlueprint(TargetBP);
+    if (!TargetBP_Asset) return CreateErrorResponse(FString::Printf(TEXT("Target blueprint not found: %s"), *TargetBP));
+    
+    // Find the custom event function in the target blueprint
+    UFunction* EventFunc = nullptr;
+    if (TargetBP_Asset->GeneratedClass)
+    {
+        EventFunc = TargetBP_Asset->GeneratedClass->FindFunctionByName(FName(*EventName));
+    }
+    
+    if (!EventFunc)
+        return CreateErrorResponse(FString::Printf(TEXT("Custom event not found: %s in %s"), *EventName, *TargetBP));
+    
+    // Create function call node
+    UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(Graph);
+    CallNode->SetFromFunction(EventFunc);
+    CallNode->NodePosX = Pos.X;
+    CallNode->NodePosY = Pos.Y;
+    CallNode->CreateNewGuid();
+    Graph->AddNode(CallNode, true);
+    CallNode->PostPlacedNewNode();
+    CallNode->AllocateDefaultPins();
+    
+    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("event_name"), EventName);
+    Result->SetStringField(TEXT("node_id"), CallNode->NodeGuid.ToString());
+    Result->SetStringField(TEXT("node_name"), CallNode->GetName());
+    
+    // Return pin information
+    TArray<TSharedPtr<FJsonValue>> PinsArray;
+    for (UEdGraphPin* Pin : CallNode->Pins)
+    {
+        TSharedPtr<FJsonObject> PinObj = MakeShared<FJsonObject>();
+        PinObj->SetStringField(TEXT("pin_name"), Pin->PinName.ToString());
+        PinObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
+        PinsArray.Add(MakeShared<FJsonValueObject>(PinObj));
+    }
+    Result->SetArrayField(TEXT("pins"), PinsArray);
+    
+    return Result;
 }
 
 // ??? Event Dispatchers ????????????????????????????????????????????????????????
