@@ -721,6 +721,57 @@ builder.compile()
 
 ---
 
+### L-027 — Cast nodes for Blueprint classes missing typed output pin
+
+**Problem:** When creating a Cast node targeting a Blueprint class (e.g., `BP_PassiveBot`), 
+the node was created but missing its typed output pin (e.g., "As BP_PassiveBot"). This made 
+it impossible to connect the cast result to other nodes that need the typed reference.
+
+**Root Cause:** The `add_blueprint_cast_node` command only tried loading C++ classes via 
+`FindObject<UClass>`, `LoadObject<UClass>`, and `FindFirstObject<UClass>`. These methods 
+don't work for Blueprint classes because Blueprints are assets with a separate 
+`GeneratedClass` property that holds the actual UClass.
+
+**When you see it:**
+- Cast node created successfully
+- Only 4 pins visible: `execute`, `then`, `CastFailed`, `Object`
+- Missing the typed output pin like "As BP_PassiveBot"
+- Cannot connect cast result to next node's `self` pin
+- Error: "Pin 'As BP_PassiveBot' not found on source node"
+
+**Fix (commit d51050d):**
+1. Added Blueprint class resolution fallback in `HandleAddBlueprintCastNode`
+2. If standard UClass lookup fails, try `FindBlueprintByShortName`
+3. Extract the `GeneratedClass` from the Blueprint asset
+4. Set `Node->TargetType = TargetBP->GeneratedClass`
+5. Added error reporting when class resolution completely fails
+6. Changed from optional TargetType assignment to mandatory (with early return on failure)
+
+**Solution code:**
+```cpp
+// After standard UClass lookup attempts...
+if (!TargetClass)
+{
+    UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByShortName(TargetClassName);
+    if (TargetBP && TargetBP->GeneratedClass)
+        TargetClass = TargetBP->GeneratedClass;
+}
+
+// Fail fast if still not found
+if (!TargetClass)
+{
+    return FUnrealMCPCommonUtils::CreateErrorResponse(
+        FString::Printf(TEXT("Failed to resolve cast target class '%s'"), *TargetClassName));
+}
+```
+
+**Result:** Cast nodes for Blueprint classes now properly create all 5 pins including the 
+typed output pin, allowing proper data flow: `SpawnActor → Cast to BP_X → Custom Event(self)`.
+
+**Status:** ✅ Fixed (requires plugin rebuild)
+
+---
+
 ## Roadmap
 
 Derived from the limitations above, grouped by release priority.
