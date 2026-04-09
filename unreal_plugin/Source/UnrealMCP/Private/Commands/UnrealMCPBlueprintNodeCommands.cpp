@@ -1733,7 +1733,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCastN
     // If still not found, try loading as a Blueprint and get its GeneratedClass
     if (!TargetClass)
     {
-        UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByShortName(TargetClassName);
+        UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByName(TargetClassName);
         if (TargetBP && TargetBP->GeneratedClass)
             TargetClass = TargetBP->GeneratedClass;
     }
