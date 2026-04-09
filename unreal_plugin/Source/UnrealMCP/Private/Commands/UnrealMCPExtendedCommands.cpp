@@ -718,7 +718,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomEvent(
     UBlueprint* BP = FindBlueprint(BPName);
     if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
     
-    UEdGraph* Graph = FUnrealMCPCommonUtils::GetEventGraph(BP);
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
     if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
     
     FVector2D Pos = GetNodePosition(Params);
@@ -756,7 +756,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallCustomEvent(
     UBlueprint* BP = FindBlueprint(BPName);
     if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
     
-    UEdGraph* Graph = FUnrealMCPCommonUtils::GetEventGraph(BP);
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
     if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
     
     FVector2D Pos = GetNodePosition(Params);
