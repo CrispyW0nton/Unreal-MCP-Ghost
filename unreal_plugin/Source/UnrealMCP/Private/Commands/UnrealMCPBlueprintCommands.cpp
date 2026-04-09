@@ -1229,6 +1229,28 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
         }
     }
     
+    // Set auto possess AI if specified
+    if (Params->HasField(TEXT("auto_possess_ai")))
+    {
+        TSharedPtr<FJsonValue> AutoPossessAIValue = Params->Values.FindRef(TEXT("auto_possess_ai"));
+        
+        FString ErrorMessage;
+        if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, TEXT("AutoPossessAI"), AutoPossessAIValue, ErrorMessage))
+        {
+            bAnyPropertiesSet = true;
+            TSharedPtr<FJsonObject> PropResultObj = MakeShared<FJsonObject>();
+            PropResultObj->SetBoolField(TEXT("success"), true);
+            ResultsObj->SetObjectField(TEXT("AutoPossessAI"), PropResultObj);
+        }
+        else
+        {
+            TSharedPtr<FJsonObject> PropResultObj = MakeShared<FJsonObject>();
+            PropResultObj->SetBoolField(TEXT("success"), false);
+            PropResultObj->SetStringField(TEXT("error"), ErrorMessage);
+            ResultsObj->SetObjectField(TEXT("AutoPossessAI"), PropResultObj);
+        }
+    }
+    
     // Set controller rotation properties
     const TCHAR* RotationProps[] = {
         TEXT("bUseControllerRotationYaw"),
