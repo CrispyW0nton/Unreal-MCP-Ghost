@@ -1729,12 +1729,26 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCastN
         TargetClass = LoadObject<UClass>(nullptr, *TargetClassName);
     if (!TargetClass)
         TargetClass = FindFirstObject<UClass>(*TargetClassName, EFindFirstObjectOptions::None);
+    
+    // If still not found, try loading as a Blueprint and get its GeneratedClass
+    if (!TargetClass)
+    {
+        UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByShortName(TargetClassName);
+        if (TargetBP && TargetBP->GeneratedClass)
+            TargetClass = TargetBP->GeneratedClass;
+    }
+
+    // Check if we successfully resolved the target class
+    if (!TargetClass)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Failed to resolve cast target class '%s'"), *TargetClassName));
+    }
 
     UK2Node_DynamicCast* Node = NewObject<UK2Node_DynamicCast>(Graph);
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create K2Node_DynamicCast"));
 
-    if (TargetClass)
-        Node->TargetType = TargetClass;
+    Node->TargetType = TargetClass;
 
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
