@@ -107,6 +107,32 @@
 // EditorLevelUtils.h removed from public includes in UE 5.6
 // #include "EditorLevelUtils.h"  // REMOVED
 
+// Niagara
+#include "NiagaraComponent.h"
+#include "NiagaraSystem.h"
+#include "NiagaraFunctionLibrary.h"
+#include "K2Node_CallFunction.h"
+
+// Animation Notifies
+#include "Animation/AnimSequenceBase.h"
+#include "Animation/AnimSequence.h"
+#include "Animation/AnimMontage.h"
+#include "Animation/AnimNotifies/AnimNotify.h"
+
+// Material Instance
+#include "Materials/MaterialInstanceConstant.h"
+#include "Materials/MaterialInterface.h"
+#include "MaterialEditingLibrary.h"
+
+// Sequencer / Level Sequence
+#include "LevelSequence.h"
+#include "Tracks/MovieScene3DTransformTrack.h"
+#include "Sections/MovieScene3DTransformSection.h"
+#include "MovieSceneTrack.h"
+#include "MovieScene.h"
+#include "MovieSceneBinding.h"
+#include "LevelSequenceActor.h"
+
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealMCPExt, Log, All);
 
 // ??? Constructor ??????????????????????????????????????????????????????????????
@@ -176,14 +202,29 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("add_blend_space_node"))       return HandleAddBlendSpaceNode(Params);
 
     // AI
-    if (CommandType == TEXT("create_behavior_tree"))       return HandleCreateBehaviorTree(Params);
-    if (CommandType == TEXT("create_blackboard"))          return HandleCreateBlackboard(Params);
+    if (CommandType == TEXT("create_behavior_tree"))            return HandleCreateBehaviorTree(Params);
+    if (CommandType == TEXT("create_blackboard"))               return HandleCreateBlackboard(Params);
+    if (CommandType == TEXT("set_behavior_tree_blackboard"))    return HandleSetBehaviorTreeBlackboard(Params);
+    if (CommandType == TEXT("set_blueprint_parent_class"))      return HandleSetBlueprintParentClass(Params);
 
     // Level/World
-    if (CommandType == TEXT("set_game_mode_for_level"))    return HandleSetGameModeForLevel(Params);
+    if (CommandType == TEXT("set_game_mode_for_level"))         return HandleSetGameModeForLevel(Params);
+
+    // Niagara / VFX
+    if (CommandType == TEXT("add_niagara_component"))              return HandleAddNiagaraComponent(Params);
+    if (CommandType == TEXT("add_spawn_niagara_at_location_node")) return HandleAddSpawnNiagaraAtLocationNode(Params);
+
+    // Animation Notifies
+    if (CommandType == TEXT("add_anim_notify"))                 return HandleAddAnimNotify(Params);
+
+    // Materials
+    if (CommandType == TEXT("set_material_instance_parameter")) return HandleSetMaterialInstanceParameter(Params);
+
+    // Sequencer
+    if (CommandType == TEXT("set_sequencer_track"))             return HandleSetSequencerTrack(Params);
 
     // Comment
-    if (CommandType == TEXT("add_comment_box"))            return HandleAddCommentBox(Params);
+    if (CommandType == TEXT("add_comment_box"))                 return HandleAddCommentBox(Params);
 
     // Enhanced Input
     if (CommandType == TEXT("create_enhanced_input_action"))  return HandleCreateEnhancedInputAction(Params);
@@ -311,7 +352,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBranchNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("Branch"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
@@ -342,7 +383,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBranchNode(
     FuncNode->PostPlacedNewNode();
     FuncNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(FuncNode->NodeGuid.ToString());
 }
 
@@ -367,7 +408,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSequenceNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("Sequence"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
@@ -375,7 +416,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSequenceNode(
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("note"), TEXT("Sequence node created - add via Blueprint Editor for best results"));
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return Result;
 }
 
@@ -397,11 +438,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddFlipFlopNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("FlipFlop"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -423,11 +464,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDoOnceNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("DoOnce"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -453,11 +494,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDoNNode(
     if (AddFlowControlMacroNode(Graph, TEXT("DoN"), Pos, MacroResult))
     {
         // Set N value if node was created
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -479,11 +520,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGateNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("Gate"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -503,11 +544,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddWhileLoopNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("WhileLoop"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -533,11 +574,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddForEachLoopNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, MacroName, Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -570,7 +611,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableGetNode(
     GetNode->AllocateDefaultPins();
     GetNode->ReconstructNode();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(GetNode->NodeGuid.ToString());
 }
 
@@ -601,7 +642,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableSetNode(
     SetNode->AllocateDefaultPins();
     SetNode->ReconstructNode();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(SetNode->NodeGuid.ToString());
 }
 
@@ -653,7 +694,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCastNode(
     CastNode->PostPlacedNewNode();
     CastNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(CastNode->NodeGuid.ToString());
 }
 
@@ -700,7 +741,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTimelineNode(
     
     TimelineNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(TimelineNode->NodeGuid.ToString());
 }
 
@@ -733,7 +774,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomEvent(
     CustomEvent->PostPlacedNewNode();
     CustomEvent->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetStringField(TEXT("event_name"), EventName);
@@ -785,7 +826,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallCustomEvent(
     CallNode->PostPlacedNewNode();
     CallNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetStringField(TEXT("event_name"), EventName);
@@ -831,7 +872,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddEventDispatcher(
     
     FBlueprintEditorUtils::AddMemberVariable(BP, FName(*DispatcherName), DelegateType);
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     FKismetEditorUtilities::CompileBlueprint(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -867,7 +908,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallEventDispatcher(
     CallNode->PostPlacedNewNode();
     CallNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(CallNode->NodeGuid.ToString());
 }
 
@@ -897,7 +938,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBindEventToDispatcher(
     BindNode->PostPlacedNewNode();
     BindNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(BindNode->NodeGuid.ToString());
 }
 
@@ -925,7 +966,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleUnbindEventFromDispatc
     UnbindNode->PostPlacedNewNode();
     UnbindNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(UnbindNode->NodeGuid.ToString());
 }
 
@@ -953,7 +994,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomFunction(
         return CreateErrorResponse(TEXT("Failed to create function graph"));
     
     FBlueprintEditorUtils::AddFunctionGraph<UClass>(BP, FuncGraph, false, nullptr);
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -982,7 +1023,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomMacro(
         return CreateErrorResponse(TEXT("Failed to create macro graph"));
     
     BP->MacroGraphs.Add(MacroGraph);
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1065,7 +1106,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMacroNode(
     MacroNode->PostPlacedNewNode();
     MacroNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(MacroNode->NodeGuid.ToString());
 }
 
@@ -1189,7 +1230,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleImplementBlueprintInte
         return CreateErrorResponse(TEXT("Interface has no generated class"));
     
     FBlueprintEditorUtils::ImplementNewInterface(BP, FTopLevelAssetPath(InterfaceClass->GetPackage()->GetFName(), InterfaceClass->GetFName()));
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1240,7 +1281,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInterfaceFunctionNo
     MsgNode->PostPlacedNewNode();
     MsgNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(MsgNode->NodeGuid.ToString());
 }
 
@@ -1550,7 +1591,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateMachine(
     SMNode->AllocateDefaultPins();
     SMNode->PostPlacedNewNode();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(AnimBP);
+    AnimBP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1603,7 +1644,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimationState(
     StateNode->CreateNewGuid();
     StateNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(AnimBP);
+    AnimBP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1625,7 +1666,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateTransition(
     if (!AnimBP)
         return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(AnimBP);
+    AnimBP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1863,7 +1904,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCommentBox(
     Graph->AddNode(CommentNode, false, false);
     CommentNode->CreateNewGuid();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse(CommentNode->NodeGuid.ToString());
 }
 
@@ -1915,7 +1956,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSwitchNode(
     SwitchNode->PostPlacedNewNode();
     SwitchNode->AllocateDefaultPins();
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1943,11 +1984,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMultiGateNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("MultiGate"), Pos, MacroResult))
     {
-        FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
         return MacroResult;
     }
     
-    FBlueprintEditorUtils::MarkBlueprintAsModified(BP);
+    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
     return CreateSuccessResponse();
 }
 
@@ -2116,4 +2157,557 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInputMapping(
     Result->SetStringField(TEXT("key"), KeyName);
     Result->SetNumberField(TEXT("mapping_index"), NewIndex);
     return Result;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// set_blueprint_parent_class
+// Params: blueprint_name, new_parent_class (Blueprint asset name OR C++ class name)
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBlueprintParentClass(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, NewParentName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"),  BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("new_parent_class"), NewParentName))
+        return CreateErrorResponse(TEXT("Missing 'new_parent_class'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(
+        FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    // Try: find as Blueprint asset first (allows BP-to-BP reparenting)
+    UClass* NewParentClass = nullptr;
+    UBlueprint* ParentBP = FindBlueprint(NewParentName);
+    if (ParentBP && ParentBP->GeneratedClass)
+    {
+        NewParentClass = ParentBP->GeneratedClass;
+    }
+    else
+    {
+        // Try C++ class by short name
+        NewParentClass = FindObject<UClass>(ANY_PACKAGE, *NewParentName);
+    }
+
+    if (!NewParentClass)
+        return CreateErrorResponse(
+            FString::Printf(TEXT("Parent class not found: '%s'. Provide either a Blueprint asset name or C++ class name."), *NewParentName));
+
+    // Store old parent for response
+    FString OldParentName = BP->ParentClass ? BP->ParentClass->GetName() : TEXT("None");
+
+    // Perform reparent — uses KismetEditorUtilities which handles safe migration
+    FKismetEditorUtilities::ReparentBlueprint(BP, NewParentClass);
+    BP->Modify();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),        true);
+    R->SetStringField(TEXT("blueprint"),    BPName);
+    R->SetStringField(TEXT("old_parent"),   OldParentName);
+    R->SetStringField(TEXT("new_parent"),   NewParentClass->GetName());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// set_behavior_tree_blackboard
+// Params: behavior_tree_name, blackboard_name
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBehaviorTreeBlackboard(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName, BBName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+    if (!Params->TryGetStringField(TEXT("blackboard_name"),    BBName))
+        return CreateErrorResponse(TEXT("Missing 'blackboard_name'"));
+
+    // Load Behavior Tree asset
+    IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+        TEXT("AssetRegistry")).Get();
+
+    TArray<FAssetData> BTAssets;
+    AR.GetAssetsByClass(FTopLevelAssetPath(TEXT("/Script/AIModule"), TEXT("BehaviorTree")), BTAssets, true);
+    UBehaviorTree* BT = nullptr;
+    for (const FAssetData& AD : BTAssets)
+    {
+        if (AD.AssetName.ToString().Equals(BTName, ESearchCase::IgnoreCase))
+        {
+            BT = Cast<UBehaviorTree>(AD.GetAsset());
+            break;
+        }
+    }
+    if (!BT) return CreateErrorResponse(
+        FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // Load Blackboard asset
+    TArray<FAssetData> BBAssets;
+    AR.GetAssetsByClass(FTopLevelAssetPath(TEXT("/Script/AIModule"), TEXT("BlackboardData")), BBAssets, true);
+    UBlackboardData* BB = nullptr;
+    for (const FAssetData& AD : BBAssets)
+    {
+        if (AD.AssetName.ToString().Equals(BBName, ESearchCase::IgnoreCase))
+        {
+            BB = Cast<UBlackboardData>(AD.GetAsset());
+            break;
+        }
+    }
+    if (!BB) return CreateErrorResponse(
+        FString::Printf(TEXT("BlackboardData not found: %s"), *BBName));
+
+    BT->BlackboardAsset = BB;
+    BT->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),           true);
+    R->SetStringField(TEXT("behavior_tree"),   BTName);
+    R->SetStringField(TEXT("blackboard"),      BBName);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// add_niagara_component
+// Params: blueprint_name, component_name, [niagara_system_path]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNiagaraComponent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, CompName, NSPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"),  BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("component_name"),  CompName))
+        return CreateErrorResponse(TEXT("Missing 'component_name'"));
+    Params->TryGetStringField(TEXT("niagara_system_path"), NSPath);
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(
+        FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    USimpleConstructionScript* SCS = BP->SimpleConstructionScript;
+    if (!SCS) return CreateErrorResponse(TEXT("Blueprint has no SimpleConstructionScript"));
+
+    // Add a NiagaraComponent node to the SCS
+    USCS_Node* NewNode = SCS->CreateNode(UNiagaraComponent::StaticClass(), FName(*CompName));
+    if (!NewNode) return CreateErrorResponse(TEXT("Failed to create NiagaraComponent SCS node"));
+
+    SCS->GetRootNodes()[0] ? SCS->GetRootNodes()[0]->AddChildNode(NewNode)
+                            : SCS->AddNode(NewNode);
+
+    // Optionally assign a Niagara System asset
+    if (!NSPath.IsEmpty())
+    {
+        UNiagaraSystem* NS = Cast<UNiagaraSystem>(
+            StaticLoadObject(UNiagaraSystem::StaticClass(), nullptr, *NSPath));
+        if (NS)
+        {
+            UNiagaraComponent* NComp = Cast<UNiagaraComponent>(NewNode->ComponentTemplate);
+            if (NComp) NComp->SetAsset(NS);
+        }
+    }
+
+    BP->Modify();
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),          true);
+    R->SetStringField(TEXT("blueprint"),      BPName);
+    R->SetStringField(TEXT("component_name"), CompName);
+    R->SetStringField(TEXT("niagara_system"), NSPath.IsEmpty() ? TEXT("(none)") : NSPath);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// add_spawn_niagara_at_location_node
+// Params: blueprint_name, graph_name, niagara_system_path, [node_position]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSpawnNiagaraAtLocationNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, GraphName, NSPath;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"),      BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("niagara_system_path"), NSPath))
+        return CreateErrorResponse(TEXT("Missing 'niagara_system_path'"));
+    GraphName = TEXT("EventGraph");
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(
+        FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FindOrCreateEventGraph(BP);
+    for (UEdGraph* G : BP->UbergraphPages)
+        if (G && G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) { Graph = G; break; }
+    if (!Graph) return CreateErrorResponse(
+        FString::Printf(TEXT("Graph not found: %s"), *GraphName));
+
+    FVector2D Pos = GetNodePosition(Params);
+
+    // Add a CallFunction node for UNiagaraFunctionLibrary::SpawnSystemAtLocation
+    UFunction* SpawnFunc = UNiagaraFunctionLibrary::StaticClass()->FindFunctionByName(
+        TEXT("SpawnSystemAtLocation"));
+    if (!SpawnFunc)
+        return CreateErrorResponse(TEXT("SpawnSystemAtLocation function not found. Make sure Niagara plugin is enabled."));
+
+    UK2Node_CallFunction* CallNode = NewObject<UK2Node_CallFunction>(Graph);
+    CallNode->SetFromFunction(SpawnFunc);
+    CallNode->NodePosX = (int32)Pos.X;
+    CallNode->NodePosY = (int32)Pos.Y;
+    Graph->AddNode(CallNode, true, false);
+    CallNode->CreateNewGuid();
+    CallNode->PostPlacedNewNode();
+    CallNode->AllocateDefaultPins();
+
+    // Set the SystemTemplate pin default to the NS path
+    for (UEdGraphPin* Pin : CallNode->Pins)
+    {
+        if (Pin->PinName == TEXT("SystemTemplate"))
+        {
+            Pin->DefaultObject = Cast<UNiagaraSystem>(
+                StaticLoadObject(UNiagaraSystem::StaticClass(), nullptr, *NSPath));
+            break;
+        }
+    }
+
+    BP->Modify();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),           true);
+    R->SetStringField(TEXT("node_id"),         CallNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("niagara_system"),  NSPath);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// add_anim_notify
+// Params: animation_path, notify_name, time (seconds), [notify_state_duration]
+//         notify_type: "notify" (default) | "notify_state"
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimNotify(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString AnimPath, NotifyName;
+    if (!Params->TryGetStringField(TEXT("animation_path"), AnimPath))
+        return CreateErrorResponse(TEXT("Missing 'animation_path'"));
+    if (!Params->TryGetStringField(TEXT("notify_name"),    NotifyName))
+        return CreateErrorResponse(TEXT("Missing 'notify_name'"));
+
+    double TimeVal = 0.0;
+    Params->TryGetNumberField(TEXT("time"), TimeVal);
+    float TimeSeconds = (float)TimeVal;
+
+    double DurationVal = 0.1;
+    Params->TryGetNumberField(TEXT("notify_state_duration"), DurationVal);
+    float Duration = (float)DurationVal;
+
+    FString NotifyType = TEXT("notify");
+    Params->TryGetStringField(TEXT("notify_type"), NotifyType);
+    bool bIsState = NotifyType.ToLower() == TEXT("notify_state");
+
+    // Load the animation asset
+    UAnimSequenceBase* AnimAsset = Cast<UAnimSequenceBase>(
+        StaticLoadObject(UAnimSequenceBase::StaticClass(), nullptr, *AnimPath));
+    if (!AnimAsset)
+        return CreateErrorResponse(
+            FString::Printf(TEXT("Animation asset not found: %s"), *AnimPath));
+
+    // Create the notify track if needed
+    if (AnimAsset->AnimNotifyTracks.Num() == 0)
+    {
+        FAnimNotifyTrack NewTrack;
+        NewTrack.TrackName = TEXT("Notifies");
+        NewTrack.TrackColor = FLinearColor::White;
+        AnimAsset->AnimNotifyTracks.Add(NewTrack);
+    }
+
+    float SequenceLength = AnimAsset->GetPlayLength();
+    if (TimeSeconds > SequenceLength)
+        TimeSeconds = SequenceLength * 0.5f; // clamp to middle if out of range
+
+    if (!bIsState)
+    {
+        // Simple AnimNotify (point in time)
+        FAnimNotifyEvent NewEvent;
+        NewEvent.NotifyName = FName(*NotifyName);
+        NewEvent.SetTime(TimeSeconds);
+        NewEvent.TrackIndex = 0;
+        // Use generic AnimNotify (no custom class)
+        NewEvent.Notify = nullptr;
+        AnimAsset->Notifies.Add(NewEvent);
+    }
+    else
+    {
+        // AnimNotifyState (has duration)
+        FAnimNotifyEvent NewEvent;
+        NewEvent.NotifyName = FName(*NotifyName);
+        NewEvent.SetTime(TimeSeconds);
+        NewEvent.SetDuration(Duration);
+        NewEvent.TrackIndex = 0;
+        NewEvent.NotifyStateClass = nullptr; // Generic state, subclass later
+        AnimAsset->Notifies.Add(NewEvent);
+    }
+
+    AnimAsset->MarkPackageDirty();
+    AnimAsset->PostEditChange();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),          true);
+    R->SetStringField(TEXT("animation"),      AnimPath);
+    R->SetStringField(TEXT("notify_name"),    NotifyName);
+    R->SetStringField(TEXT("notify_type"),    bIsState ? TEXT("notify_state") : TEXT("notify"));
+    R->SetNumberField(TEXT("time"),           TimeSeconds);
+    if (bIsState) R->SetNumberField(TEXT("duration"), Duration);
+    R->SetNumberField(TEXT("total_notifies"), (double)AnimAsset->Notifies.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// set_material_instance_parameter
+// Params: material_instance_path, parameter_name, parameter_type (scalar|vector|texture), value
+//         For scalar: value = "1.5"
+//         For vector: value = "1.0,0.5,0.0,1.0"  (R,G,B,A)
+//         For texture: value = "/Game/Path/To/T_Texture"
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetMaterialInstanceParameter(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MIPath, ParamName, ParamType, ValueStr;
+    if (!Params->TryGetStringField(TEXT("material_instance_path"), MIPath))
+        return CreateErrorResponse(TEXT("Missing 'material_instance_path'"));
+    if (!Params->TryGetStringField(TEXT("parameter_name"),         ParamName))
+        return CreateErrorResponse(TEXT("Missing 'parameter_name'"));
+    if (!Params->TryGetStringField(TEXT("parameter_type"),         ParamType))
+        return CreateErrorResponse(TEXT("Missing 'parameter_type' (scalar|vector|texture)"));
+    if (!Params->TryGetStringField(TEXT("value"),                  ValueStr))
+        return CreateErrorResponse(TEXT("Missing 'value'"));
+
+    UMaterialInstanceConstant* MI = Cast<UMaterialInstanceConstant>(
+        StaticLoadObject(UMaterialInstanceConstant::StaticClass(), nullptr, *MIPath));
+    if (!MI)
+        return CreateErrorResponse(
+            FString::Printf(TEXT("MaterialInstanceConstant not found: %s"), *MIPath));
+
+    FString TypeLower = ParamType.ToLower();
+    FName PName(*ParamName);
+
+    if (TypeLower == TEXT("scalar"))
+    {
+        float ScalarVal = FCString::Atof(*ValueStr);
+        MI->SetScalarParameterValueEditorOnly(PName, ScalarVal);
+    }
+    else if (TypeLower == TEXT("vector"))
+    {
+        // Parse "R,G,B,A"
+        TArray<FString> Parts;
+        ValueStr.ParseIntoArray(Parts, TEXT(","), true);
+        float R = Parts.IsValidIndex(0) ? FCString::Atof(*Parts[0]) : 0.f;
+        float G = Parts.IsValidIndex(1) ? FCString::Atof(*Parts[1]) : 0.f;
+        float B = Parts.IsValidIndex(2) ? FCString::Atof(*Parts[2]) : 0.f;
+        float A = Parts.IsValidIndex(3) ? FCString::Atof(*Parts[3]) : 1.f;
+        MI->SetVectorParameterValueEditorOnly(PName, FLinearColor(R, G, B, A));
+    }
+    else if (TypeLower == TEXT("texture"))
+    {
+        UTexture* Tex = Cast<UTexture>(
+            StaticLoadObject(UTexture::StaticClass(), nullptr, *ValueStr));
+        if (!Tex) return CreateErrorResponse(
+            FString::Printf(TEXT("Texture not found: %s"), *ValueStr));
+        MI->SetTextureParameterValueEditorOnly(PName, Tex);
+    }
+    else
+    {
+        return CreateErrorResponse(TEXT("parameter_type must be 'scalar', 'vector', or 'texture'"));
+    }
+
+    MI->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),           true);
+    R->SetStringField(TEXT("material_instance"), MIPath);
+    R->SetStringField(TEXT("parameter_name"),  ParamName);
+    R->SetStringField(TEXT("parameter_type"),  ParamType);
+    R->SetStringField(TEXT("value"),           ValueStr);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// set_sequencer_track
+// Params: sequence_path, actor_name, track_type ("Transform"|"Visibility"|"Event")
+//         keyframes: [{time, [location:{x,y,z}], [rotation:{pitch,yaw,roll}], [scale:{x,y,z}]}]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetSequencerTrack(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SeqPath, ActorName, TrackType;
+    if (!Params->TryGetStringField(TEXT("sequence_path"), SeqPath))
+        return CreateErrorResponse(TEXT("Missing 'sequence_path'"));
+    if (!Params->TryGetStringField(TEXT("actor_name"),    ActorName))
+        return CreateErrorResponse(TEXT("Missing 'actor_name'"));
+    TrackType = TEXT("Transform");
+    Params->TryGetStringField(TEXT("track_type"), TrackType);
+
+    ULevelSequence* Seq = Cast<ULevelSequence>(
+        StaticLoadObject(ULevelSequence::StaticClass(), nullptr, *SeqPath));
+    if (!Seq)
+    {
+        // Try asset registry search by name
+        IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+            TEXT("AssetRegistry")).Get();
+        TArray<FAssetData> SeqAssets;
+        AR.GetAssetsByClass(FTopLevelAssetPath(TEXT("/Script/LevelSequence"), TEXT("LevelSequence")), SeqAssets, true);
+        for (const FAssetData& AD : SeqAssets)
+        {
+            if (AD.AssetName.ToString().Equals(SeqPath, ESearchCase::IgnoreCase) ||
+                AD.AssetName.ToString().Equals(FPaths::GetBaseFilename(SeqPath), ESearchCase::IgnoreCase))
+            {
+                Seq = Cast<ULevelSequence>(AD.GetAsset());
+                break;
+            }
+        }
+    }
+    if (!Seq)
+        return CreateErrorResponse(
+            FString::Printf(TEXT("LevelSequence not found: %s"), *SeqPath));
+
+    UMovieScene* MovieScene = Seq->GetMovieScene();
+    if (!MovieScene)
+        return CreateErrorResponse(TEXT("LevelSequence has no MovieScene"));
+
+    // Find or create a binding for the named actor
+    // We use a possessable with the actor name as a display name
+    FGuid BindingGuid;
+    for (int32 i = 0; i < MovieScene->GetPossessableCount(); ++i)
+    {
+        const FMovieScenePossessable& Poss = MovieScene->GetPossessable(i);
+        if (Poss.GetName().Equals(ActorName, ESearchCase::IgnoreCase))
+        {
+            BindingGuid = Poss.GetGuid();
+            break;
+        }
+    }
+    if (!BindingGuid.IsValid())
+    {
+        // Create a new possessable binding (actor must be placed in level separately)
+        BindingGuid = MovieScene->AddPossessable(ActorName, AActor::StaticClass());
+    }
+
+    // Add the requested track type
+    FString TypeLower = TrackType.ToLower();
+    int32 KeyframesAdded = 0;
+
+    if (TypeLower == TEXT("transform"))
+    {
+        UMovieScene3DTransformTrack* TransformTrack = MovieScene->FindTrack<UMovieScene3DTransformTrack>(BindingGuid);
+        if (!TransformTrack)
+        {
+            TransformTrack = MovieScene->AddTrack<UMovieScene3DTransformTrack>(BindingGuid);
+        }
+        if (!TransformTrack)
+            return CreateErrorResponse(TEXT("Failed to create Transform track"));
+
+        // Add a section if none exists
+        UMovieScene3DTransformSection* Section = nullptr;
+        if (TransformTrack->GetAllSections().Num() == 0)
+        {
+            TransformTrack->AddSection(*TransformTrack->CreateNewSection());
+        }
+        Section = Cast<UMovieScene3DTransformSection>(TransformTrack->GetAllSections()[0]);
+        if (!Section)
+            return CreateErrorResponse(TEXT("Failed to get/create Transform section"));
+
+        // Parse keyframes array
+        const TArray<TSharedPtr<FJsonValue>>* KeyframesArray = nullptr;
+        if (Params->TryGetArrayField(TEXT("keyframes"), KeyframesArray))
+        {
+            FFrameRate TickRate = MovieScene->GetTickResolution();
+
+            for (const TSharedPtr<FJsonValue>& KFVal : *KeyframesArray)
+            {
+                const TSharedPtr<FJsonObject>* KFObj;
+                if (!KFVal->TryGetObject(KFObj)) continue;
+
+                double TimeVal = 0.0;
+                (*KFObj)->TryGetNumberField(TEXT("time"), TimeVal);
+                FFrameNumber FrameNum = (TickRate * TimeVal).RoundToFrame();
+
+                // Extend section range
+                TRange<FFrameNumber> CurrentRange = Section->GetRange();
+                FFrameNumber NewEnd = FMath::Max(CurrentRange.HasUpperBound()
+                    ? CurrentRange.GetUpperBoundValue() : FFrameNumber(0), FrameNum + FFrameNumber(1));
+                Section->SetRange(TRange<FFrameNumber>(
+                    CurrentRange.HasLowerBound() ? CurrentRange.GetLowerBoundValue() : FFrameNumber(0),
+                    NewEnd));
+
+                // Read location
+                FVector Loc(0, 0, 0);
+                const TSharedPtr<FJsonObject>* LocObj;
+                if ((*KFObj)->TryGetObjectField(TEXT("location"), LocObj))
+                {
+                    double X = 0, Y = 0, Z = 0;
+                    (*LocObj)->TryGetNumberField(TEXT("x"), X);
+                    (*LocObj)->TryGetNumberField(TEXT("y"), Y);
+                    (*LocObj)->TryGetNumberField(TEXT("z"), Z);
+                    Loc = FVector(X, Y, Z);
+                }
+                // Read rotation
+                FRotator Rot(0, 0, 0);
+                const TSharedPtr<FJsonObject>* RotObj;
+                if ((*KFObj)->TryGetObjectField(TEXT("rotation"), RotObj))
+                {
+                    double P = 0, Y = 0, R = 0;
+                    (*RotObj)->TryGetNumberField(TEXT("pitch"), P);
+                    (*RotObj)->TryGetNumberField(TEXT("yaw"),   Y);
+                    (*RotObj)->TryGetNumberField(TEXT("roll"),  R);
+                    Rot = FRotator(P, Y, R);
+                }
+                // Read scale
+                FVector Scale(1, 1, 1);
+                const TSharedPtr<FJsonObject>* ScaleObj;
+                if ((*KFObj)->TryGetObjectField(TEXT("scale"), ScaleObj))
+                {
+                    double X = 1, Y = 1, Z = 1;
+                    (*ScaleObj)->TryGetNumberField(TEXT("x"), X);
+                    (*ScaleObj)->TryGetNumberField(TEXT("y"), Y);
+                    (*ScaleObj)->TryGetNumberField(TEXT("z"), Z);
+                    Scale = FVector(X, Y, Z);
+                }
+
+                // Add transform key via the section channels
+                FMovieSceneTransformMask TransformMask;
+                auto& Channels = Section->GetChannelProxy();
+                // Set Translation channels
+                using FFloatChannel = FMovieSceneFloatChannel;
+                TArrayView<FFloatChannel*> FloatChannels = Channels.GetChannels<FFloatChannel>();
+                // Channels 0-2 = Translation X,Y,Z; 3-5 = Rotation P,Y,R; 6-8 = Scale X,Y,Z
+                if (FloatChannels.Num() >= 9)
+                {
+                    FloatChannels[0]->AddCubicKey(FrameNum, (float)Loc.X);
+                    FloatChannels[1]->AddCubicKey(FrameNum, (float)Loc.Y);
+                    FloatChannels[2]->AddCubicKey(FrameNum, (float)Loc.Z);
+                    FloatChannels[3]->AddCubicKey(FrameNum, (float)Rot.Pitch);
+                    FloatChannels[4]->AddCubicKey(FrameNum, (float)Rot.Yaw);
+                    FloatChannels[5]->AddCubicKey(FrameNum, (float)Rot.Roll);
+                    FloatChannels[6]->AddCubicKey(FrameNum, (float)Scale.X);
+                    FloatChannels[7]->AddCubicKey(FrameNum, (float)Scale.Y);
+                    FloatChannels[8]->AddCubicKey(FrameNum, (float)Scale.Z);
+                }
+                KeyframesAdded++;
+            }
+        }
+    }
+    else
+    {
+        return CreateErrorResponse(
+            FString::Printf(TEXT("Unsupported track_type: '%s'. Currently supported: 'Transform'"), *TrackType));
+    }
+
+    Seq->MarkPackageDirty();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"),          true);
+    R->SetStringField(TEXT("sequence"),       SeqPath);
+    R->SetStringField(TEXT("actor"),          ActorName);
+    R->SetStringField(TEXT("track_type"),     TrackType);
+    R->SetStringField(TEXT("binding_guid"),   BindingGuid.ToString());
+    R->SetNumberField(TEXT("keyframes_added"), (double)KeyframesAdded);
+    return R;
 }
