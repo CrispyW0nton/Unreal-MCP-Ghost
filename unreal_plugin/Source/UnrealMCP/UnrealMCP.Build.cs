@@ -89,6 +89,20 @@ public class UnrealMCP : ModuleRules
                 // The user must have the "Python Editor Script Plugin" enabled in UE5.
                 "PythonScriptPlugin",
 
+                // Niagara VFX - required for add_niagara_component + add_spawn_niagara_at_location_node
+                "Niagara",
+                "NiagaraEditor",
+
+                // Sequencer / Level Sequence - required for set_sequencer_track
+                "MovieScene",
+                "MovieSceneTracks",
+                "LevelSequence",
+                "Sequencer",
+                "MovieSceneTools",
+
+                // Material editing - required for set_material_instance_parameter
+                "MaterialEditor",
+
                 // All of FStructureEditorUtils, FEnumEditorUtils, UEdGraphNode_Comment,
                 // UDataTableFactory, and UAnimationStateMachineSchema are provided by
                 // UnrealEd and AnimGraph which are already listed above.

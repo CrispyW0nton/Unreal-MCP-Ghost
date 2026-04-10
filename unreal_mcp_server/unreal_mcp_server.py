@@ -4,12 +4,34 @@ Based on: https://github.com/chongdashu/unreal-mcp
 Extended with full Blueprint Visual Scripting support as described in:
 "Blueprints Visual Scripting for Unreal Engine 5" by Marcos Romero
 
-This server enables AI assistants (Claude, Cursor, Windsurf) to control
-Unreal Engine 5 through natural language using the Model Context Protocol (MCP).
+This server enables AI assistants to control Unreal Engine 5 through the
+Model Context Protocol (MCP). Supports three transport modes:
+
+  stdio           — default; for local AI clients (Claude Desktop, Cursor, Windsurf)
+                    configured via the client's MCP config JSON.
+
+  sse             — HTTP + Server-Sent Events; for remote AI agents (GenSpark AI
+                    Developer, any cloud-based MCP client). Run the server on the
+                    developer's machine, then connect from the remote agent.
+
+  streamable-http — Modern HTTP streaming transport (MCP 2025-03-26 spec).
+                    Recommended alternative to SSE for new integrations.
 
 Architecture:
-  - Python MCP Server (this file) <-> TCP Socket (port 55557) <-> UE5 C++ Plugin
-  - The C++ plugin (UnrealMCP) must be installed in your UE5 project
+  Remote AI Agent (GenSpark)
+    → HTTP POST/SSE to MCP server  (MCP_SERVER_HOST:MCP_SERVER_PORT, default 8000)
+    → unreal_mcp_server.py  (this file, running on developer's machine)
+    → TCP JSON  (UNREAL_HOST:UNREAL_PORT, default 55557, via Playit tunnel if needed)
+    → UnrealMCP C++ Plugin inside UE5 Editor
+
+Quick start for remote agents (GenSpark AI Developer):
+  # On the developer's machine, run:
+  python unreal_mcp_server.py --transport sse --mcp-host 0.0.0.0 --mcp-port 8000 \\
+      --unreal-host lie-instability.with.playit.plus --unreal-port 5462
+
+  # Set up a second Playit tunnel pointing to localhost:8000 (or use any port-forward)
+  # Then in GenSpark, connect to the MCP server SSE URL:
+  #   http://<playit-address>:<playit-port>/sse
 """
 
 import argparse
@@ -33,9 +55,14 @@ logging.basicConfig(
 logger = logging.getLogger("UnrealMCP")
 
 # ─── Configuration ──────────────────────────────────────────────────────────
-# Priority: --host/--port flags  >  UNREAL_HOST/UNREAL_PORT env vars  >  defaults
+# UE5 plugin connection (the TCP socket to Unreal Engine)
+# Priority: CLI flags > environment variables > defaults
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
 UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55557"))
+
+# MCP HTTP server settings (used for sse / streamable-http transports)
+MCP_SERVER_HOST = os.environ.get("MCP_SERVER_HOST", "0.0.0.0")
+MCP_SERVER_PORT = int(os.environ.get("MCP_SERVER_PORT", "8000"))
 
 
 # ─── Connection Class ────────────────────────────────────────────────────────
@@ -610,14 +637,119 @@ def info():
 
 
 if __name__ == "__main__":
-    # Parse --host/--port before handing off to FastMCP — these override env vars
-    parser = argparse.ArgumentParser(add_help=False)
-    parser.add_argument("--host", default=None)
-    parser.add_argument("--port", type=int, default=None)
-    known, _ = parser.parse_known_args()
-    if known.host is not None:
-        UNREAL_HOST = known.host
-    if known.port is not None:
-        UNREAL_PORT = known.port
-    logger.info(f"Starting Unreal MCP server (target: {UNREAL_HOST}:{UNREAL_PORT}) with stdio transport")
-    mcp.run(transport='stdio')
+    # ── Argument parsing ────────────────────────────────────────────────────
+    parser = argparse.ArgumentParser(
+        description="Unreal Engine MCP Server",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+        epilog="""
+Transport modes:
+  stdio            For local AI clients (Claude Desktop, Cursor, Windsurf).
+                   No extra flags needed. Used by default.
+
+  sse              HTTP + Server-Sent Events. For remote AI agents (GenSpark,
+                   any cloud MCP client). Starts an HTTP server that remote
+                   agents connect to via the /sse endpoint.
+                   Example: python unreal_mcp_server.py --transport sse
+                            --mcp-host 0.0.0.0 --mcp-port 8000
+
+  streamable-http  Modern HTTP streaming (MCP 2025-03-26). Recommended for
+                   new integrations. Exposes /mcp endpoint.
+                   Example: python unreal_mcp_server.py --transport streamable-http
+
+Unreal Engine connection:
+  --unreal-host    Hostname/IP of the UE5 machine (default: 127.0.0.1)
+                   Set to your Playit tunnel address when UE5 is remote.
+  --unreal-port    Port the UnrealMCP plugin listens on (default: 55557)
+                   Set to your Playit tunnel port when using a tunnel.
+
+Environment variable equivalents:
+  UNREAL_HOST, UNREAL_PORT      — UE5 plugin TCP address
+  MCP_SERVER_HOST, MCP_SERVER_PORT — HTTP server bind address (sse/streamable-http)
+        """
+    )
+
+    # Transport
+    parser.add_argument(
+        "--transport",
+        choices=["stdio", "sse", "streamable-http"],
+        default="stdio",
+        help="MCP transport to use (default: stdio)"
+    )
+
+    # UE5 plugin address
+    parser.add_argument(
+        "--unreal-host",
+        default=None,
+        metavar="HOST",
+        help="Hostname or IP of the UE5 machine (overrides UNREAL_HOST env var)"
+    )
+    parser.add_argument(
+        "--unreal-port",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="Port the UnrealMCP plugin listens on (overrides UNREAL_PORT env var)"
+    )
+
+    # MCP HTTP server address (sse / streamable-http only)
+    parser.add_argument(
+        "--mcp-host",
+        default=None,
+        metavar="HOST",
+        help="Host to bind the MCP HTTP server to (default: 0.0.0.0). sse/streamable-http only."
+    )
+    parser.add_argument(
+        "--mcp-port",
+        type=int,
+        default=None,
+        metavar="PORT",
+        help="Port to bind the MCP HTTP server to (default: 8000). sse/streamable-http only."
+    )
+
+    args = parser.parse_args()
+
+    # ── Apply CLI overrides ─────────────────────────────────────────────────
+    if args.unreal_host is not None:
+        UNREAL_HOST = args.unreal_host
+    if args.unreal_port is not None:
+        UNREAL_PORT = args.unreal_port
+    if args.mcp_host is not None:
+        MCP_SERVER_HOST = args.mcp_host
+    if args.mcp_port is not None:
+        MCP_SERVER_PORT = args.mcp_port
+
+    # ── Apply MCP server HTTP host/port settings ────────────────────────────
+    # FastMCP reads these from its settings object; patch them before run()
+    if args.transport in ("sse", "streamable-http"):
+        mcp.settings.host = MCP_SERVER_HOST
+        mcp.settings.port = MCP_SERVER_PORT
+
+    # ── Launch ──────────────────────────────────────────────────────────────
+    if args.transport == "stdio":
+        logger.info(
+            f"Starting UnrealMCP server | transport=stdio | "
+            f"UE5={UNREAL_HOST}:{UNREAL_PORT}"
+        )
+        mcp.run(transport="stdio")
+
+    elif args.transport == "sse":
+        logger.info(
+            f"Starting UnrealMCP server | transport=sse | "
+            f"HTTP={MCP_SERVER_HOST}:{MCP_SERVER_PORT} | "
+            f"UE5={UNREAL_HOST}:{UNREAL_PORT}"
+        )
+        print(f"[UnrealMCP] SSE server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/sse")
+        print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/sse")
+        print(f"[UnrealMCP] UE5 plugin target: {UNREAL_HOST}:{UNREAL_PORT}")
+        mcp.run(transport="sse")
+
+    elif args.transport == "streamable-http":
+        logger.info(
+            f"Starting UnrealMCP server | transport=streamable-http | "
+            f"HTTP={MCP_SERVER_HOST}:{MCP_SERVER_PORT} | "
+            f"UE5={UNREAL_HOST}:{UNREAL_PORT}"
+        )
+        print(f"[UnrealMCP] Streamable-HTTP server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/mcp")
+        print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/mcp")
+        print(f"[UnrealMCP] UE5 plugin target: {UNREAL_HOST}:{UNREAL_PORT}")
+        mcp.run(transport="streamable-http")

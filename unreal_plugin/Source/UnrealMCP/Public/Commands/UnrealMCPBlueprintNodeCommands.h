@@ -46,6 +46,9 @@
  *   add_blueprint_spawn_actor_node         - add a K2Node_SpawnActorFromClass (L-012)
  *   add_blueprint_comment_node             - add a comment box node (L-018)
  *   setup_navmesh                          - spawn/resize a NavMeshBoundsVolume (L-014)
+ *   get_blueprint_variables                - list all member variables with type/default/category
+ *   get_blueprint_functions                - list all function graphs with input/output pin info
+ *   add_blueprint_function_with_pins       - create function graph with typed input/output pins
  */
 class UNREALMCP_API FUnrealMCPBlueprintNodeCommands
 {
@@ -68,6 +71,8 @@ private:
 
     // ---------- node creation ----------
     TSharedPtr<FJsonObject> HandleAddBlueprintEvent(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintCustomEventNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetSpawnActorClass(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintFunctionCall(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintVariableGetNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintVariableSetNode(const TSharedPtr<FJsonObject>& Params);
@@ -77,6 +82,7 @@ private:
     TSharedPtr<FJsonObject> HandleAddBlueprintSelfReference(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintGetSelfComponentReference(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintGetComponentNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintSetComponentProperty(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintBranchNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintCastNode(const TSharedPtr<FJsonObject>& Params);
 
@@ -103,6 +109,11 @@ private:
 
     // ---------- Phase 5: NavMesh (L-014) ----------
     TSharedPtr<FJsonObject> HandleSetupNavMesh(const TSharedPtr<FJsonObject>& Params);
+
+    // ---------- Phase 6: Blueprint introspection ----------
+    TSharedPtr<FJsonObject> HandleGetBlueprintVariables(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleGetBlueprintFunctions(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintFunctionWithPins(const TSharedPtr<FJsonObject>& Params);
 
     // ---------- shared helpers ----------
 

@@ -58,6 +58,8 @@
 #include "Commands/UnrealMCPCommonUtils.h"
 #include "Commands/UnrealMCPUMGCommands.h"
 #include "Commands/UnrealMCPExtendedCommands.h"
+#include "HAL/PlatformTime.h"
+#include "UnrealMCPModule.h"
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
@@ -216,6 +218,27 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
     AsyncTask(ENamedThreads::GameThread, [this, CommandType, Params, Promise = MoveTemp(Promise)]() mutable
     {
         TSharedPtr<FJsonObject> ResponseJson = MakeShareable(new FJsonObject);
+
+        // ---------------------------------------------------------------
+        // Pre-command diagnostic logging so we can trace every MCP action
+        // even if Unreal crashes before the command completes.
+        // These lines appear in Saved/Logs/UnrealEditor.log.
+        // ---------------------------------------------------------------
+        UE_LOG(LogMCP, Display, TEXT("[MCP] >>> BEGIN command: '%s'"), *CommandType);
+
+        // Serialize params for debugging (keep it short – first 512 chars)
+        {
+            FString ParamsStr;
+            TSharedRef<TJsonWriter<>> PWriter = TJsonWriterFactory<>::Create(&ParamsStr);
+            FJsonSerializer::Serialize(Params.ToSharedRef(), PWriter);
+            if (ParamsStr.Len() > 512)
+            {
+                ParamsStr = ParamsStr.Left(509) + TEXT("...");
+            }
+            UE_LOG(LogMCP, Display, TEXT("[MCP]   Params: %s"), *ParamsStr);
+        }
+
+        const double CommandStartTime = FPlatformTime::Seconds();
         
         try
         {
@@ -265,6 +288,8 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("delete_blueprint_node") ||
                      CommandType == TEXT("set_node_pin_value") ||
                      CommandType == TEXT("add_blueprint_event_node") ||
+                     CommandType == TEXT("add_blueprint_custom_event_node") ||
+                     CommandType == TEXT("set_spawn_actor_class") ||
                      CommandType == TEXT("add_blueprint_function_node") ||
                      CommandType == TEXT("add_blueprint_variable_get_node") ||
                      CommandType == TEXT("add_blueprint_variable_set_node") ||
@@ -274,6 +299,7 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("add_blueprint_self_reference") ||
                      CommandType == TEXT("add_blueprint_get_self_component_reference") ||
                      CommandType == TEXT("add_blueprint_get_component_node") ||
+                     CommandType == TEXT("add_blueprint_set_component_property") ||
                      CommandType == TEXT("add_blueprint_branch_node") ||
                      CommandType == TEXT("add_blueprint_cast_node") ||
                      // Phase 2: structural nodes (L-012)
@@ -369,11 +395,33 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                 ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
                 ResponseJson->SetStringField(TEXT("error"), ErrorMessage);
             }
+
+            const double ElapsedMs = (FPlatformTime::Seconds() - CommandStartTime) * 1000.0;
+            UE_LOG(LogMCP, Display, TEXT("[MCP] <<< END command: '%s' | success=%d | %.1f ms"),
+                *CommandType, bSuccess ? 1 : 0, ElapsedMs);
         }
         catch (const std::exception& e)
         {
+            const double ElapsedMs = (FPlatformTime::Seconds() - CommandStartTime) * 1000.0;
+            UE_LOG(LogMCP, Error, TEXT("[MCP] <<< EXCEPTION in command '%s' after %.1f ms: %s"),
+                *CommandType, ElapsedMs, UTF8_TO_TCHAR(e.what()));
             ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
             ResponseJson->SetStringField(TEXT("error"), UTF8_TO_TCHAR(e.what()));
+        }
+        catch (...)
+        {
+            // This catch block handles non-std exceptions (e.g. SEH exceptions
+            // on Windows that have been translated by _set_se_translator).
+            // Note: raw hardware exceptions (EXCEPTION_ACCESS_VIOLATION) do NOT
+            // reach here in a normal UE build – they are caught by the engine's
+            // crash handler.  But structured exceptions translated to C++
+            // exceptions via _set_se_translator WILL land here.
+            const double ElapsedMs = (FPlatformTime::Seconds() - CommandStartTime) * 1000.0;
+            UE_LOG(LogMCP, Error, TEXT("[MCP] <<< UNKNOWN EXCEPTION in command '%s' after %.1f ms"),
+                *CommandType, ElapsedMs);
+            ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
+            ResponseJson->SetStringField(TEXT("error"),
+                FString::Printf(TEXT("Unknown exception in command '%s'"), *CommandType));
         }
         
         FString ResultString;

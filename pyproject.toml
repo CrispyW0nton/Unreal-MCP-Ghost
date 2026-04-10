@@ -13,6 +13,10 @@ dependencies = [
     # Earlier versions (2.27.x) tried to compile from source via PyO3 which
     # only supports up to Python 3.13, causing the cargo build failure.
     "pydantic-core>=2.28.0",
+    # uvicorn is required for SSE and streamable-http transport modes.
+    # These modes let remote AI agents (GenSpark AI Developer, etc.) connect
+    # to the MCP server over HTTP instead of stdio.
+    "uvicorn>=0.29.0",
 ]
 
 [project.scripts]
