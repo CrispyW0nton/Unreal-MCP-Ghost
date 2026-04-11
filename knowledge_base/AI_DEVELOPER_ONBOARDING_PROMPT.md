@@ -133,7 +133,7 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 
 ## 4. COMPLETE TOOL REFERENCE (321 tools)
 
-> This section lists the most commonly needed tools. The full set of 321 tools includes many additional helpers (e.g. `add_branch_node`, `add_do_once_node`, `add_flipflop_node`, `add_gate_node`, `add_sequence_node`, `add_while_loop_node`, `add_reroute_node`, `add_switch_on_int_node`, `add_switch_on_string_node`, `add_switch_on_enum_node`, `add_multigate_node`, `add_select_node`, `add_format_text_node`, `add_append_string_node`, `add_vector_length_node`, `add_nearly_equal_float_node`, `add_abs_node`, `add_min_max_node`, `add_math_expression_node`, `add_make_array_node`, `add_make_map_node`, `add_make_set_node`, various map/set operation nodes, `add_multi_line_trace_by_channel_node`, `add_multi_line_trace_for_objects_node`, `add_spline_component`, `add_spline_mesh_component`, and VR/variant tools). Use `search_knowledge_base("tool name")` to find the right tool and its parameters.
+> **All 321 tools are documented below.** Every tool is listed with its exact parameter names — use them verbatim. Wrong parameter names fail silently.
 
 ### Actor / Level Tools
 | Tool | Key Parameters |
@@ -222,6 +222,30 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `add_custom_function` | `blueprint_name`, `function_name` |
 | `add_timeline_node` | `blueprint_name`, `graph_name`, `timeline_name`, `node_position` |
 | `add_delay_node` | `blueprint_name`, `[duration]`, `node_position` |
+| `add_branch_node` | `blueprint_name`, `[node_position]` — If/Else branch |
+| `add_sequence_node` | `blueprint_name`, `[node_position]` — execute outputs in order |
+| `add_flipflop_node` | `blueprint_name`, `[node_position]` — alternates between A and B outputs |
+| `add_do_once_node` | `blueprint_name`, `[node_position]` — executes only the first time |
+| `add_do_n_node` | `blueprint_name`, `[n]`, `[node_position]` — executes exactly N times |
+| `add_gate_node` | `blueprint_name`, `[node_position]` — open/close gate for exec flow |
+| `add_while_loop_node` | `blueprint_name`, `[node_position]` — loop while condition is true |
+| `add_for_each_loop_node` | `blueprint_name`, `[with_break]`, `[node_position]` — iterates over an Array |
+| `add_multigate_node` | `blueprint_name`, `[node_position]` — routes exec to one of N outputs in sequence |
+| `add_select_node` | `blueprint_name`, `[index_type]`, `[option_type]`, `[num_options]`, `[node_position]` |
+| `add_reroute_node` | `blueprint_name`, `[node_position]` — wire routing dot node |
+| `add_comment_box` | `blueprint_name`, `comment_text`, `[position]`, `[size]`, `[color]` — documentation comment |
+| `add_macro_node` | `blueprint_name`, `macro_name`, `[node_position]` — call a macro by name |
+| `add_custom_macro` | `blueprint_name`, `macro_name`, `[inputs]`, `[outputs]` — define a new Macro |
+| `add_construct_object_node` | `blueprint_name`, `object_class`, `[node_position]` — Construct Object from Class |
+| `add_spawn_actor_node` | `blueprint_name`, `actor_class`, `[node_position]` — Spawn Actor from Class |
+| `add_get_variable_node` | `blueprint_name`, `variable_name`, `[node_position]` — Get a variable's value |
+| `add_set_variable_node` | `blueprint_name`, `variable_name`, `[node_position]` — Set a variable's value |
+| `add_switch_on_int_node` | `blueprint_name`, `[node_position]` |
+| `add_switch_on_string_node` | `blueprint_name`, `[node_position]` |
+| `add_switch_on_enum_node` | `blueprint_name`, `enum_type`, `[node_position]` |
+| `add_format_text_node` | `blueprint_name`, `[template]`, `[node_position]` — Format Text with `{ParameterName}` slots |
+| `add_append_string_node` | `blueprint_name`, `[node_position]` — concatenate strings |
+| `add_math_expression_node` | `blueprint_name`, `expression`, `[node_position]` — expression string like `"A + B * C"` |
 | `add_print_string_node` | `blueprint_name`, `[message]`, `node_position` |
 | `add_print_text_node` | `blueprint_name`, `[message]`, `node_position` |
 | `add_get_delta_seconds_node` | `blueprint_name` |
@@ -229,13 +253,20 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `add_get_player_controller_node` | `blueprint_name`, `node_position` |
 | `add_get_game_mode_node` | `blueprint_name`, `node_position` |
 | `add_get_game_instance_node` | `blueprint_name`, `node_position` |
+| `add_get_owner_node` | `blueprint_name`, `[cast_to_class]`, `[node_position]` — GetOwner for component Blueprints |
 | `add_get_all_actors_of_class_node` | `blueprint_name`, `actor_class`, `node_position` |
 | `add_get_actor_of_class_node` | `blueprint_name`, `actor_class`, `node_position` |
 | `add_destroy_actor_node` | `blueprint_name`, `node_position` |
 | `add_spawn_actor_from_class_node` | `blueprint_name`, `actor_class`, `node_position` |
 | `add_is_valid_node` | `blueprint_name`, `node_position` |
+| `add_is_valid_class_node` | `blueprint_name`, `[node_position]` — check if a class reference is valid |
 | `add_validated_get_node` | `blueprint_name`, `variable_name`, `node_position` |
 | `add_math_node` | `blueprint_name`, `operation` (e.g. `"Add_FloatFloat"`, `"VSize"`), `node_position` |
+| `add_abs_node` | `blueprint_name`, `[operand_type]`, `[node_position]` — absolute value |
+| `add_min_max_node` | `blueprint_name`, `[operation]` (`"Min"`/`"Max"`), `[operand_type]`, `[node_position]` |
+| `add_nearly_equal_float_node` | `blueprint_name`, `[node_position]` — float equality with tolerance |
+| `add_vector_length_node` | `blueprint_name`, `[node_position]` — VSize / vector magnitude |
+| `add_get_unit_direction_vector_node` | `blueprint_name`, `[node_position]` — normalized direction vector from A to B |
 | `add_cast_node` | `blueprint_name`, `target_class`, `node_position` |
 
 ### Node Editing Tools
@@ -276,7 +307,10 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `add_get_blackboard_value_node` | `blueprint_name`, `key_name`, `value_type` |
 | `set_blackboard_value` | `blueprint_name`, `key_name`, `value` |
 | `add_clear_blackboard_value_node` | `blueprint_name`, `key_name` |
+| `add_bt_blackboard_decorator` | `behavior_tree_name`, `sequence_name`, `blackboard_key`, `[observer_aborts]`, `[node_name]` |
 | `add_finish_execute_node` | `blueprint_name`, `success` |
+| `create_bt_attack_task` | `[name]`, `[damage_variable]`, `[default_damage]`, `[target_key_variable]`, `[path]` — BT attack task Blueprint |
+| `create_bt_wander_task` | `[name]`, `[wander_radius]`, `[path]` — BT random wander task Blueprint |
 
 **Blackboard key types:** `Vector`, `Bool`, `Float`, `Int`, `String`, `Object`
 
@@ -290,6 +324,7 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `set_animation_for_state` | `anim_blueprint_name`, `state_machine_name`, `state_name`, `animation_asset` |
 | `add_blend_space_node` | `anim_blueprint_name`, `blend_space_asset`, `node_position` |
 | `add_anim_notify` | `animation_path`, `notify_name`, `time` |
+| `add_anim_blueprint_variable` | `anim_blueprint_name`, `variable_name`, `variable_type`, `[default_value]` — add variable to Anim BP |
 | `create_character_animation_setup` | `character_name`, `[skeleton]` |
 
 ### Data Asset Tools
@@ -306,20 +341,42 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `add_make_struct_node` | `blueprint_name`, `struct_type` |
 | `add_break_struct_node` | `blueprint_name`, `struct_type` |
 
+### Map / Set / Collection Node Tools
+| Tool | Key Parameters |
+|---|---|
+| `add_set_contains_node` | `blueprint_name`, `set_variable`, `[node_position]` — check if element is in Set |
+| `add_set_union_node` | `blueprint_name`, `[node_position]` — combine two Sets (removes duplicates) |
+| `add_set_intersection_node` | `blueprint_name`, `[node_position]` — elements common to both Sets |
+| `add_set_difference_node` | `blueprint_name`, `[node_position]` — elements in first Set but not second |
+| `add_set_to_array_node` | `blueprint_name`, `set_variable`, `[node_position]` — convert Set to Array |
+| `add_map_find_node` | `blueprint_name`, `map_variable`, `[node_position]` — get Map value by key |
+| `add_map_contains_node` | `blueprint_name`, `map_variable`, `[node_position]` — check if key exists in Map |
+| `add_map_keys_node` | `blueprint_name`, `map_variable`, `[node_position]` — copy all Map keys to Array |
+| `add_map_values_node` | `blueprint_name`, `map_variable`, `[node_position]` — copy all Map values to Array |
+| `add_random_array_item_node` | `blueprint_name`, `array_variable`, `[node_position]` — pick a random Array element |
+| `add_make_array_node` | `blueprint_name`, `[node_position]` — construct an Array literal |
+| `add_make_map_node` | `blueprint_name`, `[node_position]` — construct a Map literal |
+| `add_make_set_node` | `blueprint_name`, `[node_position]` — construct a Set literal |
+
 ### Input Tools
 | Tool | Key Parameters |
 |---|---|
 | `create_enhanced_input_action` | `name`, `[path]` |
 | `create_input_mapping_context` | `name`, `[path]` |
 | `add_input_mapping` | `context_name`, `action_name`, `key` |
+| `create_input_mapping` | `action_name`, `key`, `[input_type]` — legacy project settings input binding |
 
 ### UMG / Widget Tools
 | Tool | Key Parameters |
 |---|---|
 | `create_umg_widget_blueprint` | `name`, `[path]` |
 | `create_hud_widget` | `widget_name`, `[health_bar]`, `[stamina_bar]`, `[ammo_counter]` |
+| `create_hud_blueprint` | `name` — creates a HUD Blueprint (GameHUD class, not a Widget) |
 | `add_text_block_to_widget` | `widget_name`, `text_block_name`, `text`, `position` |
 | `add_button_to_widget` | `widget_name`, `button_name`, `position` |
+| `add_progress_bar_to_widget` | `widget_name`, `progress_bar_name`, `[position]`, `[size]`, `[fill_color]`, `[background_color]`, `[percent]` |
+| `add_image_to_widget` | `widget_name`, `image_name`, `[texture_path]`, `[position]`, `[size]`, `[color]` |
+| `add_named_slot_to_widget` | `widget_name`, `slot_name`, `[position]`, `[size]` — Named Slot placeholder |
 | `bind_widget_event` | `widget_name`, `widget_element_name`, `event_name`, `function_name` |
 | `set_text_block_binding` | `widget_name`, `text_block_name`, `binding_function` |
 | `add_widget_to_viewport` | `widget_name` |
@@ -361,6 +418,10 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `create_dynamic_material_instance` | `blueprint_name`, `component_name`, `source_material_path` |
 | `set_material_on_actor` | `actor_name`, `material_path` |
 | `set_material_instance_parameter` | `material_instance_path`, `parameter_name`, `parameter_type`, `value` |
+| `add_set_material_node` | `blueprint_name`, `component_name`, `material_path`, `[event_name]`, `[node_position]` — Set Material at runtime |
+| `add_set_vector_parameter_value_node` | `blueprint_name`, `dynamic_material_variable`, `parameter_name`, `[color_value]`, `[node_position]` — change material color |
+| `add_set_scalar_parameter_value_node` | `blueprint_name`, `dynamic_material_variable`, `parameter_name`, `[scalar_value]`, `[node_position]` — change material float param |
+| `add_play_sound_node` | `blueprint_name`, `[sound_asset]`, `[node_position]` — Play Sound at Location |
 | `add_niagara_component` | `blueprint_name`, `component_name`, `[niagara_system_path]` |
 | `add_spawn_niagara_at_location_node` | `blueprint_name`, `graph_name`, `niagara_system_path`, `node_position` |
 | `add_spawn_emitter_at_location_node` | `blueprint_name`, `particle_system_path` |
@@ -372,12 +433,17 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | Tool | Key Parameters |
 |---|---|
 | `add_line_trace_by_channel_node` | `blueprint_name`, `[trace_channel]`, `[draw_debug]` |
+| `add_multi_line_trace_by_channel_node` | `blueprint_name`, `[trace_channel]`, `[draw_debug]`, `[node_position]` — returns all hits |
+| `add_multi_line_trace_for_objects_node` | `blueprint_name`, `[object_types]`, `[node_position]` — multi-hit by object type |
 | `add_sphere_trace_by_channel_node` | `blueprint_name`, `[radius]`, `[trace_channel]` |
 | `add_capsule_trace_by_channel_node` | `blueprint_name`, `[radius]`, `[half_height]` |
 | `add_box_trace_by_channel_node` | `blueprint_name`, `[half_size]`, `[trace_channel]` |
 | `add_break_hit_result_node` | `blueprint_name` |
 | `add_apply_damage_node` | `blueprint_name`, `[damage_amount]` |
 | `add_apply_point_damage_node` | `blueprint_name`, `[damage_amount]` |
+| `add_set_collision_enabled_node` | `blueprint_name`, `component_name`, `[collision_enabled]`, `[node_position]` |
+| `add_set_collision_profile_node` | `blueprint_name`, `component_name`, `[profile_name]`, `[node_position]` — e.g. `"BlockAll"`, `"OverlapAll"` |
+| `add_set_generate_overlap_events_node` | `blueprint_name`, `component_name`, `[generate_overlap]`, `[node_position]` |
 | `add_get_actor_location_node` | `blueprint_name` |
 | `add_set_actor_location_node` | `blueprint_name` |
 | `add_actor_world_offset_node` | `blueprint_name` |
@@ -452,8 +518,18 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 | `create_procedural_mesh_blueprint` | `name`, `[static_mesh_path]`, `[instances_per_row]` |
 | `create_spline_placement_blueprint` | `name`, `[static_mesh_path]`, `[space_between_instances]` |
 | `create_editor_utility_blueprint` | `name`, `[utility_type]` |
+| `create_align_actors_utility` | `[name]`, `[folder_path]` — Editor Utility to align actors on X axis |
 | `create_enemy_spawner_blueprint` | `name`, `[enemy_class]`, `[wave_size]` |
 | `create_random_spawner_blueprint` | `name`, `[spawn_class]` |
+| `add_spline_component` | `blueprint_name`, `[component_name]`, `[node_position]` — add Spline component |
+| `add_spline_mesh_component` | `blueprint_name`, `[component_name]`, `[static_mesh_path]` — add Spline Mesh component |
+| `add_instanced_static_mesh_component` | `blueprint_name`, `[component_name]`, `[static_mesh_path]`, `[attach_to_root]` |
+| `add_instanced_mesh_add_instance_node` | `blueprint_name`, `[instanced_mesh_variable]`, `[node_position]` — AddInstance on ISM component |
+| `add_construction_script_for_loop` | `blueprint_name`, `[first_index]`, `[last_index_variable]`, `[nested]`, `[node_position]` — For Loop in Construction Script |
+| `add_get_spline_length_node` | `blueprint_name`, `[spline_component_variable]`, `[node_position]` |
+| `add_get_location_at_distance_along_spline_node` | `blueprint_name`, `[spline_component_variable]`, `[coordinate_space]`, `[node_position]` |
+| `add_get_rotation_at_distance_along_spline_node` | `blueprint_name`, `[spline_component_variable]`, `[coordinate_space]`, `[node_position]` |
+| `place_navmesh_bounds_volume` | `[location]`, `[scale]` — place NavMeshBoundsVolume in the level |
 | `add_set_timer_by_event_node` | `blueprint_name`, `[time_seconds]`, `[looping]`, `[custom_event_name]` |
 | `add_set_timer_by_function_name_node` | `blueprint_name`, `[function_name]`, `[time_seconds]` |
 | `add_clear_timer_node` | `blueprint_name` — uses `K2_ClearAndInvalidateTimerHandle` internally |
