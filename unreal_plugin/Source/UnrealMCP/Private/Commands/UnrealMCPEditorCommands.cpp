@@ -716,43 +716,109 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
            *ModeStr, Code.Len());
 
     // ?? 4. Execute ????????????????????????????????????????????????????????????
+    // ?? 4a. Wrap user code in try/except so syntax errors and runtime errors
+    //        are caught cleanly inside Python and returned as error JSON instead
+    //        of hanging ExecPythonCommandEx indefinitely.
+    //
+    //        We only wrap execute_file / execute_statement modes.
+    //        evaluate_statement is a single expression — wrap differently.
+    FString WrappedCode;
+    if (ExecMode == EPythonCommandExecutionMode::EvaluateStatement)
+    {
+        // evaluate_statement: just run as-is; errors surface via bOk=false
+        WrappedCode = Code;
+    }
+    else
+    {
+        // Indent every line of user code by 4 spaces so it sits inside the
+        // try block. Replace literal \n with actual newlines first.
+        FString IndentedCode;
+        TArray<FString> Lines;
+        Code.ParseIntoArrayLines(Lines, false);
+        for (const FString& Line : Lines)
+        {
+            IndentedCode += TEXT("    ") + Line + TEXT("\n");
+        }
+        if (IndentedCode.IsEmpty())
+        {
+            IndentedCode = TEXT("    pass\n");
+        }
+        WrappedCode = FString::Printf(
+            TEXT("import traceback as _mcp_tb\n")
+            TEXT("try:\n")
+            TEXT("%s")
+            TEXT("except Exception as _mcp_e:\n")
+            TEXT("    print('[MCP_ERROR] ' + _mcp_tb.format_exc())\n"),
+            *IndentedCode
+        );
+    }
+
     FPythonCommandEx Command;
-    Command.Command  = Code;
+    Command.Command  = WrappedCode;
     Command.ExecutionMode = ExecMode;
     Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
 
     const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
+    
+    // If the wrapper caught an exception the Python output will contain
+    // '[MCP_ERROR]' lines — surface that as a failed response.
+    bool bHasPythonError = false;
+    FString PythonErrorDetail;
 
     // ?? 5. Collect log output into a single string ???????????????????????????
+    //       Also scan for [MCP_ERROR] lines emitted by our try/except wrapper —
+    //       these indicate a Python exception was caught inside the wrapper.
     FString LogOutput;
     for (const FPythonLogOutputEntry& Entry : Command.LogOutput)
     {
+        FString Prefix;
         switch (Entry.Type)
         {
-            case EPythonLogOutputType::Info:
-                LogOutput += TEXT("[Info] ");  break;
-            case EPythonLogOutputType::Warning:
-                LogOutput += TEXT("[Warning] "); break;
-            case EPythonLogOutputType::Error:
-                LogOutput += TEXT("[Error] ");  break;
-            default:
-                LogOutput += TEXT("[Log] ");    break;
+            case EPythonLogOutputType::Info:    Prefix = TEXT("[Info] ");    break;
+            case EPythonLogOutputType::Warning: Prefix = TEXT("[Warning] "); break;
+            case EPythonLogOutputType::Error:   Prefix = TEXT("[Error] ");   break;
+            default:                            Prefix = TEXT("[Log] ");     break;
         }
-        LogOutput += Entry.Output + TEXT("\n");
+        FString Line = Prefix + Entry.Output;
+        LogOutput += Line + TEXT("\n");
+
+        // Detect errors printed by our Python wrapper
+        if (!bHasPythonError && Entry.Output.Contains(TEXT("[MCP_ERROR]")))
+        {
+            bHasPythonError = true;
+            PythonErrorDetail += Entry.Output + TEXT("\n");
+        }
     }
     LogOutput = LogOutput.TrimEnd();
+    PythonErrorDetail = PythonErrorDetail.TrimEnd();
+
+    // Determine overall success: C++ bOk AND no Python-level exception
+    const bool bFinalOk = bOk && !bHasPythonError;
 
     // ?? 6. Build response ?????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
-    ResultObj->SetBoolField(TEXT("success"), bOk);
+    ResultObj->SetBoolField(TEXT("success"), bFinalOk);
     ResultObj->SetStringField(TEXT("output"), LogOutput);
     ResultObj->SetStringField(TEXT("command_result"), Command.CommandResult);
 
-    if (!bOk)
+    if (!bFinalOk)
     {
-        // Include both the command_result (which holds the traceback) and
-        // the collected log as the error field so it bubbles up as an error.
-        FString ErrorDetail = Command.CommandResult.IsEmpty() ? LogOutput : Command.CommandResult;
+        // Surface the most informative error detail available.
+        // Priority: Python wrapper traceback > C++ CommandResult > LogOutput
+        FString ErrorDetail;
+        if (bHasPythonError && !PythonErrorDetail.IsEmpty())
+        {
+            // Strip the [MCP_ERROR] prefix so callers see a clean traceback
+            ErrorDetail = PythonErrorDetail.Replace(TEXT("[MCP_ERROR] "), TEXT(""));
+        }
+        else if (!Command.CommandResult.IsEmpty())
+        {
+            ErrorDetail = Command.CommandResult;
+        }
+        else
+        {
+            ErrorDetail = LogOutput;
+        }
         ResultObj->SetStringField(TEXT("error"), ErrorDetail);
         UE_LOG(LogTemp, Error, TEXT("exec_python failed: %s"), *ErrorDetail);
     }

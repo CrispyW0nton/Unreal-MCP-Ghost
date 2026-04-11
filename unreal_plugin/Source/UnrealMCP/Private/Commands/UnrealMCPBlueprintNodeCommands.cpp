@@ -2937,57 +2937,64 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintFunct
 
     TArray<TSharedPtr<FJsonValue>> FuncsArray;
 
+    // Helper lambda: safely build a pin descriptor without triggering lazy
+    // schema resolution. Accessing PinSubCategoryObject on an uncompiled
+    // Blueprint can block the GameThread — guard with IsValid() + !IsStale().
+    auto SafePinToJson = [](UEdGraphPin* Pin) -> TSharedPtr<FJsonObject>
+    {
+        TSharedPtr<FJsonObject> PinObj = MakeShared<FJsonObject>();
+        PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
+        PinObj->SetStringField(TEXT("type"), Pin->PinType.PinCategory.ToString());
+        if (Pin->PinType.PinSubCategoryObject.IsValid() &&
+            !Pin->PinType.PinSubCategoryObject.IsStale())
+        {
+            PinObj->SetStringField(TEXT("sub_type"),
+                Pin->PinType.PinSubCategoryObject->GetName());
+        }
+        return PinObj;
+    };
+
     for (UEdGraph* Graph : BP->FunctionGraphs)
     {
-        if (!Graph) continue;
+        if (!Graph || !IsValid(Graph)) continue;
 
         TSharedPtr<FJsonObject> FObj = MakeShared<FJsonObject>();
         FObj->SetStringField(TEXT("name"),       Graph->GetName());
         FObj->SetStringField(TEXT("graph_type"), TEXT("function"));
 
-        // Find the function entry node to get pins
         TArray<TSharedPtr<FJsonValue>> Inputs, Outputs;
         bool bIsPure = false;
         bool bIsConst = false;
 
         for (UEdGraphNode* Node : Graph->Nodes)
         {
-            // Entry node (UK2Node_FunctionEntry)
-            if (Node->GetClass()->GetName().Contains(TEXT("FunctionEntry")))
+            if (!Node || !IsValid(Node)) continue;
+            // Use FName comparison — avoids triggering CDO loads that
+            // GetClass()->GetName().Contains() can indirectly cause.
+            FString ClassName = Node->GetClass()->GetFName().ToString();
+
+            if (ClassName.Contains(TEXT("FunctionEntry")))
             {
                 for (UEdGraphPin* Pin : Node->Pins)
                 {
+                    if (!Pin) continue;
                     if (Pin->Direction == EGPD_Output &&
                         Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
                     {
-                        TSharedPtr<FJsonObject> PinObj = MakeShared<FJsonObject>();
-                        PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
-                        PinObj->SetStringField(TEXT("type"), Pin->PinType.PinCategory.ToString());
-                        if (Pin->PinType.PinSubCategoryObject.IsValid())
-                            PinObj->SetStringField(TEXT("sub_type"),
-                                Pin->PinType.PinSubCategoryObject->GetName());
-                        Inputs.Add(MakeShared<FJsonValueObject>(PinObj));
+                        Inputs.Add(MakeShared<FJsonValueObject>(SafePinToJson(Pin)));
                     }
                 }
-                // Check pure flag via node metadata
-                bIsPure = Node->GetDesiredEnabledState() == ENodeEnabledState::Enabled &&
-                          Node->GetClass()->GetName().Contains(TEXT("Pure"));
+                bIsPure = ClassName.Contains(TEXT("Pure"));
             }
-            // Result node (UK2Node_FunctionResult)
-            if (Node->GetClass()->GetName().Contains(TEXT("FunctionResult")))
+            else if (ClassName.Contains(TEXT("FunctionResult")))
             {
                 for (UEdGraphPin* Pin : Node->Pins)
                 {
+                    if (!Pin) continue;
                     if (Pin->Direction == EGPD_Input &&
                         Pin->PinType.PinCategory != UEdGraphSchema_K2::PC_Exec)
                     {
-                        TSharedPtr<FJsonObject> PinObj = MakeShared<FJsonObject>();
-                        PinObj->SetStringField(TEXT("name"), Pin->PinName.ToString());
-                        PinObj->SetStringField(TEXT("type"), Pin->PinType.PinCategory.ToString());
-                        if (Pin->PinType.PinSubCategoryObject.IsValid())
-                            PinObj->SetStringField(TEXT("sub_type"),
-                                Pin->PinType.PinSubCategoryObject->GetName());
-                        Outputs.Add(MakeShared<FJsonValueObject>(PinObj));
+                        Outputs.Add(MakeShared<FJsonValueObject>(SafePinToJson(Pin)));
                     }
                 }
             }
@@ -3001,10 +3008,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintFunct
         FuncsArray.Add(MakeShared<FJsonValueObject>(FObj));
     }
 
-    // Also include macro graphs
+    // Macro graphs — metadata only, no pin inspection needed
     for (UEdGraph* Graph : BP->MacroGraphs)
     {
-        if (!Graph) continue;
+        if (!Graph || !IsValid(Graph)) continue;
         TSharedPtr<FJsonObject> FObj = MakeShared<FJsonObject>();
         FObj->SetStringField(TEXT("name"),       Graph->GetName());
         FObj->SetStringField(TEXT("graph_type"), TEXT("macro"));

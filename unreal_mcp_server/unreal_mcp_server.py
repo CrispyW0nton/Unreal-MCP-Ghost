@@ -268,7 +268,15 @@ class UnrealConnection:
 
         if not self.connect():
             logger.error("Failed to connect to Unreal Engine for command")
-            return None
+            return {"status": "error", "error": "Could not connect to Unreal Engine on "
+                    f"{UNREAL_HOST}:{UNREAL_PORT}. Make sure UE5 is open and the UnrealMCP plugin is active."}
+
+        # Guard: connect() should always set self.socket, but protect against
+        # race conditions (e.g. another thread closed the socket between
+        # connect() returning True and this sendall call).
+        if self.socket is None:
+            logger.error("Socket is None immediately after connect() — aborting send")
+            return {"status": "error", "error": "Socket became None after connect (internal error). Retry the command."}
 
         try:
             command_obj = {
@@ -476,6 +484,23 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         _unreal_connection = get_unreal_connection()
         if _unreal_connection:
             logger.info("Connected to Unreal Engine on startup")
+            # ── Python interpreter warm-up ────────────────────────────────
+            # UE5's Python plugin cold-starts on the FIRST ExecPythonCommandEx
+            # call per session — it loads all 'unreal' module stubs, which can
+            # take 30-60 s and causes the very first exec_python / get_actors_in_level
+            # tool call to appear hung.  Fire a trivial no-op now so the cost is
+            # paid at startup (invisible to the user) rather than on the first
+            # tool call (visible as a 60 s timeout in the test report).
+            try:
+                logger.info("Warming up UE5 Python interpreter (first-call latency reduction)...")
+                warmup_result = _unreal_connection._send_command_raw(
+                    "exec_python",
+                    {"code": "pass", "mode": "execute_statement"}
+                )
+                logger.info(f"Python warm-up complete: {str(warmup_result)[:100]}")
+            except Exception as warmup_err:
+                # Non-fatal — warm-up failure just means the first real call pays the cost
+                logger.warning(f"Python warm-up skipped (UE5 not ready yet): {warmup_err}")
         else:
             logger.warning("Could not connect to Unreal Engine on startup - will retry on first tool call")
     except Exception as e:
