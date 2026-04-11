@@ -120,36 +120,44 @@ class UnrealConnection:
         #     client saw RemoteProtocolError: Server disconnected without response.
         #   120 s is generous enough for the heaviest operations while still
         #   catching genuinely hung connections.
+        #
+        # IMPORTANT: Do NOT early-return on the first successful json.loads() inside
+        # the recv loop.  For large responses (e.g. get_actors_in_level with many
+        # actors) multiple 65536-byte chunks are needed.  The first N chunks may
+        # accidentally form a valid-but-truncated JSON document (e.g. a partial
+        # actors array that closes cleanly), causing the Python side to return a
+        # truncated response that looks like newline-delimited JSON objects.
+        #
+        # The C++ bridge opens a fresh TCP connection per command and closes the
+        # socket after writing the full response.  The correct termination signal
+        # is therefore EOF (recv returns b''), not a successful json.loads mid-stream.
         chunks = []
         sock.settimeout(120)
         try:
             while True:
                 chunk = sock.recv(buffer_size)
                 if not chunk:
-                    if not chunks:
-                        raise Exception("Connection closed before receiving data")
+                    # EOF — C++ closed the connection after sending the full response.
                     break
                 chunks.append(chunk)
-                data = b''.join(chunks)
-                try:
-                    json.loads(data.decode('utf-8'))
-                    logger.info(f"Received complete response ({len(data)} bytes)")
-                    return data
-                except json.JSONDecodeError:
-                    continue
         except socket.timeout:
             logger.warning("Socket timeout (120 s) during receive")
-            if chunks:
-                data = b''.join(chunks)
-                try:
-                    json.loads(data.decode('utf-8'))
-                    return data
-                except Exception:
-                    pass
-            raise Exception("Timeout (120 s) waiting for Unreal response — UE5 may be busy or the command crashed")
+            # Fall through — try to parse whatever we have.
         except Exception as e:
             logger.error(f"Error during receive: {str(e)}")
             raise
+
+        if not chunks:
+            raise Exception("Connection closed before receiving data")
+
+        data = b''.join(chunks)
+        logger.info(f"Received complete response ({len(data)} bytes)")
+        # Validate — raises json.JSONDecodeError if incomplete/corrupt.
+        try:
+            json.loads(data.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            raise Exception(f"Incomplete JSON response ({len(data)} bytes): {e}")
+        return data
 
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a JSON command to UE5 and return the parsed response."""
