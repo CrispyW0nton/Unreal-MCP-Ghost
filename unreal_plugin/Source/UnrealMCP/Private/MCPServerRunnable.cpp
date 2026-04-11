@@ -171,8 +171,14 @@ uint32 FMCPServerRunnable::Run()
                                     if (!Response.EndsWith(TEXT("\n")))
                                         Response += TEXT("\n");
 
+                                    // Use the actual UTF-8 byte length, not the TCHAR
+                                    // character count. For pure-ASCII responses they
+                                    // are equal, but actor names / labels with non-ASCII
+                                    // characters produce more UTF-8 bytes than TCHARs,
+                                    // causing a truncated send with the old Response.Len().
+                                    FTCHARToUTF8 Utf8Response(*Response);
                                     int32 BytesSent = 0;
-                                    if (!ClientSocket->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent))
+                                    if (!ClientSocket->Send((const uint8*)Utf8Response.Get(), Utf8Response.Length(), BytesSent))
                                     {
                                         UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Failed to send response"));
                                     }
@@ -390,11 +396,17 @@ void FMCPServerRunnable::ProcessMessage(TSharedPtr<FSocket> Client, const FStrin
     
     // Send response with newline terminator
     Response += TEXT("\n");
-    int32 BytesSent = 0;
     
     UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Sending response: %s"), *Response);
-    
-    if (!Client->Send((uint8*)TCHAR_TO_UTF8(*Response), Response.Len(), BytesSent))
+
+    // Use the actual UTF-8 byte length, not the TCHAR character count.
+    // Response.Len() gives the number of UTF-16 code units, but
+    // TCHAR_TO_UTF8 produces variable-length UTF-8 bytes.  For actor names
+    // or labels that contain non-ASCII characters the byte count is larger
+    // than the char count, so using Response.Len() would truncate the send.
+    FTCHARToUTF8 Utf8Response(*Response);
+    int32 BytesSent = 0;
+    if (!Client->Send((const uint8*)Utf8Response.Get(), Utf8Response.Length(), BytesSent))
     {
         UE_LOG(LogTemp, Error, TEXT("MCPServerRunnable: Failed to send response"));
     }

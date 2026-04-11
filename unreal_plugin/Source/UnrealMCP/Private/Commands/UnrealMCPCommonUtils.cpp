@@ -151,38 +151,72 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprint(const FString& BlueprintName)
     return FindBlueprintByName(BlueprintName);
 }
 
+// ---------------------------------------------------------------------------
+// Blueprint name → object-path cache.
+//
+// The Asset Registry scan (GetAssets with bRecursivePaths on a large project)
+// is extremely expensive: on an 8 k-asset project it blocks the GameThread for
+// 20-30 s, causing the Python 30 s socket timeout to fire.
+//
+// Fix:
+//   (a) Use AR.GetAssetsByClass() which hits an O(1) class index instead of
+//       scanning every asset in the registry.
+//   (b) Cache the resolved object path in a static TMap so repeated calls for
+//       the same Blueprint cost only a FindObject<> lookup (zero AR scan).
+//   (c) The cache entry is validated with IsValid() before use; stale entries
+//       (e.g. after Hot-Reload) are automatically evicted.
+// ---------------------------------------------------------------------------
+static TMap<FString, FSoftObjectPath> GBlueprintNameCache;
+
 UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
-    // 1) Try the legacy hardcoded path first for backwards compatibility
-    FString AssetPath = TEXT("/Game/Blueprints/") + BlueprintName;
-    UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (BP) return BP;
+    // ── 0. Check the in-memory cache first (free after the first lookup) ──
+    if (const FSoftObjectPath* CachedPath = GBlueprintNameCache.Find(BlueprintName))
+    {
+        if (UBlueprint* CachedBP = Cast<UBlueprint>(CachedPath->ResolveObject()))
+        {
+            return CachedBP;
+        }
+        // Stale entry (e.g. after Hot-Reload) – remove and re-scan below.
+        GBlueprintNameCache.Remove(BlueprintName);
+    }
 
-    // 2) Try direct /Game/<Name> path (asset sitting at content root)
-    AssetPath = TEXT("/Game/") + BlueprintName;
-    BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (BP) return BP;
+    // ── 1. Try the two common path conventions first (O(1) FindObject) ──
+    auto TryCachedPath = [&](const FString& Path) -> UBlueprint*
+    {
+        // FindObject skips I/O; LoadObject falls back to disk only if needed.
+        UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Path);
+        if (!BP) BP = LoadObject<UBlueprint>(nullptr, *Path);
+        if (BP)
+        {
+            GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
+            return BP;
+        }
+        return nullptr;
+    };
 
-    // 3) Use the Asset Registry to search the entire /Game tree by asset name
+    if (UBlueprint* BP = TryCachedPath(TEXT("/Game/Blueprints/") + BlueprintName)) return BP;
+    if (UBlueprint* BP = TryCachedPath(TEXT("/Game/") + BlueprintName))           return BP;
+
+    // ── 2. Use the Asset Registry class index (fast O(k) where k = # Blueprints) ──
+    //
+    // GetAssetsByClass() uses a pre-built per-class index — it does NOT scan
+    // all 8 k assets. It only visits the ~N Blueprint assets in the project.
+    // This is dramatically faster than GetAssets(Filter) with bRecursivePaths.
     FAssetRegistryModule& ARModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
     IAssetRegistry& AR = ARModule.Get();
 
-    FARFilter Filter;
-    Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
-    Filter.PackagePaths.Add(TEXT("/Game"));
-    Filter.bRecursivePaths = true;
+    TArray<FAssetData> BlueprintAssets;
+    AR.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssets, /*bSearchSubClasses=*/true);
 
-    TArray<FAssetData> Assets;
-    AR.GetAssets(Filter, Assets);
-
-    for (const FAssetData& Asset : Assets)
+    for (const FAssetData& Asset : BlueprintAssets)
     {
-        // Match on asset name (case-insensitive)
         if (Asset.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
         {
-            BP = Cast<UBlueprint>(Asset.GetAsset());
+            UBlueprint* BP = Cast<UBlueprint>(Asset.GetAsset());
             if (BP)
             {
+                GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
                 UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
                     *BlueprintName, *Asset.GetObjectPathString());
                 return BP;
