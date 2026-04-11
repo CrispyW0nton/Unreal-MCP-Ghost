@@ -3,6 +3,7 @@
 
 // Python scripting plugin interface
 #include "IPythonScriptPlugin.h"
+#include "EngineUtils.h"       // TActorIterator
 
 #include "Editor.h"
 #include "EditorViewportClient.h"
@@ -556,6 +557,8 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFocusViewport(const TSha
         AActor* TargetActor = nullptr;
         if (GWorld)
         {
+            // TActorIterator provides early-exit (faster than GetAllActorsOfClass
+            // which always fills the full array before returning).
             for (TActorIterator<AActor> It(GWorld); It; ++It)
             {
                 AActor* A = *It;
