@@ -315,9 +315,17 @@ if bp_asset is None:
 if bp_asset is None:
     print(f"ERROR: Blueprint not found: {{bp_name}}")
 else:
-    # Step 1: Compile (always attempt, even on clean/unmodified Blueprints)
+    # Step 1: Compile (always attempt, even on clean/unmodified Blueprints).
+    # UE5.4+: KismetEditorUtilities.compile_blueprint was moved to
+    #          BlueprintEditorLibrary.compile_blueprint.
+    # Try the new API first; fall back to the old name for older UE5 builds.
     try:
-        unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
+        if hasattr(unreal, 'BlueprintEditorLibrary'):
+            unreal.BlueprintEditorLibrary.compile_blueprint(bp_asset)
+        elif hasattr(unreal, 'KismetEditorUtilities'):
+            unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
+        else:
+            raise AttributeError("Neither BlueprintEditorLibrary nor KismetEditorUtilities found in unreal module")
         print(f"COMPILED: {{bp_name}}")
     except Exception as e:
         print(f"COMPILE_ERROR: {{e}}")

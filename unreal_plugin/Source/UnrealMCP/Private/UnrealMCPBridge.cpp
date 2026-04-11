@@ -438,5 +438,47 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
         Promise.SetValue(ResultString);
     });
     
+    // Wait up to 25 seconds for the GameThread to complete the command.
+    //
+    // Without a timeout, Future.Get() blocks the TCP receiver thread forever when
+    // the GameThread handler stalls (e.g. AddMemberVariable triggering an asset-
+    // registry refresh on a large project, or StaticLoadObject on a cold asset).
+    // The stalled thread holds the TCP socket open, so the Python side's 30s socket
+    // timeout fires — but by then the GameThread task is still queued/running.
+    // The next command from Python connects a new socket, but its AsyncTask is
+    // queued BEHIND the still-running stalled task, causing exec_python and other
+    // fast commands to wait 30+ seconds in the GameThread queue.
+    //
+    // With a 25s budget:
+    //  - Normal commands (< 1 s) are unaffected.
+    //  - Slow-but-valid commands (compile ~10-20 s) still complete.
+    //  - Truly hung commands get a clean error response after 25 s, the TCP socket
+    //    is released, and the GameThread task will either finish or be cancelled.
+    //  - The Python-side 30 s timeout is now a secondary safety net, not primary.
+    const FTimespan WaitTimeout = FTimespan::FromSeconds(25.0);
+    const bool bCompleted = Future.WaitFor(WaitTimeout);
+    if (!bCompleted)
+    {
+        // Build a JSON error response immediately so the client gets an answer.
+        // Note: the AsyncTask lambda is still running (or queued) on the GameThread.
+        // We cannot cancel it from here, but releasing the socket allows the next
+        // command to be processed without being blocked behind this one.
+        TSharedPtr<FJsonObject> TimeoutResponse = MakeShareable(new FJsonObject);
+        TimeoutResponse->SetStringField(TEXT("status"), TEXT("error"));
+        TimeoutResponse->SetStringField(TEXT("error"),
+            FString::Printf(TEXT("GameThread timeout after 25s for command '%s'. "
+                "The operation may still complete in the background. "
+                "Possible causes: asset-registry refresh on a large project, "
+                "synchronous asset load, or a blocking GameThread operation."),
+                *CommandType));
+        FString TimeoutResultString;
+        TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> TWriter =
+            TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&TimeoutResultString);
+        FJsonSerializer::Serialize(TimeoutResponse.ToSharedRef(), TWriter);
+        UE_LOG(LogMCP, Error,
+            TEXT("[MCP] <<< TIMEOUT: command '%s' did not complete within 25s"),
+            *CommandType);
+        return TimeoutResultString;
+    }
     return Future.Get();
 }
