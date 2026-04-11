@@ -144,7 +144,7 @@ def register_knowledge_tools(mcp):
             "  vfx              — VFX deep-dive: Niagara + materials",
             "  tools            — Complete MCP tool usage guide with examples",
             "  roadmap          — Tool expansion roadmap, development status",
-            "  dantooine        — Dantooine project reference (EnclaveProject)",
+            "  dantooine        — Project-specific reference (asset list, folder map, implementation status)",
             "",
             "## Usage",
             "  get_knowledge_base('ai')          → AI systems reference + book extracts",

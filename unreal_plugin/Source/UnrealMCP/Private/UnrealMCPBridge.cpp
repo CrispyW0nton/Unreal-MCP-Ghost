@@ -320,7 +320,10 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      // Phase 4: component inspection (L-020)
                      CommandType == TEXT("get_blueprint_components") ||
                      // Phase 5: NavMesh (L-014)
-                     CommandType == TEXT("setup_navmesh"))
+                     CommandType == TEXT("setup_navmesh") ||
+                     // Phase 6: variable + function introspection
+                     CommandType == TEXT("get_blueprint_variables") ||
+                     CommandType == TEXT("get_blueprint_functions"))
             {
                 ResultJson = BlueprintNodeCommands->HandleCommand(CommandType, Params);
             }
