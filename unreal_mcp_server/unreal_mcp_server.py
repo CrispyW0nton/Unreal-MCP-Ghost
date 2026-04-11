@@ -64,9 +64,6 @@ from mcp.server.fastmcp import FastMCP
 import anyio
 from mcp.server.fastmcp.utilities import func_metadata as _fm_module
 
-_original_call_fn = _fm_module.FuncMetadata.call_fn_with_arg_validation.__func__  # type: ignore[attr-defined]
-
-
 async def _threaded_call_fn(self, fn, fn_is_async, arguments_to_validate, arguments_to_pass_directly):
     """Replacement for FuncMetadata.call_fn_with_arg_validation.
 
