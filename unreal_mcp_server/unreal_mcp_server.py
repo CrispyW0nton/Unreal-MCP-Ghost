@@ -786,41 +786,51 @@ Environment variable equivalents:
         security_settings = TransportSecuritySettings(enable_dns_rebinding_protection=False)
         sse = SseServerTransport("/messages/", security_settings=security_settings)
 
-        # handle_sse must be an ASGI app (scope, receive, send) not a request handler,
-        # so that the raw send callable is passed directly to connect_sse.
-        # Wrapping it as a Starlette Request endpoint causes 'NoneType not callable'
-        # because request_response() tries to call the None return value as a Response.
-        async def handle_sse(scope, receive, send):
-            try:
-                async with sse.connect_sse(scope, receive, send) as streams:
-                    await mcp._mcp_server.run(
-                        streams[0],
-                        streams[1],
-                        mcp._mcp_server.create_initialization_options(),
-                    )
-            except Exception as exc:
-                import anyio
-                # ClosedResourceError = client disconnected cleanly; suppress silently.
-                if isinstance(exc, anyio.ClosedResourceError):
-                    logger.debug("SSE client disconnected")
-                else:
-                    logger.error(f"SSE handler error: {exc}")
+        # ── SSE endpoint design note ─────────────────────────────────────────
+        # Starlette's Route() inspects whether the endpoint is a function or a
+        # class.  When it's a function, Starlette wraps it with request_response()
+        # which *sends an HTTP response* when the function returns.  For SSE that
+        # is catastrophic: after the first tool-call exchange the function returns,
+        # request_response() sends a bare HTTP 200 response body, and the client
+        # sees "peer closed connection without sending complete message body
+        # (incomplete chunked read)".  The stream is dead after exactly one response.
+        #
+        # Fix: make the endpoint a *class* (ASGI app).  Starlette's Route uses
+        #   self.app = endpoint          ← for classes (no request_response wrap)
+        #   self.app = request_response(endpoint)  ← for functions (WRONG for SSE)
+        # A class-based ASGI app receives (scope, receive, send) directly, so the
+        # EventSourceResponse inside connect_sse owns the entire HTTP response
+        # lifecycle and the stream stays open for the full MCP session.
+        # ─────────────────────────────────────────────────────────────────────
+        class SseEndpoint:
+            """Class-based ASGI endpoint for /sse.
 
-        # Starlette Route treats async functions as request handlers (Response return)
-        # unless we provide methods=None and route them as ASGI apps.
-        # The cleanest approach: wrap in a tiny request-style function that
-        # passes raw ASGI primitives through, matching what FastMCP itself does.
-        async def sse_endpoint(request: Request):
-            """Bridge from Starlette request to raw ASGI for connect_sse."""
-            await handle_sse(request.scope, request.receive, request._send)
-            # Return a dummy Response so Starlette's request_response() wrapper
-            # doesn't try to call None as a callable.
-            from starlette.responses import Response as StarletteResponse
-            return StarletteResponse(status_code=200)
+            Starlette detects this as a class and skips request_response() wrapping,
+            so the EventSourceResponse inside connect_sse controls the connection
+            lifetime instead of being prematurely closed by a wrapping Response.
+            """
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    return
+                try:
+                    async with sse.connect_sse(scope, receive, send) as streams:
+                        await mcp._mcp_server.run(
+                            streams[0],
+                            streams[1],
+                            mcp._mcp_server.create_initialization_options(),
+                        )
+                except Exception as exc:
+                    import anyio
+                    # ClosedResourceError = client disconnected cleanly; suppress.
+                    if isinstance(exc, anyio.ClosedResourceError):
+                        logger.debug("SSE client disconnected cleanly")
+                    else:
+                        logger.error(f"SSE handler error: {exc}")
 
         starlette_app = Starlette(
             routes=[
-                Route("/sse", endpoint=sse_endpoint, methods=["GET"]),
+                Route("/sse", endpoint=SseEndpoint(), methods=["GET"]),
                 Mount("/messages/", app=sse.handle_post_message),
             ]
         )
