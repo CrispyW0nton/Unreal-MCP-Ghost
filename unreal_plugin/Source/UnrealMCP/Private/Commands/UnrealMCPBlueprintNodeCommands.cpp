@@ -716,7 +716,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleConnectBlueprintN
                 : ConnectError);
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     // Confirm the connection actually took effect by checking the pin's link list.
     // FindPin with EGPD_MAX to mirror what ConnectGraphNodes used.
@@ -776,7 +776,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDisconnectBluepri
         else Pin->BreakAllPinLinks();
 
         UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-        if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
         TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
         R->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
@@ -809,7 +809,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDisconnectBluepri
     else SP->BreakLinkTo(DP);
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("source_node_id"), SrcNode->NodeGuid.ToString());
@@ -846,7 +846,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDeleteBlueprintNo
     Graph->RemoveNode(Node);
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("deleted_node_id"),   DeletedId);
@@ -897,7 +897,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetNodePinValue(
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to apply pin value"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),  Node->NodeGuid.ToString());
@@ -961,7 +961,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetSpawnActorClas
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     if (BP)
     {
-        BP->Modify(); // mark for undo system
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
         // Also mark the package dirty so Ctrl+S in UE will save the class pin value
         UPackage* Pkg = BP->GetOutermost();
         if (Pkg) Pkg->MarkPackageDirty();
@@ -1029,7 +1029,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCusto
     CustomEventNode->AllocateDefaultPins();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // safe: only marks UObject dirty, no AssetRegistry broadcast
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   CustomEventNode->NodeGuid.ToString());
@@ -1065,7 +1065,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintEvent
     if (!EventNode) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create event node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   EventNode->NodeGuid.ToString());
@@ -1300,7 +1300,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         }
     }
 
-    if (Blueprint) Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (Blueprint) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   FuncNode->NodeGuid.ToString());
@@ -1337,7 +1337,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(
         FString::Printf(TEXT("Failed to create VariableGet node for '%s'"), *VarName));
 
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -1372,7 +1372,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(
         FString::Printf(TEXT("Failed to create VariableSet node for '%s'"), *VarName));
 
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -1541,7 +1541,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintInput
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create input action node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -1568,7 +1568,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSelfR
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Self node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -1608,7 +1608,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintGetSe
     Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -1752,7 +1752,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintEnhan
     Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),         Node->NodeGuid.ToString());
@@ -1888,7 +1888,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintGetCo
     Node->AllocateDefaultPins();
     Node->ReconstructNode();
 
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),        Node->NodeGuid.ToString());
@@ -1999,7 +1999,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSetCo
     Node->AllocateDefaultPins();
     Node->ReconstructNode();
 
-    BP->Modify();
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),           Node->NodeGuid.ToString());
@@ -2044,7 +2044,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintBranc
     Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2115,7 +2115,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCastN
     Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),    Node->NodeGuid.ToString());
@@ -2189,7 +2189,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintForLo
         ApplyPinValue(Graph, P, FString::Printf(TEXT("%d"), (int32)LastIdx));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2220,7 +2220,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintForEa
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create ForEachLoop macro node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2251,7 +2251,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSeque
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Sequence macro node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2282,7 +2282,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintDoOnc
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create DoOnce macro node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2321,7 +2321,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintGateN
     }
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2352,7 +2352,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFlipF
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create FlipFlop macro node"));
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2399,7 +2399,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSwitc
     RawNode->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   RawNode->NodeGuid.ToString());
@@ -2470,7 +2470,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSpawn
     }
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2531,7 +2531,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintComme
     Node->PostPlacedNewNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),      Node->NodeGuid.ToString());
@@ -2571,7 +2571,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleMoveBlueprintNode
     Node->NodePosY = (int32)Pos.Y;
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    if (BP) BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    if (BP) FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("node_id"),   Node->NodeGuid.ToString());
@@ -2671,7 +2671,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetBlueprintVaria
                     Prop->ImportText_Direct(*DefaultValue, Prop->ContainerPtrToValuePtr<void>(CDO), CDO, PPF_None);
             }
 
-            BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+            FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
             TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
             R->SetStringField(TEXT("blueprint"),     BlueprintName);
@@ -3055,9 +3055,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create function graph"));
 
     FBlueprintEditorUtils::AddFunctionGraph<UClass>(BP, FuncGraph, false, nullptr);
-    BP->Modify();
-
-    // Find entry/result nodes that were auto-created
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
     UEdGraphNode* EntryNode = nullptr;
     UEdGraphNode* ResultNode = nullptr;
     for (UEdGraphNode* Node : FuncGraph->Nodes)
@@ -3173,7 +3171,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         ResultNode->ReconstructNode();
     }
 
-    BP->Modify();
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"),        true);

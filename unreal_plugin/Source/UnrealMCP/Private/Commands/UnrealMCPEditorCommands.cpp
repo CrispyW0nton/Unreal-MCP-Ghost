@@ -515,49 +515,85 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFocusViewport(const TSha
         HasOrientation = true;
     }
 
-    // Get the active viewport
-    FLevelEditorViewportClient* ViewportClient = (FLevelEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+    // ── Safely get the active viewport ──────────────────────────────────────
+    // GEditor->GetActiveViewport() may return nullptr when no editor viewport
+    // is focused (e.g. the Blueprint editor or another modal has focus).
+    // Previously this caused a null-dereference → UE5 crash → GameThread hang.
+    FLevelEditorViewportClient* ViewportClient = nullptr;
+    if (GEditor && GEditor->GetActiveViewport())
+    {
+        ViewportClient = (FLevelEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+    }
+    // If no viewport found via GetActiveViewport, try the level editor viewports
     if (!ViewportClient)
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get active viewport"));
+        for (FLevelEditorViewportClient* LVC : GEditor->GetLevelViewportClients())
+        {
+            if (LVC)
+            {
+                ViewportClient = LVC;
+                break;
+            }
+        }
+    }
+    if (!ViewportClient)
+    {
+        // Return a soft error (not a hard failure) so the test suite can continue.
+        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+        ResultObj->SetBoolField(TEXT("success"), false);
+        ResultObj->SetStringField(TEXT("error"), TEXT("No active level viewport found. Open the level editor viewport and try again."));
+        return ResultObj;
     }
 
-    // If we have a target actor, focus on it
+    // ── Determine target location ────────────────────────────────────────────
+    FVector FocusLocation = FVector::ZeroVector;
+
     if (HasTargetActor)
     {
-        // Find the actor
+        // Use FindActorByLabel/Name first (O(N) over all actors in world, but
+        // terminates early on first match — much faster than GetAllActorsOfClass
+        // on a 4256-actor world).
         AActor* TargetActor = nullptr;
-        TArray<AActor*> AllActors;
-        UGameplayStatics::GetAllActorsOfClass(GWorld, AActor::StaticClass(), AllActors);
-        
-        for (AActor* Actor : AllActors)
+        if (GWorld)
         {
-            if (Actor && Actor->GetName() == TargetActorName)
+            for (TActorIterator<AActor> It(GWorld); It; ++It)
             {
-                TargetActor = Actor;
-                break;
+                AActor* A = *It;
+                if (A && (A->GetName() == TargetActorName || A->GetActorLabel() == TargetActorName))
+                {
+                    TargetActor = A;
+                    break;
+                }
             }
         }
 
         if (!TargetActor)
         {
-            return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *TargetActorName));
+            TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+            ResultObj->SetBoolField(TEXT("success"), false);
+            ResultObj->SetStringField(TEXT("error"),
+                FString::Printf(TEXT("Actor not found: %s"), *TargetActorName));
+            return ResultObj;
         }
-
-        // Focus on the actor
-        ViewportClient->SetViewLocation(TargetActor->GetActorLocation() - FVector(Distance, 0.0f, 0.0f));
+        FocusLocation = TargetActor->GetActorLocation();
     }
-    // Otherwise use the provided location
     else if (HasLocation)
     {
-        ViewportClient->SetViewLocation(Location - FVector(Distance, 0.0f, 0.0f));
+        FocusLocation = Location;
     }
     else
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Either 'target' or 'location' must be provided"));
+        // No target or location — just report success; caller may only want
+        // to bring the viewport to the front without repositioning.
+        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+        ResultObj->SetBoolField(TEXT("success"), true);
+        ResultObj->SetStringField(TEXT("note"), TEXT("No 'target' or 'location' provided; viewport was not moved."));
+        return ResultObj;
     }
 
-    // Set orientation if provided
+    // ── Position and orient the camera ──────────────────────────────────────
+    ViewportClient->SetViewLocation(FocusLocation - FVector(Distance, 0.0f, 0.0f));
+
     if (HasOrientation)
     {
         ViewportClient->SetViewRotation(Orientation);

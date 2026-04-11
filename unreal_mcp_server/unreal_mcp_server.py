@@ -214,31 +214,49 @@ class UnrealConnection:
         return data
 
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+        """Public dispatcher — routes to _send_command_raw (no health-check).
+
+        After get_unreal_connection() has been called once, this is monkey-
+        patched to point at send_command_with_health_check so all 321 tool
+        functions transparently benefit from the GameThread backoff logic.
+        """
+        return self._send_command_raw(command, params)
+
+    def _send_command_raw(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a JSON command to UE5 and return the parsed response."""
-        # Per-command timeout budget (seconds).
+        # ── Per-command socket timeout budget (seconds) ──────────────────────
         #
-        # 30 s  — default for fast read/write operations.
-        # 90 s  — slow operations: compile, large asset loads, Python execution.
-        # 120 s — very slow: get_actors_in_level (multi-MB payload over Playit tunnel)
-        #         and add_blueprint_variable on a large project (AddMemberVariable can
-        #         trigger asset-registry notifications even after MarkStructurallyModified).
+        # The C++ bridge now has a matching per-command budget (see UnrealMCPBridge.cpp).
+        # Python budgets are intentionally slightly larger to avoid Python timing out
+        # before C++ has a chance to return its structured error JSON.
         #
-        # NOTE: the C++ bridge has a 25 s per-task timeout (WaitFor 25s); for commands
-        # in this list that exceed 25 s the C++ side returns a timeout error immediately
-        # so the socket is freed.  The Python timeout here is the outer safety net.
+        # tier 1 — 30 s : fast read/write (ping, get_node, set_pin, …)
+        # tier 2 — 90 s : slow ops with AR scans or asset I/O
+        # tier 3 — 150 s: very heavy exec_python that spawns asset factories
+        #                  (BehaviorTree / WidgetBlueprint creation can take 60-90 s
+        #                   inside UE5 on a large project)
         _SLOW_COMMANDS = {
-            "compile_blueprint",        # 15-90 s for large Blueprints
-            "exec_python",              # arbitrary Python; budget 90 s
-            "create_blueprint",         # asset creation can be slow on big projects
-            "save_blueprint",           # triggers compile + save pipeline
-            "get_actors_in_level",      # large TCP payload (4256 actors → several MB)
-            "add_blueprint_variable",   # AddMemberVariable can trigger AR notification
-            "get_blueprint_variables",  # FindBlueprint AR scan on cold cache
-            "get_blueprint_functions",  # same AR scan path
-            "get_blueprint_graphs",     # same AR scan path
-            "add_component_to_blueprint",  # can trigger recompile on existing BP
+            "compile_blueprint",          # 15-90 s for large Blueprints
+            "create_blueprint",           # asset creation can be slow on big projects
+            "save_blueprint",             # triggers compile + save pipeline
+            "get_actors_in_level",        # large TCP payload (4256 actors → several MB)
+            "add_blueprint_variable",     # AddMemberVariable can trigger AR notification
+            "get_blueprint_variables",    # FindBlueprint AR scan on cold cache
+            "get_blueprint_functions",    # same AR scan path
+            "get_blueprint_graphs",       # same AR scan path
+            "add_component_to_blueprint", # SCS node creation + MarkStructurallyModified
+            "focus_viewport",             # GetAllActorsOfClass scan over 4256 actors
         }
-        timeout = 90 if command in _SLOW_COMMANDS else 30
+        # exec_python is tier 3 — heavy factory scripts can run 60-120 s
+        _VERY_SLOW_COMMANDS = {
+            "exec_python",                # arbitrary Python; factory scripts need 150 s
+        }
+        if command in _VERY_SLOW_COMMANDS:
+            timeout = 150
+        elif command in _SLOW_COMMANDS:
+            timeout = 90
+        else:
+            timeout = 30
 
         if self.socket:
             try:
@@ -289,7 +307,7 @@ class UnrealConnection:
             return response
 
         except Exception as e:
-            logger.error(f"Error sending command: {e}")
+            logger.error(f"Error sending command '{command}': {e}")
             self.connected = False
             try:
                 self.socket.close()
@@ -298,12 +316,134 @@ class UnrealConnection:
             self.socket = None
             return {"status": "error", "error": str(e)}
 
+    def ping(self, timeout: float = 5.0) -> bool:
+        """Send a lightweight ping to verify the UE5 GameThread is responsive.
+
+        Returns True if the GameThread responds within `timeout` seconds.
+        Used before sending expensive commands after a long session to detect
+        GameThread saturation early.
+        """
+        import time as _time
+        try:
+            # Fresh socket for each ping attempt
+            if self.socket:
+                try:
+                    self.socket.close()
+                except Exception:
+                    pass
+                self.socket = None
+                self.connected = False
+
+            if not self.connect():
+                return False
+
+            ping_json = json.dumps({"type": "ping", "params": {}}) + "\n"
+            self.socket.sendall(ping_json.encode('utf-8'))
+            data = self.receive_full_response(self.socket, timeout=timeout)
+            resp = json.loads(data.decode('utf-8'))
+            return bool(resp)  # any valid JSON response = alive
+        except Exception as e:
+            logger.debug(f"Ping failed: {e}")
+            return False
+        finally:
+            try:
+                if self.socket:
+                    self.socket.close()
+            except Exception:
+                pass
+            self.socket = None
+            self.connected = False
+
+    # ── Commands that should be preceded by a GameThread health-check ────────
+    # After a long test session (60+ commands) the GameThread accumulates stalled
+    # AsyncTasks from previous C++ timeouts.  These commands are the ones that
+    # consistently return empty {} or "No response" at the end of long sessions.
+    _HEALTH_CHECK_COMMANDS: set = {
+        "get_blueprint_variables",
+        "get_blueprint_graphs",
+        "get_blueprint_functions",
+        "compile_blueprint",
+        "save_blueprint",
+        "add_blueprint_variable",
+        "add_component_to_blueprint",
+        "exec_python",
+    }
+
+    # How many consecutive errors before we start health-checking
+    _consecutive_errors: int = 0
+    _MAX_ERRORS_BEFORE_CHECK: int = 2
+
+    def send_command_with_health_check(
+        self,
+        command: str,
+        params: Dict[str, Any] = None,
+        max_wait: float = 30.0,
+        ping_timeout: float = 4.0,
+    ) -> Optional[Dict[str, Any]]:
+        """Like send_command but probes GameThread health first when needed.
+
+        Activates when:
+        1. The command is in _HEALTH_CHECK_COMMANDS, AND
+        2. At least _MAX_ERRORS_BEFORE_CHECK consecutive errors have occurred.
+
+        If the GameThread is saturated (no ping response), waits up to
+        `max_wait` seconds for it to drain. Resets error counter on success.
+        This prevents L3/L4 "No response from Unreal Engine" failures at the
+        end of long test sessions (GameThread saturation after 60+ commands).
+        """
+        import time as _time
+
+        should_check = (
+            command in self._HEALTH_CHECK_COMMANDS
+            and self._consecutive_errors >= self._MAX_ERRORS_BEFORE_CHECK
+        )
+
+        if should_check:
+            waited = 0.0
+            step = 2.0
+            while waited < max_wait:
+                if self.ping(timeout=ping_timeout):
+                    logger.info(f"GameThread responsive after {waited:.0f}s wait — proceeding with '{command}'")
+                    break  # GameThread is responsive
+                logger.warning(
+                    f"GameThread not responding (waited {waited:.0f}s) — "
+                    f"backing off {step:.0f}s before '{command}'"
+                )
+                _time.sleep(step)
+                waited += step
+                step = min(step * 1.5, 10.0)
+            else:
+                logger.error(
+                    f"GameThread did not recover after {max_wait:.0f}s — "
+                    f"sending '{command}' anyway"
+                )
+
+        # Call the original (un-patched) send_command via _send_command_raw
+        # to avoid infinite recursion when send_command is monkey-patched to
+        # point at this method in get_unreal_connection().
+        result = self._send_command_raw(command, params)
+
+        # Track consecutive errors to decide when to activate health checks
+        if result is None or (isinstance(result, dict) and result.get("status") == "error"):
+            self._consecutive_errors += 1
+            logger.debug(f"Consecutive errors: {self._consecutive_errors}")
+        else:
+            self._consecutive_errors = 0  # reset on success
+
+        return result
+
 
 # ─── Global connection ───────────────────────────────────────────────────────
 _unreal_connection: UnrealConnection = None
 
 
-def get_unreal_connection() -> Optional[UnrealConnection]:
+def get_unreal_connection() -> Optional["UnrealConnection"]:
+    """Return the global UnrealConnection, creating it on first call.
+
+    All tool functions call unreal.send_command(…).  That method now routes
+    through send_command_with_health_check so the GameThread health-check
+    logic is transparent to the 321 tool implementations.
+    """
     global _unreal_connection
     try:
         if _unreal_connection is None:
@@ -311,6 +451,17 @@ def get_unreal_connection() -> Optional[UnrealConnection]:
             if not _unreal_connection.connect():
                 logger.warning("Could not connect to Unreal Engine")
                 _unreal_connection = None
+        if _unreal_connection is not None:
+            # Redirect .send_command → .send_command_with_health_check so all
+            # 321 tool functions automatically benefit from the GameThread
+            # backoff logic without requiring changes to 21 individual files.
+            # send_command_with_health_check calls _send_command_raw internally
+            # so there is no infinite recursion.
+            import types as _types
+            _unreal_connection.send_command = _types.MethodType(  # type: ignore[method-assign]
+                lambda self, cmd, params=None: self.send_command_with_health_check(cmd, params),
+                _unreal_connection,
+            )
         return _unreal_connection
     except Exception as e:
         logger.error(f"Error getting Unreal connection: {e}")

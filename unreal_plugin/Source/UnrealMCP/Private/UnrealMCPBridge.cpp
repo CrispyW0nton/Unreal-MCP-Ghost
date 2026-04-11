@@ -459,10 +459,16 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
     //   • Everything else: 24 s  — frees the socket before Python's 30 s fires.
     // -----------------------------------------------------------------------
     double TimeoutSeconds = 24.0;  // default: fast commands
-    if (CommandType == TEXT("compile_blueprint") ||
-        CommandType == TEXT("save_blueprint")    ||
-        CommandType == TEXT("exec_python")       ||
-        CommandType == TEXT("create_blueprint"))
+    if (CommandType == TEXT("exec_python"))
+    {
+        // exec_python tier-3: factory scripts (BehaviorTree, WidgetBlueprint) can
+        // run 60-120 s inside UE5. Give a 140 s budget so C++ never cuts them off
+        // before they finish. Python has 150 s (see _VERY_SLOW_COMMANDS).
+        TimeoutSeconds = 140.0;
+    }
+    else if (CommandType == TEXT("compile_blueprint") ||
+             CommandType == TEXT("save_blueprint")    ||
+             CommandType == TEXT("create_blueprint"))
     {
         TimeoutSeconds = 80.0;   // legitimately slow
     }
@@ -471,7 +477,8 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
              CommandType == TEXT("get_blueprint_functions")   ||
              CommandType == TEXT("get_blueprint_graphs")      ||
              CommandType == TEXT("add_component_to_blueprint")||
-             CommandType == TEXT("get_actors_in_level"))
+             CommandType == TEXT("get_actors_in_level")       ||
+             CommandType == TEXT("focus_viewport"))
     {
         TimeoutSeconds = 80.0;   // AR scan + possible notification chain
     }
