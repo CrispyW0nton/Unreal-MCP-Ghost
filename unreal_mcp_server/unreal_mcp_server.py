@@ -35,14 +35,65 @@ Quick start for remote agents (GenSpark AI Developer):
 """
 
 import argparse
+import asyncio
 import logging
 import os
 import socket
 import sys
 import json
+import functools
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
+
+# ─── Async thread-offload patch ─────────────────────────────────────────────
+# Problem: FastMCP calls sync tool functions with a plain `return fn(**args)`,
+# which blocks the entire asyncio event loop.  While the event loop is blocked:
+#   • no SSE writes can be flushed back to the client
+#   • no keep-alive pings can be sent
+#   • the client sees a stalled connection and raises RemoteProtocolError
+# This means tool call RESULTS are accepted (202) but NEVER written to the SSE
+# stream — only the `initialize` response (which is pure async) arrives correctly.
+#
+# Fix: Monkey-patch FuncMetadata.call_fn_with_arg_validation to run sync
+# callables in anyio's default thread pool (run_sync_in_worker_thread), exactly
+# as FastMCP would do if every tool were declared `async def`.
+# Async callables are still awaited directly — no change to async tools.
+# This is a one-line patch at startup, requires zero changes across the 321 tool
+# functions spread over 21 files.
+import anyio
+from mcp.server.fastmcp.utilities import func_metadata as _fm_module
+
+_original_call_fn = _fm_module.FuncMetadata.call_fn_with_arg_validation.__func__  # type: ignore[attr-defined]
+
+
+async def _threaded_call_fn(self, fn, fn_is_async, arguments_to_validate, arguments_to_pass_directly):
+    """Replacement for FuncMetadata.call_fn_with_arg_validation.
+
+    Async functions are awaited directly (unchanged behaviour).
+    Sync functions are offloaded to anyio's worker-thread pool so the
+    asyncio event loop remains free to flush SSE writes while the blocking
+    socket recv() call waits for UE5 to respond.
+    """
+    arguments_pre_parsed = self.pre_parse_json(arguments_to_validate)
+    arguments_parsed_model = self.arg_model.model_validate(arguments_pre_parsed)
+    arguments_parsed_dict = arguments_parsed_model.model_dump_one_level()
+    arguments_parsed_dict |= arguments_to_pass_directly or {}
+
+    if fn_is_async:
+        return await fn(**arguments_parsed_dict)
+    else:
+        # Run in a worker thread so the event loop stays responsive.
+        # functools.partial is used to bind keyword arguments because
+        # anyio.to_thread.run_sync only accepts positional args to the callable.
+        return await anyio.to_thread.run_sync(
+            functools.partial(fn, **arguments_parsed_dict),
+            limiter=None,         # use default 40-thread limit
+            abandon_on_cancel=False,
+        )
+
+
+_fm_module.FuncMetadata.call_fn_with_arg_validation = _threaded_call_fn  # type: ignore[method-assign]
 
 # ─── Logging ────────────────────────────────────────────────────────────────
 # Write to file only (UTF-8 so emoji/arrow chars in KB tool output don't crash).
