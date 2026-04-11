@@ -45,11 +45,15 @@ from typing import AsyncIterator, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
 
 # ─── Logging ────────────────────────────────────────────────────────────────
+# Write to file only (UTF-8 so emoji/arrow chars in KB tool output don't crash).
+# On Windows the default cp1252 console encoding cannot encode characters like
+# the arrow (\u2192) or book emoji (\U0001F4DA) emitted by knowledge_tools.py.
+# Keeping all logging to a file avoids UnicodeEncodeError on the server console.
 logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
-        logging.FileHandler('unreal_mcp.log'),
+        logging.FileHandler('unreal_mcp.log', encoding='utf-8'),
     ]
 )
 logger = logging.getLogger("UnrealMCP")
@@ -107,9 +111,17 @@ class UnrealConnection:
         self.socket = None
         self.connected = False
 
-    def receive_full_response(self, sock, buffer_size=8192) -> bytes:
+    def receive_full_response(self, sock, buffer_size=65536) -> bytes:
+        # Timeout budget explanation:
+        #   - Blueprint compile / node operations on UE5 GameThread can take 30-90 s.
+        #   - Routing through a Playit tunnel adds variable latency.
+        #   - The old 15 s limit caused all non-trivial tool calls to raise
+        #     socket.timeout → MCP server closed the connection mid-flight →
+        #     client saw RemoteProtocolError: Server disconnected without response.
+        #   120 s is generous enough for the heaviest operations while still
+        #   catching genuinely hung connections.
         chunks = []
-        sock.settimeout(15)
+        sock.settimeout(120)
         try:
             while True:
                 chunk = sock.recv(buffer_size)
@@ -126,7 +138,7 @@ class UnrealConnection:
                 except json.JSONDecodeError:
                     continue
         except socket.timeout:
-            logger.warning("Socket timeout during receive")
+            logger.warning("Socket timeout (120 s) during receive")
             if chunks:
                 data = b''.join(chunks)
                 try:
@@ -134,7 +146,7 @@ class UnrealConnection:
                     return data
                 except Exception:
                     pass
-            raise Exception("Timeout receiving Unreal response")
+            raise Exception("Timeout (120 s) waiting for Unreal response — UE5 may be busy or the command crashed")
         except Exception as e:
             logger.error(f"Error during receive: {str(e)}")
             raise
@@ -268,6 +280,7 @@ from tools.vr_tools import register_vr_tools
 from tools.variant_tools import register_variant_tools
 # 3rd pass: Physics/Math/Trace tools (Ch.14), expanded AI (Ch.10)
 from tools.physics_tools import register_physics_tools
+from tools.knowledge_tools import register_knowledge_tools
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -289,6 +302,7 @@ register_vr_tools(mcp)
 register_variant_tools(mcp)
 # 3rd pass additions
 register_physics_tools(mcp)
+register_knowledge_tools(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
@@ -723,6 +737,12 @@ Environment variable equivalents:
     if args.transport in ("sse", "streamable-http"):
         mcp.settings.host = MCP_SERVER_HOST
         mcp.settings.port = MCP_SERVER_PORT
+        # Allow any Host header so reverse proxies / Playit tunnels work correctly.
+        # Without this uvicorn returns 421 Misdirected Request for tunnel hostnames.
+        try:
+            mcp.settings.allowed_hosts = ["*"]
+        except Exception:
+            pass
 
     # ── Launch ──────────────────────────────────────────────────────────────
     if args.transport == "stdio":
@@ -741,7 +761,78 @@ Environment variable equivalents:
         print(f"[UnrealMCP] SSE server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/sse")
         print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/sse")
         print(f"[UnrealMCP] UE5 plugin target: {UNREAL_HOST}:{UNREAL_PORT}")
-        mcp.run(transport="sse")
+        # Run uvicorn directly with DNS rebinding protection disabled.
+        # The MCP library's SseServerTransport has its own TransportSecurityMiddleware
+        # that rejects any Host header not in its allowed list, returning 421.
+        # FastMCP's mcp.run(transport="sse") has no way to pass security_settings
+        # through, so we build the Starlette app manually with protection disabled.
+        import asyncio
+        import uvicorn
+        from mcp.server.sse import SseServerTransport
+        from mcp.server.transport_security import TransportSecuritySettings
+        from starlette.applications import Starlette
+        from starlette.requests import Request
+        from starlette.routing import Mount, Route
+
+        # Disable DNS rebinding protection so tunnel Host headers are accepted
+        security_settings = TransportSecuritySettings(enable_dns_rebinding_protection=False)
+        sse = SseServerTransport("/messages/", security_settings=security_settings)
+
+        # handle_sse must be an ASGI app (scope, receive, send) not a request handler,
+        # so that the raw send callable is passed directly to connect_sse.
+        # Wrapping it as a Starlette Request endpoint causes 'NoneType not callable'
+        # because request_response() tries to call the None return value as a Response.
+        async def handle_sse(scope, receive, send):
+            try:
+                async with sse.connect_sse(scope, receive, send) as streams:
+                    await mcp._mcp_server.run(
+                        streams[0],
+                        streams[1],
+                        mcp._mcp_server.create_initialization_options(),
+                    )
+            except Exception as exc:
+                import anyio
+                # ClosedResourceError = client disconnected cleanly; suppress silently.
+                if isinstance(exc, anyio.ClosedResourceError):
+                    logger.debug("SSE client disconnected")
+                else:
+                    logger.error(f"SSE handler error: {exc}")
+
+        # Starlette Route treats async functions as request handlers (Response return)
+        # unless we provide methods=None and route them as ASGI apps.
+        # The cleanest approach: wrap in a tiny request-style function that
+        # passes raw ASGI primitives through, matching what FastMCP itself does.
+        async def sse_endpoint(request: Request):
+            """Bridge from Starlette request to raw ASGI for connect_sse."""
+            await handle_sse(request.scope, request.receive, request._send)
+            # Return a dummy Response so Starlette's request_response() wrapper
+            # doesn't try to call None as a callable.
+            from starlette.responses import Response as StarletteResponse
+            return StarletteResponse(status_code=200)
+
+        starlette_app = Starlette(
+            routes=[
+                Route("/sse", endpoint=sse_endpoint, methods=["GET"]),
+                Mount("/messages/", app=sse.handle_post_message),
+            ]
+        )
+
+        config = uvicorn.Config(
+            starlette_app,
+            host=MCP_SERVER_HOST,
+            port=MCP_SERVER_PORT,
+            log_level="info",
+            # Keep HTTP connections open long enough for slow UE5 operations.
+            # h11 (HTTP/1.1) has a default incomplete-event size limit that can
+            # reject large Blueprint-node responses; bump it to 16 MB.
+            # timeout_keep_alive: seconds to hold an idle SSE connection open.
+            # timeout_graceful_shutdown: gives in-flight tool calls time to finish.
+            timeout_keep_alive=300,
+            timeout_graceful_shutdown=10,
+            h11_max_incomplete_event_size=16 * 1024 * 1024,  # 16 MB
+        )
+        server = uvicorn.Server(config)
+        asyncio.run(server.serve())
 
     elif args.transport == "streamable-http":
         logger.info(

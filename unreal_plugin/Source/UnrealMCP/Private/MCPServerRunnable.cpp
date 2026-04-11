@@ -356,13 +356,20 @@ void FMCPServerRunnable::ProcessMessage(TSharedPtr<FSocket> Client, const FStrin
         return;
     }
     
-    // Extract command type and parameters using MCP protocol format
+    // Extract command type and parameters using MCP protocol format.
+    // The Python server sends {"type": "...", "params": {...}} so accept
+    // both "command" (newer) and "type" (legacy) field names.
     FString CommandType;
     TSharedPtr<FJsonObject> Params = MakeShareable(new FJsonObject());
     
-    if (!JsonMessage->TryGetStringField(TEXT("command"), CommandType))
+    bool bHasCommand = JsonMessage->TryGetStringField(TEXT("command"), CommandType);
+    if (!bHasCommand)
     {
-        UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Message missing 'command' field"));
+        bHasCommand = JsonMessage->TryGetStringField(TEXT("type"), CommandType);
+    }
+    if (!bHasCommand)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Message missing 'command'/'type' field"));
         return;
     }
     
