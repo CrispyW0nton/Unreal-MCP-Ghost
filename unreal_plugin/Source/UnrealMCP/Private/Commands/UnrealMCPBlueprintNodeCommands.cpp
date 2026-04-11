@@ -285,6 +285,12 @@ UFunction* FUnrealMCPBlueprintNodeCommands::ResolveFunction(
             {TEXT("KismetNodeHelperLibrary"),   TEXT("/Script/Engine.KismetNodeHelperLibrary")},
             {TEXT("GameplayStatics"),           TEXT("/Script/Engine.GameplayStatics")},
             {TEXT("DataTableFunctionLibrary"),  TEXT("/Script/Engine.DataTableFunctionLibrary")},
+            // Animation / AI
+            {TEXT("KismetAnimationLibrary"),    TEXT("/Script/Engine.KismetAnimationLibrary")},
+            {TEXT("AIBlueprintHelperLibrary"),  TEXT("/Script/AIModule.AIBlueprintHelperLibrary")},
+            {TEXT("NavigationSystemV1"),        TEXT("/Script/NavigationSystem.NavigationSystemV1")},
+            // Niagara (VFX)
+            {TEXT("NiagaraFunctionLibrary"),    TEXT("/Script/Niagara.NiagaraFunctionLibrary")},
             // Actor / Component hierarchy
             {TEXT("Actor"),                     TEXT("/Script/Engine.Actor")},
             {TEXT("Character"),                 TEXT("/Script/Engine.Character")},
@@ -1126,6 +1132,34 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         { TEXT("Subtract_VectorVector"),TEXT("Subtract_VectorVector"), TEXT("KismetMathLibrary") },
         // Gameplay – GetGameTimeInSeconds is on KismetSystemLibrary in UE5, not GameplayStatics
         { TEXT("GetGameTimeInSeconds"), TEXT("GetGameTimeInSeconds"),  TEXT("KismetSystemLibrary") },
+        // Trace nodes — all live in KismetSystemLibrary
+        { TEXT("LineTraceSingle"),           TEXT("LineTraceSingle"),           TEXT("KismetSystemLibrary") },
+        { TEXT("LineTraceMulti"),            TEXT("LineTraceMulti"),            TEXT("KismetSystemLibrary") },
+        { TEXT("LineTraceByChannel"),        TEXT("LineTraceSingle"),           TEXT("KismetSystemLibrary") },
+        { TEXT("SphereTraceSingle"),         TEXT("SphereTraceSingle"),         TEXT("KismetSystemLibrary") },
+        { TEXT("SphereTraceMulti"),          TEXT("SphereTraceMulti"),          TEXT("KismetSystemLibrary") },
+        { TEXT("CapsuleTraceSingle"),        TEXT("CapsuleTraceSingle"),        TEXT("KismetSystemLibrary") },
+        { TEXT("CapsuleTraceMulti"),         TEXT("CapsuleTraceMulti"),         TEXT("KismetSystemLibrary") },
+        { TEXT("BoxTraceSingle"),            TEXT("BoxTraceSingle"),            TEXT("KismetSystemLibrary") },
+        { TEXT("BoxTraceMulti"),             TEXT("BoxTraceMulti"),             TEXT("KismetSystemLibrary") },
+        { TEXT("SphereOverlapActors"),       TEXT("SphereOverlapActors"),       TEXT("KismetSystemLibrary") },
+        { TEXT("SphereOverlapComponents"),   TEXT("SphereOverlapComponents"),   TEXT("KismetSystemLibrary") },
+        // Debug draw — also KismetSystemLibrary
+        { TEXT("DrawDebugLine"),             TEXT("DrawDebugLine"),             TEXT("KismetSystemLibrary") },
+        { TEXT("DrawDebugSphere"),           TEXT("DrawDebugSphere"),           TEXT("KismetSystemLibrary") },
+        { TEXT("DrawDebugPoint"),            TEXT("DrawDebugPoint"),            TEXT("KismetSystemLibrary") },
+        { TEXT("DrawDebugBox"),              TEXT("DrawDebugBox"),              TEXT("KismetSystemLibrary") },
+        // Common GameplayStatics
+        { TEXT("GetAllActorsOfClass"),       TEXT("GetAllActorsOfClass"),       TEXT("GameplayStatics") },
+        { TEXT("GetActorOfClass"),           TEXT("GetActorOfClass"),           TEXT("GameplayStatics") },
+        { TEXT("GetGameMode"),               TEXT("GetGameMode"),               TEXT("GameplayStatics") },
+        { TEXT("GetGameInstance"),           TEXT("GetGameInstance"),           TEXT("GameplayStatics") },
+        { TEXT("SpawnObject"),               TEXT("SpawnObject"),               TEXT("GameplayStatics") },
+        { TEXT("PlaySound2D"),               TEXT("PlaySound2D"),               TEXT("GameplayStatics") },
+        { TEXT("PlaySoundAtLocation"),       TEXT("PlaySoundAtLocation"),       TEXT("GameplayStatics") },
+        { TEXT("ApplyDamage"),               TEXT("ApplyDamage"),               TEXT("GameplayStatics") },
+        { TEXT("ApplyPointDamage"),          TEXT("ApplyPointDamage"),          TEXT("GameplayStatics") },
+        { TEXT("OpenLevel"),                 TEXT("OpenLevel"),                 TEXT("GameplayStatics") },
         // Actor
         { TEXT("GetActorForwardVector"),TEXT("GetActorForwardVector"), TEXT("Actor") },
         { TEXT("GetActorLocation"),     TEXT("K2_GetActorLocation"),   TEXT("Actor") },
@@ -1468,7 +1502,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
         }
     }
 
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    // Mark the Blueprint dirty WITHOUT triggering a full AssetRegistry refresh.
+    // BP->Modify() calls MarkPackageDirty() which on a large project (8k+ assets)
+    // can stall the GameThread for 60+ seconds while the content browser refreshes.
+    // FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified() does the same
+    // graph invalidation but skips the heavyweight asset registry notification.
+    // The caller must still call compile_blueprint + save_blueprint to persist.
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("variable_name"), VarName);

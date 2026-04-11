@@ -2500,13 +2500,30 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSpawnNiagaraAtLocat
     CallNode->PostPlacedNewNode();
     CallNode->AllocateDefaultPins();
 
-    // Set the SystemTemplate pin default to the NS path
+    // Set the SystemTemplate pin default to the NS path.
+    // Use FindObject first (cache-only, instant) to avoid StaticLoadObject stalling
+    // the GameThread when the Niagara asset has not been loaded yet.
+    // StaticLoadObject does a synchronous disk read from the GameThread which can
+    // block indefinitely on a slow or networked drive.  If the asset is not already
+    // in memory, the pin stays unset (nullptr) and the caller can set it manually.
     for (UEdGraphPin* Pin : CallNode->Pins)
     {
         if (Pin->PinName == TEXT("SystemTemplate"))
         {
-            Pin->DefaultObject = Cast<UNiagaraSystem>(
-                StaticLoadObject(UNiagaraSystem::StaticClass(), nullptr, *NSPath));
+            UNiagaraSystem* NiagaraAsset = FindObject<UNiagaraSystem>(nullptr, *NSPath);
+            if (!NiagaraAsset)
+            {
+                // Attempt a load, but only if the path looks valid — avoids blocking
+                // on a missing/typo path.  A non-empty NSPath that starts with /Game/
+                // or /Script/ is assumed to be a real asset path.
+                if (!NSPath.IsEmpty() && (NSPath.StartsWith(TEXT("/Game/")) ||
+                                          NSPath.StartsWith(TEXT("/Script/"))))
+                {
+                    NiagaraAsset = Cast<UNiagaraSystem>(
+                        StaticLoadObject(UNiagaraSystem::StaticClass(), nullptr, *NSPath));
+                }
+            }
+            Pin->DefaultObject = NiagaraAsset;
             break;
         }
     }

@@ -159,38 +159,44 @@ class UnrealConnection:
         self.socket = None
         self.connected = False
 
-    def receive_full_response(self, sock, buffer_size=65536) -> bytes:
-        # Timeout budget explanation:
-        #   - Blueprint compile / node operations on UE5 GameThread can take 30-90 s.
-        #   - Routing through a Playit tunnel adds variable latency.
-        #   - The old 15 s limit caused all non-trivial tool calls to raise
-        #     socket.timeout → MCP server closed the connection mid-flight →
-        #     client saw RemoteProtocolError: Server disconnected without response.
-        #   120 s is generous enough for the heaviest operations while still
-        #   catching genuinely hung connections.
+    def receive_full_response(self, sock, buffer_size=65536, timeout=30) -> bytes:
+        # Per-command timeout:
+        #   30 s covers the vast majority of UE5 GameThread operations including
+        #   Blueprint compile (5-15 s) and large node graph mutations (10-25 s).
+        #   Commands that hang indefinitely on the GameThread (e.g. AddMemberVariable
+        #   triggering an asset-registry refresh on an 8 k-asset project, or
+        #   StaticLoadObject on an uncached Niagara asset) would previously block
+        #   the SSE stream forever.  With a 30 s limit they return a clear timeout
+        #   error to the AI instead of silently starving the event loop.
         #
-        # IMPORTANT: Do NOT early-return on the first successful json.loads() inside
-        # the recv loop.  For large responses (e.g. get_actors_in_level with many
-        # actors) multiple 65536-byte chunks are needed.  The first N chunks may
-        # accidentally form a valid-but-truncated JSON document (e.g. a partial
-        # actors array that closes cleanly), causing the Python side to return a
-        # truncated response that looks like newline-delimited JSON objects.
+        #   get_actors_in_level (4 256 actors → several hundred KB) is handled
+        #   correctly because we read until EOF, not until first valid json.loads.
+        #   The 30 s window is more than enough for the TCP transfer itself.
         #
-        # The C++ bridge opens a fresh TCP connection per command and closes the
-        # socket after writing the full response.  The correct termination signal
-        # is therefore EOF (recv returns b''), not a successful json.loads mid-stream.
+        # IMPORTANT: Do NOT early-return on a successful json.loads() inside the
+        # recv loop.  Read until EOF (recv returns b'') so large multi-chunk
+        # responses are never truncated.
         chunks = []
-        sock.settimeout(120)
+        sock.settimeout(timeout)
         try:
             while True:
                 chunk = sock.recv(buffer_size)
                 if not chunk:
-                    # EOF — C++ closed the connection after sending the full response.
+                    # EOF — C++ closed the connection after writing the full response.
                     break
                 chunks.append(chunk)
         except socket.timeout:
-            logger.warning("Socket timeout (120 s) during receive")
-            # Fall through — try to parse whatever we have.
+            # UE5 GameThread is hung — return a descriptive error immediately so
+            # the SSE stream stays unblocked for the next tool call.
+            raise Exception(
+                f"UE5 command timed out after {timeout}s — the GameThread did not "
+                "respond in time.  Likely causes: (1) AddMemberVariable / Modify() "
+                "triggered an asset-registry refresh on a large project, "
+                "(2) StaticLoadObject blocked on an uncached asset, "
+                "(3) global class search over 8k+ assets.  "
+                "Retry the command; if it consistently times out, compile & save "
+                "the Blueprint first, or use exec_python as a workaround."
+            )
         except Exception as e:
             logger.error(f"Error during receive: {str(e)}")
             raise
@@ -209,6 +215,18 @@ class UnrealConnection:
 
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a JSON command to UE5 and return the parsed response."""
+        # Commands that legitimately take longer than 30 s get a higher budget.
+        # Everything else is capped at 30 s so a hung GameThread never freezes
+        # the SSE stream indefinitely.
+        _SLOW_COMMANDS = {
+            "compile_blueprint",        # 15-90 s for large Blueprints
+            "exec_python",              # arbitrary Python; budget 60 s
+            "create_blueprint",         # asset creation can be slow on big projects
+            "save_blueprint",           # triggers compile + save pipeline
+            "get_actors_in_level",      # large TCP payload (4256 actors → several MB)
+        }
+        timeout = 90 if command in _SLOW_COMMANDS else 30
+
         if self.socket:
             try:
                 self.socket.close()
@@ -230,7 +248,7 @@ class UnrealConnection:
             logger.info(f"Sending command: {command_json[:200]}...")
             self.socket.sendall(command_json.encode('utf-8'))
 
-            response_data = self.receive_full_response(self.socket)
+            response_data = self.receive_full_response(self.socket, timeout=timeout)
             response = json.loads(response_data.decode('utf-8'))
             logger.info(f"Response: {str(response)[:300]}")
 
