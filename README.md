@@ -785,6 +785,19 @@ Count existing assets:
     set_behavior_tree_blackboard  → blackboard_name="BB_X"  (not the full path)
     create_data_table             → row_struct="ST_X"       (not row_struct_path)
 
+12. ALWAYS query the knowledge base before implementing any system. The knowledge base
+    contains authoritative parameter names, patterns, and gotchas sourced from 4 UE5
+    textbooks (1,626 pages). Never implement from memory alone.
+    - Before AI/BT work    → get_knowledge_base("ai")
+    - Before animation     → get_knowledge_base("animation")
+    - Before UI/HUD        → get_knowledge_base("ui")
+    - Before gameplay      → get_knowledge_base("gameplay")
+    - Before materials     → get_knowledge_base("materials")
+    - Before input system  → get_knowledge_base("input")
+    - Before data/structs  → get_knowledge_base("data")
+    - Before communication → get_knowledge_base("communication")
+    - Unknown topic?       → list_knowledge_base_topics() then search_knowledge_base("your term")
+
 ═══════════════════════════════════════════════
 3. KNOWN PARAMETER GOTCHAS
 ═══════════════════════════════════════════════
@@ -1028,6 +1041,21 @@ HIGH-LEVEL COMPOSITE TOOLS (build entire systems in one call)
   setup_hit_material_swap(blueprint_name="BP_X", mesh_component="Mesh", default_material="/Game/.../M_Default", hit_material="/Game/.../M_Hit")
   build_trace_interaction_blueprint(blueprint_name="BP_X", trace_range=500.0, input_key="E")
   build_complete_blueprint_graph(blueprint_name="BP_X")
+
+KNOWLEDGE BASE TOOLS (anti-hallucination — MANDATORY before implementing any system)
+  list_knowledge_base_topics()
+      → Returns index of all available topics with usage instructions
+
+  get_knowledge_base(topic="ai")
+      → Returns full reference doc + book extracts for the topic
+      → Topics: blueprints, communication, gameplay, ai, animation, ui, data,
+                materials, niagara, world, components, input, cookbook,
+                packaging, animation_deep, technical_art, vfx, tools, dantooine
+      → CALL THIS FIRST before building any of the above systems
+
+  search_knowledge_base(query="behavior tree task")
+      → Keyword search across all 22 KB files + 10 book extracts (1,626 pages)
+      → Returns top matching sections with source file references
 
 ═══════════════════════════════════════════════
 5. ASSET CREATION VIA exec_python (FOR CUSTOM FOLDERS)
