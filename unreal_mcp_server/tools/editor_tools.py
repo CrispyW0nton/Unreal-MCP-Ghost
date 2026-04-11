@@ -302,23 +302,33 @@ if bp_asset is None:
 if bp_asset is None:
     print(f"ERROR: Blueprint not found: {{bp_name}}")
 else:
-    had_errors = False
+    # Step 1: Compile (always attempt even on clean/unmodified Blueprints)
     try:
         unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
         print(f"COMPILED: {{bp_name}}")
     except Exception as e:
-        had_errors = True
         print(f"COMPILE_ERROR: {{e}}")
 
+    # Step 2: Mark dirty so save_asset never skips a clean package
     try:
-        pkg_path = bp_asset.get_outer().get_path_name()
-        saved = unreal.EditorLoadingAndSavingUtils.save_packages_with_dialog([bp_asset.get_outer()], only_dirty=False)
-        if not saved:
-            # Fallback to save_asset
-            unreal.EditorAssetLibrary.save_asset(str(bp_asset.get_path_name()), only_if_is_dirty=False)
+        pkg = bp_asset.get_outer()
+        if pkg:
+            pkg.mark_package_dirty()
+    except Exception:
+        pass
+
+    # Step 3: Save — use save_asset with only_if_is_dirty=False to force write
+    try:
+        asset_path = str(bp_asset.get_path_name())
+        unreal.EditorAssetLibrary.save_asset(asset_path, only_if_is_dirty=False)
         print(f"SAVED: {{bp_name}}")
     except Exception as e:
-        print(f"SAVE_ERROR: {{e}}")
+        # Final fallback: save_packages_with_dialog
+        try:
+            unreal.EditorLoadingAndSavingUtils.save_packages_with_dialog([bp_asset.get_outer()], only_dirty=False)
+            print(f"SAVED: {{bp_name}}")
+        except Exception as e2:
+            print(f"SAVE_ERROR: {{e2}}")
 """
         try:
             unreal = get_unreal_connection()
@@ -326,12 +336,18 @@ else:
                 return {"success": False, "message": "Not connected to Unreal Engine"}
             response = unreal.send_command("exec_python", {"code": code}) or {}
             output = response.get("output", response.get("result", ""))
+            if not isinstance(output, str):
+                output = str(output)
             had_errors = "COMPILE_ERROR" in output or "ERROR:" in output
-            compiled = "COMPILED:" in output
+            # compiled=True if "COMPILED:" present OR if no compile error and no "not found"
+            # (clean Blueprints may produce no output from compile_blueprint)
+            compile_error = "COMPILE_ERROR" in output
+            not_found = "ERROR: Blueprint not found" in output
+            compiled = "COMPILED:" in output or (not compile_error and not not_found)
             saved = "SAVED:" in output
             errors = [ln for ln in output.splitlines() if "ERROR" in ln]
             return {
-                "success": compiled and not had_errors,
+                "success": compiled and saved and not had_errors,
                 "compiled": compiled,
                 "saved": saved,
                 "had_errors": had_errors,
