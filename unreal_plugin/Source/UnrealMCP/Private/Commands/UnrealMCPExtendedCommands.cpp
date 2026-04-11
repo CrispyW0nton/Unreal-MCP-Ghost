@@ -48,6 +48,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "BlueprintEditorSettings.h"
+#include "BlueprintEditorLibrary.h"   // UBlueprintEditorLibrary::ReparentBlueprint
 
 // Editor Asset utilities
 #include "EditorAssetLibrary.h"
@@ -2335,11 +2336,12 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBlueprintParentClas
     // Store old parent for response
     FString OldParentName = BP->ParentClass ? BP->ParentClass->GetName() : TEXT("None");
 
-    // Perform reparent — uses KismetEditorUtilities which handles safe migration
-    // ReparentBlueprint was removed from FKismetEditorUtilities in UE5.4+.
-    // Use FBlueprintEditorUtils::ReparentBlueprint instead.
-    FBlueprintEditorUtils::ReparentBlueprint(BP, NewParentClass);
+    // Perform reparent.
+    // FKismetEditorUtilities::ReparentBlueprint removed in UE5.4+.
+    // FBlueprintEditorUtils has no ReparentBlueprint in UE5.6.
+    // Correct API: UBlueprintEditorLibrary::ReparentBlueprint (BlueprintEditorLibrary module).
     BP->Modify();
+    UBlueprintEditorLibrary::ReparentBlueprint(BP, NewParentClass);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"),        true);
@@ -2768,9 +2770,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetSequencerTrack(
 
                 double TimeVal = 0.0;
                 (*KFObj)->TryGetNumberField(TEXT("time"), TimeVal);
-                // FFrameRate * double operator removed in UE5.4+; use ConvertTo instead
+                // FFrameRate * double operator removed in UE5.4+; compute manually.
+                // FMath::RoundToInt returns int64 in UE5.5+; cast to int32 for FFrameNumber.
                 FFrameNumber FrameNum = TickRate.AsDecimal() > 0.0
-                    ? FFrameNumber(FMath::RoundToInt(TimeVal * TickRate.AsDecimal()))
+                    ? FFrameNumber(static_cast<int32>(FMath::RoundToInt64(TimeVal * TickRate.AsDecimal())))
                     : FFrameNumber(0);
 
                 // Extend section range
