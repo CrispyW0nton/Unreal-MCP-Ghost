@@ -1431,4 +1431,66 @@ def register_blueprint_node_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    @mcp.tool()
+    def get_blueprint_variables(
+        ctx: Context,
+        blueprint_name: str,
+        category: str = ""
+    ) -> Dict[str, Any]:
+        """
+        List all member variables defined in a Blueprint class.
+
+        Returns each variable's name, type, default value, and category.
+        Use this to inspect existing variables before adding new ones.
+
+        Args:
+            blueprint_name: Blueprint asset name (e.g., "BP_MyCharacter")
+            category: Optional category filter (empty string = return all)
+
+        Returns:
+            Dict with 'variables' list. Each entry has:
+              name, type, default_value, category, is_exposed, is_read_only
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            params: Dict[str, Any] = {"blueprint_name": blueprint_name}
+            if category:
+                params["category"] = category
+            return unreal.send_command("get_blueprint_variables", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def get_blueprint_functions(
+        ctx: Context,
+        blueprint_name: str,
+    ) -> Dict[str, Any]:
+        """
+        List all function graphs defined inside a Blueprint class.
+
+        Returns each function's name, input pins, and output pins.
+        Use this before calling add_blueprint_function_node on a custom function,
+        or before modifying an existing function graph.
+
+        Args:
+            blueprint_name: Blueprint asset name (e.g., "BP_MyCharacter")
+
+        Returns:
+            Dict with 'functions' list. Each entry has:
+              name, inputs (list of {name, type}), outputs (list of {name, type})
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("get_blueprint_functions", {
+                "blueprint_name": blueprint_name,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     logger.info("Blueprint node tools registered")

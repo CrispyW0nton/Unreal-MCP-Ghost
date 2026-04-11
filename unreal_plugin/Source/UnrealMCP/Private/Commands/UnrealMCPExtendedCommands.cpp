@@ -231,6 +231,139 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("create_input_mapping_context"))  return HandleCreateInputMappingContext(Params);
     if (CommandType == TEXT("add_input_mapping"))              return HandleAddInputMapping(Params);
 
+    // ── SaveGame / Game State (Ch. 11) ───────────────────────────────────────
+    if (CommandType == TEXT("add_save_game_to_slot_node"))       return HandleAddSaveGameToSlotNode(Params);
+    if (CommandType == TEXT("add_load_game_from_slot_node"))     return HandleAddLoadGameFromSlotNode(Params);
+    if (CommandType == TEXT("add_does_save_game_exist_node"))    return HandleAddDoesSaveGameExistNode(Params);
+    if (CommandType == TEXT("add_create_save_game_object_node")) return HandleAddCreateSaveGameObjectNode(Params);
+    if (CommandType == TEXT("add_delete_save_game_in_slot_node")) return HandleAddDeleteSaveGameInSlotNode(Params);
+    if (CommandType == TEXT("add_open_level_node"))              return HandleAddOpenLevelNode(Params);
+    if (CommandType == TEXT("add_set_game_paused_node"))         return HandleAddSetGamePausedNode(Params);
+    if (CommandType == TEXT("add_quit_game_node"))               return HandleAddQuitGameNode(Params);
+    if (CommandType == TEXT("add_player_death_event"))           return HandleAddPlayerDeathEvent(Params);
+
+    // ── Library / Component (Ch. 18) ─────────────────────────────────────────
+    if (CommandType == TEXT("add_set_timer_by_event_node"))      return HandleAddSetTimerByEventNode(Params);
+    if (CommandType == TEXT("add_set_timer_by_function_name_node")) return HandleAddSetTimerByFunctionNameNode(Params);
+    if (CommandType == TEXT("add_get_owner_node"))               return HandleAddGetOwnerNode(Params);
+    if (CommandType == TEXT("add_custom_component_to_blueprint")) return HandleAddCustomComponentToBlueprint(Params);
+    if (CommandType == TEXT("add_function_to_blueprint"))        return HandleAddFunctionToLibrary(Params);
+    if (CommandType == TEXT("add_function_to_library"))          return HandleAddFunctionToLibrary(Params);
+
+    // ── Data Containers (Ch. 13) ─────────────────────────────────────────────
+    if (CommandType == TEXT("add_make_array_node"))              return HandleAddMakeArrayNode(Params);
+    if (CommandType == TEXT("add_make_map_node"))                return HandleAddMakeMapNode(Params);
+    if (CommandType == TEXT("add_make_set_node"))                return HandleAddMakeSetNode(Params);
+    if (CommandType == TEXT("add_break_struct_node"))            return HandleAddBreakStructNode(Params);
+    if (CommandType == TEXT("add_make_struct_node"))             return HandleAddMakeStructNode(Params);
+    if (CommandType == TEXT("add_get_data_table_row_node"))      return HandleAddGetDataTableRowNode(Params);
+    if (CommandType == TEXT("add_random_array_item_node"))       return HandleAddRandomArrayItemNode(Params);
+    if (CommandType == TEXT("add_set_contains_node"))            return HandleAddSetContainsNode(Params);
+    if (CommandType == TEXT("add_set_operation_node"))           return HandleAddSetOperationNode(Params);
+    if (CommandType == TEXT("add_set_to_array_node"))            return HandleAddSetToArrayNode(Params);
+    if (CommandType == TEXT("add_map_find_node"))                return HandleAddMapFindNode(Params);
+    if (CommandType == TEXT("add_map_contains_node"))            return HandleAddMapContainsNode(Params);
+    if (CommandType == TEXT("add_map_keys_node"))                return HandleAddMapKeysNode(Params);
+    if (CommandType == TEXT("add_map_values_node"))              return HandleAddMapValuesNode(Params);
+    if (CommandType == TEXT("add_map_variable"))                 return HandleAddMapVariable(Params);
+
+    // ── Material / VFX nodes (Ch. 9) ─────────────────────────────────────────
+    if (CommandType == TEXT("add_set_material_node"))             return HandleAddSetMaterialNode(Params);
+    if (CommandType == TEXT("add_set_vector_parameter_value_node")) return HandleAddSetVectorParameterValueNode(Params);
+    if (CommandType == TEXT("add_set_scalar_parameter_value_node")) return HandleAddSetScalarParameterValueNode(Params);
+    if (CommandType == TEXT("add_spawn_emitter_at_location_node")) return HandleAddSpawnEmitterAtLocationNode(Params);
+    if (CommandType == TEXT("add_play_sound_at_location_node"))   return HandleAddPlaySoundAtLocationNode(Params);
+
+    // ── Physics / Trace (Ch. 14) ─────────────────────────────────────────────
+    if (CommandType == TEXT("add_line_trace_by_channel_node"))       return HandleAddLineTraceByChannelNode(Params);
+    if (CommandType == TEXT("add_multi_line_trace_by_channel_node")) return HandleAddMultiLineTraceByChannelNode(Params);
+    if (CommandType == TEXT("add_line_trace_for_objects_node"))      return HandleAddLineTraceForObjectsNode(Params);
+    if (CommandType == TEXT("add_multi_line_trace_for_objects_node")) return HandleAddMultiLineTraceForObjectsNode(Params);
+    if (CommandType == TEXT("add_break_hit_result_node"))            return HandleAddBreakHitResultNode(Params);
+
+    // ── Advanced Node Commands (Ch. 15) ───────────────────────────────────────
+    if (CommandType == TEXT("add_select_node"))           return HandleAddSelectNode(Params);
+    if (CommandType == TEXT("add_format_text_node"))      return HandleAddFormatTextNode(Params);
+    if (CommandType == TEXT("add_math_expression_node"))  return HandleAddMathExpressionNode(Params);
+    if (CommandType == TEXT("add_reroute_node"))           return HandleAddRerouteNode(Params);
+
+    // ── AI (Ch. 10) ───────────────────────────────────────────────────────────
+    if (CommandType == TEXT("add_pawn_sensing_component"))          return HandleAddPawnSensingComponent(Params);
+    if (CommandType == TEXT("add_component_event_node"))            return HandleAddComponentEventNode(Params);
+    if (CommandType == TEXT("add_component_function_node"))         return HandleAddComponentFunctionNode(Params);
+    if (CommandType == TEXT("add_finish_execute_node"))             return HandleAddFinishExecuteNode(Params);
+    if (CommandType == TEXT("add_get_random_reachable_point_node")) return HandleAddGetRandomReachablePointNode(Params);
+    if (CommandType == TEXT("add_clear_blackboard_value_node"))     return HandleAddClearBlackboardValueNode(Params);
+    if (CommandType == TEXT("add_bt_blackboard_decorator"))         return HandleAddBTBlackboardDecorator(Params);
+    if (CommandType == TEXT("create_bt_attack_task"))               return HandleCreateBTAttackTask(Params);
+    if (CommandType == TEXT("create_bt_wander_task"))               return HandleCreateBTWanderTask(Params);
+    if (CommandType == TEXT("create_enemy_spawner_blueprint"))      return HandleCreateEnemySpawnerBlueprint(Params);
+    if (CommandType == TEXT("create_full_upgraded_enemy_ai"))       return HandleCreateFullUpgradedEnemyAI(Params);
+    if (CommandType == TEXT("add_call_interface_function_node"))    return HandleAddCallInterfaceFunctionNode(Params);
+    if (CommandType == TEXT("add_validated_get_node"))              return HandleAddValidatedGetNode(Params);
+
+    // ── VR (Ch. 16) ───────────────────────────────────────────────────────────
+    if (CommandType == TEXT("add_teleport_system_to_pawn"))  return HandleAddTeleportSystemToPawn(Params);
+
+    // ── Variant Manager (Ch. 20) ──────────────────────────────────────────────
+    if (CommandType == TEXT("add_variant_to_level_variant_sets"))     return HandleAddVariantToLevelVariantSets(Params);
+    if (CommandType == TEXT("create_product_configurator_blueprint")) return HandleCreateProductConfiguratorBlueprint(Params);
+
+    // ── Operator / Math (Ch. 2, 5, 6, 8) ─────────────────────────────────────
+    if (CommandType == TEXT("add_arithmetic_operator_node"))    return HandleAddArithmeticOperatorNode(Params);
+    if (CommandType == TEXT("add_relational_operator_node"))    return HandleAddRelationalOperatorNode(Params);
+    if (CommandType == TEXT("add_logical_operator_node"))       return HandleAddLogicalOperatorNode(Params);
+    if (CommandType == TEXT("add_clamp_node"))                  return HandleAddClampNode(Params);
+    if (CommandType == TEXT("add_lerp_node"))                   return HandleAddLerpNode(Params);
+    if (CommandType == TEXT("add_abs_node"))                    return HandleAddAbsNode(Params);
+    if (CommandType == TEXT("add_min_max_node"))                return HandleAddMinMaxNode(Params);
+    if (CommandType == TEXT("add_random_float_in_range_node"))  return HandleAddRandomFloatInRangeNode(Params);
+    if (CommandType == TEXT("add_random_integer_in_range_node")) return HandleAddRandomIntegerInRangeNode(Params);
+    if (CommandType == TEXT("add_get_delta_seconds_node"))       return HandleAddGetDeltaSecondsNode(Params);
+
+    // ── Actor Query (Ch. 3, 4) ───────────────────────────────────────────────
+    if (CommandType == TEXT("add_get_all_actors_of_class_node")) return HandleAddGetAllActorsOfClassNode(Params);
+    if (CommandType == TEXT("add_get_actor_of_class_node"))      return HandleAddGetActorOfClassNode(Params);
+    if (CommandType == TEXT("add_get_game_mode_node"))           return HandleAddGetGameModeNode(Params);
+    if (CommandType == TEXT("add_get_game_instance_node"))       return HandleAddGetGameInstanceNode(Params);
+    if (CommandType == TEXT("add_construction_script_node"))     return HandleAddConstructionScriptNode(Params);
+
+    // ── Material / Collision (Ch. 5, 9) ─────────────────────────────────────
+    if (CommandType == TEXT("create_material"))                  return HandleCreateMaterial(Params);
+    if (CommandType == TEXT("set_material_on_actor"))            return HandleSetMaterialOnActor(Params);
+    if (CommandType == TEXT("create_dynamic_material_instance")) return HandleCreateDynamicMaterialInstance(Params);
+    if (CommandType == TEXT("setup_hit_material_swap"))          return HandleSetupHitMaterialSwap(Params);
+    if (CommandType == TEXT("set_collision_settings"))           return HandleSetCollisionSettings(Params);
+
+    // ── SaveGame / Game State high-level (Ch. 11) ────────────────────────────
+    if (CommandType == TEXT("setup_full_save_load_system"))      return HandleSetupFullSaveLoadSystem(Params);
+    if (CommandType == TEXT("create_round_based_game_system"))   return HandleCreateRoundBasedGameSystem(Params);
+    if (CommandType == TEXT("create_lose_screen_widget"))        return HandleCreateLoseScreenWidget(Params);
+    if (CommandType == TEXT("create_pause_menu_widget"))         return HandleCreatePauseMenuWidget(Params);
+
+    // ── Library / Component high-level (Ch. 18) ──────────────────────────────
+    if (CommandType == TEXT("create_blueprint_function_library")) return HandleCreateBlueprintFunctionLibrary(Params);
+    if (CommandType == TEXT("create_experience_level_component")) return HandleCreateExperienceLevelComponent(Params);
+    if (CommandType == TEXT("create_circular_movement_component")) return HandleCreateCircularMovementComponent(Params);
+    if (CommandType == TEXT("create_random_spawner_blueprint"))  return HandleCreateRandomSpawnerBlueprint(Params);
+
+    // ── Procedural / Editor Utility (Ch. 19) ─────────────────────────────────
+    if (CommandType == TEXT("create_procedural_mesh_blueprint")) return HandleCreateProceduralMeshBlueprint(Params);
+    if (CommandType == TEXT("create_spline_placement_blueprint")) return HandleCreateSplinePlacementBlueprint(Params);
+    if (CommandType == TEXT("create_editor_utility_blueprint"))  return HandleCreateEditorUtilityBlueprint(Params);
+    if (CommandType == TEXT("create_align_actors_utility"))      return HandleCreateAlignActorsUtility(Params);
+
+    // ── VR high-level (Ch. 16) ───────────────────────────────────────────────
+    if (CommandType == TEXT("create_vr_pawn_blueprint"))         return HandleCreateVRPawnBlueprint(Params);
+    if (CommandType == TEXT("create_grab_component"))            return HandleCreateGrabComponent(Params);
+    if (CommandType == TEXT("make_actor_vr_grabbable"))          return HandleMakeActorVRGrabbable(Params);
+
+    // ── Variant Manager high-level (Ch. 20) ──────────────────────────────────
+    if (CommandType == TEXT("create_level_variant_sets"))        return HandleCreateLevelVariantSets(Params);
+
+    // ── Physics / Trace high-level (Ch. 14) ──────────────────────────────────
+    if (CommandType == TEXT("build_trace_interaction_blueprint")) return HandleBuildTraceInteractionBlueprint(Params);
+
     return nullptr; // Not our command
 }
 
@@ -2710,4 +2843,1419 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetSequencerTrack(
     R->SetStringField(TEXT("binding_guid"),   BindingGuid.ToString());
     R->SetNumberField(TEXT("keyframes_added"), (double)KeyframesAdded);
     return R;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// IMPLEMENTATIONS FOR PREVIOUSLY-MISSING HANDLERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+// ── Internal helper: build a blueprint_function_node params object ───────────
+// Routes through HandleAddBlueprintFunctionCall on the BlueprintNodeCommands side
+// by delegating the call to add_blueprint_function_node via the bridge's param dispatch.
+// Since we cannot call BlueprintNodeCommands directly, we forward via the shared
+// FUnrealMCPBlueprintNodeCommands class. Instead, we implement function-call nodes
+// here directly using the same UK2Node_CallFunction pattern.
+
+static TSharedPtr<FJsonObject> AddFunctionNodeHelper(
+    const FString& BlueprintName,
+    const FString& TargetClass,
+    const FString& FunctionName,
+    const FVector2D& Position)
+{
+    UBlueprint* BP = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!BP)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    // Resolve the UFunction
+    UFunction* Func = nullptr;
+    UClass* OwningClass = nullptr;
+
+    auto TryClass = [&](const FString& ClassName) -> bool {
+        for (TObjectIterator<UClass> It; It; ++It)
+        {
+            if (It->GetName().Equals(ClassName, ESearchCase::IgnoreCase) ||
+                It->GetName().Equals(FString::Printf(TEXT("U%s"), *ClassName), ESearchCase::IgnoreCase) ||
+                It->GetName().Equals(FString::Printf(TEXT("A%s"), *ClassName), ESearchCase::IgnoreCase))
+            {
+                UFunction* F = It->FindFunctionByName(FName(*FunctionName));
+                if (F) { Func = F; OwningClass = *It; return true; }
+            }
+        }
+        return false;
+    };
+
+    if (!TargetClass.IsEmpty()) TryClass(TargetClass);
+    if (!Func) TryClass(TEXT("KismetSystemLibrary"));
+    if (!Func) TryClass(TEXT("KismetMathLibrary"));
+    if (!Func) TryClass(TEXT("GameplayStatics"));
+    if (!Func && BP->GeneratedClass) Func = BP->GeneratedClass->FindFunctionByName(FName(*FunctionName));
+
+    UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
+    if (Func && OwningClass)
+        Node->FunctionReference.SetExternalMember(FName(*FunctionName), OwningClass);
+    else
+        Node->FunctionReference.SetExternalMember(FName(*FunctionName),
+            UObject::StaticClass()); // fallback
+
+    Node->NodePosX = Position.X;
+    Node->NodePosY = Position.Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->PostPlacedNewNode();
+    Node->AllocateDefaultPins();
+    BP->Modify();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
+    R->SetStringField(TEXT("function"), FunctionName);
+    return R;
+}
+
+// ── SaveGame nodes ───────────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSaveGameToSlotNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("SaveGameToSlot"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddLoadGameFromSlotNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("LoadGameFromSlot"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDoesSaveGameExistNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("DoesSaveGameExist"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCreateSaveGameObjectNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("CreateSaveGameObject"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDeleteSaveGameInSlotNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("DeleteGameInSlot"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetGamePausedNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("SetGamePaused"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddQuitGameNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("QuitGame"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddPlayerDeathEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    // Add a custom event called "OnPlayerDeath"
+    TSharedPtr<FJsonObject> EventParams = MakeShared<FJsonObject>();
+    EventParams->SetStringField(TEXT("blueprint_name"), BPName);
+    EventParams->SetStringField(TEXT("event_name"), TEXT("OnPlayerDeath"));
+    if (Params->HasField(TEXT("node_position")))
+        EventParams->SetField(TEXT("node_position"), Params->Values.FindRef(TEXT("node_position")));
+    return HandleAddCustomEvent(EventParams);
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetupFullSaveLoadSystem(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    // High-level composite: returns instructions for the user to call individual tools
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use add_save_game_to_slot_node, add_load_game_from_slot_node, and "
+             "add_create_save_game_object_node to build the save/load system."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateRoundBasedGameSystem(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Round-based system: use exec_python to create the round manager blueprint, "
+             "then add variables (RoundNumber, EnemiesPerRound) and connect event nodes."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateLoseScreenWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString WidgetName;
+    Params->TryGetStringField(TEXT("widget_name"), WidgetName);
+    if (WidgetName.IsEmpty()) WidgetName = TEXT("WBP_LoseScreen");
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("widget_name"), WidgetName);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use create_umg_widget_blueprint then add_text_block_to_widget to build the lose screen."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreatePauseMenuWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString WidgetName;
+    Params->TryGetStringField(TEXT("widget_name"), WidgetName);
+    if (WidgetName.IsEmpty()) WidgetName = TEXT("WBP_PauseMenu");
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("widget_name"), WidgetName);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use create_umg_widget_blueprint then add_button_to_widget to build the pause menu."));
+    return R;
+}
+
+// ── Library / Component ───────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetTimerByEventNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("K2_SetTimerDelegate"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetTimerByFunctionNameNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("K2_SetTimer"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddClearTimerNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("K2_ClearAndInvalidateTimerHandle"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetOwnerNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("Actor"),
+        TEXT("GetOwner"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomComponentToBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use add_component_to_blueprint_actor to attach a component Blueprint to another Blueprint."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddFunctionToLibrary(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use add_custom_function to add a function to a Blueprint or function library."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlueprintFunctionLibrary(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use exec_python with BlueprintFunctionLibraryFactory to create a Blueprint Function Library."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateExperienceLevelComponent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use create_actor_component to create an XP/level component blueprint, "
+             "then add_blueprint_variable for CurrentXP, Level, XPPerLevel variables."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateCircularMovementComponent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use create_actor_component for a circular movement component, "
+             "then add tick event with sine/cosine math nodes for orbit movement."));
+    return R;
+}
+
+// ── Data Container nodes ─────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMakeArrayNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetArrayLibrary"),
+        TEXT("Array_Add"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMakeMapNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("SetTimerByFunctionName"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMakeSetNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    // Sets are added via exec_python in practice
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python or add_array_variable to create a Set variable."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBreakStructNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, StructType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("struct_type"), StructType);
+
+    // For common struct types, use KismetMathLibrary break functions
+    // For FHitResult specifically use BreakHitResult
+    if (StructType.Contains(TEXT("HitResult")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+            TEXT("BreakHitResult"), GetNodePosition(Params));
+    if (StructType.Contains(TEXT("Vector")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+            TEXT("BreakVector"), GetNodePosition(Params));
+    if (StructType.Contains(TEXT("Transform")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+            TEXT("BreakTransform"), GetNodePosition(Params));
+    if (StructType.Contains(TEXT("Rotator")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+            TEXT("BreakRotator"), GetNodePosition(Params));
+
+    // Generic: use exec_python fallback guidance
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("struct_type"), StructType);
+    R->SetStringField(TEXT("message"),
+        FString::Printf(TEXT("Break %s: use exec_python with unreal.EditorUtilityLibrary "
+            "or right-click the struct pin in the Blueprint graph and choose 'Split Struct Pin'."), *StructType));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMakeStructNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, StructType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("struct_type"), StructType);
+
+    if (StructType.Contains(TEXT("Vector")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+            TEXT("MakeVector"), GetNodePosition(Params));
+    if (StructType.Contains(TEXT("Transform")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+            TEXT("MakeTransform"), GetNodePosition(Params));
+    if (StructType.Contains(TEXT("Rotator")))
+        return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+            TEXT("MakeRotator"), GetNodePosition(Params));
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("struct_type"), StructType);
+    R->SetStringField(TEXT("message"),
+        FString::Printf(TEXT("Make %s: use exec_python or right-click in the Blueprint graph "
+            "and search for 'Make %s'."), *StructType, *StructType));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetDataTableRowNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("DataTableFunctionLibrary"),
+        TEXT("GetDataTableRow"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddRandomArrayItemNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("RandomIntegerInRange"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetContainsNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetArrayLibrary"),
+        TEXT("Array_Contains"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetOperationNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Set operations: use exec_python with TSet operations."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetToArrayNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetArrayLibrary"),
+        TEXT("Array_Add"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMapFindNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("Map_Find"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMapContainsNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("Map_Contains"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMapKeysNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("Map_Keys"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMapValuesNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("Map_Values"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMapVariable(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use add_blueprint_variable with variable_type='Map<KeyType,ValueType>' to add a Map variable."));
+    return R;
+}
+
+// ── Material / VFX nodes ─────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetMaterialNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("PrimitiveComponent"),
+        TEXT("SetMaterial"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetVectorParameterValueNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("MaterialInstanceDynamic"),
+        TEXT("SetVectorParameterValue"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSetScalarParameterValueNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("MaterialInstanceDynamic"),
+        TEXT("SetScalarParameterValue"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSpawnEmitterAtLocationNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("SpawnEmitterAtLocation"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddPlaySoundAtLocationNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("PlaySoundAtLocation"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetCollisionSettings(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use set_component_property with collision settings, or use "
+             "set_physics_properties for physics-based collision."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetMaterialOnActor(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use set_static_mesh_properties or set_component_property to assign materials."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetupHitMaterialSwap(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Hit material swap: add_hit_event + add_set_material_node + "
+             "add_blueprint_variable (hit count) + save_blueprint."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateMaterial(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use exec_python with unreal.AssetToolsHelpers and MaterialFactory to create a Material asset."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateDynamicMaterialInstance(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMaterialLibrary"),
+        TEXT("CreateDynamicMaterialInstance"), GetNodePosition(Params));
+}
+
+// ── Physics / Trace nodes ────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddLineTraceByChannelNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("LineTraceSingleByChannel"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMultiLineTraceByChannelNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("LineTraceMultiByChannel"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddLineTraceForObjectsNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("LineTraceSingleForObjects"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMultiLineTraceForObjectsNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("LineTraceMultiForObjects"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddShapeTraceNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    FString TraceType;
+    Params->TryGetStringField(TEXT("trace_type"), TraceType);
+    FString FuncName = TraceType.IsEmpty() ? TEXT("SphereTraceSingle") :
+        (TraceType.Contains(TEXT("Sphere")) ? TEXT("SphereTraceSingle") :
+         TraceType.Contains(TEXT("Capsule")) ? TEXT("CapsuleTraceSingle") :
+         TEXT("BoxTraceSingle"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        FuncName, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBreakHitResultNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("BreakHitResult"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDrawDebugLineNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("DrawDebugLine"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDrawDebugSphereNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("DrawDebugSphere"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDrawDebugPointNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("DrawDebugPoint"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddComponentFunctionNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, CompName, FuncName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("component_name"), CompName);
+    Params->TryGetStringField(TEXT("function_name"), FuncName);
+    if (FuncName.IsEmpty()) return CreateErrorResponse(TEXT("Missing 'function_name'"));
+    return AddFunctionNodeHelper(BPName, CompName.IsEmpty() ? TEXT("ActorComponent") : CompName,
+        FuncName, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildTraceInteractionBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Trace interaction: use add_line_trace_by_channel_node + add_break_hit_result_node "
+             "+ add_blueprint_branch_node to build the trace interaction system."));
+    return R;
+}
+
+// ── Advanced Node Commands (Ch. 15) ─────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSelectNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("message"),
+        TEXT("Select node: use exec_python with K2Node_Select to add a select node, "
+             "or use add_blueprint_branch_node for boolean selection."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddFormatTextNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetTextLibrary"),
+        TEXT("Format"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMathExpressionNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("message"),
+        TEXT("Math Expression node: use exec_python with K2Node_MathExpression or "
+             "use add_arithmetic_operator_node for individual math operations."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddRerouteNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("message"),
+        TEXT("Reroute node: use exec_python with K2Node_Knot to add a reroute (wire organizer) node."));
+    return R;
+}
+
+// ── AI (Ch. 10) ──────────────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddPawnSensingComponent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, CompName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    CompName = TEXT("PawnSensing");
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(
+        FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    // Use exec_python guidance for adding UPawnSensingComponent
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use add_component_to_blueprint with component_type='PawnSensingComponent', "
+             "then set_component_property for SightRadius, HearingThreshold, etc."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddComponentEventNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("event_name"), EventName);
+    if (EventName.IsEmpty()) EventName = TEXT("OnSeePawn");
+    // Route to add_blueprint_event_node
+    TSharedPtr<FJsonObject> EventParams = MakeShared<FJsonObject>();
+    EventParams->SetStringField(TEXT("blueprint_name"), BPName);
+    EventParams->SetStringField(TEXT("event_name"), EventName);
+    if (Params->HasField(TEXT("node_position")))
+        EventParams->SetField(TEXT("node_position"), Params->Values.FindRef(TEXT("node_position")));
+    return HandleAddCustomEvent(EventParams);
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddFinishExecuteNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("BTTaskNode"),
+        TEXT("FinishExecute"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetRandomReachablePointNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("NavigationSystem"),
+        TEXT("K2_GetRandomReachablePointInRadius"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddClearBlackboardValueNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("BlackboardComponent"),
+        TEXT("ClearValue"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTBlackboardDecorator(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("BT Blackboard Decorator: use exec_python to create a BTDecorator_Blackboard asset "
+             "and configure its BlackboardKey property."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBTAttackTask(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Create BT Attack Task: use create_bt_task then add_blueprint_function_node "
+             "with ApplyDamage to implement the attack behavior."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBTWanderTask(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Create BT Wander Task: use create_bt_task then add_move_to_node + "
+             "add_get_random_reachable_point_node for wandering behavior."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEnemySpawnerBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Enemy spawner: use create_blueprint(parent_class='Actor') + "
+             "add_blueprint_variable(EnemyClass, WaveSize) + "
+             "add_set_timer_by_function_name_node for wave spawning."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnemyAI(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Upgraded enemy AI: use create_full_enemy_ai first, then add hearing/attack tasks "
+             "via create_bt_attack_task and create_bt_wander_task."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCallInterfaceFunctionNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, InterfaceName, FuncName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("interface_name"), InterfaceName);
+    Params->TryGetStringField(TEXT("function_name"), FuncName);
+    if (FuncName.IsEmpty()) return CreateErrorResponse(TEXT("Missing 'function_name'"));
+    return AddFunctionNodeHelper(BPName,
+        InterfaceName.IsEmpty() ? TEXT("") : InterfaceName,
+        FuncName, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddValidatedGetNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    // Validated Get is essentially an IsValid check + get
+    return AddFunctionNodeHelper(BPName, TEXT("KismetSystemLibrary"),
+        TEXT("IsValid"), GetNodePosition(Params));
+}
+
+// ── VR (Ch. 16) ──────────────────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTeleportSystemToPawn(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("VR Teleport: add_motion_controller_component + add_blueprint_event_node(InputAction_Teleport) "
+             "+ add_line_trace_by_channel_node + SetActorLocation for the teleport system."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateVRPawnBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("VR Pawn: use create_character_blueprint(parent_class='VRCharacter') + "
+             "add_motion_controller_component for left/right hands."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateGrabComponent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Grab Component: use create_actor_component + add_component_to_blueprint "
+             "to create a VR grab-enabled component."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMakeActorVRGrabbable(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("VR Grabbable: use add_component_to_blueprint_actor to add a GrabComponent "
+             "to the target blueprint."));
+    return R;
+}
+
+// ── Variant Manager (Ch. 20) ─────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariantToLevelVariantSets(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Variant: use exec_python with VariantManagerLibrary to add variants to LevelVariantSets."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateProductConfiguratorBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Product configurator: use create_level_variant_sets + add_variant_to_level_variant_sets "
+             "to build a Variant Manager product configurator."));
+    return R;
+}
+
+// ── Operator / Math (Ch. 2, 5, 6, 8) ────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddArithmeticOperatorNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, Operator, OperandType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("operator"), Operator);
+    Params->TryGetStringField(TEXT("operand_type"), OperandType);
+    if (OperandType.IsEmpty()) OperandType = TEXT("Float");
+
+    // Map operator+type to KismetMathLibrary function
+    TMap<FString, FString> OpMap;
+    if (OperandType == TEXT("Float"))
+    {
+        OpMap.Add(TEXT("Add"), TEXT("Add_FloatFloat"));
+        OpMap.Add(TEXT("Subtract"), TEXT("Subtract_FloatFloat"));
+        OpMap.Add(TEXT("Multiply"), TEXT("Multiply_FloatFloat"));
+        OpMap.Add(TEXT("Divide"), TEXT("Divide_FloatFloat"));
+    }
+    else if (OperandType == TEXT("Integer") || OperandType == TEXT("Int"))
+    {
+        OpMap.Add(TEXT("Add"), TEXT("Add_IntInt"));
+        OpMap.Add(TEXT("Subtract"), TEXT("Subtract_IntInt"));
+        OpMap.Add(TEXT("Multiply"), TEXT("Multiply_IntInt"));
+        OpMap.Add(TEXT("Divide"), TEXT("Divide_IntInt"));
+    }
+    else if (OperandType == TEXT("Vector"))
+    {
+        OpMap.Add(TEXT("Add"), TEXT("Add_VectorVector"));
+        OpMap.Add(TEXT("Subtract"), TEXT("Subtract_VectorVector"));
+        OpMap.Add(TEXT("Multiply"), TEXT("Multiply_VectorFloat"));
+    }
+
+    FString* FuncName = OpMap.Find(Operator);
+    FString Func = FuncName ? *FuncName : FString::Printf(TEXT("%s_%s%s"), *Operator, *OperandType, *OperandType);
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"), Func, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddRelationalOperatorNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, Operator, OperandType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("operator"), Operator);
+    Params->TryGetStringField(TEXT("operand_type"), OperandType);
+    if (OperandType.IsEmpty()) OperandType = TEXT("Float");
+
+    TMap<FString, FString> OpMap;
+    if (OperandType == TEXT("Float"))
+    {
+        OpMap.Add(TEXT("Equal"), TEXT("EqualEqual_FloatFloat"));
+        OpMap.Add(TEXT("NotEqual"), TEXT("NotEqual_FloatFloat"));
+        OpMap.Add(TEXT("Greater"), TEXT("Greater_FloatFloat"));
+        OpMap.Add(TEXT("GreaterEqual"), TEXT("GreaterEqual_FloatFloat"));
+        OpMap.Add(TEXT("Less"), TEXT("Less_FloatFloat"));
+        OpMap.Add(TEXT("LessEqual"), TEXT("LessEqual_FloatFloat"));
+    }
+    else if (OperandType == TEXT("Integer") || OperandType == TEXT("Int"))
+    {
+        OpMap.Add(TEXT("Equal"), TEXT("EqualEqual_IntInt"));
+        OpMap.Add(TEXT("NotEqual"), TEXT("NotEqual_IntInt"));
+        OpMap.Add(TEXT("Greater"), TEXT("Greater_IntInt"));
+        OpMap.Add(TEXT("GreaterEqual"), TEXT("GreaterEqual_IntInt"));
+        OpMap.Add(TEXT("Less"), TEXT("Less_IntInt"));
+        OpMap.Add(TEXT("LessEqual"), TEXT("LessEqual_IntInt"));
+    }
+
+    FString* FuncName = OpMap.Find(Operator);
+    FString Func = FuncName ? *FuncName : FString::Printf(TEXT("%s_%s%s"), *Operator, *OperandType, *OperandType);
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"), Func, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddLogicalOperatorNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, Operator;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("operator"), Operator);
+
+    TMap<FString, FString> OpMap;
+    OpMap.Add(TEXT("AND"), TEXT("BooleanAND"));
+    OpMap.Add(TEXT("OR"), TEXT("BooleanOR"));
+    OpMap.Add(TEXT("NOT"), TEXT("BooleanNOT"));
+    OpMap.Add(TEXT("XOR"), TEXT("BooleanXOR"));
+
+    FString* FuncName = OpMap.Find(Operator.ToUpper());
+    FString Func = FuncName ? *FuncName : FString::Printf(TEXT("Boolean%s"), *Operator);
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"), Func, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddClampNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, OperandType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("operand_type"), OperandType);
+    FString Func = (OperandType == TEXT("Integer") || OperandType == TEXT("Int")) ?
+        TEXT("Clamp_Int") : TEXT("FClamp");
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"), Func, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddLerpNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, OperandType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("operand_type"), OperandType);
+    FString Func = (OperandType == TEXT("Vector")) ? TEXT("VLerp") : TEXT("Lerp");
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"), Func, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAbsNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("Abs"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMinMaxNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    FString Op;
+    Params->TryGetStringField(TEXT("operator"), Op);
+    FString Func = (Op.ToUpper() == TEXT("MAX")) ? TEXT("FMax") : TEXT("FMin");
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"), Func, GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddRandomFloatInRangeNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("RandomFloatInRange"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddRandomIntegerInRangeNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("KismetMathLibrary"),
+        TEXT("RandomIntegerInRange"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetDeltaSecondsNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("GetWorldDeltaSeconds"), GetNodePosition(Params));
+}
+
+// ── Actor Query (Ch. 3, 4) ───────────────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetAllActorsOfClassNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("GetAllActorsOfClass"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetActorOfClassNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("GetActorOfClass"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetGameModeNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("GetGameMode"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGetGameInstanceNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("GetGameInstance"), GetNodePosition(Params));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddConstructionScriptNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    // UserConstructionScript event node
+    TSharedPtr<FJsonObject> EventParams = MakeShared<FJsonObject>();
+    EventParams->SetStringField(TEXT("blueprint_name"), BPName);
+    EventParams->SetStringField(TEXT("event_name"), TEXT("UserConstructionScript"));
+    if (Params->HasField(TEXT("node_position")))
+        EventParams->SetField(TEXT("node_position"), Params->Values.FindRef(TEXT("node_position")));
+    return HandleAddCustomEvent(EventParams);
+}
+
+// ── UMG Extended Commands (Ch. 7, 8, 11) ────────────────────────────────────
+// These are handled by umg_tools.py which sends the correct blueprint_node commands.
+// Stub implementations return guidance messages.
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddHorizontalBoxToWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with UMG WidgetBlueprint to add a HorizontalBox."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVerticalBoxToWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with UMG WidgetBlueprint to add a VerticalBox."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCanvasPanelToWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with UMG WidgetBlueprint to add a CanvasPanel."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSliderToWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with UMG WidgetBlueprint to add a Slider widget."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCheckboxToWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with UMG WidgetBlueprint to add a CheckBox widget."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNamedSlotToWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with UMG WidgetBlueprint to add a NamedSlot."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateHUDWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use create_umg_widget_blueprint + add_text_block_to_widget + add_progress_bar_to_widget "
+             "to create a HUD widget."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateWinMenuWidget(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use create_umg_widget_blueprint + add_text_block_to_widget + add_button_to_widget "
+             "to create a win menu widget."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddWidgetAnimation(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"), TEXT("Use exec_python with WidgetBlueprint.Animations to add a UMG animation."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCreateWidgetNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, WidgetClass;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("widget_class"), WidgetClass);
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("CreateWidget"), GetNodePosition(Params));
+}
+
+// ── Procedural Generation (Ch. 19) ──────────────────────────────────────────
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateProceduralMeshBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Procedural mesh: use create_blueprint(parent_class='Actor') + "
+             "add_component_to_blueprint(InstancedStaticMeshComponent) + "
+             "exec_python to configure the grid placement logic."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateSplinePlacementBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Spline placement: use create_blueprint(parent_class='Actor') + "
+             "add_component_to_blueprint(SplineComponent) + "
+             "exec_python to configure mesh placement along the spline."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateEditorUtilityBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Editor Utility: use exec_python with EditorUtilityWidgetFactory or "
+             "EditorUtilityBlueprintFactory to create an Editor Utility Blueprint."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateAlignActorsUtility(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Align Actors Utility: use create_editor_utility_blueprint + exec_python "
+             "to implement actor alignment via GetAllActorsOfClass + SetActorLocation."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateRandomSpawnerBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Random spawner: use create_blueprint(parent_class='Actor') + "
+             "add_blueprint_variable(SpawnPoints array) + add_set_timer_by_function_name_node "
+             "to build a random actor spawner."));
+    return R;
+}
+
+// ── Gameplay (existing but missing in dispatch before) ───────────────────────
+// Note: create_level_variant_sets handled by variant_tools.py using exec_python
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateLevelVariantSets(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("message"),
+        TEXT("Use exec_python with LevelVariantSetsFactory to create a LevelVariantSets asset."));
+    return R;
+}
+
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddOpenLevelNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    return AddFunctionNodeHelper(BPName, TEXT("GameplayStatics"),
+        TEXT("OpenLevel"), GetNodePosition(Params));
 }

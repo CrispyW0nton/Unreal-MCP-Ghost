@@ -334,4 +334,85 @@ def register_material_tools(mcp: FastMCP):
             "hidden_in_game": hidden_in_game
         })
 
+    @mcp.tool()
+    def add_spawn_niagara_at_location_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        niagara_system_path: str = "",
+        node_position: List[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add a 'Spawn System At Location' node for a Niagara particle system.
+
+        Use this to fire a one-shot Niagara VFX effect at a world location from
+        within a Blueprint graph (e.g., spawn explosion on hit, footstep dust).
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            graph_name: Graph to add the node in (default: "EventGraph")
+            niagara_system_path: Asset path to the NS_ asset
+                                 (e.g., "/Game/VFX/NS_Explosion")
+            node_position: Optional [X, Y] graph position
+
+        Returns:
+            Dict with node_id and success flag
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_spawn_niagara_at_location_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name": graph_name,
+                "niagara_system_path": niagara_system_path,
+                "node_position": node_position or [0, 0],
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def set_sequencer_track(
+        ctx: Context,
+        sequence_path: str,
+        actor_name: str,
+        track_type: str,
+        keyframes: List[Dict] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add or update a track on a Level Sequence (Sequencer) asset.
+
+        Use this to animate actors in a cutscene/cinematic: set transform keys,
+        visibility, material parameter, or audio tracks for a specific actor.
+
+        Args:
+            sequence_path: Asset path to the LS_ asset
+                           (e.g., "/Game/Cinematics/LS_Intro")
+            actor_name: Name of the actor to track
+            track_type: Track type string, e.g.:
+                        "Transform", "Visibility", "MaterialParameter", "Audio"
+            keyframes: Optional list of keyframe dicts, e.g.:
+                       [{"time": 0.0, "value": [0,0,0]},
+                        {"time": 1.0, "value": [0,0,100]}]
+
+        Returns:
+            Dict with success flag and track info
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            params: Dict[str, Any] = {
+                "sequence_path": sequence_path,
+                "actor_name": actor_name,
+                "track_type": track_type,
+            }
+            if keyframes:
+                params["keyframes"] = keyframes
+            return unreal.send_command("set_sequencer_track", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     logger.info("Material tools registered successfully")

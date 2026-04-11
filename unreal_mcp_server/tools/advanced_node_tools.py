@@ -1287,11 +1287,24 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_math_node", {
+        # Map operator + type to the actual KismetMathLibrary function name
+        _op_map = {
+            ("Add", "Float"): "Add_FloatFloat", ("Add", "Integer"): "Add_IntInt",
+            ("Add", "Vector"): "Add_VectorVector", ("Add", "Int64"): "Add_Int64Int64",
+            ("Subtract", "Float"): "Subtract_FloatFloat", ("Subtract", "Integer"): "Subtract_IntInt",
+            ("Subtract", "Vector"): "Subtract_VectorVector", ("Subtract", "Int64"): "Subtract_Int64Int64",
+            ("Multiply", "Float"): "Multiply_FloatFloat", ("Multiply", "Integer"): "Multiply_IntInt",
+            ("Multiply", "Vector"): "Multiply_VectorFloat", ("Multiply", "Int64"): "Multiply_Int64Int64",
+            ("Divide", "Float"): "Divide_FloatFloat", ("Divide", "Integer"): "Divide_IntInt",
+            ("Modulo", "Integer"): "Percent_IntInt",
+            ("Power", "Float"): "MultiplyMultiply_FloatFloat",
+        }
+        fn = _op_map.get((operator, operand_type), f"{operator}_{operand_type}{operand_type}")
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "operation": operator,
-            "operand_type": operand_type,
-            "node_position": node_position
+            "target": "KismetMathLibrary",
+            "function_name": fn,
+            "node_position": node_position or [0, 0]
         })
 
     @mcp.tool()
@@ -1321,11 +1334,22 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_math_node", {
+        _rel_map = {
+            ("Equal", "Float"): "EqualEqual_FloatFloat", ("Equal", "Integer"): "EqualEqual_IntInt",
+            ("Equal", "String"): "EqualEqual_StrStr", ("Equal", "Vector"): "EqualEqual_VectorVector",
+            ("NotEqual", "Float"): "NotEqual_FloatFloat", ("NotEqual", "Integer"): "NotEqual_IntInt",
+            ("NotEqual", "String"): "NotEqual_StrStr",
+            ("Greater", "Float"): "Greater_FloatFloat", ("Greater", "Integer"): "Greater_IntInt",
+            ("GreaterEqual", "Float"): "GreaterEqual_FloatFloat", ("GreaterEqual", "Integer"): "GreaterEqual_IntInt",
+            ("Less", "Float"): "Less_FloatFloat", ("Less", "Integer"): "Less_IntInt",
+            ("LessEqual", "Float"): "LessEqual_FloatFloat", ("LessEqual", "Integer"): "LessEqual_IntInt",
+        }
+        fn = _rel_map.get((operator, operand_type), f"{operator}_{operand_type}{operand_type}")
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "operation": operator,
-            "operand_type": operand_type,
-            "node_position": node_position
+            "target": "KismetMathLibrary",
+            "function_name": fn,
+            "node_position": node_position or [0, 0]
         })
 
     @mcp.tool()
@@ -1351,11 +1375,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_math_node", {
+        return _send("add_logical_operator_node", {
             "blueprint_name": blueprint_name,
-            "operation": operator,
-            "operand_type": "Boolean",
-            "node_position": node_position
+            "operator": operator,
+            "node_position": node_position or [0, 0]
         })
 
     # ─── Chapter 3: Actor Lifecycle and OOP ─────────────────────────────────────
@@ -1406,11 +1429,9 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_get_all_actors_of_class_node", {
             "blueprint_name": blueprint_name,
-            "target": "UGameplayStatics",
-            "function_name": "GetAllActorsOfClass",
-            "params": {"ActorClass": actor_class},
+            "actor_class": actor_class,
             "node_position": node_position
         })
 
@@ -1434,11 +1455,9 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_get_actor_of_class_node", {
             "blueprint_name": blueprint_name,
-            "target": "UGameplayStatics",
-            "function_name": "GetActorOfClass",
-            "params": {"ActorClass": actor_class},
+            "actor_class": actor_class,
             "node_position": node_position
         })
 
@@ -1460,10 +1479,8 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_get_game_mode_node", {
             "blueprint_name": blueprint_name,
-            "target": "UGameplayStatics",
-            "function_name": "GetGameMode",
             "node_position": node_position
         })
 
@@ -1485,10 +1502,8 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_get_game_instance_node", {
             "blueprint_name": blueprint_name,
-            "target": "UGameplayStatics",
-            "function_name": "GetGameInstance",
             "node_position": node_position
         })
 
@@ -1539,12 +1554,11 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        func_name = "FClamp" if operand_type == "Float" else "Clamp"
-        return _send("add_blueprint_function_node", {
+        return _send("add_clamp_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetMathLibrary",
-            "function_name": func_name,
-            "params": {"Min": min_value, "Max": max_value},
+            "operand_type": operand_type,
+            "min_value": min_value,
+            "max_value": max_value,
             "node_position": node_position
         })
 
@@ -1568,16 +1582,9 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        func_map = {
-            "Float": "Lerp",
-            "Vector": "VLerp",
-            "Rotator": "RLerp",
-            "LinearColor": "LinearColorLerp"
-        }
-        return _send("add_blueprint_function_node", {
+        return _send("add_lerp_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetMathLibrary",
-            "function_name": func_map.get(operand_type, "Lerp"),
+            "operand_type": operand_type,
             "node_position": node_position
         })
 
@@ -1603,11 +1610,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_random_float_in_range_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetMathLibrary",
-            "function_name": "RandomFloatInRange",
-            "params": {"Min": min_value, "Max": max_value},
+            "min_value": min_value,
+            "max_value": max_value,
             "node_position": node_position
         })
 
@@ -1633,11 +1639,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_random_integer_in_range_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetMathLibrary",
-            "function_name": "RandomIntegerInRange",
-            "params": {"Min": min_value, "Max": max_value},
+            "min_value": min_value,
+            "max_value": max_value,
             "node_position": node_position
         })
 
@@ -1661,11 +1666,9 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        func_name = "Abs" if operand_type == "Float" else "Abs_Int"
-        return _send("add_blueprint_function_node", {
+        return _send("add_abs_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetMathLibrary",
-            "function_name": func_name,
+            "operand_type": operand_type,
             "node_position": node_position
         })
 
@@ -1690,17 +1693,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        func_map = {
-            "Min_Float": "Min",
-            "Max_Float": "Max",
-            "Min_Integer": "Min_Int",
-            "Max_Integer": "Max_Int"
-        }
-        key = f"{operation}_{operand_type}"
-        return _send("add_blueprint_function_node", {
+        return _send("add_min_max_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetMathLibrary",
-            "function_name": func_map.get(key, "Min"),
+            "operation": operation,
+            "operand_type": operand_type,
             "node_position": node_position
         })
 
@@ -1729,15 +1725,11 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_set_timer_by_function_name_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetSystemLibrary",
-            "function_name": "SetTimerByFunctionName",
-            "params": {
-                "FunctionName": function_name,
-                "Time": timer_rate,
-                "bLooping": looping
-            },
+            "function_name": function_name,
+            "timer_rate": timer_rate,
+            "looping": looping,
             "node_position": node_position
         })
 
@@ -1760,9 +1752,9 @@ def register_advanced_node_tools(mcp: FastMCP):
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "target": "UKismetSystemLibrary",
-            "function_name": "ClearAndInvalidateTimerHandle",
-            "node_position": node_position
+            "target": "KismetSystemLibrary",
+            "function_name": "K2_ClearAndInvalidateTimerHandle",
+            "node_position": node_position or [0, 0]
         })
 
     @mcp.tool()
@@ -1784,10 +1776,8 @@ def register_advanced_node_tools(mcp: FastMCP):
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_get_delta_seconds_node", {
             "blueprint_name": blueprint_name,
-            "target": "UGameplayStatics",
-            "function_name": "GetWorldDeltaSeconds",
             "node_position": node_position
         })
 

@@ -121,8 +121,8 @@ def register_physics_tools(mcp: FastMCP):
         """
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "target": "self",
-            "function_name": "GetActorRotation",
+            "target": "Actor",
+            "function_name": "K2_GetActorRotation",
             "node_position": node_position or [0, 0]
         })
 
@@ -141,8 +141,8 @@ def register_physics_tools(mcp: FastMCP):
         """
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "target": "self",
-            "function_name": "SetActorRotation",
+            "target": "Actor",
+            "function_name": "K2_SetActorRotation",
             "node_position": node_position or [0, 0]
         })
 
@@ -277,10 +277,10 @@ def register_physics_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_math_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "operation": "Add",
-            "operand_type": "Vector",
+            "target": "KismetMathLibrary",
+            "function_name": "Add_VectorVector",
             "node_position": node_position or [0, 0]
         })
 
@@ -299,10 +299,10 @@ def register_physics_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_math_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "operation": "Subtract",
-            "operand_type": "Vector",
+            "target": "KismetMathLibrary",
+            "function_name": "Subtract_VectorVector",
             "node_position": node_position or [0, 0]
         })
 
@@ -321,10 +321,10 @@ def register_physics_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_math_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "operation": "Multiply",
-            "operand_type": "Vector",
+            "target": "KismetMathLibrary",
+            "function_name": "Multiply_VectorFloat",
             "node_position": node_position or [0, 0]
         })
 
@@ -645,13 +645,10 @@ def register_physics_tools(mcp: FastMCP):
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_shape_trace_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "shape_type": "Sphere",
-            "trace_mode": "ForObjects",
-            "radius": radius,
-            "object_types": object_types or ["WorldStatic", "WorldDynamic", "Pawn"],
-            "draw_debug": draw_debug,
+            "target": "KismetSystemLibrary",
+            "function_name": "SphereTraceMultiForObjects",
             "node_position": node_position or [0, 0]
         })
 
@@ -676,13 +673,10 @@ def register_physics_tools(mcp: FastMCP):
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_shape_trace_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "shape_type": "Sphere",
-            "trace_mode": "ByChannel",
-            "radius": radius,
-            "trace_channel": trace_channel,
-            "draw_debug": draw_debug,
+            "target": "KismetSystemLibrary",
+            "function_name": "SphereTraceSingle",
             "node_position": node_position or [0, 0]
         })
 
@@ -710,14 +704,10 @@ def register_physics_tools(mcp: FastMCP):
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_shape_trace_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "shape_type": "Capsule",
-            "trace_mode": "ByChannel",
-            "radius": radius,
-            "half_height": half_height,
-            "trace_channel": trace_channel,
-            "draw_debug": draw_debug,
+            "target": "KismetSystemLibrary",
+            "function_name": "CapsuleTraceSingle",
             "node_position": node_position or [0, 0]
         })
 
@@ -742,13 +732,10 @@ def register_physics_tools(mcp: FastMCP):
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
         """
-        return _send("add_shape_trace_node", {
+        return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
-            "shape_type": "Box",
-            "trace_mode": "ByChannel",
-            "half_size": half_size or [32.0, 32.0, 32.0],
-            "trace_channel": trace_channel,
-            "draw_debug": draw_debug,
+            "target": "KismetSystemLibrary",
+            "function_name": "BoxTraceSingle",
             "node_position": node_position or [0, 0]
         })
 

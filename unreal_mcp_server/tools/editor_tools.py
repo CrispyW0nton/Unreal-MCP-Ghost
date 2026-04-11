@@ -293,7 +293,7 @@ for a in assets:
 
 if bp_asset is None:
     # Fallback: try common paths
-    for path in [f"/Game/Blueprints/{{bp_name}}", f"/Game/{{bp_name}}", f"/Game/Dantooine/Blueprints/{{bp_name}}"]:
+    for path in [f"/Game/Blueprints/{{bp_name}}", f"/Game/{{bp_name}}", f"/Game/Blueprints/Core/{{bp_name}}", f"/Game/Blueprints/Player/{{bp_name}}", f"/Game/Blueprints/AI/{{bp_name}}"]:
         obj = unreal.EditorAssetLibrary.load_asset(path)
         if obj:
             bp_asset = obj

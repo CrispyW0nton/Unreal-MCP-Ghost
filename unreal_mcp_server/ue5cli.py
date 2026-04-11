@@ -100,7 +100,7 @@ COMMANDS = [
     (
         "take_screenshot",
         "Save a viewport screenshot to a local file path",
-        "filepath=C:/Users/NewAdmin/Desktop/shot.png",
+        "filepath=C:/Users/YourUser/Desktop/shot.png",
         ["filepath"],
     ),
     # ─ Blueprint assets ────────────────────────────────────────────────────────

@@ -1130,6 +1130,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         { TEXT("GetActorForwardVector"),TEXT("GetActorForwardVector"), TEXT("Actor") },
         { TEXT("GetActorLocation"),     TEXT("K2_GetActorLocation"),   TEXT("Actor") },
         { TEXT("SetActorLocation"),     TEXT("K2_SetActorLocation"),   TEXT("Actor") },
+        { TEXT("GetActorRotation"),     TEXT("K2_GetActorRotation"),   TEXT("Actor") },
+        { TEXT("SetActorRotation"),     TEXT("K2_SetActorRotation"),   TEXT("Actor") },
+        { TEXT("K2_GetActorRotation"),  TEXT("K2_GetActorRotation"),   TEXT("Actor") },
+        { TEXT("K2_SetActorRotation"),  TEXT("K2_SetActorRotation"),   TEXT("Actor") },
         { TEXT("AddMovementInput"),     TEXT("AddMovementInput"),      TEXT("Pawn") },
     };
     for (const FFuncAlias& A : FuncAliases)
