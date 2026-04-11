@@ -39,6 +39,9 @@ public:
     // Blueprint utilities
     static UBlueprint* FindBlueprint(const FString& BlueprintName);
     static UBlueprint* FindBlueprintByName(const FString& BlueprintName);
+    /** Remove a blueprint name from the negative-miss cache so it can be found
+     *  immediately after creation (e.g. right after create_blueprint). */
+    static void InvalidateBlueprintMissCache(const FString& BlueprintName);
     static UEdGraph* FindOrCreateEventGraph(UBlueprint* Blueprint);
     
     // Blueprint node utilities

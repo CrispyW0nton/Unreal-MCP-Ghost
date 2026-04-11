@@ -167,6 +167,11 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
         // Mark the package dirty
         Package->MarkPackageDirty();
 
+        // Clear the negative-miss cache for this name so subsequent calls to
+        // FindBlueprint (e.g. get_blueprint_graphs right after create_blueprint)
+        // don't see a stale "not found" entry from a previous failed lookup.
+        FUnrealMCPCommonUtils::InvalidateBlueprintMissCache(AssetName);
+
         TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
         ResultObj->SetStringField(TEXT("name"), AssetName);
         ResultObj->SetStringField(TEXT("path"), PackagePath + AssetName);

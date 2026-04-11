@@ -215,15 +215,28 @@ class UnrealConnection:
 
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a JSON command to UE5 and return the parsed response."""
-        # Commands that legitimately take longer than 30 s get a higher budget.
-        # Everything else is capped at 30 s so a hung GameThread never freezes
-        # the SSE stream indefinitely.
+        # Per-command timeout budget (seconds).
+        #
+        # 30 s  — default for fast read/write operations.
+        # 90 s  — slow operations: compile, large asset loads, Python execution.
+        # 120 s — very slow: get_actors_in_level (multi-MB payload over Playit tunnel)
+        #         and add_blueprint_variable on a large project (AddMemberVariable can
+        #         trigger asset-registry notifications even after MarkStructurallyModified).
+        #
+        # NOTE: the C++ bridge has a 25 s per-task timeout (WaitFor 25s); for commands
+        # in this list that exceed 25 s the C++ side returns a timeout error immediately
+        # so the socket is freed.  The Python timeout here is the outer safety net.
         _SLOW_COMMANDS = {
             "compile_blueprint",        # 15-90 s for large Blueprints
-            "exec_python",              # arbitrary Python; budget 60 s
+            "exec_python",              # arbitrary Python; budget 90 s
             "create_blueprint",         # asset creation can be slow on big projects
             "save_blueprint",           # triggers compile + save pipeline
             "get_actors_in_level",      # large TCP payload (4256 actors → several MB)
+            "add_blueprint_variable",   # AddMemberVariable can trigger AR notification
+            "get_blueprint_variables",  # FindBlueprint AR scan on cold cache
+            "get_blueprint_functions",  # same AR scan path
+            "get_blueprint_graphs",     # same AR scan path
+            "add_component_to_blueprint",  # can trigger recompile on existing BP
         }
         timeout = 90 if command in _SLOW_COMMANDS else 30
 

@@ -163,14 +163,31 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprint(const FString& BlueprintName)
 //       scanning every asset in the registry.
 //   (b) Cache the resolved object path in a static TMap so repeated calls for
 //       the same Blueprint cost only a FindObject<> lookup (zero AR scan).
-//   (c) The cache entry is validated with IsValid() before use; stale entries
-//       (e.g. after Hot-Reload) are automatically evicted.
+//   (c) Cache NEGATIVE results (blueprint not found) in GBlueprintMissingCache
+//       with a timestamp.  Missing-BP queries (e.g. get_blueprint_graphs for a
+//       non-existent BP) currently scan ALL blueprint assets every time — on a
+//       project with 500+ blueprints this takes 5-30 s.  The negative cache
+//       returns an error in O(1) for the next 60 s; after that it re-scans once
+//       in case the blueprint was created meanwhile.
+//   (d) The positive cache entry is validated with IsValid() before use; stale
+//       entries (e.g. after Hot-Reload) are automatically evicted.
 // ---------------------------------------------------------------------------
 static TMap<FString, FSoftObjectPath> GBlueprintNameCache;
 
+// Negative cache: blueprints confirmed NOT to exist + the time we last scanned.
+// Value = FPlatformTime::Seconds() at which we confirmed the BP was missing.
+// TTL = 60 s (re-scan after that in case the user created the blueprint).
+static TMap<FString, double> GBlueprintMissingCache;
+static constexpr double MISSING_CACHE_TTL_SECONDS = 60.0;
+
+void FUnrealMCPCommonUtils::InvalidateBlueprintMissCache(const FString& BlueprintName)
+{
+    GBlueprintMissingCache.Remove(BlueprintName);
+}
+
 UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
-    // ── 0. Check the in-memory cache first (free after the first lookup) ──
+    // ── 0. Check the in-memory positive cache first (free after first lookup) ──
     if (const FSoftObjectPath* CachedPath = GBlueprintNameCache.Find(BlueprintName))
     {
         if (UBlueprint* CachedBP = Cast<UBlueprint>(CachedPath->ResolveObject()))
@@ -179,6 +196,24 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
         }
         // Stale entry (e.g. after Hot-Reload) – remove and re-scan below.
         GBlueprintNameCache.Remove(BlueprintName);
+        // Also clear the negative cache entry if it exists, to force a fresh scan.
+        GBlueprintMissingCache.Remove(BlueprintName);
+    }
+
+    // ── 0b. Check the negative cache — skip the expensive AR scan for recently
+    //        confirmed-missing blueprints to avoid 5-30 s hangs on invalid names. ──
+    if (const double* MissTime = GBlueprintMissingCache.Find(BlueprintName))
+    {
+        const double Age = FPlatformTime::Seconds() - *MissTime;
+        if (Age < MISSING_CACHE_TTL_SECONDS)
+        {
+            UE_LOG(LogTemp, Verbose,
+                TEXT("FindBlueprintByName: '%s' in negative cache (%.1f s ago) — skipping AR scan"),
+                *BlueprintName, Age);
+            return nullptr;
+        }
+        // TTL expired — remove stale negative entry and do a fresh scan.
+        GBlueprintMissingCache.Remove(BlueprintName);
     }
 
     // ── 1. Try the two common path conventions first (O(1) FindObject) ──
@@ -190,6 +225,7 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
         if (BP)
         {
             GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
+            GBlueprintMissingCache.Remove(BlueprintName); // clear any stale negative entry
             return BP;
         }
         return nullptr;
@@ -217,6 +253,7 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
             if (BP)
             {
                 GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
+                GBlueprintMissingCache.Remove(BlueprintName);
                 UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
                     *BlueprintName, *Asset.GetObjectPathString());
                 return BP;
@@ -224,8 +261,10 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
         }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("FindBlueprintByName: could not find blueprint '%s' anywhere under /Game"),
-        *BlueprintName);
+    // Record in the negative cache so the next call within 60 s returns O(1).
+    GBlueprintMissingCache.Add(BlueprintName, FPlatformTime::Seconds());
+    UE_LOG(LogTemp, Warning, TEXT("FindBlueprintByName: could not find blueprint '%s' anywhere under /Game (cached as missing for %.0f s)"),
+        *BlueprintName, MISSING_CACHE_TTL_SECONDS);
     return nullptr;
 }
 

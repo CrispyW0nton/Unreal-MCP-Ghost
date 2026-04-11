@@ -438,46 +438,69 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
         Promise.SetValue(ResultString);
     });
     
-    // Wait up to 25 seconds for the GameThread to complete the command.
+    // -----------------------------------------------------------------------
+    // Per-command GameThread timeout budget.
     //
-    // Without a timeout, Future.Get() blocks the TCP receiver thread forever when
-    // the GameThread handler stalls (e.g. AddMemberVariable triggering an asset-
-    // registry refresh on a large project, or StaticLoadObject on a cold asset).
-    // The stalled thread holds the TCP socket open, so the Python side's 30s socket
-    // timeout fires — but by then the GameThread task is still queued/running.
-    // The next command from Python connects a new socket, but its AsyncTask is
-    // queued BEHIND the still-running stalled task, causing exec_python and other
-    // fast commands to wait 30+ seconds in the GameThread queue.
+    // Background:
+    //   Without a timeout, Future.Get() blocks the TCP receiver thread forever
+    //   when the GameThread handler stalls (AddMemberVariable on 8k-asset project,
+    //   StaticLoadObject on cold asset, BP compile with many errors, etc.).
+    //   The stalled TCP thread holds the socket; Python times out after 30/90 s
+    //   and reconnects, but its AsyncTask is queued BEHIND the still-running
+    //   stalled task — causing every subsequent command to wait in line.
     //
-    // With a 25s budget:
-    //  - Normal commands (< 1 s) are unaffected.
-    //  - Slow-but-valid commands (compile ~10-20 s) still complete.
-    //  - Truly hung commands get a clean error response after 25 s, the TCP socket
-    //    is released, and the GameThread task will either finish or be cancelled.
-    //  - The Python-side 30 s timeout is now a secondary safety net, not primary.
-    const FTimespan WaitTimeout = FTimespan::FromSeconds(25.0);
+    // Per-command budgets:
+    //   • compile_blueprint / save_blueprint / exec_python:
+    //       80 s  — these legitimately run long; give them the full Python budget.
+    //   • add_blueprint_variable / get_blueprint_* / add_component_to_blueprint:
+    //       80 s  — AddMemberVariable + MarkStructurallyModified can notify the
+    //               ContentBrowser which is expensive on large projects.
+    //               FindBlueprint AR scan is slow on cold cache.
+    //   • Everything else: 24 s  — frees the socket before Python's 30 s fires.
+    // -----------------------------------------------------------------------
+    double TimeoutSeconds = 24.0;  // default: fast commands
+    if (CommandType == TEXT("compile_blueprint") ||
+        CommandType == TEXT("save_blueprint")    ||
+        CommandType == TEXT("exec_python")       ||
+        CommandType == TEXT("create_blueprint"))
+    {
+        TimeoutSeconds = 80.0;   // legitimately slow
+    }
+    else if (CommandType == TEXT("add_blueprint_variable")    ||
+             CommandType == TEXT("get_blueprint_variables")   ||
+             CommandType == TEXT("get_blueprint_functions")   ||
+             CommandType == TEXT("get_blueprint_graphs")      ||
+             CommandType == TEXT("add_component_to_blueprint")||
+             CommandType == TEXT("get_actors_in_level"))
+    {
+        TimeoutSeconds = 80.0;   // AR scan + possible notification chain
+    }
+
+    const FTimespan WaitTimeout = FTimespan::FromSeconds(TimeoutSeconds);
     const bool bCompleted = Future.WaitFor(WaitTimeout);
     if (!bCompleted)
     {
-        // Build a JSON error response immediately so the client gets an answer.
-        // Note: the AsyncTask lambda is still running (or queued) on the GameThread.
-        // We cannot cancel it from here, but releasing the socket allows the next
-        // command to be processed without being blocked behind this one.
+        // Return a JSON error immediately so the TCP socket is freed and the
+        // next command is not blocked behind this stalled GameThread task.
         TSharedPtr<FJsonObject> TimeoutResponse = MakeShareable(new FJsonObject);
         TimeoutResponse->SetStringField(TEXT("status"), TEXT("error"));
         TimeoutResponse->SetStringField(TEXT("error"),
-            FString::Printf(TEXT("GameThread timeout after 25s for command '%s'. "
-                "The operation may still complete in the background. "
-                "Possible causes: asset-registry refresh on a large project, "
-                "synchronous asset load, or a blocking GameThread operation."),
-                *CommandType));
+            FString::Printf(TEXT("GameThread timeout after %.0fs for command '%s'. "
+                "The operation may still be running in the background. "
+                "Possible causes: (1) AddMemberVariable / MarkStructurallyModified "
+                "triggered a ContentBrowser/AssetRegistry refresh on a large project "
+                "(8k+ assets); (2) StaticLoadObject blocked on an uncached asset; "
+                "(3) Blueprint compile with many errors held the compiler lock. "
+                "Retry after a few seconds; if persistent, compile+save the Blueprint "
+                "first or restart the UE5 editor."),
+                TimeoutSeconds, *CommandType));
         FString TimeoutResultString;
         TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> TWriter =
             TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&TimeoutResultString);
         FJsonSerializer::Serialize(TimeoutResponse.ToSharedRef(), TWriter);
         UE_LOG(LogMCP, Error,
-            TEXT("[MCP] <<< TIMEOUT: command '%s' did not complete within 25s"),
-            *CommandType);
+            TEXT("[MCP] <<< TIMEOUT: command '%s' did not complete within %.0fs"),
+            *CommandType, TimeoutSeconds);
         return TimeoutResultString;
     }
     return Future.Get();
