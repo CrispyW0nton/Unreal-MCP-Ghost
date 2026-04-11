@@ -716,40 +716,57 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
            *ModeStr, Code.Len());
 
     // ?? 4. Execute ????????????????????????????????????????????????????????????
-    // ?? 4a. Wrap user code in try/except so syntax errors and runtime errors
-    //        are caught cleanly inside Python and returned as error JSON instead
-    //        of hanging ExecPythonCommandEx indefinitely.
+    // ?? 4a. Wrap user code so ALL Python exceptions (including SyntaxError)
+    //        are caught and returned as clean error JSON instead of hanging.
     //
-    //        We only wrap execute_file / execute_statement modes.
-    //        evaluate_statement is a single expression — wrap differently.
+    // Problem with simple try/except indentation:
+    //   Python compiles the entire try-block before executing it.
+    //   A SyntaxError in the user code fires at compile time — BEFORE
+    //   the try/except is entered — so it leaks out of the wrapper.
+    //
+    // Solution: repr() the user code into a string variable (_mcp_src),
+    //   then call compile() + exec() inside the try/except.
+    //   compile() raises SyntaxError as a regular exception, so it IS caught.
+    //
+    // Template (Python):
+    //   import traceback as _mcp_tb
+    //   _mcp_src = <repr(Code)>
+    //   try:
+    //       exec(compile(_mcp_src, '<mcp_exec>', 'exec'))
+    //   except Exception:
+    //       print('[MCP_ERROR] ' + _mcp_tb.format_exc())
+    //
+    // The [MCP_ERROR] tag is detected by the C++ log scanner below and
+    // surfaced as success=false + error field in the JSON response.
+
     FString WrappedCode;
     if (ExecMode == EPythonCommandExecutionMode::EvaluateStatement)
     {
-        // evaluate_statement: just run as-is; errors surface via bOk=false
+        // evaluate_statement: single expression, errors surface via bOk=false
         WrappedCode = Code;
     }
     else
     {
-        // Indent every line of user code by 4 spaces so it sits inside the
-        // try block. Replace literal \n with actual newlines first.
-        FString IndentedCode;
-        TArray<FString> Lines;
-        Code.ParseIntoArrayLines(Lines, false);
-        for (const FString& Line : Lines)
-        {
-            IndentedCode += TEXT("    ") + Line + TEXT("\n");
-        }
-        if (IndentedCode.IsEmpty())
-        {
-            IndentedCode = TEXT("    pass\n");
-        }
+        // Build a Python repr() of the code string so it is safe to embed
+        // in a Python script regardless of quotes, backslashes, or newlines.
+        // Strategy: escape backslashes, then escape single quotes, then wrap
+        // in single quotes.  This matches Python's repr() for typical code.
+        FString Escaped = Code;
+        Escaped.ReplaceInline(TEXT("\\"), TEXT("\\\\"), ESearchCase::CaseSensitive);
+        Escaped.ReplaceInline(TEXT("'"),  TEXT("\\'"),  ESearchCase::CaseSensitive);
+        // Newlines inside the repr string must stay as \n (escaped)
+        Escaped.ReplaceInline(TEXT("\r\n"), TEXT("\\n"), ESearchCase::CaseSensitive);
+        Escaped.ReplaceInline(TEXT("\n"),   TEXT("\\n"), ESearchCase::CaseSensitive);
+        Escaped.ReplaceInline(TEXT("\r"),   TEXT("\\n"), ESearchCase::CaseSensitive);
+
         WrappedCode = FString::Printf(
             TEXT("import traceback as _mcp_tb\n")
+            TEXT("_mcp_src = '%s'\n")
             TEXT("try:\n")
-            TEXT("%s")
-            TEXT("except Exception as _mcp_e:\n")
+            TEXT("    exec(compile(_mcp_src, '<mcp_exec>', 'exec'))\n")
+            TEXT("except Exception:\n")
             TEXT("    print('[MCP_ERROR] ' + _mcp_tb.format_exc())\n"),
-            *IndentedCode
+            *Escaped
         );
     }
 
