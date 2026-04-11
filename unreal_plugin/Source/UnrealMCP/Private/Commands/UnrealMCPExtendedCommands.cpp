@@ -107,6 +107,10 @@
 // EditorLevelUtils.h removed from public includes in UE 5.6
 // #include "EditorLevelUtils.h"  // REMOVED
 
+// SimpleConstructionScript (required for SCS_Node / USCS_Node access)
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
+
 // Niagara
 #include "NiagaraComponent.h"
 #include "NiagaraSystem.h"
@@ -2318,8 +2322,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBlueprintParentClas
     }
     else
     {
-        // Try C++ class by short name
-        NewParentClass = FindObject<UClass>(ANY_PACKAGE, *NewParentName);
+        // Try C++ class by short name using FindFirstObject (ANY_PACKAGE deprecated in UE5.4+)
+        NewParentClass = FindFirstObject<UClass>(*NewParentName, EFindFirstObjectOptions::None);
+        if (!NewParentClass)
+            NewParentClass = FindObject<UClass>(nullptr, *NewParentName);
     }
 
     if (!NewParentClass)
@@ -2330,7 +2336,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBlueprintParentClas
     FString OldParentName = BP->ParentClass ? BP->ParentClass->GetName() : TEXT("None");
 
     // Perform reparent — uses KismetEditorUtilities which handles safe migration
-    FKismetEditorUtilities::ReparentBlueprint(BP, NewParentClass);
+    // ReparentBlueprint was removed from FKismetEditorUtilities in UE5.4+.
+    // Use FBlueprintEditorUtils::ReparentBlueprint instead.
+    FBlueprintEditorUtils::ReparentBlueprint(BP, NewParentClass);
     BP->Modify();
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
@@ -2760,7 +2768,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetSequencerTrack(
 
                 double TimeVal = 0.0;
                 (*KFObj)->TryGetNumberField(TEXT("time"), TimeVal);
-                FFrameNumber FrameNum = (TickRate * TimeVal).RoundToFrame();
+                // FFrameRate * double operator removed in UE5.4+; use ConvertTo instead
+                FFrameNumber FrameNum = TickRate.AsDecimal() > 0.0
+                    ? FFrameNumber(FMath::RoundToInt(TimeVal * TickRate.AsDecimal()))
+                    : FFrameNumber(0);
 
                 // Extend section range
                 TRange<FFrameNumber> CurrentRange = Section->GetRange();

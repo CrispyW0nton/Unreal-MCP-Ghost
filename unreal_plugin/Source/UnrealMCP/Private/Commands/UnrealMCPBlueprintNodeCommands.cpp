@@ -3065,8 +3065,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         }
         else if (!SubTypeStr.IsEmpty())
         {
-            // Try to load as object class
-            UClass* ObjClass = FindObject<UClass>(ANY_PACKAGE, *SubTypeStr);
+            // Try to load as object class (ANY_PACKAGE deprecated; use FindFirstObject)
+            UClass* ObjClass = FindFirstObject<UClass>(*SubTypeStr, EFindFirstObjectOptions::None);
+            if (!ObjClass) ObjClass = FindObject<UClass>(nullptr, *SubTypeStr);
             if (ObjClass)
             {
                 PinType.PinCategory          = UEdGraphSchema_K2::PC_Object;
@@ -3104,7 +3105,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
             (*PinObj)->TryGetStringField(TEXT("sub_type"), PinSubType);
 
             FEdGraphPinType EPinType = MakePinType(PinType, PinSubType);
-            EntryNode->CreateUserDefinedPin(FName(*PinName), EPinType, EGPD_Output);
+            // CreateUserDefinedPin removed in UE5.4+; use CreatePin directly
+            EntryNode->CreatePin(EGPD_Output, EPinType.PinCategory, EPinType.PinSubCategory,
+                EPinType.PinSubCategoryObject.Get(), FName(*PinName));
         }
         EntryNode->ReconstructNode();
     }
@@ -3123,7 +3126,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
             (*PinObj)->TryGetStringField(TEXT("sub_type"), PinSubType);
 
             FEdGraphPinType EPinType = MakePinType(PinType, PinSubType);
-            ResultNode->CreateUserDefinedPin(FName(*PinName), EPinType, EGPD_Input);
+            // CreateUserDefinedPin removed in UE5.4+; use CreatePin directly
+            ResultNode->CreatePin(EGPD_Input, EPinType.PinCategory, EPinType.PinSubCategory,
+                EPinType.PinSubCategoryObject.Get(), FName(*PinName));
         }
         ResultNode->ReconstructNode();
     }
