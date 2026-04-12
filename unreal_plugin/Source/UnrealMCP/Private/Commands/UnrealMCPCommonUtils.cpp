@@ -242,6 +242,22 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
     FAssetRegistryModule& ARModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
     IAssetRegistry& AR = ARModule.Get();
 
+    // ── FIRST-CALL SAFETY: wait for the AR initial scan to finish ─────────
+    // On the very first MCP command of a fresh editor session, the Asset Registry
+    // may still be scanning /Game/**. Calling GetAssetsByClass() while the scan
+    // is running can intermittently return an incomplete index, which causes
+    // Asset.GetAsset() to call StaticLoadObject on packages that are being
+    // asynchronously loaded — triggering a GC-unsafe access that manifests as
+    // EXCEPTION_ACCESS_VIOLATION → WinError 10053 (WSAECONNABORTED) on Python.
+    // WaitForCompletion() blocks until the initial disk scan finishes (< 2 s on
+    // a warm filesystem cache) and is a no-op if the scan is already done.
+    if (!AR.IsSearchAsync() || AR.IsLoadingAssets())
+    {
+        UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: AR still scanning — waiting for completion before '%s' lookup"), *BlueprintName);
+        AR.WaitForCompletion();
+        UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: AR scan complete"));
+    }
+
     TArray<FAssetData> BlueprintAssets;
     AR.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssets, /*bSearchSubClasses=*/true);
 
@@ -249,8 +265,19 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
     {
         if (Asset.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
         {
-            UBlueprint* BP = Cast<UBlueprint>(Asset.GetAsset());
-            if (BP)
+            // ── SAFE ASSET RESOLUTION ─────────────────────────────────────
+            // Prefer FindObject (in-memory, no I/O) over Asset.GetAsset()
+            // (which calls StaticLoadObject and can crash on first-session access
+            // when the UPackage is in a partially-loaded state).
+            UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Asset.GetObjectPathString());
+            if (!BP)
+            {
+                // Fall back to GetAsset() only if FindObject failed.
+                // This is safe after WaitForCompletion() above because all
+                // packages the AR knows about have finished their disk scan.
+                BP = Cast<UBlueprint>(Asset.GetAsset());
+            }
+            if (BP && IsValid(BP))
             {
                 GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
                 GBlueprintMissingCache.Remove(BlueprintName);

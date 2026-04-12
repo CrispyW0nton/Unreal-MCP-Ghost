@@ -97,6 +97,32 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
     Port = MCP_SERVER_PORT;
     FIPv4Address::Parse(MCP_SERVER_HOST, ServerAddress);
 
+    // ── Asset Registry warm-up ────────────────────────────────────────────
+    // Trigger the AR initial scan now, during plugin startup, so it finishes
+    // BEFORE the first MCP command arrives.  Without this, the first call to
+    // FindBlueprintByName → AR.GetAssetsByClass() races against the ongoing
+    // async disk scan, causing Asset.GetAsset() to dereference a partially-
+    // loaded UPackage → EXCEPTION_ACCESS_VIOLATION → WinError 10053 on Python.
+    //
+    // WaitForCompletion() is a no-op if the scan is already done, so this adds
+    // no overhead on subsequent editor restarts with a warm OS disk cache.
+    // The call runs on the GameThread during subsystem init — safe and correct.
+    {
+        FAssetRegistryModule& ARModule =
+            FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+        IAssetRegistry& AR = ARModule.Get();
+        if (AR.IsLoadingAssets())
+        {
+            UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Waiting for Asset Registry initial scan to complete..."));
+            AR.WaitForCompletion();
+            UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Asset Registry scan complete — MCP is ready for first-call commands"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Asset Registry already complete"));
+        }
+    }
+
     // Start the server automatically
     StartServer();
 }

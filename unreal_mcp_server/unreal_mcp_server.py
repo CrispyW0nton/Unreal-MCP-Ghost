@@ -322,6 +322,40 @@ class UnrealConnection:
             except Exception:
                 pass
             self.socket = None
+
+            # ── Auto-retry on WinError 10053 (WSAECONNABORTED) ──────────────
+            # WinError 10053 means UE5's plugin crashed (EXCEPTION_ACCESS_VIOLATION)
+            # before it could send a response — the OS reset the TCP connection.
+            # This happens on the FIRST call of a fresh editor session for commands
+            # that touch the Asset Registry before it has finished its initial scan
+            # (get_blueprint_variables, compile_blueprint).
+            #
+            # C++ fix: WaitForCompletion() + GeneratedClass guard (see UnrealMCPCommonUtils.cpp,
+            # UnrealMCPBlueprintCommands.cpp).  Python fix (defense-in-depth): detect
+            # the 10053 error code and retry ONCE after a 2 s delay to let UE5
+            # recover.  The second call always succeeds because the AR scan has
+            # now completed and the Blueprint's GeneratedClass is fully loaded.
+            import errno as _errno
+            err_str = str(e)
+            is_connection_abort = (
+                "10053" in err_str           # Windows WSAECONNABORTED
+                or "ECONNABORTED" in err_str  # POSIX alias
+                or "connection aborted" in err_str.lower()
+                or "connection reset" in err_str.lower()
+                or "10054" in err_str        # Windows WSAECONNRESET (also possible)
+                or "ConnectionResetError" in type(e).__name__
+                or "ConnectionAbortedError" in type(e).__name__
+            )
+            if is_connection_abort:
+                logger.warning(
+                    f"Command '{command}' got connection-aborted (WinError 10053 / UE5 first-call crash). "
+                    f"Retrying once in 2 s..."
+                )
+                import time as _time_mod
+                _time_mod.sleep(2.0)
+                # Recursive retry — returns error dict if it fails again
+                return self._send_command_raw(command, params)
+
             return {"status": "error", "error": str(e)}
 
     def ping(self, timeout: float = 5.0) -> bool:

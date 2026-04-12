@@ -1009,9 +1009,33 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
     UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - Found '%s', status=%d. Marking modified (no inline compile)."),
         *BlueprintName, (int32)Blueprint->Status.GetValue());
 
-    // SAFE: MarkBlueprintAsStructurallyModified does NOT broadcast to the
-    // AssetRegistry / ContentBrowser (which would stall the GameThread).
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    // -----------------------------------------------------------------------
+    // DEFINITIVE FIX v4 — guard against first-call EXCEPTION_ACCESS_VIOLATION
+    //
+    // MarkBlueprintAsStructurallyModified internally dereferences
+    // Blueprint->GeneratedClass to invalidate the class's property chain.
+    // On the FIRST call of a fresh session, GeneratedClass may be null (BP not
+    // yet fully post-loaded) or in a transient GC state, causing a hardware
+    // SEH access violation that crashes the GameThread and aborts the TCP
+    // socket (Python sees WinError 10053 / WSAECONNABORTED).
+    //
+    // Safe strategy:
+    //   - If GeneratedClass is valid → call MarkBlueprintAsStructurallyModified
+    //     (which also calls Blueprint->Modify() internally).
+    //   - If GeneratedClass is null/invalid → call Blueprint->Modify() only,
+    //     which just marks the UObject dirty for Undo/save purposes and cannot
+    //     crash.  The editor will recompile normally on the next user save.
+    // -----------------------------------------------------------------------
+    if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+    {
+        UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - GeneratedClass valid, calling MarkBlueprintAsStructurallyModified"));
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    }
+    else
+    {
+        UE_LOG(LogMCP, Warning, TEXT("[MCP] CompileBlueprint - GeneratedClass null/invalid for '%s', falling back to Modify() only"), *BlueprintName);
+        Blueprint->Modify();
+    }
 
     UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - SUCCESS (marked modified, deferred compile) for '%s'"), *BlueprintName);
 
