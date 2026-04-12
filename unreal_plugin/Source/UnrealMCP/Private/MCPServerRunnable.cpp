@@ -122,8 +122,10 @@ uint32 FMCPServerRunnable::Run()
         // Socket options
         ClientSock->SetNoDelay(true);
         ClientSock->SetNonBlocking(false);   // blocking reads — simpler recv loop
-        ClientSock->SetSendBufferSize(131072, 131072);
-        ClientSock->SetReceiveBufferSize(131072, 131072);
+        // SetSendBufferSize / SetReceiveBufferSize take an int32& out-param for
+        // the actual size the OS granted — must pass a variable, not a literal.
+        { int32 ActualSize = 0; ClientSock->SetSendBufferSize(131072, ActualSize); }
+        { int32 ActualSize = 0; ClientSock->SetReceiveBufferSize(131072, ActualSize); }
 
         UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Connection accepted"));
 
@@ -156,7 +158,9 @@ uint32 FMCPServerRunnable::Run()
             else if (!bRecvOk)
             {
                 int32 ErrCode = (int32)ISocketSubsystem::Get()->GetLastErrorCode();
-                if (ErrCode == SE_EWOULDBLOCK || ErrCode == SE_EAGAIN)
+                // SE_EAGAIN is a POSIX-only alias for EWOULDBLOCK; on Windows
+                // only SE_EWOULDBLOCK exists.  Use SE_EWOULDBLOCK for both.
+                if (ErrCode == SE_EWOULDBLOCK)
                 {
                     FPlatformProcess::Sleep(0.005f);
                     continue;

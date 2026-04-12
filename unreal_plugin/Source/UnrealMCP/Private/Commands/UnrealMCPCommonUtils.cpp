@@ -533,13 +533,19 @@ UEdGraphPin* FUnrealMCPCommonUtils::FindPin(UEdGraphNode* Node, const FString& P
 
     // Common exec-pin alias pairs
     FString PinLower = PinName.ToLower();
-    if      (PinLower == TEXT("execute") || PinLower == TEXT("exec"))
-        Candidates.Add(TEXT("execute")), Candidates.Add(TEXT("exec")), Candidates.Add(TEXT("then"));
+    if (PinLower == TEXT("execute") || PinLower == TEXT("exec"))
+    {
+        Candidates.Add(TEXT("execute")); Candidates.Add(TEXT("exec")); Candidates.Add(TEXT("then"));
+    }
     else if (PinLower == TEXT("then"))
-        Candidates.Add(TEXT("execute")), Candidates.Add(TEXT("exec"));
-    // "return value" variants
+    {
+        Candidates.Add(TEXT("execute")); Candidates.Add(TEXT("exec"));
+    }
     else if (PinLower == TEXT("returnvalue") || PinLower == TEXT("return_value") || PinLower == TEXT("return value"))
-        Candidates.Add(TEXT("ReturnValue")), Candidates.Add(TEXT("return value"));
+    {
+        // "return value" variants
+        Candidates.Add(TEXT("ReturnValue")); Candidates.Add(TEXT("return value"));
+    }
 
     // ---- 1. Exact name match (with aliases) ----
     for (const FString& Candidate : Candidates)
