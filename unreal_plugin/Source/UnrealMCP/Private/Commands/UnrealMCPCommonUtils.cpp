@@ -185,6 +185,29 @@ void FUnrealMCPCommonUtils::InvalidateBlueprintMissCache(const FString& Blueprin
     GBlueprintMissingCache.Remove(BlueprintName);
 }
 
+void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
+{
+    if (!Blueprint || !IsValid(Blueprint)) return;
+
+    // MarkBlueprintAsStructurallyModified dereferences Blueprint->GeneratedClass
+    // to invalidate the property chain. For newly-created or first-session-access
+    // Blueprints, GeneratedClass may be null → EXCEPTION_ACCESS_VIOLATION
+    // (manifests as EdGraphNode.h:586 assertion or WinError 10053 on Python).
+    if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+    {
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+    }
+    else
+    {
+        // Safe fallback: mark the UObject dirty for Undo/save without touching
+        // GeneratedClass. The editor compiles and regenerates the class on next save.
+        Blueprint->Modify();
+        UE_LOG(LogTemp, Warning,
+            TEXT("SafeMarkBlueprintModified: GeneratedClass null for '%s' — using Modify() fallback"),
+            *Blueprint->GetName());
+    }
+}
+
 UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
     // ── 0. Check the in-memory positive cache first (free after first lookup) ──

@@ -42,6 +42,20 @@ public:
     /** Remove a blueprint name from the negative-miss cache so it can be found
      *  immediately after creation (e.g. right after create_blueprint). */
     static void InvalidateBlueprintMissCache(const FString& BlueprintName);
+
+    /**
+     * Safe wrapper around FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified.
+     *
+     * MarkBlueprintAsStructurallyModified() dereferences Blueprint->GeneratedClass to
+     * invalidate the class property chain.  On the FIRST call of a fresh editor session
+     * (or for newly-created Blueprints that haven't been compiled yet), GeneratedClass
+     * may be null — causing EXCEPTION_ACCESS_VIOLATION → EdGraphNode.h:586 assertion.
+     *
+     * This wrapper guards GeneratedClass and falls back to Blueprint->Modify() which
+     * marks the UObject dirty for Undo/save without touching GeneratedClass.
+     */
+    static void SafeMarkBlueprintModified(UBlueprint* Blueprint);
+
     static UEdGraph* FindOrCreateEventGraph(UBlueprint* Blueprint);
     
     // Blueprint node utilities

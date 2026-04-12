@@ -376,7 +376,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
         // EXCEPTION_ACCESS_VIOLATION on first-session access.
         if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
         {
-            FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
             UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - MarkBlueprintAsStructurallyModified '%s'"), *BlueprintName);
         }
         else
@@ -636,7 +636,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             {
                 // Mark the blueprint as modified
                 UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Successfully set SpringArm property %s"), *PropertyName);
-                FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+                FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
                 TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
                 ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -881,7 +881,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             // Do NOT call ConditionalPostLoad() or PostEditChange() on CDO-owned
             // components – those calls can trigger internal re-registration and GC
             // passes that leave our raw Blueprint pointer dangling.
-            FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
             TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
             ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -970,7 +970,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPhysicsProperties(
     }
 
     // Mark the blueprint as modified
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -1037,7 +1037,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
     if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
     {
         UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - GeneratedClass valid, calling MarkBlueprintAsStructurallyModified"));
-        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
     }
     else
     {
@@ -1155,7 +1155,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintProperty(
         if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, PropertyName, JsonValue, ErrorMessage))
         {
             // Mark the blueprint as modified
-            FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
             TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
             ResultObj->SetStringField(TEXT("property"), PropertyName);
@@ -1237,7 +1237,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetStaticMeshProperti
     }
 
     // Mark the blueprint as modified
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -1377,7 +1377,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
     // Mark the blueprint as modified if any properties were set
     if (bAnyPropertiesSet)
     {
-        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
     }
     else if (ResultsObj->Values.Num() == 0)
     {
@@ -1458,7 +1458,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintAIControl
     }
 
     DefaultPawn->AIControllerClass = ControllerClass;
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
     UE_LOG(LogTemp, Display, TEXT("Set AIControllerClass on %s to %s"),
            *BlueprintName, *ControllerClass->GetName());
