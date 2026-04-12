@@ -2149,10 +2149,34 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCastN
 // ============================================================
 static UK2Node_MacroInstance* CreateMacroNode(UEdGraph* Graph, const FString& MacroName, const FVector2D& Pos)
 {
-    // Standard macros live in the engine's "StandardMacros" Blueprint
+    // Standard macros live in the engine's "StandardMacros" Blueprint.
+    // Cache the pointer after the first load — LoadObject is synchronous and can
+    // take 200–800 ms on the first call in a fresh editor session.
     static const FString MacroBPPath = TEXT("/Engine/EditorBlueprintResources/StandardMacros.StandardMacros");
-    UBlueprint* MacroBP = LoadObject<UBlueprint>(nullptr, *MacroBPPath);
-    if (!MacroBP) return nullptr;
+    static TWeakObjectPtr<UBlueprint> GCachedMacroBP;
+
+    UBlueprint* MacroBP = GCachedMacroBP.Get();
+    if (!MacroBP)
+    {
+        // Try in-memory first (free, no I/O)
+        MacroBP = FindObject<UBlueprint>(nullptr, *MacroBPPath);
+        if (!MacroBP)
+        {
+            UE_LOG(LogTemp, Display, TEXT("[MCP] CreateMacroNode: loading StandardMacros BP..."));
+            MacroBP = LoadObject<UBlueprint>(nullptr, *MacroBPPath);
+        }
+        if (MacroBP)
+        {
+            GCachedMacroBP = MacroBP;
+            UE_LOG(LogTemp, Display, TEXT("[MCP] CreateMacroNode: StandardMacros BP cached (%d macro graphs)"),
+                MacroBP->MacroGraphs.Num());
+        }
+    }
+    if (!MacroBP)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[MCP] CreateMacroNode: failed to load StandardMacros BP"));
+        return nullptr;
+    }
 
     UEdGraph* MacroGraph = nullptr;
     for (UEdGraph* G : MacroBP->MacroGraphs)
@@ -2163,7 +2187,11 @@ static UK2Node_MacroInstance* CreateMacroNode(UEdGraph* Graph, const FString& Ma
             break;
         }
     }
-    if (!MacroGraph) return nullptr;
+    if (!MacroGraph)
+    {
+        UE_LOG(LogTemp, Error, TEXT("[MCP] CreateMacroNode: macro '%s' not found in StandardMacros"), *MacroName);
+        return nullptr;
+    }
 
     UK2Node_MacroInstance* Node = NewObject<UK2Node_MacroInstance>(Graph);
     Node->SetMacroGraph(MacroGraph);

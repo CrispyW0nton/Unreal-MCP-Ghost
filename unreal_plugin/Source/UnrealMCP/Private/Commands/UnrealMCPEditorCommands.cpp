@@ -759,13 +759,20 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         Escaped.ReplaceInline(TEXT("\n"),   TEXT("\\n"), ESearchCase::CaseSensitive);
         Escaped.ReplaceInline(TEXT("\r"),   TEXT("\\n"), ESearchCase::CaseSensitive);
 
+        // Use raise SystemExit() instead of print() for the error path.
+        // print() routes through UE5's GLog which can flush slowly on large
+        // log-heavy projects (20-30 s).  SystemExit is caught by UE5's Python
+        // runner, sets bOk=false, and stores the message in Command.CommandResult
+        // without any GLog I/O.  We re-detect it below via bOk=false.
         WrappedCode = FString::Printf(
             TEXT("import traceback as _mcp_tb\n")
             TEXT("_mcp_src = '%s'\n")
             TEXT("try:\n")
             TEXT("    exec(compile(_mcp_src, '<mcp_exec>', 'exec'))\n")
+            TEXT("except SystemExit:\n")
+            TEXT("    raise\n")
             TEXT("except Exception:\n")
-            TEXT("    print('[MCP_ERROR] ' + _mcp_tb.format_exc())\n"),
+            TEXT("    raise SystemExit('[MCP_ERROR] ' + _mcp_tb.format_exc())\n"),
             *Escaped
         );
     }
@@ -785,15 +792,25 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
 
     const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
-    
-    // If the wrapper caught an exception the Python output will contain
-    // '[MCP_ERROR]' lines — surface that as a failed response.
+
+    // ── Detect Python exceptions ──────────────────────────────────────────
+    // Two paths:
+    //   (A) Old path: the wrapper used print('[MCP_ERROR] ...') — appears in
+    //       Command.LogOutput with [MCP_ERROR] tag.
+    //   (B) New path (fast): the wrapper used raise SystemExit('[MCP_ERROR] ...')
+    //       — bOk is false, and Command.CommandResult contains the [MCP_ERROR] message.
+    //       This avoids the slow GLog flush that caused 20-30 s delays.
     bool bHasPythonError = false;
     FString PythonErrorDetail;
 
-    // ?? 5. Collect log output into a single string ???????????????????????????
-    //       Also scan for [MCP_ERROR] lines emitted by our try/except wrapper —
-    //       these indicate a Python exception was caught inside the wrapper.
+    // Check path (B) first: bOk=false with [MCP_ERROR] in CommandResult
+    if (!bOk && Command.CommandResult.Contains(TEXT("[MCP_ERROR]")))
+    {
+        bHasPythonError = true;
+        PythonErrorDetail = Command.CommandResult;
+    }
+
+    // ?? 5. Collect log output and scan for path (A) [MCP_ERROR] tags ??????????
     FString LogOutput;
     for (const FPythonLogOutputEntry& Entry : Command.LogOutput)
     {
@@ -808,7 +825,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         FString Line = Prefix + Entry.Output;
         LogOutput += Line + TEXT("\n");
 
-        // Detect errors printed by our Python wrapper
+        // Detect errors printed by our Python wrapper (old path A)
         if (!bHasPythonError && Entry.Output.Contains(TEXT("[MCP_ERROR]")))
         {
             bHasPythonError = true;

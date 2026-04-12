@@ -5,6 +5,7 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "K2Node_Event.h"
+#include "K2Node_CustomEvent.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
@@ -189,13 +190,14 @@ void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
 {
     if (!Blueprint || !IsValid(Blueprint)) return;
 
-    // MarkBlueprintAsStructurallyModified dereferences Blueprint->GeneratedClass
-    // to invalidate the property chain. For newly-created or first-session-access
-    // Blueprints, GeneratedClass may be null → EXCEPTION_ACCESS_VIOLATION
-    // (manifests as EdGraphNode.h:586 assertion or WinError 10053 on Python).
+    // FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified dereferences
+    // Blueprint->GeneratedClass to invalidate the property chain. For
+    // newly-created or first-session-access Blueprints, GeneratedClass may be
+    // null → EXCEPTION_ACCESS_VIOLATION (manifests as EdGraphNode.h:586
+    // assertion or WinError 10053 on Python side).
     if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
     {
-        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
     }
     else
     {
@@ -203,7 +205,7 @@ void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
         // GeneratedClass. The editor compiles and regenerates the class on next save.
         Blueprint->Modify();
         UE_LOG(LogTemp, Warning,
-            TEXT("SafeMarkBlueprintModified: GeneratedClass null for '%s' — using Modify() fallback"),
+            TEXT("[MCP] SafeMarkBlueprintModified: GeneratedClass null for '%s' — using Modify() fallback"),
             *Blueprint->GetName());
     }
 }
@@ -348,57 +350,140 @@ UEdGraph* FUnrealMCPCommonUtils::FindOrCreateEventGraph(UBlueprint* Blueprint)
     return NewGraph;
 }
 
+// ─── Event-name alias table ────────────────────────────────────────────────
+// Many callers use the friendly "BeginPlay" / "Tick" names. UE5 stores the
+// override function under the UFUNCTION name on AActor / UActorComponent, which
+// is sometimes different (e.g. "ReceiveBeginPlay" vs "BeginPlay").
+// We resolve in this order:
+//   1. Check existing nodes so we never duplicate (return existing node).
+//   2. Look up alias → canonical UE5 function name.
+//   3. Search the Blueprint's parent class hierarchy (not GeneratedClass,
+//      which may be null for newly-created BPs) for the UFunction.
+//   4. If not found in parent hierarchy, fall back to a custom event.
+static const struct { const TCHAR* Alias; const TCHAR* UE5Name; const TCHAR* OwnerClass; }
+GEventAliases[] =
+{
+    // AActor overrideable events
+    { TEXT("BeginPlay"),          TEXT("ReceiveBeginPlay"),          TEXT("Actor") },
+    { TEXT("EndPlay"),            TEXT("ReceiveEndPlay"),            TEXT("Actor") },
+    { TEXT("Tick"),               TEXT("ReceiveTick"),               TEXT("Actor") },
+    { TEXT("ActorBeginOverlap"),  TEXT("ReceiveActorBeginOverlap"),  TEXT("Actor") },
+    { TEXT("ActorEndOverlap"),    TEXT("ReceiveActorEndOverlap"),    TEXT("Actor") },
+    { TEXT("ActorHit"),           TEXT("ReceiveActorHit"),           TEXT("Actor") },
+    { TEXT("Destroyed"),          TEXT("ReceiveDestroyed"),          TEXT("Actor") },
+    { TEXT("AnyDamage"),          TEXT("ReceiveAnyDamage"),          TEXT("Actor") },
+    { TEXT("PointDamage"),        TEXT("ReceivePointDamage"),        TEXT("Actor") },
+    { TEXT("RadialDamage"),       TEXT("ReceiveRadialDamage"),       TEXT("Actor") },
+    // APawn
+    { TEXT("SetupPlayerInput"),   TEXT("ReceiveInput"),              TEXT("Pawn")  },
+    // UActorComponent overrideable events
+    { TEXT("InitializeComponent"),TEXT("ReceiveInitializeComponent"),TEXT("ActorComponent") },
+    { TEXT("BeginDestroy"),       TEXT("ReceiveBeginDestroy"),       TEXT("ActorComponent") },
+    // Direct UE5 names (no alias needed — included so they still work)
+    { TEXT("ReceiveBeginPlay"),   TEXT("ReceiveBeginPlay"),          TEXT("Actor") },
+    { TEXT("ReceiveEndPlay"),     TEXT("ReceiveEndPlay"),            TEXT("Actor") },
+    { TEXT("ReceiveTick"),        TEXT("ReceiveTick"),               TEXT("Actor") },
+};
+
 // Blueprint node utilities
 UK2Node_Event* FUnrealMCPCommonUtils::CreateEventNode(UEdGraph* Graph, const FString& EventName, const FVector2D& Position)
 {
     if (!Graph)
-    {
         return nullptr;
-    }
-    
+
     UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     if (!Blueprint)
-    {
         return nullptr;
-    }
-    
-    // Check for existing event node with this exact name
+
+    FName EventFName(*EventName);
+
+    // ── 1. Return existing node to avoid duplicates ──────────────────────────
     for (UEdGraphNode* Node : Graph->Nodes)
     {
         UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node);
-        if (EventNode && EventNode->EventReference.GetMemberName() == FName(*EventName))
+        if (EventNode && EventNode->EventReference.GetMemberName() == EventFName)
         {
-            UE_LOG(LogTemp, Display, TEXT("Using existing event node with name %s (ID: %s)"), 
+            UE_LOG(LogTemp, Display, TEXT("[MCP] CreateEventNode: returning existing node '%s' (ID: %s)"),
                 *EventName, *EventNode->NodeGuid.ToString());
             return EventNode;
         }
     }
 
-    // No existing node found, create a new one
-    UK2Node_Event* EventNode = nullptr;
-    
-    // Find the function to create the event
-    UClass* BlueprintClass = Blueprint->GeneratedClass;
-    UFunction* EventFunction = BlueprintClass->FindFunctionByName(FName(*EventName));
-    
-    if (EventFunction)
+    // ── 2. Resolve alias → canonical UE5 function name ───────────────────────
+    FString CanonicalName = EventName;
+    for (const auto& A : GEventAliases)
     {
+        if (EventName.Equals(A.Alias, ESearchCase::IgnoreCase))
+        {
+            CanonicalName = A.UE5Name;
+            break;
+        }
+    }
+    FName CanonicalFName(*CanonicalName);
+
+    // ── 3. Walk the parent class hierarchy (safe — no GeneratedClass needed) ─
+    //       Blueprint->ParentClass is always valid; GeneratedClass may be null
+    //       for newly-created BPs that haven't been compiled yet.
+    UFunction* EventFunction  = nullptr;
+    UClass*    OwnerClass     = nullptr;
+
+    UClass* SearchClass = Blueprint->ParentClass;
+    while (SearchClass)
+    {
+        UFunction* F = SearchClass->FindFunctionByName(CanonicalFName, EIncludeSuperFlag::ExcludeSuper);
+        if (F)
+        {
+            EventFunction = F;
+            OwnerClass    = SearchClass;
+            break;
+        }
+        SearchClass = SearchClass->GetSuperClass();
+    }
+
+    UK2Node_Event* EventNode = nullptr;
+
+    if (EventFunction && OwnerClass)
+    {
+        // Standard override event — use bOverrideFunction so UE5 knows this
+        // is an overridden event, not a new custom event.
         EventNode = NewObject<UK2Node_Event>(Graph);
-        EventNode->EventReference.SetExternalMember(FName(*EventName), BlueprintClass);
-        EventNode->NodePosX = Position.X;
-        EventNode->NodePosY = Position.Y;
+        EventNode->EventReference.SetExternalMember(CanonicalFName, OwnerClass);
+        EventNode->bOverrideFunction = true;
+        EventNode->NodePosX = (int32)Position.X;
+        EventNode->NodePosY = (int32)Position.Y;
         EventNode->CreateNewGuid();
         Graph->AddNode(EventNode, true);
         EventNode->PostPlacedNewNode();
         EventNode->AllocateDefaultPins();
-        UE_LOG(LogTemp, Display, TEXT("Created new event node with name %s (ID: %s)"), 
-            *EventName, *EventNode->NodeGuid.ToString());
+        UE_LOG(LogTemp, Display, TEXT("[MCP] CreateEventNode: override event '%s' on %s (ID: %s)"),
+            *CanonicalName, *OwnerClass->GetName(), *EventNode->NodeGuid.ToString());
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("Failed to find function for event name: %s"), *EventName);
+        // ── 4. Fall back: create a custom event with the requested name ───────
+        //       This covers project-specific events not in the parent class.
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] CreateEventNode: '%s' not found in parent hierarchy — creating custom event"),
+            *CanonicalName);
+
+        UK2Node_CustomEvent* CustomNode = NewObject<UK2Node_CustomEvent>(Graph);
+        if (!CustomNode)
+        {
+            UE_LOG(LogTemp, Error, TEXT("[MCP] CreateEventNode: failed to create custom event '%s'"), *CanonicalName);
+            return nullptr;
+        }
+        CustomNode->CustomFunctionName = CanonicalFName;
+        CustomNode->NodePosX = (int32)Position.X;
+        CustomNode->NodePosY = (int32)Position.Y;
+        CustomNode->CreateNewGuid();
+        Graph->AddNode(CustomNode, true);
+        CustomNode->PostPlacedNewNode();
+        CustomNode->AllocateDefaultPins();
+        // UK2Node_CustomEvent IS a UK2Node_Event subclass
+        EventNode = Cast<UK2Node_Event>(CustomNode);
+        UE_LOG(LogTemp, Display, TEXT("[MCP] CreateEventNode: custom event '%s' (ID: %s)"),
+            *CanonicalName, EventNode ? *EventNode->NodeGuid.ToString() : TEXT("null"));
     }
-    
+
     return EventNode;
 }
 
@@ -462,19 +547,23 @@ UK2Node_VariableSet* FUnrealMCPCommonUtils::CreateVariableSetNode(UEdGraph* Grap
 UK2Node_InputAction* FUnrealMCPCommonUtils::CreateInputActionNode(UEdGraph* Graph, const FString& ActionName, const FVector2D& Position)
 {
     if (!Graph)
-    {
         return nullptr;
-    }
-    
+
     UK2Node_InputAction* InputActionNode = NewObject<UK2Node_InputAction>(Graph);
     InputActionNode->InputActionName = FName(*ActionName);
-    InputActionNode->NodePosX = Position.X;
-    InputActionNode->NodePosY = Position.Y;
+    InputActionNode->NodePosX = (int32)Position.X;
+    InputActionNode->NodePosY = (int32)Position.Y;
     InputActionNode->CreateNewGuid();
-    Graph->AddNode(InputActionNode, true);
-    InputActionNode->PostPlacedNewNode();
+
+    // AddNode with bFromUI=false to skip the OnNodeAdded notification chain
+    // that validates the action name against Project Input Settings (slow on
+    // projects that haven't loaded Input Settings yet — can take 20-30s).
+    Graph->AddNode(InputActionNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+    // Skip PostPlacedNewNode() — it triggers input settings validation.
+    // Call AllocateDefaultPins() directly to set up Pressed/Released exec pins.
     InputActionNode->AllocateDefaultPins();
-    
+
+    UE_LOG(LogTemp, Display, TEXT("[MCP] CreateInputActionNode: created legacy InputAction node '%s'"), *ActionName);
     return InputActionNode;
 }
 

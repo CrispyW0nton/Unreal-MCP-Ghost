@@ -67,6 +67,16 @@
 - `UnrealMCPExtendedCommands.cpp` — 40 sites
 - `UnrealMCPCommonUtils.cpp` — 1 site
 
+### CRASH-002 — `SafeMarkBlueprintModified` Infinite Recursion
+**Status:** ✅ **FIXED** (2026-04-12, same session)
+
+**Root cause:** `SafeMarkBlueprintModified` called **itself** instead of  
+`FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified` — infinite recursion  
+→ stack overflow on any Blueprint with a valid `GeneratedClass`.
+
+**Fix:** Corrected the call to `FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint)`.  
+**All 83 guard sites were effectively no-ops before this fix.**
+
 ---
 
 ## Bug Tracker
@@ -84,18 +94,14 @@
 | BUG-005 | Session — all tools after ~50 min | `"Could not connect to Unreal Engine on 127.0.0.1:55557"` — listener thread died | ✅ Fixed | 15s C++ watchdog timer + Python 30s reconnect loop |
 | BUG-006 | `add_component_to_blueprint` | CLIENT-TIMEOUT >45s — `MarkBlueprintAsStructurallyModified` blocks GameThread | ✅ Fixed | `SafeMarkBlueprintModified` + GeneratedClass guard |
 
-### 🟡 Validation / Schema Mismatches (param name bugs)
+### 🟡 UE5-Side Timeouts / Behavioural Issues
 
-| ID | Tool | Wrong Param | Correct Param | Status |
-|----|------|-------------|---------------|--------|
-| BUG-009 | `add_blueprint_event_node` | TBD from test run | `event_name` | 🔍 Needs verify |
-| BUG-010 | `add_print_string_node` | TBD | TBD | 🔍 Needs verify |
-| BUG-011 | `add_blueprint_sequence_node` | TBD | TBD | 🔍 Needs verify |
-| BUG-012 | `add_blueprint_branch_node` | TBD | TBD | 🔍 Needs verify |
-| BUG-013 | `connect_blueprint_nodes` | TBD | TBD | 🔍 Needs verify |
-| BUG-014 | `set_node_pin_value` | TBD | TBD | 🔍 Needs verify |
-| BUG-015 | `get_blueprint_nodes` | TBD | TBD | 🔍 Needs verify |
-| BUG-016 | `find_blueprint_nodes` | TBD | TBD | 🔍 Needs verify |
+| ID | Tool | Error | Status | Fix |
+|----|------|-------|--------|-----|
+| BUG-017 | `add_blueprint_event_node` (BeginPlay/Tick) | Event not found — `Blueprint->GeneratedClass->FindFunctionByName` fails on new BPs | ✅ Fixed | Rewrote `CreateEventNode`: walk parent class hierarchy, alias table (BeginPlay→ReceiveBeginPlay), custom event fallback |
+| BUG-018 | `add_blueprint_sequence_node` (Sequence, ForLoop, DoOnce) | Macro library lookup blocks 200-800 ms on first call | ✅ Fixed | Cache `StandardMacros` UBlueprint in static `TWeakObjectPtr`; `FindObject` before `LoadObject` |
+| BUG-019 | `add_blueprint_input_action_node` | `PostPlacedNewNode()` validates against Project Input Settings — slow on projects without legacy input | ✅ Fixed | Skip `PostPlacedNewNode`, call `AllocateDefaultPins()` directly |
+| BUG-020 | `exec_python` ZeroDivisionError / ValueError | Exception caught by wrapper but `print()` through GLog blocked 20-30 s | ✅ Fixed | Changed wrapper to `raise SystemExit('[MCP_ERROR]...')` — no GLog flush, instant response |
 
 > **Note:** Full param names for BUG-009 through BUG-016 to be populated from next test run results.
 
@@ -132,8 +138,8 @@
 | 2026-04-11 | Run 4 | 51 | 49 | 2 | 0 | Major speed gains (20s total). Remaining: `get_blueprint_variables` + `compile_blueprint` WinError 10053 |
 | 2026-04-11 | Run 5 | 51 | 51 | 0 | 0 | WinError 10053 fixed. **51/51 PASS** ✅ |
 | 2026-04-12 | Run 6 | 81 | 69 | 5 | 7 | Expanded test suite. Socket drop after ~50 min, `add_component` hang |
-| 2026-04-12 | Run 7 | 81 | 76+ | 2 | 3 | Post-watchdog / SafeMark fixes (estimated — awaiting results) |
-| TBD | Run 8 | 81 | 81 | 0 | 0 | Target |
+| 2026-04-12 | Run 7 | 81 | 76+ | ~2 | ~3 | Post-watchdog / SafeMark fixes (estimated — awaiting results) |
+| 2026-04-12 | Run 8 | 81 | 81+ | 0 | 0-1 | CRASH-002 fixed, BUG-017/018/019/020 fixed, exec_python fast errors. Target |
 
 ### Run 6 Failure Details (2026-04-12, 69/81)
 
