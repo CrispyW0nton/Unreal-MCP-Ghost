@@ -2899,10 +2899,18 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintVaria
             continue;
 
         // Build type string
+        // Guard PinSubCategoryObject with IsValid() + Get() != nullptr to avoid
+        // EXCEPTION_ACCESS_VIOLATION when the UObject has been GC'd between
+        // IsValid() returning true and the dereference (TWeakObjectPtr race).
         FString TypeStr = VarDesc.VarType.PinCategory.ToString();
         FString SubTypeStr;
-        if (VarDesc.VarType.PinSubCategoryObject.IsValid())
-            SubTypeStr = VarDesc.VarType.PinSubCategoryObject->GetName();
+        {
+            UObject* SubObj = VarDesc.VarType.PinSubCategoryObject.Get();
+            if (SubObj && IsValid(SubObj))
+            {
+                SubTypeStr = SubObj->GetName();
+            }
+        }
 
         // Exposure flags
         bool bIsExposed = VarDesc.HasMetaData(FBlueprintMetadata::MD_ExposeOnSpawn) ||
