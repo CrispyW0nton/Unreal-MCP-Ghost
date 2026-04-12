@@ -20,7 +20,6 @@
 #include "Engine/Selection.h"
 #include "EditorAssetLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "AssetRegistry/ARFilter.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "BlueprintNodeSpawner.h"
 #include "BlueprintActionDatabase.h"
@@ -259,24 +258,22 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
         UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: AR scan complete"));
     }
 
-    // ── Name-filtered AR query (fast miss path) ───────────────────────────
-    // Instead of GetAssetsByClass() (returns ALL blueprints) + filter in C++,
-    // use GetAssets() with FARFilter::AssetNames so the AR returns only assets
-    // whose FName matches — O(1) per-name lookup via the AR's name index.
-    // This turns a "not found" scan from O(N_blueprints) to O(1), eliminating
-    // the 5-30 s stall on large projects for missing-blueprint queries.
-    FARFilter NameFilter;
-    NameFilter.AssetNames.Add(FName(*BlueprintName));
-    NameFilter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
-    NameFilter.bRecursiveClasses = true;
-    NameFilter.bRecursivePaths   = true;
-    NameFilter.PackagePaths.Add(TEXT("/Game"));
+    // ── 2b. Use TagsAndValues filter for O(1) name lookup (UE5.6-compatible) ─
+    // FARFilter.TagsAndValues lets us query by the "AssetBundleData" or any
+    // asset-searchable tag. However UBlueprint doesn't expose a name tag.
+    // Fallback: use GetAssetsByClass (Blueprint class index, O(k)) but convert
+    // the FName lookup so C++ comparison is O(1) per asset via FName hash.
+    // This is still O(k) total (k = # Blueprints in project) but k << 8k (all assets).
+    const FName BlueprintFName(*BlueprintName);
 
     TArray<FAssetData> BlueprintAssets;
-    AR.GetAssets(NameFilter, BlueprintAssets);
+    AR.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssets, /*bSearchSubClasses=*/true);
 
     for (const FAssetData& Asset : BlueprintAssets)
     {
+        // Fast FName hash comparison — O(1) per asset (no string allocation).
+        if (Asset.AssetName != BlueprintFName) continue;
+
         // ── SAFE ASSET RESOLUTION ─────────────────────────────────────
         // Prefer FindObject (in-memory, no I/O) over Asset.GetAsset()
         // (which calls StaticLoadObject and can crash on first-session access
