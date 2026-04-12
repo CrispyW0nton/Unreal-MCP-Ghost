@@ -20,6 +20,7 @@
 #include "Engine/Selection.h"
 #include "EditorAssetLibrary.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetRegistry/ARFilter.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "BlueprintNodeSpawner.h"
 #include "BlueprintActionDatabase.h"
@@ -258,33 +259,43 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
         UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: AR scan complete"));
     }
 
+    // ── Name-filtered AR query (fast miss path) ───────────────────────────
+    // Instead of GetAssetsByClass() (returns ALL blueprints) + filter in C++,
+    // use GetAssets() with FARFilter::AssetNames so the AR returns only assets
+    // whose FName matches — O(1) per-name lookup via the AR's name index.
+    // This turns a "not found" scan from O(N_blueprints) to O(1), eliminating
+    // the 5-30 s stall on large projects for missing-blueprint queries.
+    FARFilter NameFilter;
+    NameFilter.AssetNames.Add(FName(*BlueprintName));
+    NameFilter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
+    NameFilter.bRecursiveClasses = true;
+    NameFilter.bRecursivePaths   = true;
+    NameFilter.PackagePaths.Add(TEXT("/Game"));
+
     TArray<FAssetData> BlueprintAssets;
-    AR.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssets, /*bSearchSubClasses=*/true);
+    AR.GetAssets(NameFilter, BlueprintAssets);
 
     for (const FAssetData& Asset : BlueprintAssets)
     {
-        if (Asset.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
+        // ── SAFE ASSET RESOLUTION ─────────────────────────────────────
+        // Prefer FindObject (in-memory, no I/O) over Asset.GetAsset()
+        // (which calls StaticLoadObject and can crash on first-session access
+        // when the UPackage is in a partially-loaded state).
+        UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Asset.GetObjectPathString());
+        if (!BP)
         {
-            // ── SAFE ASSET RESOLUTION ─────────────────────────────────────
-            // Prefer FindObject (in-memory, no I/O) over Asset.GetAsset()
-            // (which calls StaticLoadObject and can crash on first-session access
-            // when the UPackage is in a partially-loaded state).
-            UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Asset.GetObjectPathString());
-            if (!BP)
-            {
-                // Fall back to GetAsset() only if FindObject failed.
-                // This is safe after WaitForCompletion() above because all
-                // packages the AR knows about have finished their disk scan.
-                BP = Cast<UBlueprint>(Asset.GetAsset());
-            }
-            if (BP && IsValid(BP))
-            {
-                GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
-                GBlueprintMissingCache.Remove(BlueprintName);
-                UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
-                    *BlueprintName, *Asset.GetObjectPathString());
-                return BP;
-            }
+            // Fall back to GetAsset() only if FindObject failed.
+            // This is safe after WaitForCompletion() above because all
+            // packages the AR knows about have finished their disk scan.
+            BP = Cast<UBlueprint>(Asset.GetAsset());
+        }
+        if (BP && IsValid(BP))
+        {
+            GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
+            GBlueprintMissingCache.Remove(BlueprintName);
+            UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
+                *BlueprintName, *Asset.GetObjectPathString());
+            return BP;
         }
     }
 

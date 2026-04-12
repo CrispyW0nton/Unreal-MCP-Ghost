@@ -246,6 +246,22 @@ def register_editor_tools(mcp: FastMCP):
           - Checking existing assets before creating duplicates
         """
         from unreal_mcp_server import get_unreal_connection
+        import traceback as _tb
+
+        # ── Pre-validate syntax on the Python side (instant, no UE5 round-trip) ──
+        # UE5's ExecPythonCommandEx can hang for 30+ s even when a SyntaxError
+        # is caught by our try/except wrapper, because the GIL flush after
+        # execution is slow on log-heavy projects.
+        # Catching SyntaxErrors here returns an error instantly without touching UE5.
+        try:
+            compile(code, "<mcp_exec>", "exec")
+        except SyntaxError as syn_e:
+            return {
+                "success": False,
+                "error": f"SyntaxError: {syn_e}",
+                "output": f"SyntaxError: {syn_e}\n{_tb.format_exc()}",
+            }
+
         try:
             unreal = get_unreal_connection()
             if not unreal:

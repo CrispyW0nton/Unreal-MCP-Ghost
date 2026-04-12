@@ -266,10 +266,29 @@ class UnrealConnection:
             self.socket = None
             self.connected = False
 
-        if not self.connect():
-            logger.error("Failed to connect to Unreal Engine for command")
-            return {"status": "error", "error": "Could not connect to Unreal Engine on "
-                    f"{UNREAL_HOST}:{UNREAL_PORT}. Make sure UE5 is open and the UnrealMCP plugin is active."}
+        # ── Connection with auto-recovery ────────────────────────────────────
+        # After ~50 min of heavy use, UE5's GameThread AsyncTask queue can stall
+        # which may cause the MCPServerRunnable thread to crash, dropping the
+        # listener socket.  UE5 subsystems also restart their socket during
+        # transitions (BeginPIE, EndPIE, Hot-Reload).
+        #
+        # Strategy: if connect() fails, retry every 2 s for up to 30 s before
+        # giving up.  This transparently handles:
+        #   - Brief socket drops during UE5 garbage-collection cycles
+        #   - PIE mode transitions that briefly restart the plugin
+        #   - The plugin's WaitForCompletion() stall at session start
+        import time as _time_connect
+        _connect_deadline = _time_connect.time() + 30.0
+        _connect_attempt = 0
+        while not self.connect():
+            _connect_attempt += 1
+            if _time_connect.time() >= _connect_deadline:
+                logger.error("Failed to connect to Unreal Engine for command after 30s")
+                return {"status": "error", "error": "Could not connect to Unreal Engine on "
+                        f"{UNREAL_HOST}:{UNREAL_PORT}. Make sure UE5 is open and the UnrealMCP plugin is active."}
+            wait = min(2.0 * _connect_attempt, 8.0)  # 2s, 4s, 6s, 8s max
+            logger.warning(f"Connect attempt {_connect_attempt} failed — retrying in {wait:.0f}s...")
+            _time_connect.sleep(wait)
 
         # Guard: connect() should always set self.socket, but protect against
         # race conditions (e.g. another thread closed the socket between

@@ -1,5 +1,7 @@
 #include "UnrealMCPBridge.h"
 #include "MCPServerRunnable.h"
+#include "TimerManager.h"
+#include "Editor.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "HAL/RunnableThread.h"
@@ -125,12 +127,57 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
 
     // Start the server automatically
     StartServer();
+
+    // ── Watchdog timer: restart the server thread if it dies ─────────────
+    // After long sessions (>50 min) the MCPServerRunnable thread can die due to:
+    //   (a) An unhandled exception propagating out of the Run() loop.
+    //   (b) The GameThread AsyncTask queue filling up, causing FRunnableThread
+    //       to time out its join and kill the thread.
+    // The watchdog polls every 15 s and calls StartServer() if the thread is gone.
+    if (GEditor)
+    {
+        GEditor->GetTimerManager()->SetTimer(
+            WatchdogTimerHandle,
+            this,
+            &UUnrealMCPBridge::WatchdogTick,
+            15.0f,   // check every 15 seconds
+            true     // loop
+        );
+        UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Watchdog timer registered (15 s interval)"));
+    }
+}
+
+// Watchdog: called every 15 s by GEditor's timer manager.
+// Restarts the listener thread if it has crashed or been killed.
+void UUnrealMCPBridge::WatchdogTick()
+{
+    // If the bridge is supposed to be running but the thread is dead, restart.
+    if (bIsRunning && (!ServerThread || !ListenerSocket.IsValid()))
+    {
+        UE_LOG(LogMCP, Warning, TEXT("UnrealMCPBridge: Watchdog detected dead server thread — restarting..."));
+        // Full stop to clean up any dangling handles, then restart.
+        StopServer();
+        StartServer();
+        if (bIsRunning)
+        {
+            UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Server thread restarted successfully"));
+        }
+        else
+        {
+            UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Failed to restart server thread!"));
+        }
+    }
 }
 
 // Clean up resources when subsystem is destroyed
 void UUnrealMCPBridge::Deinitialize()
 {
     UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Shutting down"));
+    // Cancel the watchdog timer before stopping the server
+    if (GEditor && WatchdogTimerHandle.IsValid())
+    {
+        GEditor->GetTimerManager()->ClearTimer(WatchdogTimerHandle);
+    }
     StopServer();
 }
 

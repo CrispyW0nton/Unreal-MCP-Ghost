@@ -772,7 +772,16 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
 
     FPythonCommandEx Command;
     Command.Command  = WrappedCode;
-    Command.ExecutionMode = ExecMode;
+    // ── IMPORTANT: always use ExecuteFile mode for our wrapper script. ──────
+    // ExecuteStatement mode uses Py_single_input which only accepts ONE
+    // statement and truncates multi-line scripts silently.
+    // ExecuteFile mode (Py_file_input) handles the full multi-line wrapper
+    // including the try/except block.
+    // For EvaluateStatement we already set WrappedCode = Code (no wrapper),
+    // so using its original ExecMode is correct.
+    Command.ExecutionMode = (ExecMode == EPythonCommandExecutionMode::EvaluateStatement)
+        ? ExecMode
+        : EPythonCommandExecutionMode::ExecuteFile;
     Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
 
     const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);

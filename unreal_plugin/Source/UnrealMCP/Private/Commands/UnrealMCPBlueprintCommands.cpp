@@ -372,10 +372,18 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
         // AssetRegistry / ContentBrowser notification (which would call
         // Modify() → MarkPackageDirty() → broadcast to all AR listeners,
         // blocking the GameThread for 30-60 s on an 8 k-asset project).
-        // MarkBlueprintAsStructurallyModified() only invalidates the BP's
-        // graph cache and sets Status=BS_Dirty — no package notification.
-        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-        UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - MarkBlueprintAsStructurallyModified '%s'"), *BlueprintName);
+        // Guard GeneratedClass (same as HandleCompileBlueprint) to prevent
+        // EXCEPTION_ACCESS_VIOLATION on first-session access.
+        if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+        {
+            FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+            UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - MarkBlueprintAsStructurallyModified '%s'"), *BlueprintName);
+        }
+        else
+        {
+            Blueprint->Modify();
+            UE_LOG(LogMCP, Warning, TEXT("[MCP] AddComponent - GeneratedClass not ready for '%s', using Modify() fallback"), *BlueprintName);
+        }
 
         TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
         ResultObj->SetStringField(TEXT("component_name"), ComponentName);
