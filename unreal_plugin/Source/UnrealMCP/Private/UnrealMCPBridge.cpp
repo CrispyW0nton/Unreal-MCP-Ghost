@@ -1,5 +1,7 @@
 #include "UnrealMCPBridge.h"
 #include "MCPServerRunnable.h"
+#include "TimerManager.h"
+#include "Editor.h"
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "HAL/RunnableThread.h"
@@ -97,14 +99,85 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
     Port = MCP_SERVER_PORT;
     FIPv4Address::Parse(MCP_SERVER_HOST, ServerAddress);
 
+    // ── Asset Registry warm-up ────────────────────────────────────────────
+    // Trigger the AR initial scan now, during plugin startup, so it finishes
+    // BEFORE the first MCP command arrives.  Without this, the first call to
+    // FindBlueprintByName → AR.GetAssetsByClass() races against the ongoing
+    // async disk scan, causing Asset.GetAsset() to dereference a partially-
+    // loaded UPackage → EXCEPTION_ACCESS_VIOLATION → WinError 10053 on Python.
+    //
+    // WaitForCompletion() is a no-op if the scan is already done, so this adds
+    // no overhead on subsequent editor restarts with a warm OS disk cache.
+    // The call runs on the GameThread during subsystem init — safe and correct.
+    {
+        FAssetRegistryModule& ARModule =
+            FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
+        IAssetRegistry& AR = ARModule.Get();
+        if (AR.IsLoadingAssets())
+        {
+            UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Waiting for Asset Registry initial scan to complete..."));
+            AR.WaitForCompletion();
+            UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Asset Registry scan complete — MCP is ready for first-call commands"));
+        }
+        else
+        {
+            UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Asset Registry already complete"));
+        }
+    }
+
     // Start the server automatically
     StartServer();
+
+    // ── Watchdog timer: restart the server thread if it dies ─────────────
+    // After long sessions (>50 min) the MCPServerRunnable thread can die due to:
+    //   (a) An unhandled exception propagating out of the Run() loop.
+    //   (b) The GameThread AsyncTask queue filling up, causing FRunnableThread
+    //       to time out its join and kill the thread.
+    // The watchdog polls every 15 s and calls StartServer() if the thread is gone.
+    if (GEditor)
+    {
+        GEditor->GetTimerManager()->SetTimer(
+            WatchdogTimerHandle,
+            this,
+            &UUnrealMCPBridge::WatchdogTick,
+            15.0f,   // check every 15 seconds
+            true     // loop
+        );
+        UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Watchdog timer registered (15 s interval)"));
+    }
+}
+
+// Watchdog: called every 15 s by GEditor's timer manager.
+// Restarts the listener thread if it has crashed or been killed.
+void UUnrealMCPBridge::WatchdogTick()
+{
+    // If the bridge is supposed to be running but the thread is dead, restart.
+    if (bIsRunning && (!ServerThread || !ListenerSocket.IsValid()))
+    {
+        UE_LOG(LogMCP, Warning, TEXT("UnrealMCPBridge: Watchdog detected dead server thread — restarting..."));
+        // Full stop to clean up any dangling handles, then restart.
+        StopServer();
+        StartServer();
+        if (bIsRunning)
+        {
+            UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Server thread restarted successfully"));
+        }
+        else
+        {
+            UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Failed to restart server thread!"));
+        }
+    }
 }
 
 // Clean up resources when subsystem is destroyed
 void UUnrealMCPBridge::Deinitialize()
 {
     UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Shutting down"));
+    // Cancel the watchdog timer before stopping the server
+    if (GEditor && WatchdogTimerHandle.IsValid())
+    {
+        GEditor->GetTimerManager()->ClearTimer(WatchdogTimerHandle);
+    }
     StopServer();
 }
 
@@ -355,7 +428,8 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     ResponseJson->SetStringField(TEXT("status"), TEXT("error"));
                     ResponseJson->SetStringField(TEXT("error"), FString::Printf(TEXT("Unknown command: %s"), *CommandType));
                     FString ResultString;
-                    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
+                    TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+                        TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ResultString);
                     FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
                     Promise.SetValue(ResultString);
                     return;
@@ -367,7 +441,8 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                 ResponseJson->SetStringField(TEXT("error"), FString::Printf(TEXT("Unknown command: %s"), *CommandType));
                 
                 FString ResultString;
-                TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
+                TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+                    TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ResultString);
                 FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
                 Promise.SetValue(ResultString);
                 return;
@@ -427,11 +502,86 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                 FString::Printf(TEXT("Unknown exception in command '%s'"), *CommandType));
         }
         
+        // Use condensed (single-line) JSON so the newline-delimited socket protocol
+        // is never confused by embedded newlines inside large actor arrays, etc.
         FString ResultString;
-        TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&ResultString);
+        TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> Writer =
+            TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&ResultString);
         FJsonSerializer::Serialize(ResponseJson.ToSharedRef(), Writer);
         Promise.SetValue(ResultString);
     });
     
+    // -----------------------------------------------------------------------
+    // Per-command GameThread timeout budget.
+    //
+    // Background:
+    //   Without a timeout, Future.Get() blocks the TCP receiver thread forever
+    //   when the GameThread handler stalls (AddMemberVariable on 8k-asset project,
+    //   StaticLoadObject on cold asset, BP compile with many errors, etc.).
+    //   The stalled TCP thread holds the socket; Python times out after 30/90 s
+    //   and reconnects, but its AsyncTask is queued BEHIND the still-running
+    //   stalled task — causing every subsequent command to wait in line.
+    //
+    // Per-command budgets:
+    //   • compile_blueprint / save_blueprint / exec_python:
+    //       80 s  — these legitimately run long; give them the full Python budget.
+    //   • add_blueprint_variable / get_blueprint_* / add_component_to_blueprint:
+    //       80 s  — AddMemberVariable + MarkStructurallyModified can notify the
+    //               ContentBrowser which is expensive on large projects.
+    //               FindBlueprint AR scan is slow on cold cache.
+    //   • Everything else: 24 s  — frees the socket before Python's 30 s fires.
+    // -----------------------------------------------------------------------
+    double TimeoutSeconds = 24.0;  // default: fast commands
+    if (CommandType == TEXT("exec_python"))
+    {
+        // exec_python tier-3: factory scripts (BehaviorTree, WidgetBlueprint) can
+        // run 60-120 s inside UE5. Give a 140 s budget so C++ never cuts them off
+        // before they finish. Python has 150 s (see _VERY_SLOW_COMMANDS).
+        TimeoutSeconds = 140.0;
+    }
+    else if (CommandType == TEXT("compile_blueprint") ||
+             CommandType == TEXT("save_blueprint")    ||
+             CommandType == TEXT("create_blueprint"))
+    {
+        TimeoutSeconds = 80.0;   // legitimately slow
+    }
+    else if (CommandType == TEXT("add_blueprint_variable")    ||
+             CommandType == TEXT("get_blueprint_variables")   ||
+             CommandType == TEXT("get_blueprint_functions")   ||
+             CommandType == TEXT("get_blueprint_graphs")      ||
+             CommandType == TEXT("add_component_to_blueprint")||
+             CommandType == TEXT("get_actors_in_level")       ||
+             CommandType == TEXT("focus_viewport"))
+    {
+        TimeoutSeconds = 80.0;   // AR scan + possible notification chain
+    }
+
+    const FTimespan WaitTimeout = FTimespan::FromSeconds(TimeoutSeconds);
+    const bool bCompleted = Future.WaitFor(WaitTimeout);
+    if (!bCompleted)
+    {
+        // Return a JSON error immediately so the TCP socket is freed and the
+        // next command is not blocked behind this stalled GameThread task.
+        TSharedPtr<FJsonObject> TimeoutResponse = MakeShareable(new FJsonObject);
+        TimeoutResponse->SetStringField(TEXT("status"), TEXT("error"));
+        TimeoutResponse->SetStringField(TEXT("error"),
+            FString::Printf(TEXT("GameThread timeout after %.0fs for command '%s'. "
+                "The operation may still be running in the background. "
+                "Possible causes: (1) AddMemberVariable / MarkStructurallyModified "
+                "triggered a ContentBrowser/AssetRegistry refresh on a large project "
+                "(8k+ assets); (2) StaticLoadObject blocked on an uncached asset; "
+                "(3) Blueprint compile with many errors held the compiler lock. "
+                "Retry after a few seconds; if persistent, compile+save the Blueprint "
+                "first or restart the UE5 editor."),
+                TimeoutSeconds, *CommandType));
+        FString TimeoutResultString;
+        TSharedRef<TJsonWriter<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>> TWriter =
+            TJsonWriterFactory<TCHAR, TCondensedJsonPrintPolicy<TCHAR>>::Create(&TimeoutResultString);
+        FJsonSerializer::Serialize(TimeoutResponse.ToSharedRef(), TWriter);
+        UE_LOG(LogMCP, Error,
+            TEXT("[MCP] <<< TIMEOUT: command '%s' did not complete within %.0fs"),
+            *CommandType, TimeoutSeconds);
+        return TimeoutResultString;
+    }
     return Future.Get();
 }

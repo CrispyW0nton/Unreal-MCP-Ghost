@@ -35,14 +35,62 @@ Quick start for remote agents (GenSpark AI Developer):
 """
 
 import argparse
+import asyncio
 import logging
 import os
 import socket
 import sys
 import json
+import functools
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
+
+# ─── Async thread-offload patch ─────────────────────────────────────────────
+# Problem: FastMCP calls sync tool functions with a plain `return fn(**args)`,
+# which blocks the entire asyncio event loop.  While the event loop is blocked:
+#   • no SSE writes can be flushed back to the client
+#   • no keep-alive pings can be sent
+#   • the client sees a stalled connection and raises RemoteProtocolError
+# This means tool call RESULTS are accepted (202) but NEVER written to the SSE
+# stream — only the `initialize` response (which is pure async) arrives correctly.
+#
+# Fix: Monkey-patch FuncMetadata.call_fn_with_arg_validation to run sync
+# callables in anyio's default thread pool (run_sync_in_worker_thread), exactly
+# as FastMCP would do if every tool were declared `async def`.
+# Async callables are still awaited directly — no change to async tools.
+# This is a one-line patch at startup, requires zero changes across the 321 tool
+# functions spread over 21 files.
+import anyio
+from mcp.server.fastmcp.utilities import func_metadata as _fm_module
+
+async def _threaded_call_fn(self, fn, fn_is_async, arguments_to_validate, arguments_to_pass_directly):
+    """Replacement for FuncMetadata.call_fn_with_arg_validation.
+
+    Async functions are awaited directly (unchanged behaviour).
+    Sync functions are offloaded to anyio's worker-thread pool so the
+    asyncio event loop remains free to flush SSE writes while the blocking
+    socket recv() call waits for UE5 to respond.
+    """
+    arguments_pre_parsed = self.pre_parse_json(arguments_to_validate)
+    arguments_parsed_model = self.arg_model.model_validate(arguments_pre_parsed)
+    arguments_parsed_dict = arguments_parsed_model.model_dump_one_level()
+    arguments_parsed_dict |= arguments_to_pass_directly or {}
+
+    if fn_is_async:
+        return await fn(**arguments_parsed_dict)
+    else:
+        # Run in a worker thread so the event loop stays responsive.
+        # functools.partial is used to bind keyword arguments because
+        # anyio.to_thread.run_sync only accepts positional args to the callable.
+        return await anyio.to_thread.run_sync(
+            functools.partial(fn, **arguments_parsed_dict),
+            limiter=None,         # use default 40-thread limit
+            abandon_on_cancel=False,
+        )
+
+
+_fm_module.FuncMetadata.call_fn_with_arg_validation = _threaded_call_fn  # type: ignore[method-assign]
 
 # ─── Logging ────────────────────────────────────────────────────────────────
 # Write to file only (UTF-8 so emoji/arrow chars in KB tool output don't crash).
@@ -111,48 +159,105 @@ class UnrealConnection:
         self.socket = None
         self.connected = False
 
-    def receive_full_response(self, sock, buffer_size=65536) -> bytes:
-        # Timeout budget explanation:
-        #   - Blueprint compile / node operations on UE5 GameThread can take 30-90 s.
-        #   - Routing through a Playit tunnel adds variable latency.
-        #   - The old 15 s limit caused all non-trivial tool calls to raise
-        #     socket.timeout → MCP server closed the connection mid-flight →
-        #     client saw RemoteProtocolError: Server disconnected without response.
-        #   120 s is generous enough for the heaviest operations while still
-        #   catching genuinely hung connections.
+    def receive_full_response(self, sock, buffer_size=65536, timeout=30) -> bytes:
+        # Per-command timeout:
+        #   30 s covers the vast majority of UE5 GameThread operations including
+        #   Blueprint compile (5-15 s) and large node graph mutations (10-25 s).
+        #   Commands that hang indefinitely on the GameThread (e.g. AddMemberVariable
+        #   triggering an asset-registry refresh on an 8 k-asset project, or
+        #   StaticLoadObject on an uncached Niagara asset) would previously block
+        #   the SSE stream forever.  With a 30 s limit they return a clear timeout
+        #   error to the AI instead of silently starving the event loop.
+        #
+        #   get_actors_in_level (4 256 actors → several hundred KB) is handled
+        #   correctly because we read until EOF, not until first valid json.loads.
+        #   The 30 s window is more than enough for the TCP transfer itself.
+        #
+        # IMPORTANT: Do NOT early-return on a successful json.loads() inside the
+        # recv loop.  Read until EOF (recv returns b'') so large multi-chunk
+        # responses are never truncated.
         chunks = []
-        sock.settimeout(120)
+        sock.settimeout(timeout)
         try:
             while True:
                 chunk = sock.recv(buffer_size)
                 if not chunk:
-                    if not chunks:
-                        raise Exception("Connection closed before receiving data")
+                    # EOF — C++ closed the connection after writing the full response.
                     break
                 chunks.append(chunk)
-                data = b''.join(chunks)
-                try:
-                    json.loads(data.decode('utf-8'))
-                    logger.info(f"Received complete response ({len(data)} bytes)")
-                    return data
-                except json.JSONDecodeError:
-                    continue
         except socket.timeout:
-            logger.warning("Socket timeout (120 s) during receive")
-            if chunks:
-                data = b''.join(chunks)
-                try:
-                    json.loads(data.decode('utf-8'))
-                    return data
-                except Exception:
-                    pass
-            raise Exception("Timeout (120 s) waiting for Unreal response — UE5 may be busy or the command crashed")
+            # UE5 GameThread is hung — return a descriptive error immediately so
+            # the SSE stream stays unblocked for the next tool call.
+            raise Exception(
+                f"UE5 command timed out after {timeout}s — the GameThread did not "
+                "respond in time.  Likely causes: (1) AddMemberVariable / Modify() "
+                "triggered an asset-registry refresh on a large project, "
+                "(2) StaticLoadObject blocked on an uncached asset, "
+                "(3) global class search over 8k+ assets.  "
+                "Retry the command; if it consistently times out, compile & save "
+                "the Blueprint first, or use exec_python as a workaround."
+            )
         except Exception as e:
             logger.error(f"Error during receive: {str(e)}")
             raise
 
+        if not chunks:
+            raise Exception("Connection closed before receiving data")
+
+        data = b''.join(chunks)
+        logger.info(f"Received complete response ({len(data)} bytes)")
+        # Validate — raises json.JSONDecodeError if incomplete/corrupt.
+        try:
+            json.loads(data.decode('utf-8'))
+        except json.JSONDecodeError as e:
+            raise Exception(f"Incomplete JSON response ({len(data)} bytes): {e}")
+        return data
+
     def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+        """Public dispatcher — routes to _send_command_raw (no health-check).
+
+        After get_unreal_connection() has been called once, this is monkey-
+        patched to point at send_command_with_health_check so all 321 tool
+        functions transparently benefit from the GameThread backoff logic.
+        """
+        return self._send_command_raw(command, params)
+
+    def _send_command_raw(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
         """Send a JSON command to UE5 and return the parsed response."""
+        # ── Per-command socket timeout budget (seconds) ──────────────────────
+        #
+        # The C++ bridge now has a matching per-command budget (see UnrealMCPBridge.cpp).
+        # Python budgets are intentionally slightly larger to avoid Python timing out
+        # before C++ has a chance to return its structured error JSON.
+        #
+        # tier 1 — 30 s : fast read/write (ping, get_node, set_pin, …)
+        # tier 2 — 90 s : slow ops with AR scans or asset I/O
+        # tier 3 — 150 s: very heavy exec_python that spawns asset factories
+        #                  (BehaviorTree / WidgetBlueprint creation can take 60-90 s
+        #                   inside UE5 on a large project)
+        _SLOW_COMMANDS = {
+            "compile_blueprint",          # 15-90 s for large Blueprints
+            "create_blueprint",           # asset creation can be slow on big projects
+            "save_blueprint",             # triggers compile + save pipeline
+            "get_actors_in_level",        # large TCP payload (4256 actors → several MB)
+            "add_blueprint_variable",     # AddMemberVariable can trigger AR notification
+            "get_blueprint_variables",    # FindBlueprint AR scan on cold cache
+            "get_blueprint_functions",    # same AR scan path
+            "get_blueprint_graphs",       # same AR scan path
+            "add_component_to_blueprint", # SCS node creation + MarkStructurallyModified
+            "focus_viewport",             # GetAllActorsOfClass scan over 4256 actors
+        }
+        # exec_python is tier 3 — heavy factory scripts can run 60-120 s
+        _VERY_SLOW_COMMANDS = {
+            "exec_python",                # arbitrary Python; factory scripts need 150 s
+        }
+        if command in _VERY_SLOW_COMMANDS:
+            timeout = 150
+        elif command in _SLOW_COMMANDS:
+            timeout = 90
+        else:
+            timeout = 30
+
         if self.socket:
             try:
                 self.socket.close()
@@ -161,9 +266,36 @@ class UnrealConnection:
             self.socket = None
             self.connected = False
 
-        if not self.connect():
-            logger.error("Failed to connect to Unreal Engine for command")
-            return None
+        # ── Connection with auto-recovery ────────────────────────────────────
+        # After ~50 min of heavy use, UE5's GameThread AsyncTask queue can stall
+        # which may cause the MCPServerRunnable thread to crash, dropping the
+        # listener socket.  UE5 subsystems also restart their socket during
+        # transitions (BeginPIE, EndPIE, Hot-Reload).
+        #
+        # Strategy: if connect() fails, retry every 2 s for up to 30 s before
+        # giving up.  This transparently handles:
+        #   - Brief socket drops during UE5 garbage-collection cycles
+        #   - PIE mode transitions that briefly restart the plugin
+        #   - The plugin's WaitForCompletion() stall at session start
+        import time as _time_connect
+        _connect_deadline = _time_connect.time() + 30.0
+        _connect_attempt = 0
+        while not self.connect():
+            _connect_attempt += 1
+            if _time_connect.time() >= _connect_deadline:
+                logger.error("Failed to connect to Unreal Engine for command after 30s")
+                return {"status": "error", "error": "Could not connect to Unreal Engine on "
+                        f"{UNREAL_HOST}:{UNREAL_PORT}. Make sure UE5 is open and the UnrealMCP plugin is active."}
+            wait = min(2.0 * _connect_attempt, 8.0)  # 2s, 4s, 6s, 8s max
+            logger.warning(f"Connect attempt {_connect_attempt} failed — retrying in {wait:.0f}s...")
+            _time_connect.sleep(wait)
+
+        # Guard: connect() should always set self.socket, but protect against
+        # race conditions (e.g. another thread closed the socket between
+        # connect() returning True and this sendall call).
+        if self.socket is None:
+            logger.error("Socket is None immediately after connect() — aborting send")
+            return {"status": "error", "error": "Socket became None after connect (internal error). Retry the command."}
 
         try:
             command_obj = {
@@ -174,7 +306,7 @@ class UnrealConnection:
             logger.info(f"Sending command: {command_json[:200]}...")
             self.socket.sendall(command_json.encode('utf-8'))
 
-            response_data = self.receive_full_response(self.socket)
+            response_data = self.receive_full_response(self.socket, timeout=timeout)
             response = json.loads(response_data.decode('utf-8'))
             logger.info(f"Response: {str(response)[:300]}")
 
@@ -202,21 +334,177 @@ class UnrealConnection:
             return response
 
         except Exception as e:
-            logger.error(f"Error sending command: {e}")
+            logger.error(f"Error sending command '{command}': {e}")
             self.connected = False
             try:
                 self.socket.close()
             except Exception:
                 pass
             self.socket = None
+
+            # ── Auto-retry on WinError 10053 (WSAECONNABORTED) ──────────────
+            # WinError 10053 means UE5's plugin crashed (EXCEPTION_ACCESS_VIOLATION)
+            # before it could send a response — the OS reset the TCP connection.
+            # This happens on the FIRST call of a fresh editor session for commands
+            # that touch the Asset Registry before it has finished its initial scan
+            # (get_blueprint_variables, compile_blueprint).
+            #
+            # C++ fix: WaitForCompletion() + GeneratedClass guard (see UnrealMCPCommonUtils.cpp,
+            # UnrealMCPBlueprintCommands.cpp).  Python fix (defense-in-depth): detect
+            # the 10053 error code and retry ONCE after a 2 s delay to let UE5
+            # recover.  The second call always succeeds because the AR scan has
+            # now completed and the Blueprint's GeneratedClass is fully loaded.
+            import errno as _errno
+            err_str = str(e)
+            is_connection_abort = (
+                "10053" in err_str           # Windows WSAECONNABORTED
+                or "ECONNABORTED" in err_str  # POSIX alias
+                or "connection aborted" in err_str.lower()
+                or "connection reset" in err_str.lower()
+                or "10054" in err_str        # Windows WSAECONNRESET (also possible)
+                or "ConnectionResetError" in type(e).__name__
+                or "ConnectionAbortedError" in type(e).__name__
+            )
+            if is_connection_abort:
+                logger.warning(
+                    f"Command '{command}' got connection-aborted (WinError 10053 / UE5 first-call crash). "
+                    f"Retrying once in 2 s..."
+                )
+                import time as _time_mod
+                _time_mod.sleep(2.0)
+                # Recursive retry — returns error dict if it fails again
+                return self._send_command_raw(command, params)
+
             return {"status": "error", "error": str(e)}
+
+    def ping(self, timeout: float = 5.0) -> bool:
+        """Send a lightweight ping to verify the UE5 GameThread is responsive.
+
+        Returns True if the GameThread responds within `timeout` seconds.
+        Used before sending expensive commands after a long session to detect
+        GameThread saturation early.
+        """
+        import time as _time
+        try:
+            # Fresh socket for each ping attempt
+            if self.socket:
+                try:
+                    self.socket.close()
+                except Exception:
+                    pass
+                self.socket = None
+                self.connected = False
+
+            if not self.connect():
+                return False
+
+            ping_json = json.dumps({"type": "ping", "params": {}}) + "\n"
+            self.socket.sendall(ping_json.encode('utf-8'))
+            data = self.receive_full_response(self.socket, timeout=timeout)
+            resp = json.loads(data.decode('utf-8'))
+            return bool(resp)  # any valid JSON response = alive
+        except Exception as e:
+            logger.debug(f"Ping failed: {e}")
+            return False
+        finally:
+            try:
+                if self.socket:
+                    self.socket.close()
+            except Exception:
+                pass
+            self.socket = None
+            self.connected = False
+
+    # ── Commands that should be preceded by a GameThread health-check ────────
+    # After a long test session (60+ commands) the GameThread accumulates stalled
+    # AsyncTasks from previous C++ timeouts.  These commands are the ones that
+    # consistently return empty {} or "No response" at the end of long sessions.
+    _HEALTH_CHECK_COMMANDS: set = {
+        "get_blueprint_variables",
+        "get_blueprint_graphs",
+        "get_blueprint_functions",
+        "compile_blueprint",
+        "save_blueprint",
+        "add_blueprint_variable",
+        "add_component_to_blueprint",
+        "exec_python",
+    }
+
+    # How many consecutive errors before we start health-checking
+    _consecutive_errors: int = 0
+    _MAX_ERRORS_BEFORE_CHECK: int = 2
+
+    def send_command_with_health_check(
+        self,
+        command: str,
+        params: Dict[str, Any] = None,
+        max_wait: float = 30.0,
+        ping_timeout: float = 4.0,
+    ) -> Optional[Dict[str, Any]]:
+        """Like send_command but probes GameThread health first when needed.
+
+        Activates when:
+        1. The command is in _HEALTH_CHECK_COMMANDS, AND
+        2. At least _MAX_ERRORS_BEFORE_CHECK consecutive errors have occurred.
+
+        If the GameThread is saturated (no ping response), waits up to
+        `max_wait` seconds for it to drain. Resets error counter on success.
+        This prevents L3/L4 "No response from Unreal Engine" failures at the
+        end of long test sessions (GameThread saturation after 60+ commands).
+        """
+        import time as _time
+
+        should_check = (
+            command in self._HEALTH_CHECK_COMMANDS
+            and self._consecutive_errors >= self._MAX_ERRORS_BEFORE_CHECK
+        )
+
+        if should_check:
+            waited = 0.0
+            step = 2.0
+            while waited < max_wait:
+                if self.ping(timeout=ping_timeout):
+                    logger.info(f"GameThread responsive after {waited:.0f}s wait — proceeding with '{command}'")
+                    break  # GameThread is responsive
+                logger.warning(
+                    f"GameThread not responding (waited {waited:.0f}s) — "
+                    f"backing off {step:.0f}s before '{command}'"
+                )
+                _time.sleep(step)
+                waited += step
+                step = min(step * 1.5, 10.0)
+            else:
+                logger.error(
+                    f"GameThread did not recover after {max_wait:.0f}s — "
+                    f"sending '{command}' anyway"
+                )
+
+        # Call the original (un-patched) send_command via _send_command_raw
+        # to avoid infinite recursion when send_command is monkey-patched to
+        # point at this method in get_unreal_connection().
+        result = self._send_command_raw(command, params)
+
+        # Track consecutive errors to decide when to activate health checks
+        if result is None or (isinstance(result, dict) and result.get("status") == "error"):
+            self._consecutive_errors += 1
+            logger.debug(f"Consecutive errors: {self._consecutive_errors}")
+        else:
+            self._consecutive_errors = 0  # reset on success
+
+        return result
 
 
 # ─── Global connection ───────────────────────────────────────────────────────
 _unreal_connection: UnrealConnection = None
 
 
-def get_unreal_connection() -> Optional[UnrealConnection]:
+def get_unreal_connection() -> Optional["UnrealConnection"]:
+    """Return the global UnrealConnection, creating it on first call.
+
+    All tool functions call unreal.send_command(…).  That method now routes
+    through send_command_with_health_check so the GameThread health-check
+    logic is transparent to the 321 tool implementations.
+    """
     global _unreal_connection
     try:
         if _unreal_connection is None:
@@ -224,6 +512,17 @@ def get_unreal_connection() -> Optional[UnrealConnection]:
             if not _unreal_connection.connect():
                 logger.warning("Could not connect to Unreal Engine")
                 _unreal_connection = None
+        if _unreal_connection is not None:
+            # Redirect .send_command → .send_command_with_health_check so all
+            # 321 tool functions automatically benefit from the GameThread
+            # backoff logic without requiring changes to 21 individual files.
+            # send_command_with_health_check calls _send_command_raw internally
+            # so there is no infinite recursion.
+            import types as _types
+            _unreal_connection.send_command = _types.MethodType(  # type: ignore[method-assign]
+                lambda self, cmd, params=None: self.send_command_with_health_check(cmd, params),
+                _unreal_connection,
+            )
         return _unreal_connection
     except Exception as e:
         logger.error(f"Error getting Unreal connection: {e}")
@@ -238,6 +537,23 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         _unreal_connection = get_unreal_connection()
         if _unreal_connection:
             logger.info("Connected to Unreal Engine on startup")
+            # ── Python interpreter warm-up ────────────────────────────────
+            # UE5's Python plugin cold-starts on the FIRST ExecPythonCommandEx
+            # call per session — it loads all 'unreal' module stubs, which can
+            # take 30-60 s and causes the very first exec_python / get_actors_in_level
+            # tool call to appear hung.  Fire a trivial no-op now so the cost is
+            # paid at startup (invisible to the user) rather than on the first
+            # tool call (visible as a 60 s timeout in the test report).
+            try:
+                logger.info("Warming up UE5 Python interpreter (first-call latency reduction)...")
+                warmup_result = _unreal_connection._send_command_raw(
+                    "exec_python",
+                    {"code": "pass", "mode": "execute_statement"}
+                )
+                logger.info(f"Python warm-up complete: {str(warmup_result)[:100]}")
+            except Exception as warmup_err:
+                # Non-fatal — warm-up failure just means the first real call pays the cost
+                logger.warning(f"Python warm-up skipped (UE5 not ready yet): {warmup_err}")
         else:
             logger.warning("Could not connect to Unreal Engine on startup - will retry on first tool call")
     except Exception as e:
@@ -778,41 +1094,51 @@ Environment variable equivalents:
         security_settings = TransportSecuritySettings(enable_dns_rebinding_protection=False)
         sse = SseServerTransport("/messages/", security_settings=security_settings)
 
-        # handle_sse must be an ASGI app (scope, receive, send) not a request handler,
-        # so that the raw send callable is passed directly to connect_sse.
-        # Wrapping it as a Starlette Request endpoint causes 'NoneType not callable'
-        # because request_response() tries to call the None return value as a Response.
-        async def handle_sse(scope, receive, send):
-            try:
-                async with sse.connect_sse(scope, receive, send) as streams:
-                    await mcp._mcp_server.run(
-                        streams[0],
-                        streams[1],
-                        mcp._mcp_server.create_initialization_options(),
-                    )
-            except Exception as exc:
-                import anyio
-                # ClosedResourceError = client disconnected cleanly; suppress silently.
-                if isinstance(exc, anyio.ClosedResourceError):
-                    logger.debug("SSE client disconnected")
-                else:
-                    logger.error(f"SSE handler error: {exc}")
+        # ── SSE endpoint design note ─────────────────────────────────────────
+        # Starlette's Route() inspects whether the endpoint is a function or a
+        # class.  When it's a function, Starlette wraps it with request_response()
+        # which *sends an HTTP response* when the function returns.  For SSE that
+        # is catastrophic: after the first tool-call exchange the function returns,
+        # request_response() sends a bare HTTP 200 response body, and the client
+        # sees "peer closed connection without sending complete message body
+        # (incomplete chunked read)".  The stream is dead after exactly one response.
+        #
+        # Fix: make the endpoint a *class* (ASGI app).  Starlette's Route uses
+        #   self.app = endpoint          ← for classes (no request_response wrap)
+        #   self.app = request_response(endpoint)  ← for functions (WRONG for SSE)
+        # A class-based ASGI app receives (scope, receive, send) directly, so the
+        # EventSourceResponse inside connect_sse owns the entire HTTP response
+        # lifecycle and the stream stays open for the full MCP session.
+        # ─────────────────────────────────────────────────────────────────────
+        class SseEndpoint:
+            """Class-based ASGI endpoint for /sse.
 
-        # Starlette Route treats async functions as request handlers (Response return)
-        # unless we provide methods=None and route them as ASGI apps.
-        # The cleanest approach: wrap in a tiny request-style function that
-        # passes raw ASGI primitives through, matching what FastMCP itself does.
-        async def sse_endpoint(request: Request):
-            """Bridge from Starlette request to raw ASGI for connect_sse."""
-            await handle_sse(request.scope, request.receive, request._send)
-            # Return a dummy Response so Starlette's request_response() wrapper
-            # doesn't try to call None as a callable.
-            from starlette.responses import Response as StarletteResponse
-            return StarletteResponse(status_code=200)
+            Starlette detects this as a class and skips request_response() wrapping,
+            so the EventSourceResponse inside connect_sse controls the connection
+            lifetime instead of being prematurely closed by a wrapping Response.
+            """
+
+            async def __call__(self, scope, receive, send):
+                if scope["type"] != "http":
+                    return
+                try:
+                    async with sse.connect_sse(scope, receive, send) as streams:
+                        await mcp._mcp_server.run(
+                            streams[0],
+                            streams[1],
+                            mcp._mcp_server.create_initialization_options(),
+                        )
+                except Exception as exc:
+                    import anyio
+                    # ClosedResourceError = client disconnected cleanly; suppress.
+                    if isinstance(exc, anyio.ClosedResourceError):
+                        logger.debug("SSE client disconnected cleanly")
+                    else:
+                        logger.error(f"SSE handler error: {exc}")
 
         starlette_app = Starlette(
             routes=[
-                Route("/sse", endpoint=sse_endpoint, methods=["GET"]),
+                Route("/sse", endpoint=SseEndpoint(), methods=["GET"]),
                 Mount("/messages/", app=sse.handle_post_message),
             ]
         )

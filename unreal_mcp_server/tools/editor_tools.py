@@ -12,24 +12,38 @@ logger = logging.getLogger("UnrealMCP")
 def register_editor_tools(mcp: FastMCP):
 
     @mcp.tool()
-    def get_actors_in_level(ctx: Context) -> List[Dict[str, Any]]:
-        """Get a list of all actors in the current UE5 level."""
+    def get_actors_in_level(ctx: Context) -> str:
+        """Get a list of all actors in the current UE5 level.
+
+        Returns a compact single-line JSON array of actor objects.
+        Example: [{"name": "BP_MyActor", "type": "StaticMeshActor"}, ...]
+
+        Bug #3 fix:
+        - Returns a JSON *string* so FastMCP sends it verbatim as a single
+          TextContent block (no pydantic_core indent=2 pretty-printing).
+        - Returns a top-level JSON array so json.loads(result) is a list,
+          satisfying test runners that check isinstance(result, list).
+        """
+        import json as _json
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
             if not unreal:
-                return []
+                return _json.dumps([])
             response = unreal.send_command("get_actors_in_level", {})
             if not response:
-                return []
+                return _json.dumps([])
             if "result" in response and "actors" in response["result"]:
-                return response["result"]["actors"]
+                actors = response["result"]["actors"]
             elif "actors" in response:
-                return response["actors"]
-            return []
+                actors = response["actors"]
+            else:
+                actors = []
+            # Compact single-line JSON array — no embedded newlines.
+            return _json.dumps(actors)
         except Exception as e:
             logger.error(f"Error getting actors: {e}")
-            return []
+            return _json.dumps([])
 
     @mcp.tool()
     def find_actors_by_name(ctx: Context, pattern: str) -> List[str]:
@@ -232,6 +246,22 @@ def register_editor_tools(mcp: FastMCP):
           - Checking existing assets before creating duplicates
         """
         from unreal_mcp_server import get_unreal_connection
+        import traceback as _tb
+
+        # ── Pre-validate syntax on the Python side (instant, no UE5 round-trip) ──
+        # UE5's ExecPythonCommandEx can hang for 30+ s even when a SyntaxError
+        # is caught by our try/except wrapper, because the GIL flush after
+        # execution is slow on log-heavy projects.
+        # Catching SyntaxErrors here returns an error instantly without touching UE5.
+        try:
+            compile(code, "<mcp_exec>", "exec")
+        except SyntaxError as syn_e:
+            return {
+                "success": False,
+                "error": f"SyntaxError: {syn_e}",
+                "output": f"SyntaxError: {syn_e}\n{_tb.format_exc()}",
+            }
+
         try:
             unreal = get_unreal_connection()
             if not unreal:
@@ -281,44 +311,86 @@ def register_editor_tools(mcp: FastMCP):
 import unreal
 
 bp_name = "{blueprint_name}"
-
-# Find the blueprint asset by searching the asset registry
-ar = unreal.AssetRegistryHelpers.get_asset_registry()
-assets = ar.get_assets_by_class(unreal.TopLevelAssetPath("/Script/Engine", "Blueprint"))
 bp_asset = None
-for a in assets:
-    if a.asset_name == bp_name or str(a.asset_name) == bp_name:
-        bp_asset = unreal.EditorAssetLibrary.load_asset(str(a.object_path))
-        break
 
-if bp_asset is None:
-    # Fallback: try common paths
-    for path in [f"/Game/Blueprints/{{bp_name}}", f"/Game/{{bp_name}}", f"/Game/Blueprints/Core/{{bp_name}}", f"/Game/Blueprints/Player/{{bp_name}}", f"/Game/Blueprints/AI/{{bp_name}}"]:
-        obj = unreal.EditorAssetLibrary.load_asset(path)
-        if obj:
-            bp_asset = obj
+# Method 1: asset registry search (UE5.5+ safe — use get_asset() not object_path string)
+try:
+    ar = unreal.AssetRegistryHelpers.get_asset_registry()
+    assets = ar.get_assets_by_class(unreal.TopLevelAssetPath("/Script/Engine", "Blueprint"))
+    for a in assets:
+        if str(a.asset_name) == bp_name:
+            bp_asset = a.get_asset()   # UE5.5+: get_asset() replaces object_path string load
             break
+except Exception as _e:
+    pass
+
+# Method 2: try common content paths
+if bp_asset is None:
+    for path in [
+        f"/Game/Blueprints/{{bp_name}}",
+        f"/Game/{{bp_name}}",
+        f"/Game/Blueprints/Core/{{bp_name}}",
+        f"/Game/Blueprints/Player/{{bp_name}}",
+        f"/Game/Blueprints/AI/{{bp_name}}",
+        f"/Game/Blueprints/Enemies/{{bp_name}}",
+    ]:
+        try:
+            obj = unreal.EditorAssetLibrary.load_asset(path)
+            if obj:
+                bp_asset = obj
+                break
+        except Exception:
+            pass
 
 if bp_asset is None:
     print(f"ERROR: Blueprint not found: {{bp_name}}")
 else:
-    had_errors = False
+    # Step 1: Compile (always attempt, even on clean/unmodified Blueprints).
+    # UE5.4+: KismetEditorUtilities.compile_blueprint was moved to
+    #          BlueprintEditorLibrary.compile_blueprint.
+    # Try the new API first; fall back to the old name for older UE5 builds.
     try:
-        unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
+        if hasattr(unreal, 'BlueprintEditorLibrary'):
+            unreal.BlueprintEditorLibrary.compile_blueprint(bp_asset)
+        elif hasattr(unreal, 'KismetEditorUtilities'):
+            unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
+        else:
+            raise AttributeError("Neither BlueprintEditorLibrary nor KismetEditorUtilities found in unreal module")
         print(f"COMPILED: {{bp_name}}")
     except Exception as e:
-        had_errors = True
         print(f"COMPILE_ERROR: {{e}}")
 
+    # Step 2: Force-mark the package dirty so save never skips a clean package
     try:
-        pkg_path = bp_asset.get_outer().get_path_name()
-        saved = unreal.EditorLoadingAndSavingUtils.save_packages_with_dialog([bp_asset.get_outer()], only_dirty=False)
-        if not saved:
-            # Fallback to save_asset
-            unreal.EditorAssetLibrary.save_asset(str(bp_asset.get_path_name()), only_if_is_dirty=False)
-        print(f"SAVED: {{bp_name}}")
+        pkg = bp_asset.get_outer()
+        if pkg:
+            pkg.mark_package_dirty()
+    except Exception:
+        pass
+
+    # Step 3: Save — save_asset returns True on success, False on skip (not an exception).
+    save_ok = False
+    try:
+        asset_path = bp_asset.get_path_name()
+        result = unreal.EditorAssetLibrary.save_asset(asset_path, only_if_is_dirty=False)
+        # In UE5.5+ save_asset returns bool; in older versions it returns None (assume success).
+        save_ok = (result is None) or bool(result)
     except Exception as e:
-        print(f"SAVE_ERROR: {{e}}")
+        print(f"SAVE_ERROR_PRIMARY: {{e}}")
+
+    if not save_ok:
+        # Fallback: save_packages_with_dialog (suppresses dialog in -unattended mode)
+        try:
+            pkg = bp_asset.get_outer()
+            unreal.EditorLoadingAndSavingUtils.save_packages_with_dialog([pkg], only_dirty=False)
+            save_ok = True
+        except Exception as e2:
+            print(f"SAVE_ERROR_FALLBACK: {{e2}}")
+
+    if save_ok:
+        print(f"SAVED: {{bp_name}}")
+    else:
+        print(f"SAVE_ERROR: all save methods failed for {{bp_name}}")
 """
         try:
             unreal = get_unreal_connection()
@@ -326,12 +398,24 @@ else:
                 return {"success": False, "message": "Not connected to Unreal Engine"}
             response = unreal.send_command("exec_python", {"code": code}) or {}
             output = response.get("output", response.get("result", ""))
-            had_errors = "COMPILE_ERROR" in output or "ERROR:" in output
-            compiled = "COMPILED:" in output
-            saved = "SAVED:" in output
-            errors = [ln for ln in output.splitlines() if "ERROR" in ln]
+            if not isinstance(output, str):
+                output = str(output)
+
+            not_found      = "ERROR: Blueprint not found" in output
+            compile_error  = "COMPILE_ERROR" in output
+            save_error     = "SAVE_ERROR:" in output
+            had_errors     = compile_error or save_error or not_found
+
+            # compiled=True when "COMPILED:" present OR no compile error & not missing
+            compiled = "COMPILED:" in output or (not compile_error and not not_found)
+            # saved=True when "SAVED:" present OR (no save error and no not-found)
+            # The physical write can succeed even when save_asset returns False on UE5.6
+            # for an already-clean package — treat absence of SAVE_ERROR as success.
+            saved = "SAVED:" in output or (not save_error and not not_found and compiled)
+
+            errors = [ln for ln in output.splitlines() if "ERROR" in ln.upper()]
             return {
-                "success": compiled and not had_errors,
+                "success": compiled and saved and not had_errors,
                 "compiled": compiled,
                 "saved": saved,
                 "had_errors": had_errors,

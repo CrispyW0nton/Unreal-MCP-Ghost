@@ -90,9 +90,29 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
     }
 
-    // Check if blueprint already exists
     FString PackagePath = TEXT("/Game/Blueprints/");
     FString AssetName = BlueprintName;
+
+    // Fast O(1) duplicate check — try in-memory object table first before
+    // calling DoesAssetExist() which can scan the entire asset registry (slow
+    // on 8k-asset projects, causes K5 "duplicate create_blueprint" to timeout).
+    {
+        const FString FullPath = PackagePath + AssetName + TEXT(".") + AssetName;
+        UBlueprint* Existing = FindObject<UBlueprint>(nullptr, *FullPath);
+        if (!Existing)
+        {
+            // Also check the positive cache (populated by earlier FindBlueprint calls)
+            Existing = FUnrealMCPCommonUtils::FindBlueprint(AssetName);
+        }
+        if (Existing)
+        {
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Blueprint already exists: %s"), *BlueprintName));
+        }
+    }
+
+    // Fallback: ask the asset registry (slightly slower, but catches on-disk BPs
+    // that have not been loaded into memory yet).
     if (UEditorAssetLibrary::DoesAssetExist(PackagePath + AssetName))
     {
         return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint already exists: %s"), *BlueprintName));
@@ -166,6 +186,11 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
 
         // Mark the package dirty
         Package->MarkPackageDirty();
+
+        // Clear the negative-miss cache for this name so subsequent calls to
+        // FindBlueprint (e.g. get_blueprint_graphs right after create_blueprint)
+        // don't see a stale "not found" entry from a previous failed lookup.
+        FUnrealMCPCommonUtils::InvalidateBlueprintMissCache(AssetName);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
         ResultObj->SetStringField(TEXT("name"), AssetName);
@@ -343,13 +368,22 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
         // Add to root if no parent specified
         Blueprint->SimpleConstructionScript->AddNode(NewNode);
 
-        // Mark blueprint modified — do NOT call CompileBlueprint or SaveAsset
-        // from inside an AsyncTask game-thread lambda in UE5.6.  Both paths
-        // crash with EXCEPTION_ACCESS_VIOLATION at 0x00007ffe447a0208 through
-        // the UnrealEditor_MassEntityEditor observer.  MarkBlueprintAsModified
-        // is sufficient; the editor will recompile on next save / open.
-        Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
-        UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - Marked '%s' modified (no inline compile — safe)"), *BlueprintName);
+        // Mark blueprint structurally modified WITHOUT triggering a full
+        // AssetRegistry / ContentBrowser notification (which would call
+        // Modify() → MarkPackageDirty() → broadcast to all AR listeners,
+        // blocking the GameThread for 30-60 s on an 8 k-asset project).
+        // Guard GeneratedClass (same as HandleCompileBlueprint) to prevent
+        // EXCEPTION_ACCESS_VIOLATION on first-session access.
+        if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+        {
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+            UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - MarkBlueprintAsStructurallyModified '%s'"), *BlueprintName);
+        }
+        else
+        {
+            Blueprint->Modify();
+            UE_LOG(LogMCP, Warning, TEXT("[MCP] AddComponent - GeneratedClass not ready for '%s', using Modify() fallback"), *BlueprintName);
+        }
 
         TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
         ResultObj->SetStringField(TEXT("component_name"), ComponentName);
@@ -602,7 +636,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             {
                 // Mark the blueprint as modified
                 UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Successfully set SpringArm property %s"), *PropertyName);
-                Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+                FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
                 TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
                 ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -847,7 +881,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             // Do NOT call ConditionalPostLoad() or PostEditChange() on CDO-owned
             // components – those calls can trigger internal re-registration and GC
             // passes that leave our raw Blueprint pointer dangling.
-            Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
             TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
             ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -936,7 +970,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPhysicsProperties(
     }
 
     // Mark the blueprint as modified
-    Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -983,8 +1017,33 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
     UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - Found '%s', status=%d. Marking modified (no inline compile)."),
         *BlueprintName, (int32)Blueprint->Status.GetValue());
 
-    // SAFE: only mark modified — never call CompileBlueprint / SaveAsset from here.
-    Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    // -----------------------------------------------------------------------
+    // DEFINITIVE FIX v4 — guard against first-call EXCEPTION_ACCESS_VIOLATION
+    //
+    // MarkBlueprintAsStructurallyModified internally dereferences
+    // Blueprint->GeneratedClass to invalidate the class's property chain.
+    // On the FIRST call of a fresh session, GeneratedClass may be null (BP not
+    // yet fully post-loaded) or in a transient GC state, causing a hardware
+    // SEH access violation that crashes the GameThread and aborts the TCP
+    // socket (Python sees WinError 10053 / WSAECONNABORTED).
+    //
+    // Safe strategy:
+    //   - If GeneratedClass is valid → call MarkBlueprintAsStructurallyModified
+    //     (which also calls Blueprint->Modify() internally).
+    //   - If GeneratedClass is null/invalid → call Blueprint->Modify() only,
+    //     which just marks the UObject dirty for Undo/save purposes and cannot
+    //     crash.  The editor will recompile normally on the next user save.
+    // -----------------------------------------------------------------------
+    if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+    {
+        UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - GeneratedClass valid, calling MarkBlueprintAsStructurallyModified"));
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+    }
+    else
+    {
+        UE_LOG(LogMCP, Warning, TEXT("[MCP] CompileBlueprint - GeneratedClass null/invalid for '%s', falling back to Modify() only"), *BlueprintName);
+        Blueprint->Modify();
+    }
 
     UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - SUCCESS (marked modified, deferred compile) for '%s'"), *BlueprintName);
 
@@ -1096,7 +1155,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintProperty(
         if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, PropertyName, JsonValue, ErrorMessage))
         {
             // Mark the blueprint as modified
-            Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
             TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
             ResultObj->SetStringField(TEXT("property"), PropertyName);
@@ -1178,7 +1237,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetStaticMeshProperti
     }
 
     // Mark the blueprint as modified
-    Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -1318,7 +1377,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
     // Mark the blueprint as modified if any properties were set
     if (bAnyPropertiesSet)
     {
-        Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
     }
     else if (ResultsObj->Values.Num() == 0)
     {
@@ -1399,7 +1458,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintAIControl
     }
 
     DefaultPawn->AIControllerClass = ControllerClass;
-    Blueprint->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
 
     UE_LOG(LogTemp, Display, TEXT("Set AIControllerClass on %s to %s"),
            *BlueprintName, *ControllerClass->GetName());
