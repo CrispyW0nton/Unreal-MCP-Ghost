@@ -878,9 +878,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetNodePinValue(
         bool BoolVal;
         double NumVal;
         if (Params->TryGetBoolField(TEXT("value"), BoolVal))
+        {
             Value = BoolVal ? TEXT("true") : TEXT("false");
+        }
         else if (Params->TryGetNumberField(TEXT("value"), NumVal))
+        {
             Value = FString::SanitizeFloat(NumVal);
+        }
         else
             return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'value'"));
     }
@@ -1293,9 +1297,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
             UEdGraphPin* Pin = FUnrealMCPCommonUtils::FindPin(FuncNode, KV.Key);
             if (!Pin) { UE_LOG(LogMCPNode, Warning, TEXT("  pin '%s' not found on node"), *KV.Key); continue; }
             FString StrVal;
-            if (KV.Value->Type == EJson::String)  StrVal = KV.Value->AsString();
-            else if (KV.Value->Type == EJson::Number) StrVal = FString::SanitizeFloat(KV.Value->AsNumber());
-            else if (KV.Value->Type == EJson::Boolean) StrVal = KV.Value->AsBool() ? TEXT("true") : TEXT("false");
+            if (KV.Value->Type == EJson::String)       { StrVal = KV.Value->AsString(); }
+            else if (KV.Value->Type == EJson::Number)  { StrVal = FString::SanitizeFloat(KV.Value->AsNumber()); }
+            else if (KV.Value->Type == EJson::Boolean) { StrVal = KV.Value->AsBool() ? TEXT("true") : TEXT("false"); }
             ApplyPinValue(Graph, Pin, StrVal);
         }
     }
@@ -1410,12 +1414,18 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
     FEdGraphPinType PinType;
     FString VarTypeLower = VarType.ToLower();
 
-    if      (VarTypeLower == TEXT("boolean") || VarTypeLower == TEXT("bool"))
+    if (VarTypeLower == TEXT("boolean") || VarTypeLower == TEXT("bool"))
+    {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+    }
     else if (VarTypeLower == TEXT("integer") || VarTypeLower == TEXT("int") || VarTypeLower == TEXT("int32"))
+    {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+    }
     else if (VarTypeLower == TEXT("integer64") || VarTypeLower == TEXT("int64"))
+    {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Int64;
+    }
     else if (VarTypeLower == TEXT("float"))
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Real;
@@ -1427,11 +1437,17 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
         PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
     }
     else if (VarTypeLower == TEXT("string"))
+    {
         PinType.PinCategory = UEdGraphSchema_K2::PC_String;
+    }
     else if (VarTypeLower == TEXT("name"))
+    {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+    }
     else if (VarTypeLower == TEXT("text"))
+    {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+    }
     else if (VarTypeLower == TEXT("vector"))
     {
         PinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
@@ -3077,9 +3093,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
     {
         FEdGraphPinType PinType;
         FString T = TypeStr.ToLower();
-        if      (T == TEXT("boolean") || T == TEXT("bool"))    PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
-        else if (T == TEXT("integer") || T == TEXT("int"))     PinType.PinCategory = UEdGraphSchema_K2::PC_Int;
-        else if (T == TEXT("integer64")|| T == TEXT("int64"))  PinType.PinCategory = UEdGraphSchema_K2::PC_Int64;
+        if (T == TEXT("boolean") || T == TEXT("bool"))         { PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean; }
+        else if (T == TEXT("integer") || T == TEXT("int"))     { PinType.PinCategory = UEdGraphSchema_K2::PC_Int; }
+        else if (T == TEXT("integer64") || T == TEXT("int64")) { PinType.PinCategory = UEdGraphSchema_K2::PC_Int64; }
         else if (T == TEXT("float"))
         {
             PinType.PinCategory    = UEdGraphSchema_K2::PC_Real;
@@ -3090,9 +3106,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
             PinType.PinCategory    = UEdGraphSchema_K2::PC_Real;
             PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
         }
-        else if (T == TEXT("string"))  PinType.PinCategory = UEdGraphSchema_K2::PC_String;
-        else if (T == TEXT("name"))    PinType.PinCategory = UEdGraphSchema_K2::PC_Name;
-        else if (T == TEXT("text"))    PinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+        else if (T == TEXT("string"))  { PinType.PinCategory = UEdGraphSchema_K2::PC_String; }
+        else if (T == TEXT("name"))    { PinType.PinCategory = UEdGraphSchema_K2::PC_Name; }
+        else if (T == TEXT("text"))    { PinType.PinCategory = UEdGraphSchema_K2::PC_Text; }
         else if (T == TEXT("vector"))
         {
             PinType.PinCategory           = UEdGraphSchema_K2::PC_Struct;

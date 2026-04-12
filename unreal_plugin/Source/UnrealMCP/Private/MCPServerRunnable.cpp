@@ -86,9 +86,13 @@ static bool SendAndClose(TSharedPtr<FSocket>& ClientSock, const FString& Respons
         (const uint8*)Utf8Response.Get(), Utf8Response.Length(), BytesSent);
 
     if (bOk)
+    {
         UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Response sent (%d bytes)"), BytesSent);
+    }
     else
+    {
         UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Send() failed — client likely disconnected before response"));
+    }
 
     // Always close after one command regardless of Send() success.
     // This prevents stale handles from poisoning future commands.

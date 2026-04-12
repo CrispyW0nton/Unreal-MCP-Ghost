@@ -2928,10 +2928,14 @@ static TSharedPtr<FJsonObject> AddFunctionNodeHelper(
 
     UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
     if (Func && OwningClass)
+    {
         Node->FunctionReference.SetExternalMember(FName(*FunctionName), OwningClass);
+    }
     else
+    {
         Node->FunctionReference.SetExternalMember(FName(*FunctionName),
-            UObject::StaticClass()); // fallback
+            UObject::StaticClass());
+    } // fallback
 
     Node->NodePosX = Position.X;
     Node->NodePosY = Position.Y;
