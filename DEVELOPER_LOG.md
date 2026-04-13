@@ -302,3 +302,43 @@ setup_full_retargeting_pipeline(
 - **Batch export API:** UE5 exposes retarget export through multiple APIs
   (`IKRetargetEditorController`, `IKRetargetingUtils`, `AssetTools`). The tools try all
   three in order for maximum compatibility across UE 5.4–5.6.
+
+---
+
+## BUG-041 — BP_Smuggler Dialogue System: SmuglerRef Never Set + Chain Dead-Ends
+
+**Date:** 2026-04-13  
+**Status:** ✅ **FIXED**  
+**Files Changed:** `BP_Smuggler` (EventGraph), `BP_ThirdPersonCharacter` (EventGraph — verified only)
+
+### Symptoms
+- Player enters interaction zone, no prompt text appears
+- Pressing E (IA_Interact) does nothing — dialogue never fires
+- Blueprint chain audits showed `SmuglerRef` on `BP_ThirdPersonCharacter` was always `null`
+
+### Root Causes (identified via `get_blueprint_nodes` audit)
+
+1. **SmuglerRef never populated** — `K2Node_VariableSet_7` (cross-BP SET targeting character's SmuglerRef variable) had its **value pin** (`SmuglerRef`) unconnected. The SET node correctly targeted the character (`self` → Cast_0 output) but the VALUE pin was empty = always set to null, so `DynamicCast_2` in BP_ThirdPersonCharacter always failed and Interact was never called.
+
+2. **VariableSet_0 — orphan node** — An unnamed `K2Node_VariableSet_0` with no connections existed as a dead node (from earlier incomplete fix attempt).
+
+### Fix Applied
+
+- Used `add_blueprint_self_reference` MCP command to create `K2Node_Self_4` in BP_Smuggler EventGraph (position `[200, -50]`)
+- Used `connect_blueprint_nodes` to link `K2Node_Self_4.self → K2Node_VariableSet_7.SmuglerRef`
+- Result: On BeginOverlap, the chain now correctly runs:
+  - `ComponentBoundEvent_0` → `DynamicCast_0` (cast OtherActor to ThirdPersonCharacter) → `VariableSet_7.self=character, .SmuglerRef=BP_Smuggler_self` → `VariableSet_3(bCanFIre=true)` → `CallFunction_5(SetVisibility PromptText, true)`
+
+### Verified Chains After Fix
+
+| Chain | Status |
+|-------|--------|
+| BeginOverlap: CBE_0 → Cast → SetSmuglerRef(Self) → SetbCanFIre=true → ShowPrompt | ✅ |
+| EndOverlap: CBE_1 → Cast → ClearSmuglerRef(null) → SetbCanFIre=false → HidePrompt → HideDialogue | ✅ |
+| E-key: IA_Interact.Started → Cast SmuglerRef → Call Interact | ✅ |
+| Interact event: IfThenElse(bPlayerInRange) → HidePrompt → ShowDialogue → SetText → Progression | ✅ |
+
+### Book Reference
+- *Blueprints Visual Scripting for UE5* p.101: "Drag from Other Actor → Cast To ThirdPersonCharacter → SET [NPC_Ref_Variable] — if code is in the NPC, use Self node to pass the NPC's reference"
+- Confirmed: Self node in BP_Smuggler provides the smuggler actor reference to store in the character's SmuglerRef variable
+
