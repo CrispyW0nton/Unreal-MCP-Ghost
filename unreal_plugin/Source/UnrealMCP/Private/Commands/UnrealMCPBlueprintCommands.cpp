@@ -368,22 +368,19 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
         // Add to root if no parent specified
         Blueprint->SimpleConstructionScript->AddNode(NewNode);
 
-        // Mark blueprint structurally modified WITHOUT triggering a full
-        // AssetRegistry / ContentBrowser notification (which would call
-        // Modify() → MarkPackageDirty() → broadcast to all AR listeners,
-        // blocking the GameThread for 30-60 s on an 8 k-asset project).
-        // Guard GeneratedClass (same as HandleCompileBlueprint) to prevent
-        // EXCEPTION_ACCESS_VIOLATION on first-session access.
-        if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
-        {
-            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
-            UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - MarkBlueprintAsStructurallyModified '%s'"), *BlueprintName);
-        }
-        else
-        {
-            Blueprint->Modify();
-            UE_LOG(LogMCP, Warning, TEXT("[MCP] AddComponent - GeneratedClass not ready for '%s', using Modify() fallback"), *BlueprintName);
-        }
+        // ── Mark dirty for save — use Modify() only, NOT MarkBlueprintAsStructurallyModified ──
+        // MarkBlueprintAsStructurallyModified broadcasts to ALL AssetRegistry
+        // and ContentBrowser listeners synchronously on the GameThread.
+        // On an 8 k-asset project this blocks 30-60 s.
+        //
+        // AddNode() already called PostEditChange() on the SCS internally,
+        // which marks the SCS's package dirty.  We only need Blueprint->Modify()
+        // here to mark the Blueprint asset itself dirty so the user can Ctrl+S.
+        // The Blueprint will be fully recompiled on the next explicit compile or
+        // editor session restart — no structural notification required.
+        Blueprint->Modify();
+        UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - added '%s' (%s) to '%s', marked dirty"),
+            *ComponentName, *ComponentType, *BlueprintName);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
         ResultObj->SetStringField(TEXT("component_name"), ComponentName);

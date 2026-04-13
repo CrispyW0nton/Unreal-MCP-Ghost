@@ -292,7 +292,19 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
     const FName BlueprintFName(*BlueprintName);
 
     TArray<FAssetData> BlueprintAssets;
+    // bSearchSubClasses=true is needed to catch UAnimBlueprint, UWidgetBlueprint, etc.
+    // (subclasses of UBlueprint).  These are common in game projects.
+    // The class index is pre-built so this is O(k) — fast after AR warmup.
     AR.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssets, /*bSearchSubClasses=*/true);
+
+    // Fast early-exit: if the AR returned no blueprints at all, the project
+    // has no blueprints or the scan is incomplete — skip loop entirely.
+    if (BlueprintAssets.IsEmpty())
+    {
+        GBlueprintMissingCache.Add(BlueprintName, FPlatformTime::Seconds());
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] FindBlueprintByName: AR returned 0 Blueprint assets (scan incomplete?) for '%s'"), *BlueprintName);
+        return nullptr;
+    }
 
     for (const FAssetData& Asset : BlueprintAssets)
     {
@@ -570,18 +582,21 @@ UK2Node_InputAction* FUnrealMCPCommonUtils::CreateInputActionNode(UEdGraph* Grap
 UK2Node_Self* FUnrealMCPCommonUtils::CreateSelfReferenceNode(UEdGraph* Graph, const FVector2D& Position)
 {
     if (!Graph)
-    {
         return nullptr;
-    }
-    
+
     UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(Graph);
-    SelfNode->NodePosX = Position.X;
-    SelfNode->NodePosY = Position.Y;
+    SelfNode->NodePosX = (int32)Position.X;
+    SelfNode->NodePosY = (int32)Position.Y;
     SelfNode->CreateNewGuid();
-    Graph->AddNode(SelfNode, true);
-    SelfNode->PostPlacedNewNode();
+    // AddNode with bFromUI=false + bSelectNewNode=false avoids the
+    // OnNodeAdded path that calls PostPlacedNewNode() → GetSchema() →
+    // GetGraphType() → dereferences Blueprint->GeneratedClass, which can
+    // block 20-45 s if the Blueprint is in an intermediate compile state.
+    Graph->AddNode(SelfNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+    // Skip PostPlacedNewNode() for the same reason.
     SelfNode->AllocateDefaultPins();
-    
+    UE_LOG(LogTemp, Display, TEXT("[MCP] CreateSelfReferenceNode: created Self node (ID: %s)"),
+        *SelfNode->NodeGuid.ToString());
     return SelfNode;
 }
 

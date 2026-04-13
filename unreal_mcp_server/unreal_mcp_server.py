@@ -176,6 +176,16 @@ class UnrealConnection:
         # IMPORTANT: Do NOT early-return on a successful json.loads() inside the
         # recv loop.  Read until EOF (recv returns b'') so large multi-chunk
         # responses are never truncated.
+
+        # Guard: sock may have been closed by UE5 plugin restart between
+        # connect() and this call (WinError 10038 / WSAENOTSOCK).
+        if sock is None:
+            raise OSError("Socket is None in receive_full_response — connection was lost")
+        try:
+            sock.fileno()  # raises OSError(10038) if the handle is already closed
+        except OSError as _e:
+            raise OSError(f"Socket handle is invalid (WinError 10038): {_e}") from _e
+
         chunks = []
         sock.settimeout(timeout)
         try:
@@ -354,21 +364,34 @@ class UnrealConnection:
             # the 10053 error code and retry ONCE after a 2 s delay to let UE5
             # recover.  The second call always succeeds because the AR scan has
             # now completed and the Blueprint's GeneratedClass is fully loaded.
-            import errno as _errno
             err_str = str(e)
-            is_connection_abort = (
-                "10053" in err_str           # Windows WSAECONNABORTED
-                or "ECONNABORTED" in err_str  # POSIX alias
+            err_type = type(e).__name__
+            # ── Classify socket errors that warrant a clean reconnect + retry ──
+            # WinError 10038 — WSAENOTSOCK: operation on a handle that was already
+            #   closed / invalidated (e.g. UE5 plugin restarted its listener while
+            #   this thread was in receive_full_response).
+            # WinError 10053 — WSAECONNABORTED: UE5 plugin crashed mid-send.
+            # WinError 10054 — WSAECONNRESET: TCP RST from UE5 side.
+            # ECONNABORTED / ECONNRESET: POSIX equivalents.
+            is_retryable_socket_error = (
+                "10038" in err_str           # Windows WSAENOTSOCK (non-socket handle)
+                or "10053" in err_str        # Windows WSAECONNABORTED
+                or "10054" in err_str        # Windows WSAECONNRESET
+                or "ECONNABORTED" in err_str
+                or "ECONNRESET"  in err_str
+                or "ENOTSOCK"    in err_str
                 or "connection aborted" in err_str.lower()
-                or "connection reset" in err_str.lower()
-                or "10054" in err_str        # Windows WSAECONNRESET (also possible)
-                or "ConnectionResetError" in type(e).__name__
-                or "ConnectionAbortedError" in type(e).__name__
+                or "connection reset"   in err_str.lower()
+                or "non-socket"         in err_str.lower()
+                or "not a socket"       in err_str.lower()
+                or "ConnectionResetError"   in err_type
+                or "ConnectionAbortedError" in err_type
+                or "OSError"                in err_type  # catch-all for WinError socket codes
             )
-            if is_connection_abort:
+            if is_retryable_socket_error:
                 logger.warning(
-                    f"Command '{command}' got connection-aborted (WinError 10053 / UE5 first-call crash). "
-                    f"Retrying once in 2 s..."
+                    f"Command '{command}' got socket error ({err_str[:80]}). "
+                    f"Reconnecting and retrying once in 2 s..."
                 )
                 import time as _time_mod
                 _time_mod.sleep(2.0)

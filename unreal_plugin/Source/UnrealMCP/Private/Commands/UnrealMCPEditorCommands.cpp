@@ -728,16 +728,20 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     //   then call compile() + exec() inside the try/except.
     //   compile() raises SyntaxError as a regular exception, so it IS caught.
     //
-    // Template (Python):
+    // Template (Python) — error stored silently in builtins._mcp_last_error:
     //   import traceback as _mcp_tb
+    //   import builtins as _mcp_bi
+    //   _mcp_bi._mcp_last_error = ''
     //   _mcp_src = <repr(Code)>
     //   try:
     //       exec(compile(_mcp_src, '<mcp_exec>', 'exec'))
     //   except Exception:
-    //       print('[MCP_ERROR] ' + _mcp_tb.format_exc())
+    //       _mcp_bi._mcp_last_error = '__MCP_ERR__' + _mcp_tb.format_exc()
     //
-    // The [MCP_ERROR] tag is detected by the C++ log scanner below and
-    // surfaced as success=false + error field in the JSON response.
+    // After ExecPythonCommandEx returns, C++ reads builtins._mcp_last_error
+    // via a fast EvaluateStatement call.  If it starts with '__MCP_ERR__',
+    // success=false with the traceback as error detail.
+    // This avoids the 20-30 s GLog flush that print() or raise would cause.
 
     FString WrappedCode;
     if (ExecMode == EPythonCommandExecutionMode::EvaluateStatement)
@@ -759,20 +763,35 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         Escaped.ReplaceInline(TEXT("\n"),   TEXT("\\n"), ESearchCase::CaseSensitive);
         Escaped.ReplaceInline(TEXT("\r"),   TEXT("\\n"), ESearchCase::CaseSensitive);
 
-        // Use raise SystemExit() instead of print() for the error path.
-        // print() routes through UE5's GLog which can flush slowly on large
-        // log-heavy projects (20-30 s).  SystemExit is caught by UE5's Python
-        // runner, sets bOk=false, and stores the message in Command.CommandResult
-        // without any GLog I/O.  We re-detect it below via bOk=false.
+        // Error-capture strategy: store traceback in a module-level variable
+        // (_mcp_last_error) instead of print()ing or raising.
+        //
+        // WHY NOT print():
+        //   print() routes through UE5's GLog which flushes all log listeners
+        //   synchronously.  On large projects with many AR / ContentBrowser
+        //   listeners this blocks 20-30 s even for a one-line ZeroDivisionError.
+        //
+        // WHY NOT raise SystemExit():
+        //   SystemExit propagates out of ExecPythonCommandEx and triggers the
+        //   same slow UE5 error-formatting / log pipeline before returning bOk=false.
+        //
+        // SOLUTION: catch the exception silently, store the traceback in the
+        // well-known global variable _mcp_last_error (a module-level attribute),
+        // and return normally (bOk=true, zero log I/O).  The C++ side checks
+        // whether Command.CommandResult starts with "__MCP_ERR__" after execution.
+        //
+        // The wrapper sets _mcp_last_error to "" on entry (success case) and
+        // to "__MCP_ERR__<traceback>" on exception.  C++ reads CommandResult
+        // via the EvaluateStatement round-trip below.
         WrappedCode = FString::Printf(
             TEXT("import traceback as _mcp_tb\n")
+            TEXT("import builtins as _mcp_bi\n")
+            TEXT("_mcp_bi._mcp_last_error = ''\n")
             TEXT("_mcp_src = '%s'\n")
             TEXT("try:\n")
             TEXT("    exec(compile(_mcp_src, '<mcp_exec>', 'exec'))\n")
-            TEXT("except SystemExit:\n")
-            TEXT("    raise\n")
             TEXT("except Exception:\n")
-            TEXT("    raise SystemExit('[MCP_ERROR] ' + _mcp_tb.format_exc())\n"),
+            TEXT("    _mcp_bi._mcp_last_error = '__MCP_ERR__' + _mcp_tb.format_exc()\n"),
             *Escaped
         );
     }
@@ -794,23 +813,34 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
 
     // ── Detect Python exceptions ──────────────────────────────────────────
-    // Two paths:
-    //   (A) Old path: the wrapper used print('[MCP_ERROR] ...') — appears in
-    //       Command.LogOutput with [MCP_ERROR] tag.
-    //   (B) New path (fast): the wrapper used raise SystemExit('[MCP_ERROR] ...')
-    //       — bOk is false, and Command.CommandResult contains the [MCP_ERROR] message.
-    //       This avoids the slow GLog flush that caused 20-30 s delays.
+    // The wrapper stores errors silently in builtins._mcp_last_error to
+    // avoid the slow GLog flush caused by print() or raise.
+    // After execution, read that variable via a fast EvaluateStatement call.
     bool bHasPythonError = false;
     FString PythonErrorDetail;
 
-    // Check path (B) first: bOk=false with [MCP_ERROR] in CommandResult
-    if (!bOk && Command.CommandResult.Contains(TEXT("[MCP_ERROR]")))
+    if (bOk)
     {
-        bHasPythonError = true;
+        // Fast path: read the error variable without any log I/O.
+        FPythonCommandEx ReadCmd;
+        ReadCmd.Command       = TEXT("getattr(__import__('builtins'), '_mcp_last_error', '')");
+        ReadCmd.ExecutionMode = EPythonCommandExecutionMode::EvaluateStatement;
+        ReadCmd.FileExecutionScope = EPythonFileExecutionScope::Public;
+        if (PythonPlugin->ExecPythonCommandEx(ReadCmd) && ReadCmd.CommandResult.StartsWith(TEXT("__MCP_ERR__")))
+        {
+            bHasPythonError  = true;
+            PythonErrorDetail = ReadCmd.CommandResult.Mid(11); // strip "__MCP_ERR__" prefix
+        }
+    }
+    else
+    {
+        // bOk=false: UE5's Python runner itself errored (e.g. plugin not loaded,
+        // or the wrapper script itself has a syntax error — should never happen).
+        bHasPythonError  = true;
         PythonErrorDetail = Command.CommandResult;
     }
 
-    // ?? 5. Collect log output and scan for path (A) [MCP_ERROR] tags ??????????
+    // ?? 5. Collect log output ????????????????????????????????????????????????????
     FString LogOutput;
     for (const FPythonLogOutputEntry& Entry : Command.LogOutput)
     {
@@ -822,15 +852,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
             case EPythonLogOutputType::Error:   Prefix = TEXT("[Error] ");   break;
             default:                            Prefix = TEXT("[Log] ");     break;
         }
-        FString Line = Prefix + Entry.Output;
-        LogOutput += Line + TEXT("\n");
-
-        // Detect errors printed by our Python wrapper (old path A)
-        if (!bHasPythonError && Entry.Output.Contains(TEXT("[MCP_ERROR]")))
-        {
-            bHasPythonError = true;
-            PythonErrorDetail += Entry.Output + TEXT("\n");
-        }
+        LogOutput += Prefix + Entry.Output + TEXT("\n");
     }
     LogOutput = LogOutput.TrimEnd();
     PythonErrorDetail = PythonErrorDetail.TrimEnd();
@@ -847,12 +869,11 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     if (!bFinalOk)
     {
         // Surface the most informative error detail available.
-        // Priority: Python wrapper traceback > C++ CommandResult > LogOutput
+        // Priority: Python wrapper traceback (from _mcp_last_error) > C++ CommandResult > LogOutput
         FString ErrorDetail;
         if (bHasPythonError && !PythonErrorDetail.IsEmpty())
         {
-            // Strip the [MCP_ERROR] prefix so callers see a clean traceback
-            ErrorDetail = PythonErrorDetail.Replace(TEXT("[MCP_ERROR] "), TEXT(""));
+            ErrorDetail = PythonErrorDetail; // already stripped of __MCP_ERR__ prefix
         }
         else if (!Command.CommandResult.IsEmpty())
         {
@@ -863,7 +884,7 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
             ErrorDetail = LogOutput;
         }
         ResultObj->SetStringField(TEXT("error"), ErrorDetail);
-        UE_LOG(LogTemp, Error, TEXT("exec_python failed: %s"), *ErrorDetail);
+        UE_LOG(LogTemp, Error, TEXT("[MCP] exec_python failed: %s"), *ErrorDetail);
     }
     else
     {
