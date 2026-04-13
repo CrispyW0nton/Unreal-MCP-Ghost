@@ -3467,6 +3467,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddComponentOverl
 
     // Correct API: (FObjectProperty* component prop, FMulticastDelegateProperty* delegate prop)
     CBENode->InitializeComponentBoundEventParams(CompProp, DelegateProp);
+
+    // BUG-038 FIX: InitializeComponentBoundEventParams stores CompProp->GetName() which for
+    // SCS-generated properties is "InteractionSphere_GEN_VARIABLE" (not "InteractionSphere").
+    // UE's compiler looks up the property by the bare SCS variable name in ExecuteUbergraph,
+    // so we must override ComponentPropertyName with the raw component name from the SCS node.
+    CBENode->ComponentPropertyName = FName(*ComponentName);
+
     CBENode->NodePosX = (int32)Pos.X;
     CBENode->NodePosY = (int32)Pos.Y;
     CBENode->CreateNewGuid();
