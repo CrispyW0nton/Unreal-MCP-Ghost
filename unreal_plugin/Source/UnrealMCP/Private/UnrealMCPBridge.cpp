@@ -396,7 +396,12 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("setup_navmesh") ||
                      // Phase 6: variable + function introspection
                      CommandType == TEXT("get_blueprint_variables") ||
-                     CommandType == TEXT("get_blueprint_functions"))
+                     CommandType == TEXT("get_blueprint_functions") ||
+                     CommandType == TEXT("add_blueprint_function_with_pins") ||
+                     // BUG-030: per-component ComponentBoundEvent
+                     CommandType == TEXT("add_component_overlap_event") ||
+                     // BUG-035: SCS node inspector
+                     CommandType == TEXT("get_scs_nodes"))
             {
                 ResultJson = BlueprintNodeCommands->HandleCommand(CommandType, Params);
             }
