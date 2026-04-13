@@ -56,6 +56,21 @@ public:
      */
     static void SafeMarkBlueprintModified(UBlueprint* Blueprint);
 
+    /**
+     * Validation-only check that Blueprint->GeneratedClass is non-null and valid.
+     *
+     * Returns true  — GeneratedClass exists; callers MAY proceed with PostPlacedNewNode,
+     *                  ReconstructNode, or TrySetDefaultObject when appropriate.
+     * Returns false — GeneratedClass is null; callers MUST skip those callbacks to
+     *                  avoid EXCEPTION_ACCESS_VIOLATION in the MassEntityEditor observer.
+     *
+     * NOTE: This function intentionally does NOT call FKismetEditorUtilities::CompileBlueprint.
+     * CompileBlueprint crashes UE5.6 when invoked from an async-task lambda context
+     * (EXCEPTION_ACCESS_VIOLATION via MassEntityEditor observer). Callers that receive
+     * false should fall back to direct pin DefaultObject/DefaultValue assignment.
+     */
+    static bool EnsureBlueprintGeneratedClass(UBlueprint* Blueprint);
+
     static UEdGraph* FindOrCreateEventGraph(UBlueprint* Blueprint);
     
     // Blueprint node utilities
