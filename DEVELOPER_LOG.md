@@ -101,7 +101,10 @@
 | BUG-017 | `add_blueprint_event_node` (BeginPlay/Tick) | Event not found — `Blueprint->GeneratedClass->FindFunctionByName` fails on new BPs | ✅ Fixed | Rewrote `CreateEventNode`: walk parent class hierarchy, alias table (BeginPlay→ReceiveBeginPlay), custom event fallback |
 | BUG-018 | `add_blueprint_sequence_node` (Sequence, ForLoop, DoOnce) | Macro library lookup blocks 200-800 ms on first call | ✅ Fixed | Cache `StandardMacros` UBlueprint in static `TWeakObjectPtr`; `FindObject` before `LoadObject` |
 | BUG-019 | `add_blueprint_input_action_node` | `PostPlacedNewNode()` validates against Project Input Settings — slow on projects without legacy input | ✅ Fixed | Skip `PostPlacedNewNode`, call `AllocateDefaultPins()` directly |
-| BUG-020 | `exec_python` ZeroDivisionError / ValueError | Exception caught by wrapper but `print()` through GLog blocked 20-30 s | ✅ Fixed | Changed wrapper to `raise SystemExit('[MCP_ERROR]...')` — no GLog flush, instant response |
+| BUG-020 | `exec_python` ZeroDivisionError / ValueError | Exception caught by wrapper but `print()` through GLog blocked 20-30 s | ✅ Fixed | Replaced with silent `builtins._mcp_last_error` variable + C++ `EvaluateStatement` round-trip — no GLog flush, instant response |
+| J1 (BUG-023) | `add_blueprint_self_reference` | CLIENT-TIMEOUT >45s — `UK2Node_Self::PostPlacedNewNode()` calls `GetSchema()->GetGraphType()` → dereferences `GeneratedClass`, blocking 20-45s on intermediate compile state | ✅ Fixed | `CreateSelfReferenceNode` now uses `Graph->AddNode(bFromUI=false)` + `AllocateDefaultPins()` directly — same approach as BUG-019 fix |
+| BUG-024 | `add_component_to_blueprint` | CLIENT-TIMEOUT >45s — `SafeMarkBlueprintModified` broadcasts to all AssetRegistry and ContentBrowser listeners synchronously (30-60s on large projects) | ✅ Fixed | `HandleAddComponentToBlueprint` now calls only `Blueprint->Modify()`; `SCS->AddNode()` already triggers necessary `PostEditChange()` |
+| BUG-025 | WinError 10038 (WSAENOTSOCK) | `receive_full_response` calls `sock.settimeout()` on socket already closed by UE5 watchdog restart; Python error classifier didn't include 10038 | ✅ Fixed | Added `sock.fileno()` pre-check to detect closed handle early; added `10038`/`WSAENOTSOCK`/`OSError` to retryable-socket-error classifier in `_send_command_raw` |
 
 > **Note:** Full param names for BUG-009 through BUG-016 to be populated from next test run results.
 
@@ -140,6 +143,7 @@
 | 2026-04-12 | Run 6 | 81 | 69 | 5 | 7 | Expanded test suite. Socket drop after ~50 min, `add_component` hang |
 | 2026-04-12 | Run 7 | 81 | 76+ | ~2 | ~3 | Post-watchdog / SafeMark fixes (estimated — awaiting results) |
 | 2026-04-12 | Run 8 | 81 | 81+ | 0 | 0-1 | CRASH-002 fixed, BUG-017/018/019/020 fixed, exec_python fast errors. Target |
+| 2026-04-13 | Run 9 | 81 | 77+ | ~1 | ~3 | Post J1/BUG-023/024/025 fixes. New: IK retargeting tools added. Target: ≥80/81 |
 
 ### Run 6 Failure Details (2026-04-12, 69/81)
 
@@ -188,6 +192,7 @@ Python opens a fresh socket per command, UE5 sends response and closes.
 | `unreal_mcp_server/tools/editor_tools.py` | `exec_python` tool with syntax pre-check |
 | `cursor_setup/mcp.json` | Cursor MCP config (stdio transport) |
 | `cursor_system_prompt.md` | System prompt for Cursor AI agent |
+| `unreal_mcp_server/tools/animation_tools.py` | Animation BP tools + IK Rig / IK Retargeter tools (exec_python) |
 
 ### `SafeMarkBlueprintModified` — Why It Exists
 
@@ -204,3 +209,84 @@ resetting the TCP socket (Python sees `WinError 10053`).
 **Solution:** `FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP)` checks  
 `BP->GeneratedClass && IsValid(BP->GeneratedClass)` first. Falls back to  
 `BP->Modify()` (marks dirty for Undo, no GeneratedClass access).
+
+---
+
+## Animation Retargeting Tools
+
+### Overview
+Manual animation retargeting is fully supported via the MCP tool using the UE5 Python API
+(`unreal.IKRigController`, `unreal.IKRetargeterController`).  All retargeting tools use
+`exec_python` internally (tier-3 timeout: 150 s on Python side, 140 s on C++ side).
+
+### Supported Workflows
+
+#### Method 1 — Quick Retarget (same bone structure)
+If all characters share an identical skeleton (same bone names + hierarchy), use the
+one-shot pipeline or call `batch_retarget_animations` directly with an existing Retargeter.
+
+#### Method 2 — Manual IK Retarget (different bone structures)
+1. `create_ik_rig` for source skeleton (e.g. Mannequin)
+2. `create_ik_rig` for target skeleton (e.g. Player)
+3. `create_ik_retargeter` — links source → target, auto-maps chains, auto-aligns bones
+4. `batch_retarget_animations` — exports retargeted animation sequences
+
+Or use `setup_full_retargeting_pipeline` to run all 4 steps at once.
+
+### New MCP Tools (2026-04-13)
+
+| Tool | Description |
+|------|-------------|
+| `create_ik_rig` | Create IKRigDefinition asset; optionally auto-generate humanoid chains |
+| `add_ik_rig_retarget_chain` | Manually add a named bone chain (start → end) to an IK Rig |
+| `set_ik_rig_retarget_root` | Set the pelvis/hips bone as the retarget root |
+| `create_ik_retargeter` | Create IKRetargeter asset linking source → target IK Rigs |
+| `batch_retarget_animations` | Export retargeted copies of multiple animation sequences |
+| `retarget_single_animation` | Export one retargeted animation (quick test/verification) |
+| `setup_full_retargeting_pipeline` | One-shot: IK Rigs + Retargeter + optional batch retarget |
+| `get_skeleton_bone_names` | List all bone names in a Skeletal Mesh (use before manual chain setup) |
+
+### Typical EnclaveProject Usage
+```
+# Step 1: Discover bone names (if unsure of exact names)
+get_skeleton_bone_names("/Game/Dantooine/Art/Characters/Player/SK_Player")
+
+# Step 2: Create IK Rigs for Mannequin (source) and Player (target)
+create_ik_rig(ik_rig_name="IKR_Mannequin", skeletal_mesh_path="/Game/Characters/Mannequin/SK_Mannequin")
+create_ik_rig(ik_rig_name="IKR_Player",    skeletal_mesh_path="/Game/Dantooine/Art/Characters/Player/SK_Player")
+
+# Step 3: Create IK Retargeter
+create_ik_retargeter(
+    retargeter_name="RTG_Mannequin_To_Player",
+    source_ik_rig_path="/Game/Animation/IKRigs/IKR_Mannequin",
+    target_ik_rig_path="/Game/Animation/IKRigs/IKR_Player"
+)
+
+# Step 4: Batch retarget all animations for Player character
+batch_retarget_animations(
+    retargeter_path="/Game/Animation/Retargeters/RTG_Mannequin_To_Player",
+    source_animation_paths=["/Game/Animations/Walk", "/Game/Animations/Run", ...],
+    output_path="/Game/Dantooine/Art/Characters/Player/Animations"
+)
+
+# OR: All-in-one
+setup_full_retargeting_pipeline(
+    source_skeletal_mesh="/Game/Characters/Mannequin/SK_Mannequin",
+    target_skeletal_mesh="/Game/Dantooine/Art/Characters/Player/SK_Player",
+    source_ik_rig_name="IKR_Mannequin",
+    target_ik_rig_name="IKR_Player",
+    retargeter_name="RTG_Mannequin_To_Player",
+    animations_to_retarget=["/Game/Animations/Walk", "/Game/Animations/Run"]
+)
+```
+
+### Notes
+- **IKRigEditor module required:** The IKRig plugin must be enabled in the project
+  (`Edit > Plugins > IK Rig`). It is enabled by default in UE 5.6.
+- **Auto-generate chains:** Works best for humanoid skeletons (UE Mannequin-like).
+  For non-humanoid skeletons (droids, quadrupeds), use `add_ik_rig_retarget_chain` manually.
+- **Retarget root:** `apply_auto_generated_retarget_definition` sets the root automatically.
+  For custom chains, call `set_ik_rig_retarget_root(root_bone="pelvis")` first.
+- **Batch export API:** UE5 exposes retarget export through multiple APIs
+  (`IKRetargetEditorController`, `IKRetargetingUtils`, `AssetTools`). The tools try all
+  three in order for maximum compatibility across UE 5.4–5.6.
