@@ -265,22 +265,34 @@ def register_gameplay_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
         component_name: str,
+        event_name: str = "OnComponentBeginOverlap",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
         """
-        Add an OnComponentBeginOverlap event node for a component.
+        Add an OnComponentBeginOverlap event node bound to a SPECIFIC SCS component.
+
+        Creates a K2Node_ComponentBoundEvent — equivalent to clicking the [+] button
+        next to the event in the component's Details panel.  Multiple components in
+        the same Blueprint each get their own event node (per component variable GUID).
+
+        Use get_scs_nodes to list available component names and their GUIDs.
 
         Args:
-            blueprint_name: Blueprint name
-            component_name: Component that triggers overlap (e.g., "CollisionBox")
-            node_position: Optional graph position
+            blueprint_name: Blueprint asset name (e.g. "BP_MyActor")
+            component_name: SCS component variable name (e.g. "InteractionSphere")
+            event_name:     Delegate event name. Default "OnComponentBeginOverlap".
+                            Other options: "OnComponentEndOverlap", "OnComponentHit".
+            node_position:  Optional [X, Y] canvas position.
         """
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_event_node", {
+        # BUG-030 fix: route to add_component_overlap_event (K2Node_ComponentBoundEvent)
+        # instead of add_blueprint_event_node (actor-level, one-per-Blueprint only).
+        return _send("add_component_overlap_event", {
             "blueprint_name": blueprint_name,
-            "event_name": "ReceiveActorBeginOverlap",
-            "node_position": node_position
+            "component_name": component_name,
+            "event_name":     event_name,
+            "node_position":  node_position,
         })
 
     @mcp.tool()

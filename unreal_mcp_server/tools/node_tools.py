@@ -171,10 +171,12 @@ def register_blueprint_node_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
         source_node_id: str,
-        source_pin: str,
         target_node_id: str,
-        target_pin: str,
         graph_name: str = "EventGraph",
+        source_pin: str = "",
+        target_pin: str = "",
+        source_pin_name: str = "",
+        target_pin_name: str = "",
     ) -> Dict[str, Any]:
         """
         Connect an output pin on one node to an input pin on another.
@@ -182,6 +184,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         source_node_id / target_node_id can be:
           - A GUID string (from get_blueprint_nodes / add_* commands)
           - The short object name, e.g. 'K2Node_CallFunction_40'
+
+        Pin name parameter (use EITHER form — both are accepted):
+          source_pin / source_pin_name  — output pin on the source node
+          target_pin / target_pin_name  — input pin on the target node
 
         Common exec pin names: 'then' (output), 'execute' (input).
         Common data pin names: 'ReturnValue', 'Target', 'NewLocation', etc.
@@ -194,24 +200,37 @@ def register_blueprint_node_tools(mcp: FastMCP):
         the command returns an error with the schema's reason message.
 
         Args:
-            blueprint_name: Asset name.
-            source_node_id: GUID or object name of the source node.
-            source_pin: Output pin name on the source node.
-            target_node_id: GUID or object name of the target node.
-            target_pin: Input pin name on the target node.
-            graph_name: Graph to operate on. Default 'EventGraph'.
+            blueprint_name:  Asset name.
+            source_node_id:  GUID or object name of the source node.
+            target_node_id:  GUID or object name of the target node.
+            graph_name:      Graph to operate on. Default 'EventGraph'.
+            source_pin:      Output pin name on the source node (alias: source_pin_name).
+            target_pin:      Input pin name on the target node (alias: target_pin_name).
+            source_pin_name: Alias for source_pin (BUG-NEW compatibility).
+            target_pin_name: Alias for target_pin (BUG-NEW compatibility).
         """
         from unreal_mcp_server import get_unreal_connection
         try:
+            # BUG-NEW: accept both source_pin/target_pin AND source_pin_name/target_pin_name
+            resolved_src_pin = source_pin or source_pin_name
+            resolved_tgt_pin = target_pin or target_pin_name
+            if not resolved_src_pin or not resolved_tgt_pin:
+                return {
+                    "success": False,
+                    "message": (
+                        "Missing pin name(s). Provide source_pin (or source_pin_name) "
+                        "AND target_pin (or target_pin_name)."
+                    ),
+                }
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
             return unreal.send_command("connect_blueprint_nodes", {
                 "blueprint_name":  blueprint_name,
                 "source_node_id":  source_node_id,
-                "source_pin":      source_pin,
+                "source_pin":      resolved_src_pin,
                 "target_node_id":  target_node_id,
-                "target_pin":      target_pin,
+                "target_pin":      resolved_tgt_pin,
                 "graph_name":      graph_name,
             }) or {}
         except Exception as e:
@@ -1498,6 +1517,101 @@ def register_blueprint_node_tools(mcp: FastMCP):
                 return {"success": False, "message": "Not connected"}
             return unreal.send_command("get_blueprint_functions", {
                 "blueprint_name": blueprint_name,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ------------------------------------------------------------------
+    # BUG-035: SCS NODE INSPECTOR
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def get_scs_nodes(
+        ctx: Context,
+        blueprint_name: str,
+    ) -> Dict[str, Any]:
+        """
+        List every SimpleConstructionScript (SCS) component in a Blueprint.
+
+        Returns name, component_class, variable_guid, parent_name, is_root,
+        and supports_overlap_events (True for PrimitiveComponent subclasses).
+
+        Use this BEFORE add_overlap_event or add_component_overlap_event to
+        find the exact component_name and variable_guid needed.  The variable_guid
+        is required to create a K2Node_ComponentBoundEvent that is scoped to a
+        specific component (not the whole actor).
+
+        Args:
+            blueprint_name: Blueprint asset name (e.g. "BP_NPC")
+
+        Returns:
+            Dict with 'scs_nodes' list. Each entry has:
+              name, component_class, variable_guid, parent_name,
+              is_root, supports_overlap_events
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("get_scs_nodes", {
+                "blueprint_name": blueprint_name,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ------------------------------------------------------------------
+    # BUG-030: COMPONENT-BOUND OVERLAP EVENT
+    # ------------------------------------------------------------------
+
+    @mcp.tool()
+    def add_component_overlap_event(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str,
+        event_name: str = "OnComponentBeginOverlap",
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add a K2Node_ComponentBoundEvent for a specific SCS component.
+
+        This is the programmatic equivalent of clicking the [+] button next to
+        an event in the component's Details panel.  Unlike add_overlap_event
+        (actor-level), this node is scoped per-component GUID, so multiple
+        components in the same Blueprint each get their own dedicated event node.
+
+        If the event node already exists for this component it is returned
+        unchanged (already_existed=True).
+
+        Use get_scs_nodes first to confirm component_name and check that
+        supports_overlap_events is True.
+
+        Args:
+            blueprint_name: Blueprint asset name (e.g. "BP_NPC")
+            component_name: SCS component variable name (e.g. "InteractionSphere")
+            event_name:     Delegate event name. Default "OnComponentBeginOverlap".
+                            Also: "OnComponentEndOverlap", "OnComponentHit".
+            graph_name:     Graph to add to. Default "EventGraph".
+            node_position:  Optional [X, Y] canvas position.
+
+        Returns:
+            Dict with node_id, node_name, component_name, event_name,
+            component_guid, already_existed, and pins list.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_component_overlap_event", {
+                "blueprint_name": blueprint_name,
+                "component_name": component_name,
+                "event_name":     event_name,
+                "graph_name":     graph_name,
+                "node_position":  node_position,
             }) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}

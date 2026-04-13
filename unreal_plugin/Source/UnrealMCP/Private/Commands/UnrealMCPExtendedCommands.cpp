@@ -454,9 +454,11 @@ bool FUnrealMCPExtendedCommands::AddFlowControlMacroNode(
     MacroNode->SetMacroGraph(MacroGraph);
     MacroNode->NodePosX = Position.X;
     MacroNode->NodePosY = Position.Y;
-    Graph->AddNode(MacroNode);
     MacroNode->CreateNewGuid();
-    MacroNode->PostPlacedNewNode();
+    // BUG-033 / CRASH-003 pattern: PostPlacedNewNode → MarkBlueprintAsStructurallyModified
+    // crashes UE5.6 via MassEntityEditor observer. Use AddNode(bFromUI=false) +
+    // AllocateDefaultPins() only — macro pins are fully materialised without PostPlacedNewNode.
+    Graph->AddNode(MacroNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     MacroNode->AllocateDefaultPins();
     
     OutResult = MakeShared<FJsonObject>();
@@ -743,8 +745,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableGetNode(
     GetNode->VariableReference.SetSelfMember(FName(*VarName));
     GetNode->NodePosX = Pos.X;
     GetNode->NodePosY = Pos.Y;
-    Graph->AddNode(GetNode);
     GetNode->CreateNewGuid();
+    FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(BP); // guard ReconstructNode
+    Graph->AddNode(GetNode);
     GetNode->PostPlacedNewNode();
     GetNode->AllocateDefaultPins();
     GetNode->ReconstructNode();
@@ -774,8 +777,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableSetNode(
     SetNode->VariableReference.SetSelfMember(FName(*VarName));
     SetNode->NodePosX = Pos.X;
     SetNode->NodePosY = Pos.Y;
-    Graph->AddNode(SetNode);
     SetNode->CreateNewGuid();
+    FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(BP); // guard ReconstructNode
+    Graph->AddNode(SetNode);
     SetNode->PostPlacedNewNode();
     SetNode->AllocateDefaultPins();
     SetNode->ReconstructNode();
@@ -827,8 +831,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCastNode(
     CastNode->TargetType = CastTargetClass;
     CastNode->NodePosX = Pos.X;
     CastNode->NodePosY = Pos.Y;
-    Graph->AddNode(CastNode);
     CastNode->CreateNewGuid();
+    FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(BP); // guard PostPlacedNewNode (DynamicCast touches GeneratedClass)
+    Graph->AddNode(CastNode);
     CastNode->PostPlacedNewNode();
     CastNode->AllocateDefaultPins();
     

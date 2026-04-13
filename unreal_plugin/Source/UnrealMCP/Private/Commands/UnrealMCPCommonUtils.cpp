@@ -521,38 +521,34 @@ UK2Node_CallFunction* FUnrealMCPCommonUtils::CreateFunctionCallNode(UEdGraph* Gr
 UK2Node_VariableGet* FUnrealMCPCommonUtils::CreateVariableGetNode(UEdGraph* Graph, UBlueprint* Blueprint, const FString& VariableName, const FVector2D& Position)
 {
     if (!Graph || !Blueprint)
-    {
         return nullptr;
-    }
-    
+
     UK2Node_VariableGet* VariableGetNode = NewObject<UK2Node_VariableGet>(Graph);
     VariableGetNode->VariableReference.SetSelfMember(FName(*VariableName));
     VariableGetNode->NodePosX = Position.X;
     VariableGetNode->NodePosY = Position.Y;
     VariableGetNode->CreateNewGuid();
-    Graph->AddNode(VariableGetNode, true);
-    VariableGetNode->PostPlacedNewNode();
+    // CRASH-003 pattern: PostPlacedNewNode→MarkBlueprintAsStructurallyModified crashes UE5.6.
+    // Use AddNode(bFromUI=false) + AllocateDefaultPins() only — variable pins are fully
+    // materialised by AllocateDefaultPins(); the VariableReference is set above.
+    Graph->AddNode(VariableGetNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     VariableGetNode->AllocateDefaultPins();
-    
     return VariableGetNode;
 }
 
 UK2Node_VariableSet* FUnrealMCPCommonUtils::CreateVariableSetNode(UEdGraph* Graph, UBlueprint* Blueprint, const FString& VariableName, const FVector2D& Position)
 {
     if (!Graph || !Blueprint)
-    {
         return nullptr;
-    }
-    
+
     UK2Node_VariableSet* VariableSetNode = NewObject<UK2Node_VariableSet>(Graph);
     VariableSetNode->VariableReference.SetSelfMember(FName(*VariableName));
     VariableSetNode->NodePosX = Position.X;
     VariableSetNode->NodePosY = Position.Y;
     VariableSetNode->CreateNewGuid();
-    Graph->AddNode(VariableSetNode, true);
-    VariableSetNode->PostPlacedNewNode();
+    // CRASH-003 pattern: PostPlacedNewNode→MarkBlueprintAsStructurallyModified crashes UE5.6.
+    Graph->AddNode(VariableSetNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     VariableSetNode->AllocateDefaultPins();
-    
     return VariableSetNode;
 }
 

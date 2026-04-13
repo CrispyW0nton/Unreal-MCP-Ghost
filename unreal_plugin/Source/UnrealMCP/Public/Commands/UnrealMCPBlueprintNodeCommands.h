@@ -49,6 +49,8 @@
  *   get_blueprint_variables                - list all member variables with type/default/category
  *   get_blueprint_functions                - list all function graphs with input/output pin info
  *   add_blueprint_function_with_pins       - create function graph with typed input/output pins
+ *   add_component_overlap_event            - K2Node_ComponentBoundEvent per SCS component (BUG-030)
+ *   get_scs_nodes                          - list SCS nodes with name/class/variableGuid (BUG-035)
  */
 class UNREALMCP_API FUnrealMCPBlueprintNodeCommands
 {
@@ -114,6 +116,12 @@ private:
     TSharedPtr<FJsonObject> HandleGetBlueprintVariables(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetBlueprintFunctions(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintFunctionWithPins(const TSharedPtr<FJsonObject>& Params);
+
+    // ---------- BUG-030: per-component ComponentBoundEvent ----------
+    TSharedPtr<FJsonObject> HandleAddComponentOverlapEvent(const TSharedPtr<FJsonObject>& Params);
+
+    // ---------- BUG-035: SCS node inspector ----------
+    TSharedPtr<FJsonObject> HandleGetSCSNodes(const TSharedPtr<FJsonObject>& Params);
 
     // ---------- shared helpers ----------
 
