@@ -3,6 +3,7 @@
 
 // Python scripting plugin interface
 #include "IPythonScriptPlugin.h"
+#include "EngineUtils.h"       // TActorIterator
 
 #include "Editor.h"
 #include "EditorViewportClient.h"
@@ -515,49 +516,87 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFocusViewport(const TSha
         HasOrientation = true;
     }
 
-    // Get the active viewport
-    FLevelEditorViewportClient* ViewportClient = (FLevelEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+    // ── Safely get the active viewport ──────────────────────────────────────
+    // GEditor->GetActiveViewport() may return nullptr when no editor viewport
+    // is focused (e.g. the Blueprint editor or another modal has focus).
+    // Previously this caused a null-dereference → UE5 crash → GameThread hang.
+    FLevelEditorViewportClient* ViewportClient = nullptr;
+    if (GEditor && GEditor->GetActiveViewport())
+    {
+        ViewportClient = (FLevelEditorViewportClient*)GEditor->GetActiveViewport()->GetClient();
+    }
+    // If no viewport found via GetActiveViewport, try the level editor viewports
     if (!ViewportClient)
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get active viewport"));
+        for (FLevelEditorViewportClient* LVC : GEditor->GetLevelViewportClients())
+        {
+            if (LVC)
+            {
+                ViewportClient = LVC;
+                break;
+            }
+        }
+    }
+    if (!ViewportClient)
+    {
+        // Return a soft error (not a hard failure) so the test suite can continue.
+        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+        ResultObj->SetBoolField(TEXT("success"), false);
+        ResultObj->SetStringField(TEXT("error"), TEXT("No active level viewport found. Open the level editor viewport and try again."));
+        return ResultObj;
     }
 
-    // If we have a target actor, focus on it
+    // ── Determine target location ────────────────────────────────────────────
+    FVector FocusLocation = FVector::ZeroVector;
+
     if (HasTargetActor)
     {
-        // Find the actor
+        // Use FindActorByLabel/Name first (O(N) over all actors in world, but
+        // terminates early on first match — much faster than GetAllActorsOfClass
+        // on a 4256-actor world).
         AActor* TargetActor = nullptr;
-        TArray<AActor*> AllActors;
-        UGameplayStatics::GetAllActorsOfClass(GWorld, AActor::StaticClass(), AllActors);
-        
-        for (AActor* Actor : AllActors)
+        if (GWorld)
         {
-            if (Actor && Actor->GetName() == TargetActorName)
+            // TActorIterator provides early-exit (faster than GetAllActorsOfClass
+            // which always fills the full array before returning).
+            for (TActorIterator<AActor> It(GWorld); It; ++It)
             {
-                TargetActor = Actor;
-                break;
+                AActor* A = *It;
+                if (A && (A->GetName() == TargetActorName || A->GetActorLabel() == TargetActorName))
+                {
+                    TargetActor = A;
+                    break;
+                }
             }
         }
 
         if (!TargetActor)
         {
-            return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *TargetActorName));
+            TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+            ResultObj->SetBoolField(TEXT("success"), false);
+            ResultObj->SetStringField(TEXT("error"),
+                FString::Printf(TEXT("Actor not found: %s"), *TargetActorName));
+            return ResultObj;
         }
-
-        // Focus on the actor
-        ViewportClient->SetViewLocation(TargetActor->GetActorLocation() - FVector(Distance, 0.0f, 0.0f));
+        FocusLocation = TargetActor->GetActorLocation();
     }
-    // Otherwise use the provided location
     else if (HasLocation)
     {
-        ViewportClient->SetViewLocation(Location - FVector(Distance, 0.0f, 0.0f));
+        FocusLocation = Location;
     }
     else
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Either 'target' or 'location' must be provided"));
+        // No target or location — just report success; caller may only want
+        // to bring the viewport to the front without repositioning.
+        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+        ResultObj->SetBoolField(TEXT("success"), true);
+        ResultObj->SetStringField(TEXT("note"), TEXT("No 'target' or 'location' provided; viewport was not moved."));
+        return ResultObj;
     }
 
-    // Set orientation if provided
+    // ── Position and orient the camera ──────────────────────────────────────
+    ViewportClient->SetViewLocation(FocusLocation - FVector(Distance, 0.0f, 0.0f));
+
     if (HasOrientation)
     {
         ViewportClient->SetViewRotation(Orientation);
@@ -677,45 +716,175 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
            *ModeStr, Code.Len());
 
     // ?? 4. Execute ????????????????????????????????????????????????????????????
+    // ?? 4a. Wrap user code so ALL Python exceptions (including SyntaxError)
+    //        are caught and returned as clean error JSON instead of hanging.
+    //
+    // Problem with simple try/except indentation:
+    //   Python compiles the entire try-block before executing it.
+    //   A SyntaxError in the user code fires at compile time — BEFORE
+    //   the try/except is entered — so it leaks out of the wrapper.
+    //
+    // Solution: repr() the user code into a string variable (_mcp_src),
+    //   then call compile() + exec() inside the try/except.
+    //   compile() raises SyntaxError as a regular exception, so it IS caught.
+    //
+    // Template (Python) — error stored silently in builtins._mcp_last_error:
+    //   import traceback as _mcp_tb
+    //   import builtins as _mcp_bi
+    //   _mcp_bi._mcp_last_error = ''
+    //   _mcp_src = <repr(Code)>
+    //   try:
+    //       exec(compile(_mcp_src, '<mcp_exec>', 'exec'))
+    //   except Exception:
+    //       _mcp_bi._mcp_last_error = '__MCP_ERR__' + _mcp_tb.format_exc()
+    //
+    // After ExecPythonCommandEx returns, C++ reads builtins._mcp_last_error
+    // via a fast EvaluateStatement call.  If it starts with '__MCP_ERR__',
+    // success=false with the traceback as error detail.
+    // This avoids the 20-30 s GLog flush that print() or raise would cause.
+
+    FString WrappedCode;
+    if (ExecMode == EPythonCommandExecutionMode::EvaluateStatement)
+    {
+        // evaluate_statement: single expression, errors surface via bOk=false
+        WrappedCode = Code;
+    }
+    else
+    {
+        // Build a Python repr() of the code string so it is safe to embed
+        // in a Python script regardless of quotes, backslashes, or newlines.
+        // Strategy: escape backslashes, then escape single quotes, then wrap
+        // in single quotes.  This matches Python's repr() for typical code.
+        FString Escaped = Code;
+        Escaped.ReplaceInline(TEXT("\\"), TEXT("\\\\"), ESearchCase::CaseSensitive);
+        Escaped.ReplaceInline(TEXT("'"),  TEXT("\\'"),  ESearchCase::CaseSensitive);
+        // Newlines inside the repr string must stay as \n (escaped)
+        Escaped.ReplaceInline(TEXT("\r\n"), TEXT("\\n"), ESearchCase::CaseSensitive);
+        Escaped.ReplaceInline(TEXT("\n"),   TEXT("\\n"), ESearchCase::CaseSensitive);
+        Escaped.ReplaceInline(TEXT("\r"),   TEXT("\\n"), ESearchCase::CaseSensitive);
+
+        // Error-capture strategy: store traceback in a module-level variable
+        // (_mcp_last_error) instead of print()ing or raising.
+        //
+        // WHY NOT print():
+        //   print() routes through UE5's GLog which flushes all log listeners
+        //   synchronously.  On large projects with many AR / ContentBrowser
+        //   listeners this blocks 20-30 s even for a one-line ZeroDivisionError.
+        //
+        // WHY NOT raise SystemExit():
+        //   SystemExit propagates out of ExecPythonCommandEx and triggers the
+        //   same slow UE5 error-formatting / log pipeline before returning bOk=false.
+        //
+        // SOLUTION: catch the exception silently, store the traceback in the
+        // well-known global variable _mcp_last_error (a module-level attribute),
+        // and return normally (bOk=true, zero log I/O).  The C++ side checks
+        // whether Command.CommandResult starts with "__MCP_ERR__" after execution.
+        //
+        // The wrapper sets _mcp_last_error to "" on entry (success case) and
+        // to "__MCP_ERR__<traceback>" on exception.  C++ reads CommandResult
+        // via the EvaluateStatement round-trip below.
+        WrappedCode = FString::Printf(
+            TEXT("import traceback as _mcp_tb\n")
+            TEXT("import builtins as _mcp_bi\n")
+            TEXT("_mcp_bi._mcp_last_error = ''\n")
+            TEXT("_mcp_src = '%s'\n")
+            TEXT("try:\n")
+            TEXT("    exec(compile(_mcp_src, '<mcp_exec>', 'exec'))\n")
+            TEXT("except Exception:\n")
+            TEXT("    _mcp_bi._mcp_last_error = '__MCP_ERR__' + _mcp_tb.format_exc()\n"),
+            *Escaped
+        );
+    }
+
     FPythonCommandEx Command;
-    Command.Command  = Code;
-    Command.ExecutionMode = ExecMode;
+    Command.Command  = WrappedCode;
+    // ── IMPORTANT: always use ExecuteFile mode for our wrapper script. ──────
+    // ExecuteStatement mode uses Py_single_input which only accepts ONE
+    // statement and truncates multi-line scripts silently.
+    // ExecuteFile mode (Py_file_input) handles the full multi-line wrapper
+    // including the try/except block.
+    // For EvaluateStatement we already set WrappedCode = Code (no wrapper),
+    // so using its original ExecMode is correct.
+    Command.ExecutionMode = (ExecMode == EPythonCommandExecutionMode::EvaluateStatement)
+        ? ExecMode
+        : EPythonCommandExecutionMode::ExecuteFile;
     Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
 
     const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
 
-    // ?? 5. Collect log output into a single string ???????????????????????????
+    // ── Detect Python exceptions ──────────────────────────────────────────
+    // The wrapper stores errors silently in builtins._mcp_last_error to
+    // avoid the slow GLog flush caused by print() or raise.
+    // After execution, read that variable via a fast EvaluateStatement call.
+    bool bHasPythonError = false;
+    FString PythonErrorDetail;
+
+    if (bOk)
+    {
+        // Fast path: read the error variable without any log I/O.
+        FPythonCommandEx ReadCmd;
+        ReadCmd.Command       = TEXT("getattr(__import__('builtins'), '_mcp_last_error', '')");
+        ReadCmd.ExecutionMode = EPythonCommandExecutionMode::EvaluateStatement;
+        ReadCmd.FileExecutionScope = EPythonFileExecutionScope::Public;
+        if (PythonPlugin->ExecPythonCommandEx(ReadCmd) && ReadCmd.CommandResult.StartsWith(TEXT("__MCP_ERR__")))
+        {
+            bHasPythonError  = true;
+            PythonErrorDetail = ReadCmd.CommandResult.Mid(11); // strip "__MCP_ERR__" prefix
+        }
+    }
+    else
+    {
+        // bOk=false: UE5's Python runner itself errored (e.g. plugin not loaded,
+        // or the wrapper script itself has a syntax error — should never happen).
+        bHasPythonError  = true;
+        PythonErrorDetail = Command.CommandResult;
+    }
+
+    // ?? 5. Collect log output ????????????????????????????????????????????????????
     FString LogOutput;
     for (const FPythonLogOutputEntry& Entry : Command.LogOutput)
     {
+        FString Prefix;
         switch (Entry.Type)
         {
-            case EPythonLogOutputType::Info:
-                LogOutput += TEXT("[Info] ");  break;
-            case EPythonLogOutputType::Warning:
-                LogOutput += TEXT("[Warning] "); break;
-            case EPythonLogOutputType::Error:
-                LogOutput += TEXT("[Error] ");  break;
-            default:
-                LogOutput += TEXT("[Log] ");    break;
+            case EPythonLogOutputType::Info:    Prefix = TEXT("[Info] ");    break;
+            case EPythonLogOutputType::Warning: Prefix = TEXT("[Warning] "); break;
+            case EPythonLogOutputType::Error:   Prefix = TEXT("[Error] ");   break;
+            default:                            Prefix = TEXT("[Log] ");     break;
         }
-        LogOutput += Entry.Output + TEXT("\n");
+        LogOutput += Prefix + Entry.Output + TEXT("\n");
     }
     LogOutput = LogOutput.TrimEnd();
+    PythonErrorDetail = PythonErrorDetail.TrimEnd();
+
+    // Determine overall success: C++ bOk AND no Python-level exception
+    const bool bFinalOk = bOk && !bHasPythonError;
 
     // ?? 6. Build response ?????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
-    ResultObj->SetBoolField(TEXT("success"), bOk);
+    ResultObj->SetBoolField(TEXT("success"), bFinalOk);
     ResultObj->SetStringField(TEXT("output"), LogOutput);
     ResultObj->SetStringField(TEXT("command_result"), Command.CommandResult);
 
-    if (!bOk)
+    if (!bFinalOk)
     {
-        // Include both the command_result (which holds the traceback) and
-        // the collected log as the error field so it bubbles up as an error.
-        FString ErrorDetail = Command.CommandResult.IsEmpty() ? LogOutput : Command.CommandResult;
+        // Surface the most informative error detail available.
+        // Priority: Python wrapper traceback (from _mcp_last_error) > C++ CommandResult > LogOutput
+        FString ErrorDetail;
+        if (bHasPythonError && !PythonErrorDetail.IsEmpty())
+        {
+            ErrorDetail = PythonErrorDetail; // already stripped of __MCP_ERR__ prefix
+        }
+        else if (!Command.CommandResult.IsEmpty())
+        {
+            ErrorDetail = Command.CommandResult;
+        }
+        else
+        {
+            ErrorDetail = LogOutput;
+        }
         ResultObj->SetStringField(TEXT("error"), ErrorDetail);
-        UE_LOG(LogTemp, Error, TEXT("exec_python failed: %s"), *ErrorDetail);
+        UE_LOG(LogTemp, Error, TEXT("[MCP] exec_python failed: %s"), *ErrorDetail);
     }
     else
     {

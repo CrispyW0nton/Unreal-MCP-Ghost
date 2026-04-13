@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "unreal-mcp": {
+      "command": "python",
+      "args": [
+        "C:\\Users\\NewAdmin\\Documents\\Academy of Art University\\2026\\Gam270\\Project2\\EnclaveProject\\unreal_mcp_server\\unreal_mcp_server.py"
+      ],
+      "env": {
+        "UNREAL_HOST": "127.0.0.1",
+        "UNREAL_PORT": "55557"
+      }
+    }
+  }
+}

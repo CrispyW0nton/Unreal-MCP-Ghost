@@ -714,9 +714,18 @@ def register_blueprint_node_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
-            return unreal.send_command("get_blueprint_graphs", {
+            result = unreal.send_command("get_blueprint_graphs", {
                 "blueprint_name": blueprint_name,
-            }) or {}
+            })
+            if result is None:
+                return {"success": False, "message": f"No response from Unreal Engine"}
+            # If C++ returned an error envelope, surface it as a clear message
+            if isinstance(result, dict) and result.get("status") == "error":
+                return {"success": False, "message": result.get("error", "Unknown error from C++ side")}
+            # Empty dict means Blueprint was not found / no graphs returned
+            if not result:
+                return {"success": False, "message": f"Blueprint '{blueprint_name}' not found or has no graphs"}
+            return result
         except Exception as e:
             return {"success": False, "message": str(e)}
 

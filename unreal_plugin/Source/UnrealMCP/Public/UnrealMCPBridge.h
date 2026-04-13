@@ -14,6 +14,7 @@
 #include "Commands/UnrealMCPProjectCommands.h"
 #include "Commands/UnrealMCPUMGCommands.h"
 #include "Commands/UnrealMCPExtendedCommands.h"
+#include "Engine/TimerHandle.h"
 #include "UnrealMCPBridge.generated.h"
 
 class FMCPServerRunnable;
@@ -42,6 +43,10 @@ public:
 	void StopServer();
 	bool IsRunning() const { return bIsRunning; }
 
+	// Watchdog: called periodically to restart the server thread if it died
+	UFUNCTION()
+	void WatchdogTick();
+
 	// Command execution
 	FString ExecuteCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
 
@@ -55,6 +60,9 @@ private:
 	// Server configuration
 	FIPv4Address ServerAddress;
 	uint16 Port;
+
+	// Watchdog timer handle
+	FTimerHandle WatchdogTimerHandle;
 
 	// Command handler instances
 	TSharedPtr<FUnrealMCPEditorCommands> EditorCommands;

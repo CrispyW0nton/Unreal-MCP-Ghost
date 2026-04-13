@@ -48,6 +48,7 @@
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "BlueprintEditorSettings.h"
+#include "BlueprintEditorLibrary.h"   // UBlueprintEditorLibrary::ReparentBlueprint
 
 // Editor Asset utilities
 #include "EditorAssetLibrary.h"
@@ -489,7 +490,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBranchNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("Branch"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
@@ -520,7 +521,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBranchNode(
     FuncNode->PostPlacedNewNode();
     FuncNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(FuncNode->NodeGuid.ToString());
 }
 
@@ -545,7 +546,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSequenceNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("Sequence"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
@@ -553,7 +554,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSequenceNode(
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("note"), TEXT("Sequence node created - add via Blueprint Editor for best results"));
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return Result;
 }
 
@@ -575,11 +576,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddFlipFlopNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("FlipFlop"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -601,11 +602,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDoOnceNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("DoOnce"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -631,11 +632,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddDoNNode(
     if (AddFlowControlMacroNode(Graph, TEXT("DoN"), Pos, MacroResult))
     {
         // Set N value if node was created
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -657,11 +658,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddGateNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("Gate"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -681,11 +682,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddWhileLoopNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("WhileLoop"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -711,11 +712,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddForEachLoopNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, MacroName, Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -748,7 +749,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableGetNode(
     GetNode->AllocateDefaultPins();
     GetNode->ReconstructNode();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(GetNode->NodeGuid.ToString());
 }
 
@@ -779,7 +780,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddVariableSetNode(
     SetNode->AllocateDefaultPins();
     SetNode->ReconstructNode();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(SetNode->NodeGuid.ToString());
 }
 
@@ -831,7 +832,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCastNode(
     CastNode->PostPlacedNewNode();
     CastNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(CastNode->NodeGuid.ToString());
 }
 
@@ -878,7 +879,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddTimelineNode(
     
     TimelineNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(TimelineNode->NodeGuid.ToString());
 }
 
@@ -911,7 +912,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomEvent(
     CustomEvent->PostPlacedNewNode();
     CustomEvent->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetStringField(TEXT("event_name"), EventName);
@@ -963,7 +964,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallCustomEvent(
     CallNode->PostPlacedNewNode();
     CallNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetStringField(TEXT("event_name"), EventName);
@@ -1009,7 +1010,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddEventDispatcher(
     
     FBlueprintEditorUtils::AddMemberVariable(BP, FName(*DispatcherName), DelegateType);
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     FKismetEditorUtilities::CompileBlueprint(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
@@ -1045,7 +1046,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCallEventDispatcher(
     CallNode->PostPlacedNewNode();
     CallNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(CallNode->NodeGuid.ToString());
 }
 
@@ -1075,7 +1076,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBindEventToDispatcher(
     BindNode->PostPlacedNewNode();
     BindNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(BindNode->NodeGuid.ToString());
 }
 
@@ -1103,7 +1104,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleUnbindEventFromDispatc
     UnbindNode->PostPlacedNewNode();
     UnbindNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(UnbindNode->NodeGuid.ToString());
 }
 
@@ -1131,7 +1132,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomFunction(
         return CreateErrorResponse(TEXT("Failed to create function graph"));
     
     FBlueprintEditorUtils::AddFunctionGraph<UClass>(BP, FuncGraph, false, nullptr);
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1160,7 +1161,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCustomMacro(
         return CreateErrorResponse(TEXT("Failed to create macro graph"));
     
     BP->MacroGraphs.Add(MacroGraph);
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1243,7 +1244,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMacroNode(
     MacroNode->PostPlacedNewNode();
     MacroNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(MacroNode->NodeGuid.ToString());
 }
 
@@ -1367,7 +1368,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleImplementBlueprintInte
         return CreateErrorResponse(TEXT("Interface has no generated class"));
     
     FBlueprintEditorUtils::ImplementNewInterface(BP, FTopLevelAssetPath(InterfaceClass->GetPackage()->GetFName(), InterfaceClass->GetFName()));
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -1418,7 +1419,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInterfaceFunctionNo
     MsgNode->PostPlacedNewNode();
     MsgNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(MsgNode->NodeGuid.ToString());
 }
 
@@ -2041,7 +2042,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCommentBox(
     Graph->AddNode(CommentNode, false, false);
     CommentNode->CreateNewGuid();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(CommentNode->NodeGuid.ToString());
 }
 
@@ -2093,7 +2094,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSwitchNode(
     SwitchNode->PostPlacedNewNode();
     SwitchNode->AllocateDefaultPins();
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -2121,11 +2122,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMultiGateNode(
     TSharedPtr<FJsonObject> MacroResult;
     if (AddFlowControlMacroNode(Graph, TEXT("MultiGate"), Pos, MacroResult))
     {
-        BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
         return MacroResult;
     }
     
-    BP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse();
 }
 
@@ -2335,11 +2336,12 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBlueprintParentClas
     // Store old parent for response
     FString OldParentName = BP->ParentClass ? BP->ParentClass->GetName() : TEXT("None");
 
-    // Perform reparent — uses KismetEditorUtilities which handles safe migration
-    // ReparentBlueprint was removed from FKismetEditorUtilities in UE5.4+.
-    // Use FBlueprintEditorUtils::ReparentBlueprint instead.
-    FBlueprintEditorUtils::ReparentBlueprint(BP, NewParentClass);
-    BP->Modify();
+    // Perform reparent.
+    // FKismetEditorUtilities::ReparentBlueprint removed in UE5.4+.
+    // FBlueprintEditorUtils has no ReparentBlueprint in UE5.6.
+    // Correct API: UBlueprintEditorLibrary::ReparentBlueprint (BlueprintEditorLibrary module).
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+    UBlueprintEditorLibrary::ReparentBlueprint(BP, NewParentClass);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"),        true);
@@ -2445,8 +2447,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNiagaraComponent(
         }
     }
 
-    BP->Modify();
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"),          true);
@@ -2498,18 +2500,35 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSpawnNiagaraAtLocat
     CallNode->PostPlacedNewNode();
     CallNode->AllocateDefaultPins();
 
-    // Set the SystemTemplate pin default to the NS path
+    // Set the SystemTemplate pin default to the NS path.
+    // Use FindObject first (cache-only, instant) to avoid StaticLoadObject stalling
+    // the GameThread when the Niagara asset has not been loaded yet.
+    // StaticLoadObject does a synchronous disk read from the GameThread which can
+    // block indefinitely on a slow or networked drive.  If the asset is not already
+    // in memory, the pin stays unset (nullptr) and the caller can set it manually.
     for (UEdGraphPin* Pin : CallNode->Pins)
     {
         if (Pin->PinName == TEXT("SystemTemplate"))
         {
-            Pin->DefaultObject = Cast<UNiagaraSystem>(
-                StaticLoadObject(UNiagaraSystem::StaticClass(), nullptr, *NSPath));
+            UNiagaraSystem* NiagaraAsset = FindObject<UNiagaraSystem>(nullptr, *NSPath);
+            if (!NiagaraAsset)
+            {
+                // Attempt a load, but only if the path looks valid — avoids blocking
+                // on a missing/typo path.  A non-empty NSPath that starts with /Game/
+                // or /Script/ is assumed to be a real asset path.
+                if (!NSPath.IsEmpty() && (NSPath.StartsWith(TEXT("/Game/")) ||
+                                          NSPath.StartsWith(TEXT("/Script/"))))
+                {
+                    NiagaraAsset = Cast<UNiagaraSystem>(
+                        StaticLoadObject(UNiagaraSystem::StaticClass(), nullptr, *NSPath));
+                }
+            }
+            Pin->DefaultObject = NiagaraAsset;
             break;
         }
     }
 
-    BP->Modify();
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"),           true);
@@ -2768,9 +2787,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetSequencerTrack(
 
                 double TimeVal = 0.0;
                 (*KFObj)->TryGetNumberField(TEXT("time"), TimeVal);
-                // FFrameRate * double operator removed in UE5.4+; use ConvertTo instead
+                // FFrameRate * double operator removed in UE5.4+; compute manually.
+                // FMath::RoundToInt returns int64 in UE5.5+; cast to int32 for FFrameNumber.
                 FFrameNumber FrameNum = TickRate.AsDecimal() > 0.0
-                    ? FFrameNumber(FMath::RoundToInt(TimeVal * TickRate.AsDecimal()))
+                    ? FFrameNumber(static_cast<int32>(FMath::RoundToInt64(TimeVal * TickRate.AsDecimal())))
                     : FFrameNumber(0);
 
                 // Extend section range
@@ -2908,10 +2928,14 @@ static TSharedPtr<FJsonObject> AddFunctionNodeHelper(
 
     UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
     if (Func && OwningClass)
+    {
         Node->FunctionReference.SetExternalMember(FName(*FunctionName), OwningClass);
+    }
     else
+    {
         Node->FunctionReference.SetExternalMember(FName(*FunctionName),
-            UObject::StaticClass()); // fallback
+            UObject::StaticClass());
+    } // fallback
 
     Node->NodePosX = Position.X;
     Node->NodePosY = Position.Y;
@@ -2919,7 +2943,7 @@ static TSharedPtr<FJsonObject> AddFunctionNodeHelper(
     Node->CreateNewGuid();
     Node->PostPlacedNewNode();
     Node->AllocateDefaultPins();
-    BP->Modify();
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetBoolField(TEXT("success"), true);

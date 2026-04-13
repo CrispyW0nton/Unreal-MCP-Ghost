@@ -5,6 +5,7 @@
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
 #include "K2Node_Event.h"
+#include "K2Node_CustomEvent.h"
 #include "K2Node_CallFunction.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
@@ -151,47 +152,191 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprint(const FString& BlueprintName)
     return FindBlueprintByName(BlueprintName);
 }
 
+// ---------------------------------------------------------------------------
+// Blueprint name → object-path cache.
+//
+// The Asset Registry scan (GetAssets with bRecursivePaths on a large project)
+// is extremely expensive: on an 8 k-asset project it blocks the GameThread for
+// 20-30 s, causing the Python 30 s socket timeout to fire.
+//
+// Fix:
+//   (a) Use AR.GetAssetsByClass() which hits an O(1) class index instead of
+//       scanning every asset in the registry.
+//   (b) Cache the resolved object path in a static TMap so repeated calls for
+//       the same Blueprint cost only a FindObject<> lookup (zero AR scan).
+//   (c) Cache NEGATIVE results (blueprint not found) in GBlueprintMissingCache
+//       with a timestamp.  Missing-BP queries (e.g. get_blueprint_graphs for a
+//       non-existent BP) currently scan ALL blueprint assets every time — on a
+//       project with 500+ blueprints this takes 5-30 s.  The negative cache
+//       returns an error in O(1) for the next 60 s; after that it re-scans once
+//       in case the blueprint was created meanwhile.
+//   (d) The positive cache entry is validated with IsValid() before use; stale
+//       entries (e.g. after Hot-Reload) are automatically evicted.
+// ---------------------------------------------------------------------------
+static TMap<FString, FSoftObjectPath> GBlueprintNameCache;
+
+// Negative cache: blueprints confirmed NOT to exist + the time we last scanned.
+// Value = FPlatformTime::Seconds() at which we confirmed the BP was missing.
+// TTL = 60 s (re-scan after that in case the user created the blueprint).
+static TMap<FString, double> GBlueprintMissingCache;
+static constexpr double MISSING_CACHE_TTL_SECONDS = 60.0;
+
+void FUnrealMCPCommonUtils::InvalidateBlueprintMissCache(const FString& BlueprintName)
+{
+    GBlueprintMissingCache.Remove(BlueprintName);
+}
+
+void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
+{
+    if (!Blueprint || !IsValid(Blueprint)) return;
+
+    // FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified dereferences
+    // Blueprint->GeneratedClass to invalidate the property chain. For
+    // newly-created or first-session-access Blueprints, GeneratedClass may be
+    // null → EXCEPTION_ACCESS_VIOLATION (manifests as EdGraphNode.h:586
+    // assertion or WinError 10053 on Python side).
+    if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+    {
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
+    }
+    else
+    {
+        // Safe fallback: mark the UObject dirty for Undo/save without touching
+        // GeneratedClass. The editor compiles and regenerates the class on next save.
+        Blueprint->Modify();
+        UE_LOG(LogTemp, Warning,
+            TEXT("[MCP] SafeMarkBlueprintModified: GeneratedClass null for '%s' — using Modify() fallback"),
+            *Blueprint->GetName());
+    }
+}
+
 UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
-    // 1) Try the legacy hardcoded path first for backwards compatibility
-    FString AssetPath = TEXT("/Game/Blueprints/") + BlueprintName;
-    UBlueprint* BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (BP) return BP;
+    // ── 0. Check the in-memory positive cache first (free after first lookup) ──
+    if (const FSoftObjectPath* CachedPath = GBlueprintNameCache.Find(BlueprintName))
+    {
+        if (UBlueprint* CachedBP = Cast<UBlueprint>(CachedPath->ResolveObject()))
+        {
+            return CachedBP;
+        }
+        // Stale entry (e.g. after Hot-Reload) – remove and re-scan below.
+        GBlueprintNameCache.Remove(BlueprintName);
+        // Also clear the negative cache entry if it exists, to force a fresh scan.
+        GBlueprintMissingCache.Remove(BlueprintName);
+    }
 
-    // 2) Try direct /Game/<Name> path (asset sitting at content root)
-    AssetPath = TEXT("/Game/") + BlueprintName;
-    BP = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (BP) return BP;
+    // ── 0b. Check the negative cache — skip the expensive AR scan for recently
+    //        confirmed-missing blueprints to avoid 5-30 s hangs on invalid names. ──
+    if (const double* MissTime = GBlueprintMissingCache.Find(BlueprintName))
+    {
+        const double Age = FPlatformTime::Seconds() - *MissTime;
+        if (Age < MISSING_CACHE_TTL_SECONDS)
+        {
+            UE_LOG(LogTemp, Verbose,
+                TEXT("FindBlueprintByName: '%s' in negative cache (%.1f s ago) — skipping AR scan"),
+                *BlueprintName, Age);
+            return nullptr;
+        }
+        // TTL expired — remove stale negative entry and do a fresh scan.
+        GBlueprintMissingCache.Remove(BlueprintName);
+    }
 
-    // 3) Use the Asset Registry to search the entire /Game tree by asset name
+    // ── 1. Try the two common path conventions first (O(1) FindObject) ──
+    auto TryCachedPath = [&](const FString& Path) -> UBlueprint*
+    {
+        // FindObject skips I/O; LoadObject falls back to disk only if needed.
+        UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Path);
+        if (!BP) BP = LoadObject<UBlueprint>(nullptr, *Path);
+        if (BP)
+        {
+            GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
+            GBlueprintMissingCache.Remove(BlueprintName); // clear any stale negative entry
+            return BP;
+        }
+        return nullptr;
+    };
+
+    if (UBlueprint* BP = TryCachedPath(TEXT("/Game/Blueprints/") + BlueprintName)) return BP;
+    if (UBlueprint* BP = TryCachedPath(TEXT("/Game/") + BlueprintName))           return BP;
+
+    // ── 2. Use the Asset Registry class index (fast O(k) where k = # Blueprints) ──
+    //
+    // GetAssetsByClass() uses a pre-built per-class index — it does NOT scan
+    // all 8 k assets. It only visits the ~N Blueprint assets in the project.
+    // This is dramatically faster than GetAssets(Filter) with bRecursivePaths.
     FAssetRegistryModule& ARModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
     IAssetRegistry& AR = ARModule.Get();
 
-    FARFilter Filter;
-    Filter.ClassPaths.Add(UBlueprint::StaticClass()->GetClassPathName());
-    Filter.PackagePaths.Add(TEXT("/Game"));
-    Filter.bRecursivePaths = true;
-
-    TArray<FAssetData> Assets;
-    AR.GetAssets(Filter, Assets);
-
-    for (const FAssetData& Asset : Assets)
+    // ── FIRST-CALL SAFETY: wait for the AR initial scan to finish ─────────
+    // On the very first MCP command of a fresh editor session, the Asset Registry
+    // may still be scanning /Game/**. Calling GetAssetsByClass() while the scan
+    // is running can intermittently return an incomplete index, which causes
+    // Asset.GetAsset() to call StaticLoadObject on packages that are being
+    // asynchronously loaded — triggering a GC-unsafe access that manifests as
+    // EXCEPTION_ACCESS_VIOLATION → WinError 10053 (WSAECONNABORTED) on Python.
+    // WaitForCompletion() blocks until the initial disk scan finishes (< 2 s on
+    // a warm filesystem cache) and is a no-op if the scan is already done.
+    if (!AR.IsSearchAsync() || AR.IsLoadingAssets())
     {
-        // Match on asset name (case-insensitive)
-        if (Asset.AssetName.ToString().Equals(BlueprintName, ESearchCase::IgnoreCase))
+        UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: AR still scanning — waiting for completion before '%s' lookup"), *BlueprintName);
+        AR.WaitForCompletion();
+        UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: AR scan complete"));
+    }
+
+    // ── 2b. Use TagsAndValues filter for O(1) name lookup (UE5.6-compatible) ─
+    // FARFilter.TagsAndValues lets us query by the "AssetBundleData" or any
+    // asset-searchable tag. However UBlueprint doesn't expose a name tag.
+    // Fallback: use GetAssetsByClass (Blueprint class index, O(k)) but convert
+    // the FName lookup so C++ comparison is O(1) per asset via FName hash.
+    // This is still O(k) total (k = # Blueprints in project) but k << 8k (all assets).
+    const FName BlueprintFName(*BlueprintName);
+
+    TArray<FAssetData> BlueprintAssets;
+    // bSearchSubClasses=true is needed to catch UAnimBlueprint, UWidgetBlueprint, etc.
+    // (subclasses of UBlueprint).  These are common in game projects.
+    // The class index is pre-built so this is O(k) — fast after AR warmup.
+    AR.GetAssetsByClass(UBlueprint::StaticClass()->GetClassPathName(), BlueprintAssets, /*bSearchSubClasses=*/true);
+
+    // Fast early-exit: if the AR returned no blueprints at all, the project
+    // has no blueprints or the scan is incomplete — skip loop entirely.
+    if (BlueprintAssets.IsEmpty())
+    {
+        GBlueprintMissingCache.Add(BlueprintName, FPlatformTime::Seconds());
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] FindBlueprintByName: AR returned 0 Blueprint assets (scan incomplete?) for '%s'"), *BlueprintName);
+        return nullptr;
+    }
+
+    for (const FAssetData& Asset : BlueprintAssets)
+    {
+        // Fast FName hash comparison — O(1) per asset (no string allocation).
+        if (Asset.AssetName != BlueprintFName) continue;
+
+        // ── SAFE ASSET RESOLUTION ─────────────────────────────────────
+        // Prefer FindObject (in-memory, no I/O) over Asset.GetAsset()
+        // (which calls StaticLoadObject and can crash on first-session access
+        // when the UPackage is in a partially-loaded state).
+        UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Asset.GetObjectPathString());
+        if (!BP)
         {
+            // Fall back to GetAsset() only if FindObject failed.
+            // This is safe after WaitForCompletion() above because all
+            // packages the AR knows about have finished their disk scan.
             BP = Cast<UBlueprint>(Asset.GetAsset());
-            if (BP)
-            {
-                UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
-                    *BlueprintName, *Asset.GetObjectPathString());
-                return BP;
-            }
+        }
+        if (BP && IsValid(BP))
+        {
+            GBlueprintNameCache.Add(BlueprintName, FSoftObjectPath(BP));
+            GBlueprintMissingCache.Remove(BlueprintName);
+            UE_LOG(LogTemp, Display, TEXT("FindBlueprintByName: found '%s' at '%s'"),
+                *BlueprintName, *Asset.GetObjectPathString());
+            return BP;
         }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("FindBlueprintByName: could not find blueprint '%s' anywhere under /Game"),
-        *BlueprintName);
+    // Record in the negative cache so the next call within 60 s returns O(1).
+    GBlueprintMissingCache.Add(BlueprintName, FPlatformTime::Seconds());
+    UE_LOG(LogTemp, Warning, TEXT("FindBlueprintByName: could not find blueprint '%s' anywhere under /Game (cached as missing for %.0f s)"),
+        *BlueprintName, MISSING_CACHE_TTL_SECONDS);
     return nullptr;
 }
 
@@ -217,57 +362,140 @@ UEdGraph* FUnrealMCPCommonUtils::FindOrCreateEventGraph(UBlueprint* Blueprint)
     return NewGraph;
 }
 
+// ─── Event-name alias table ────────────────────────────────────────────────
+// Many callers use the friendly "BeginPlay" / "Tick" names. UE5 stores the
+// override function under the UFUNCTION name on AActor / UActorComponent, which
+// is sometimes different (e.g. "ReceiveBeginPlay" vs "BeginPlay").
+// We resolve in this order:
+//   1. Check existing nodes so we never duplicate (return existing node).
+//   2. Look up alias → canonical UE5 function name.
+//   3. Search the Blueprint's parent class hierarchy (not GeneratedClass,
+//      which may be null for newly-created BPs) for the UFunction.
+//   4. If not found in parent hierarchy, fall back to a custom event.
+static const struct { const TCHAR* Alias; const TCHAR* UE5Name; const TCHAR* OwnerClass; }
+GEventAliases[] =
+{
+    // AActor overrideable events
+    { TEXT("BeginPlay"),          TEXT("ReceiveBeginPlay"),          TEXT("Actor") },
+    { TEXT("EndPlay"),            TEXT("ReceiveEndPlay"),            TEXT("Actor") },
+    { TEXT("Tick"),               TEXT("ReceiveTick"),               TEXT("Actor") },
+    { TEXT("ActorBeginOverlap"),  TEXT("ReceiveActorBeginOverlap"),  TEXT("Actor") },
+    { TEXT("ActorEndOverlap"),    TEXT("ReceiveActorEndOverlap"),    TEXT("Actor") },
+    { TEXT("ActorHit"),           TEXT("ReceiveActorHit"),           TEXT("Actor") },
+    { TEXT("Destroyed"),          TEXT("ReceiveDestroyed"),          TEXT("Actor") },
+    { TEXT("AnyDamage"),          TEXT("ReceiveAnyDamage"),          TEXT("Actor") },
+    { TEXT("PointDamage"),        TEXT("ReceivePointDamage"),        TEXT("Actor") },
+    { TEXT("RadialDamage"),       TEXT("ReceiveRadialDamage"),       TEXT("Actor") },
+    // APawn
+    { TEXT("SetupPlayerInput"),   TEXT("ReceiveInput"),              TEXT("Pawn")  },
+    // UActorComponent overrideable events
+    { TEXT("InitializeComponent"),TEXT("ReceiveInitializeComponent"),TEXT("ActorComponent") },
+    { TEXT("BeginDestroy"),       TEXT("ReceiveBeginDestroy"),       TEXT("ActorComponent") },
+    // Direct UE5 names (no alias needed — included so they still work)
+    { TEXT("ReceiveBeginPlay"),   TEXT("ReceiveBeginPlay"),          TEXT("Actor") },
+    { TEXT("ReceiveEndPlay"),     TEXT("ReceiveEndPlay"),            TEXT("Actor") },
+    { TEXT("ReceiveTick"),        TEXT("ReceiveTick"),               TEXT("Actor") },
+};
+
 // Blueprint node utilities
 UK2Node_Event* FUnrealMCPCommonUtils::CreateEventNode(UEdGraph* Graph, const FString& EventName, const FVector2D& Position)
 {
     if (!Graph)
-    {
         return nullptr;
-    }
-    
+
     UBlueprint* Blueprint = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     if (!Blueprint)
-    {
         return nullptr;
-    }
-    
-    // Check for existing event node with this exact name
+
+    FName EventFName(*EventName);
+
+    // ── 1. Return existing node to avoid duplicates ──────────────────────────
     for (UEdGraphNode* Node : Graph->Nodes)
     {
         UK2Node_Event* EventNode = Cast<UK2Node_Event>(Node);
-        if (EventNode && EventNode->EventReference.GetMemberName() == FName(*EventName))
+        if (EventNode && EventNode->EventReference.GetMemberName() == EventFName)
         {
-            UE_LOG(LogTemp, Display, TEXT("Using existing event node with name %s (ID: %s)"), 
+            UE_LOG(LogTemp, Display, TEXT("[MCP] CreateEventNode: returning existing node '%s' (ID: %s)"),
                 *EventName, *EventNode->NodeGuid.ToString());
             return EventNode;
         }
     }
 
-    // No existing node found, create a new one
-    UK2Node_Event* EventNode = nullptr;
-    
-    // Find the function to create the event
-    UClass* BlueprintClass = Blueprint->GeneratedClass;
-    UFunction* EventFunction = BlueprintClass->FindFunctionByName(FName(*EventName));
-    
-    if (EventFunction)
+    // ── 2. Resolve alias → canonical UE5 function name ───────────────────────
+    FString CanonicalName = EventName;
+    for (const auto& A : GEventAliases)
     {
+        if (EventName.Equals(A.Alias, ESearchCase::IgnoreCase))
+        {
+            CanonicalName = A.UE5Name;
+            break;
+        }
+    }
+    FName CanonicalFName(*CanonicalName);
+
+    // ── 3. Walk the parent class hierarchy (safe — no GeneratedClass needed) ─
+    //       Blueprint->ParentClass is always valid; GeneratedClass may be null
+    //       for newly-created BPs that haven't been compiled yet.
+    UFunction* EventFunction  = nullptr;
+    UClass*    OwnerClass     = nullptr;
+
+    UClass* SearchClass = Blueprint->ParentClass;
+    while (SearchClass)
+    {
+        UFunction* F = SearchClass->FindFunctionByName(CanonicalFName, EIncludeSuperFlag::ExcludeSuper);
+        if (F)
+        {
+            EventFunction = F;
+            OwnerClass    = SearchClass;
+            break;
+        }
+        SearchClass = SearchClass->GetSuperClass();
+    }
+
+    UK2Node_Event* EventNode = nullptr;
+
+    if (EventFunction && OwnerClass)
+    {
+        // Standard override event — use bOverrideFunction so UE5 knows this
+        // is an overridden event, not a new custom event.
         EventNode = NewObject<UK2Node_Event>(Graph);
-        EventNode->EventReference.SetExternalMember(FName(*EventName), BlueprintClass);
-        EventNode->NodePosX = Position.X;
-        EventNode->NodePosY = Position.Y;
+        EventNode->EventReference.SetExternalMember(CanonicalFName, OwnerClass);
+        EventNode->bOverrideFunction = true;
+        EventNode->NodePosX = (int32)Position.X;
+        EventNode->NodePosY = (int32)Position.Y;
         EventNode->CreateNewGuid();
         Graph->AddNode(EventNode, true);
         EventNode->PostPlacedNewNode();
         EventNode->AllocateDefaultPins();
-        UE_LOG(LogTemp, Display, TEXT("Created new event node with name %s (ID: %s)"), 
-            *EventName, *EventNode->NodeGuid.ToString());
+        UE_LOG(LogTemp, Display, TEXT("[MCP] CreateEventNode: override event '%s' on %s (ID: %s)"),
+            *CanonicalName, *OwnerClass->GetName(), *EventNode->NodeGuid.ToString());
     }
     else
     {
-        UE_LOG(LogTemp, Error, TEXT("Failed to find function for event name: %s"), *EventName);
+        // ── 4. Fall back: create a custom event with the requested name ───────
+        //       This covers project-specific events not in the parent class.
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] CreateEventNode: '%s' not found in parent hierarchy — creating custom event"),
+            *CanonicalName);
+
+        UK2Node_CustomEvent* CustomNode = NewObject<UK2Node_CustomEvent>(Graph);
+        if (!CustomNode)
+        {
+            UE_LOG(LogTemp, Error, TEXT("[MCP] CreateEventNode: failed to create custom event '%s'"), *CanonicalName);
+            return nullptr;
+        }
+        CustomNode->CustomFunctionName = CanonicalFName;
+        CustomNode->NodePosX = (int32)Position.X;
+        CustomNode->NodePosY = (int32)Position.Y;
+        CustomNode->CreateNewGuid();
+        Graph->AddNode(CustomNode, true);
+        CustomNode->PostPlacedNewNode();
+        CustomNode->AllocateDefaultPins();
+        // UK2Node_CustomEvent IS a UK2Node_Event subclass
+        EventNode = Cast<UK2Node_Event>(CustomNode);
+        UE_LOG(LogTemp, Display, TEXT("[MCP] CreateEventNode: custom event '%s' (ID: %s)"),
+            *CanonicalName, EventNode ? *EventNode->NodeGuid.ToString() : TEXT("null"));
     }
-    
+
     return EventNode;
 }
 
@@ -331,37 +559,44 @@ UK2Node_VariableSet* FUnrealMCPCommonUtils::CreateVariableSetNode(UEdGraph* Grap
 UK2Node_InputAction* FUnrealMCPCommonUtils::CreateInputActionNode(UEdGraph* Graph, const FString& ActionName, const FVector2D& Position)
 {
     if (!Graph)
-    {
         return nullptr;
-    }
-    
+
     UK2Node_InputAction* InputActionNode = NewObject<UK2Node_InputAction>(Graph);
     InputActionNode->InputActionName = FName(*ActionName);
-    InputActionNode->NodePosX = Position.X;
-    InputActionNode->NodePosY = Position.Y;
+    InputActionNode->NodePosX = (int32)Position.X;
+    InputActionNode->NodePosY = (int32)Position.Y;
     InputActionNode->CreateNewGuid();
-    Graph->AddNode(InputActionNode, true);
-    InputActionNode->PostPlacedNewNode();
+
+    // AddNode with bFromUI=false to skip the OnNodeAdded notification chain
+    // that validates the action name against Project Input Settings (slow on
+    // projects that haven't loaded Input Settings yet — can take 20-30s).
+    Graph->AddNode(InputActionNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+    // Skip PostPlacedNewNode() — it triggers input settings validation.
+    // Call AllocateDefaultPins() directly to set up Pressed/Released exec pins.
     InputActionNode->AllocateDefaultPins();
-    
+
+    UE_LOG(LogTemp, Display, TEXT("[MCP] CreateInputActionNode: created legacy InputAction node '%s'"), *ActionName);
     return InputActionNode;
 }
 
 UK2Node_Self* FUnrealMCPCommonUtils::CreateSelfReferenceNode(UEdGraph* Graph, const FVector2D& Position)
 {
     if (!Graph)
-    {
         return nullptr;
-    }
-    
+
     UK2Node_Self* SelfNode = NewObject<UK2Node_Self>(Graph);
-    SelfNode->NodePosX = Position.X;
-    SelfNode->NodePosY = Position.Y;
+    SelfNode->NodePosX = (int32)Position.X;
+    SelfNode->NodePosY = (int32)Position.Y;
     SelfNode->CreateNewGuid();
-    Graph->AddNode(SelfNode, true);
-    SelfNode->PostPlacedNewNode();
+    // AddNode with bFromUI=false + bSelectNewNode=false avoids the
+    // OnNodeAdded path that calls PostPlacedNewNode() → GetSchema() →
+    // GetGraphType() → dereferences Blueprint->GeneratedClass, which can
+    // block 20-45 s if the Blueprint is in an intermediate compile state.
+    Graph->AddNode(SelfNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+    // Skip PostPlacedNewNode() for the same reason.
     SelfNode->AllocateDefaultPins();
-    
+    UE_LOG(LogTemp, Display, TEXT("[MCP] CreateSelfReferenceNode: created Self node (ID: %s)"),
+        *SelfNode->NodeGuid.ToString());
     return SelfNode;
 }
 
@@ -460,13 +695,19 @@ UEdGraphPin* FUnrealMCPCommonUtils::FindPin(UEdGraphNode* Node, const FString& P
 
     // Common exec-pin alias pairs
     FString PinLower = PinName.ToLower();
-    if      (PinLower == TEXT("execute") || PinLower == TEXT("exec"))
-        Candidates.Add(TEXT("execute")), Candidates.Add(TEXT("exec")), Candidates.Add(TEXT("then"));
+    if (PinLower == TEXT("execute") || PinLower == TEXT("exec"))
+    {
+        Candidates.Add(TEXT("execute")); Candidates.Add(TEXT("exec")); Candidates.Add(TEXT("then"));
+    }
     else if (PinLower == TEXT("then"))
-        Candidates.Add(TEXT("execute")), Candidates.Add(TEXT("exec"));
-    // "return value" variants
+    {
+        Candidates.Add(TEXT("execute")); Candidates.Add(TEXT("exec"));
+    }
     else if (PinLower == TEXT("returnvalue") || PinLower == TEXT("return_value") || PinLower == TEXT("return value"))
-        Candidates.Add(TEXT("ReturnValue")), Candidates.Add(TEXT("return value"));
+    {
+        // "return value" variants
+        Candidates.Add(TEXT("ReturnValue")); Candidates.Add(TEXT("return value"));
+    }
 
     // ---- 1. Exact name match (with aliases) ----
     for (const FString& Candidate : Candidates)
