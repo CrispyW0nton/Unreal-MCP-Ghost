@@ -342,3 +342,46 @@ setup_full_retargeting_pipeline(
 - *Blueprints Visual Scripting for UE5* p.101: "Drag from Other Actor → Cast To ThirdPersonCharacter → SET [NPC_Ref_Variable] — if code is in the NPC, use Self node to pass the NPC's reference"
 - Confirmed: Self node in BP_Smuggler provides the smuggler actor reference to store in the character's SmuglerRef variable
 
+
+---
+
+## BUG-042 — BP_Smuggler Dialogue: Text="Text", E-key Stops Working After First Press
+
+**Date:** 2026-04-13  
+**Status:** ✅ **FIXED**  
+**File Changed:** `BP_Smuggler` (EventGraph)
+
+### Symptoms
+- Walking into interaction zone showed prompt ✅  
+- Pressing E showed dialogue box but text read **"Text"** (placeholder)  
+- Pressing E a second/third time: dialogue box disappeared, no further text  
+
+### Root Causes (all confirmed via full `get_blueprint_nodes` audit)
+
+| # | Bug | Evidence | Fix |
+|---|-----|----------|-----|
+| 1 | **Wrong gate variable** | `IfThenElse_1.Condition` read `bPlayerInRange` (ShootingZone flag), not `bCanFIre` (InteractionSphere flag). After first E press, dialogue text was set hidden=false, but the *second* press would still route through ITE1 which evaluated `bPlayerInRange=false` → else branch was unconnected → dead end. | Bypass `IfThenElse_1` entirely: disconnected `CE0→ITE1`, wired `CE0.then → CF10.execute` directly |
+| 2 | **Modulo B=1** | `Percent_IntInt.B` defaulted to `1` → `(DialogueIndex+1) % 1 = 0` always → index never advanced past 0. On every E press the index was reset to 0 immediately after being computed | Set `Percent_IntInt.B = 3` (number of dialogue lines) |
+| 3 | **Empty Line variables** | `Line0`, `Line1`, `Line2` all had empty default values → `CurrentLine` was empty → `K2_SetText` set "Text" (component placeholder) | Set default values for all three lines |
+
+### Dialogue Flow After Fix (per E press)
+
+```
+Interact event fires →
+  SetVisibility(PromptText, false)    ← hides prompt
+  SetHiddenInGame(DialogueText, false) ← shows dialogue box
+  if DialogueIndex==0 → CurrentLine = Line0
+  elif DialogueIndex!=1 → CurrentLine = Line2
+  else → CurrentLine = Line1
+  K2_SetText(DialogueText, CurrentLine)
+  DialogueIndex = (DialogueIndex + 1) % 3  ← cycles 0→1→2→0
+```
+
+Press 1: index=0 → "I've been waiting for someone like you…" → index becomes 1  
+Press 2: index=1 → "Listen carefully. The shipment arrives at midnight." → index becomes 2  
+Press 3: index=2 → "Don't keep me waiting. Get moving." → index becomes 0  
+
+### Book Reference
+- *Blueprints Visual Scripting for UE5* p.328–329: array index pattern — check bounds, use current index to get value, increment and wrap with modulo
+- p.173: use SetText node (K2_SetText) to update text component from variable
+
