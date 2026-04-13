@@ -1460,8 +1460,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
         Node->NodePosX = (int32)Pos.X;
         Node->NodePosY = (int32)Pos.Y;
         Node->CreateNewGuid();
+        // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only
         Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
-        Node->PostPlacedNewNode();
         Node->AllocateDefaultPins();
     }
     else
@@ -1715,10 +1715,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintGetSe
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node);
-    Node->PostPlacedNewNode();
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
@@ -1854,15 +1853,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintEnhan
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node);
-
-    // Set the InputAction property on the node
+    // CRASH-003 safe pattern: set InputAction BEFORE AddNode so it's available during AllocateDefaultPins
     Node->InputAction = InputAction;
-    
-    // Initialize the node
-    Node->PostPlacedNewNode();
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
@@ -1996,10 +1990,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintGetCo
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node);
-    Node->PostPlacedNewNode();
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
 
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
@@ -2107,10 +2100,11 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSetCo
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node, true);
-    Node->PostPlacedNewNode();
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only —
+    // PostPlacedNewNode + ReconstructNode trigger MarkBlueprintAsStructurallyModified
+    // which fires MassEntityEditor observer → EXCEPTION_ACCESS_VIOLATION in UE5.6
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
 
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
@@ -2222,10 +2216,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCastN
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node);
-    Node->PostPlacedNewNode();
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
@@ -2295,10 +2288,9 @@ static UK2Node_MacroInstance* CreateMacroNode(UEdGraph* Graph, const FString& Ma
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node);
-    Node->PostPlacedNewNode();
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
     return Node;
 }
 
@@ -2534,10 +2526,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSwitc
     RawNode->NodePosX = (int32)Pos.X;
     RawNode->NodePosY = (int32)Pos.Y;
     RawNode->CreateNewGuid();
-    Graph->AddNode(RawNode);
-    RawNode->PostPlacedNewNode();
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) + AllocateDefaultPins only
+    Graph->AddNode(RawNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     RawNode->AllocateDefaultPins();
-    RawNode->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
