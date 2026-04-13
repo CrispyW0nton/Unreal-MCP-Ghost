@@ -3298,8 +3298,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
 // ============================================================
 // add_component_overlap_event  (BUG-030)
 // Params: blueprint_name, component_name, [event_name], [node_position]
-// Creates a K2Node_ComponentBoundEvent scoped to a specific SCS component's
-// VariableGuid so N components each get their own bound-event node.
+// Creates a K2Node_ComponentBoundEvent scoped to a specific SCS component.
+//
+// InitializeComponentBoundEventParams API (UE5):
+//   void InitializeComponentBoundEventParams(
+//       const FObjectProperty* InComponentProperty,   <- property on BP::GeneratedClass
+//       const FMulticastDelegateProperty* InDelegateProperty) <- delegate on component class
 // ============================================================
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddComponentOverlapEvent(
     const TSharedPtr<FJsonObject>& Params)
@@ -3324,8 +3328,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddComponentOverl
     if (Params->HasField(TEXT("node_position")))
         Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
 
-    // Find the SCS node for this component by name
-    USCS_Node* TargetSCSNode = nullptr;
+    // ── Step 1: find the SCS node to get the component class ──────────────────
     UClass* ComponentClass = nullptr;
     if (BP->SimpleConstructionScript)
     {
@@ -3334,38 +3337,65 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddComponentOverl
             if (!SCSNode) continue;
             if (SCSNode->GetVariableName().ToString().Equals(ComponentName, ESearchCase::IgnoreCase))
             {
-                TargetSCSNode = SCSNode;
                 ComponentClass = SCSNode->ComponentClass;
                 break;
             }
         }
     }
-    if (!TargetSCSNode)
+    if (!ComponentClass)
         return FUnrealMCPCommonUtils::CreateErrorResponse(
             FString::Printf(TEXT("SCS component '%s' not found in Blueprint '%s'"), *ComponentName, *BlueprintName));
 
-    // Resolve the UFunction for the requested event on the component class
-    UFunction* EventFunc = nullptr;
-    if (ComponentClass)
-        EventFunc = ComponentClass->FindFunctionByName(FName(*EventName));
-    // Also search the MulticastDelegate property if FindFunctionByName misses it
-    if (!EventFunc && ComponentClass)
+    // ── Step 2: find the FObjectProperty on GeneratedClass (or SkeletonClass) ─
+    // InitializeComponentBoundEventParams needs the FObjectProperty that the
+    // Blueprint exposes for the component variable (e.g. FObjectProperty "InteractionSphere").
+    FObjectProperty* CompProp = nullptr;
+    UClass* SearchClass = BP->GeneratedClass ? BP->GeneratedClass : BP->SkeletonGeneratedClass;
+    if (SearchClass)
     {
-        for (TFieldIterator<FMulticastDelegateProperty> It(ComponentClass); It; ++It)
+        for (TFieldIterator<FObjectProperty> It(SearchClass); It; ++It)
         {
-            if (It->GetName().Equals(EventName, ESearchCase::IgnoreCase))
+            if (It->GetName().Equals(ComponentName, ESearchCase::IgnoreCase))
             {
-                // Use the delegate's signature function
-                EventFunc = It->SignatureFunction;
+                CompProp = *It;
                 break;
             }
         }
     }
-    if (!EventFunc)
+    // Fallback: search skeleton class if GeneratedClass didn't have it
+    if (!CompProp && BP->SkeletonGeneratedClass && SearchClass != BP->SkeletonGeneratedClass)
+    {
+        for (TFieldIterator<FObjectProperty> It(BP->SkeletonGeneratedClass); It; ++It)
+        {
+            if (It->GetName().Equals(ComponentName, ESearchCase::IgnoreCase))
+            {
+                CompProp = *It;
+                break;
+            }
+        }
+    }
+    if (!CompProp)
         return FUnrealMCPCommonUtils::CreateErrorResponse(
-            FString::Printf(TEXT("Event '%s' not found on component class '%s'"),
-                *EventName, ComponentClass ? *ComponentClass->GetName() : TEXT("unknown")));
+            FString::Printf(TEXT("FObjectProperty '%s' not found on GeneratedClass of '%s'. "
+                "Ensure the Blueprint has been saved/compiled at least once."),
+                *ComponentName, *BlueprintName));
 
+    // ── Step 3: find the FMulticastDelegateProperty on the component class ────
+    FMulticastDelegateProperty* DelegateProp = nullptr;
+    for (TFieldIterator<FMulticastDelegateProperty> It(ComponentClass, EFieldIteratorFlags::IncludeSuper); It; ++It)
+    {
+        if (It->GetName().Equals(EventName, ESearchCase::IgnoreCase))
+        {
+            DelegateProp = *It;
+            break;
+        }
+    }
+    if (!DelegateProp)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Delegate '%s' not found on component class '%s'"),
+                *EventName, *ComponentClass->GetName()));
+
+    // ── Step 4: get/create event graph and dedup ──────────────────────────────
     UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
     if (!Graph) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get event graph"));
 
@@ -3386,16 +3416,17 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddComponentOverl
         }
     }
 
-    // Create the ComponentBoundEvent node
+    // ── Step 5: create and initialise the node ────────────────────────────────
     UK2Node_ComponentBoundEvent* CBENode = NewObject<UK2Node_ComponentBoundEvent>(Graph);
     if (!CBENode) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create K2Node_ComponentBoundEvent"));
 
-    CBENode->InitializeComponentBoundEventParams(TargetSCSNode, EventFunc);
+    // Correct API: (FObjectProperty* component prop, FMulticastDelegateProperty* delegate prop)
+    CBENode->InitializeComponentBoundEventParams(CompProp, DelegateProp);
     CBENode->NodePosX = (int32)Pos.X;
     CBENode->NodePosY = (int32)Pos.Y;
     CBENode->CreateNewGuid();
 
-    // AddNode first so CreatePin assertions pass, then allocate pins — no PostPlacedNewNode (CRASH-003 pattern)
+    // CRASH-003 safe pattern: AddNode(bFromUI=false) then AllocateDefaultPins — NO PostPlacedNewNode
     Graph->AddNode(CBENode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     CBENode->AllocateDefaultPins();
 
