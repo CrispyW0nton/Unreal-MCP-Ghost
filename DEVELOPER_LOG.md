@@ -385,3 +385,52 @@ Press 3: index=2 → "Don't keep me waiting. Get moving." → index becomes 0
 - *Blueprints Visual Scripting for UE5* p.328–329: array index pattern — check bounds, use current index to get value, increment and wrap with modulo
 - p.173: use SetText node (K2_SetText) to update text component from variable
 
+
+## BUG-043 — Dialogue shows "Text" placeholder; E-key progression wrong order
+**Date:** 2026-04-13
+**Status:** FIXED
+**Files Changed:** BP_Smuggler EventGraph
+
+### Symptoms
+- Entering the InteractionSphere showed the text widget but it displayed the placeholder "Text" instead of actual dialogue
+- Pressing E once hid the prompt; subsequent E presses showed nothing new or showed lines in wrong order
+- Lines would cycle as: Line0 → Line2 → Line1 (wrong) instead of Line0 → Line1 → Line2
+
+### Root Causes (3 bugs)
+
+**BUG-043a: Variable defaults were not persisted**
+- `Line0`, `Line1`, `Line2` variables had empty default values (`''`)
+- When `K2_SetText` was called with `CurrentLine = ""`, the TextBlock showed its internal "Text" placeholder
+- Fix: Called `set_blueprint_variable_default` for each line variable with actual dialogue strings:
+  - Line0 = "I've been waiting for someone like you. What do you need?"
+  - Line1 = "Listen carefully. The shipment arrives at midnight."
+  - Line2 = "Don't keep me waiting. Get moving."
+  - DialogueIndex = "0"
+
+**BUG-043b: VariableGet_16/17 were wired to wrong VariableSet nodes**
+- `K2Node_VariableSet_13` (reached when `NotEqual(index,1)` is TRUE, i.e. index=2) was feeding `Line1` instead of `Line2`
+- `K2Node_VariableSet_14` (reached when `NotEqual(index,1)` is FALSE, i.e. index=1) was feeding `Line2` instead of `Line1`
+- Caused dialogue line order: press 1 → Line0, press 2 → Line2 (skip!), press 3 → Line1 (wrong order)
+- Fix: Swapped connections:
+  - VariableGet_17 (Line2) → VariableSet_13.CurrentLine (index=2 path) ✅
+  - VariableGet_16 (Line1) → VariableSet_14.CurrentLine (index=1 path) ✅
+
+**BUG-043c: Modulo B=1 was already fixed in BUG-042 (B=3 now)**
+- (Already resolved in previous session, confirmed B=3 ✅)
+
+### Reference
+- Marcos Romero "Blueprints Visual Scripting for UE5" Ch.13: arrays start at index 0, use Get(a copy) with index, check LENGTH for bounds
+
+### Verified Dialogue Progression
+| Press | Index Before | Branch Path | Line Shown | Index After |
+|-------|-------------|-------------|------------|-------------|
+| 1st E | 0 | CF40 TRUE → VS12 | Line0 | 1 |
+| 2nd E | 1 | CF40 FALSE, CF41 FALSE → VS14 | Line1 | 2 |
+| 3rd E | 2 | CF40 FALSE, CF41 TRUE → VS13 | Line2 | 0 |
+| 4th E | 0 | CF40 TRUE → VS12 | Line0 (loops) | 1 |
+
+### Interaction Chains (all ✅)
+- BeginOverlap → SetSmuglerRef(Self) → SetbCanFIre=true → Show PromptText ✅
+- EndOverlap → ClearSmuglerRef → SetbCanFIre=false → Hide PromptText+DialogueText ✅
+- E key → Cast SmuglerRef → Interact() called ✅
+- Interact event → Hide prompt → Show dialogue → Branch index → SetText → Increment index ✅
