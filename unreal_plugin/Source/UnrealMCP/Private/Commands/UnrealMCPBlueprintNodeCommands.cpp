@@ -1218,8 +1218,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         { TEXT("K2_GetActorRotation"),  TEXT("K2_GetActorRotation"),   TEXT("Actor") },
         { TEXT("K2_SetActorRotation"),  TEXT("K2_SetActorRotation"),   TEXT("Actor") },
         { TEXT("AddMovementInput"),     TEXT("AddMovementInput"),      TEXT("Pawn") },
-        // TextRenderComponent — BUG-036
-        { TEXT("SetText"),              TEXT("SetText"),               TEXT("TextRenderComponent") },
+        // TextRenderComponent — BUG-036 / BUG-039
+        // SetText is BlueprintInternalUseOnly; K2_SetText is the Blueprint-callable wrapper.
+        // Both "SetText" and "K2_SetText" aliases resolve to K2_SetText.
+        { TEXT("SetText"),              TEXT("K2_SetText"),            TEXT("TextRenderComponent") },
+        { TEXT("K2_SetText"),           TEXT("K2_SetText"),            TEXT("TextRenderComponent") },
+        { TEXT("Set Text"),             TEXT("K2_SetText"),            TEXT("TextRenderComponent") },
         { TEXT("SetTextRenderColor"),   TEXT("SetTextRenderColor"),    TEXT("TextRenderComponent") },
         { TEXT("SetWorldSize"),         TEXT("SetWorldSize"),          TEXT("TextRenderComponent") },
         // SceneComponent / ActorComponent visibility — BUG-036
