@@ -210,6 +210,28 @@ void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
     }
 }
 
+bool FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(UBlueprint* Blueprint)
+{
+    // CRASH-003 guard: validation-only — NO CompileBlueprint call.
+    // FKismetEditorUtilities::CompileBlueprint crashes UE5.6 when called from an
+    // async-task lambda context (EXCEPTION_ACCESS_VIOLATION via MassEntityEditor observer).
+    // Callers that receive false must skip PostPlacedNewNode, ReconstructNode and
+    // TrySetDefaultObject, and fall back to direct DefaultObject/DefaultValue assignment.
+    if (!Blueprint || !IsValid(Blueprint))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] EnsureBlueprintGeneratedClass: null Blueprint"));
+        return false;
+    }
+    if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
+    {
+        return true;
+    }
+    UE_LOG(LogTemp, Warning,
+        TEXT("[MCP] EnsureBlueprintGeneratedClass: GeneratedClass null for '%s' — callers must skip PostPlacedNewNode/ReconstructNode"),
+        *Blueprint->GetName());
+    return false;
+}
+
 UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintName)
 {
     // ── 0. Check the in-memory positive cache first (free after first lookup) ──
