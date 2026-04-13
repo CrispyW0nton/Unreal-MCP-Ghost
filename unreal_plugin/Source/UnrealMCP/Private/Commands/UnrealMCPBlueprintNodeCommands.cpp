@@ -25,6 +25,7 @@
 #include "K2Node_ForEachElementInEnum.h"
 #include "K2Node_Composite.h"
 #include "K2Node_SpawnActorFromClass.h"
+#include "K2Node_ComponentBoundEvent.h"
 #include "EdGraphNode_Comment.h"
 #include "NavMesh/NavMeshBoundsVolume.h"
 #include "NavigationSystem.h"
@@ -103,6 +104,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleCommand(
     if (CommandType == TEXT("get_blueprint_variables"))                     return HandleGetBlueprintVariables(Params);
     if (CommandType == TEXT("get_blueprint_functions"))                     return HandleGetBlueprintFunctions(Params);
     if (CommandType == TEXT("add_blueprint_function_with_pins"))            return HandleAddBlueprintFunctionWithPins(Params);
+    // BUG-030: per-component ComponentBoundEvent
+    if (CommandType == TEXT("add_component_overlap_event"))                 return HandleAddComponentOverlapEvent(Params);
+    // BUG-035: SCS node inspector
+    if (CommandType == TEXT("get_scs_nodes"))                               return HandleGetSCSNodes(Params);
 
     return FUnrealMCPCommonUtils::CreateErrorResponse(
         FString::Printf(TEXT("Unknown blueprint node command: %s"), *CommandType));
@@ -1376,7 +1381,50 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
     if (Params->HasField(TEXT("node_position")))
         Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
 
-    UK2Node_VariableSet* Node = FUnrealMCPCommonUtils::CreateVariableSetNode(Graph, BP, VarName, Pos);
+    // BUG-032: optional target_class — variable belongs to a different Blueprint class
+    FString TargetClassName;
+    Params->TryGetStringField(TEXT("target_class"), TargetClassName);
+
+    UK2Node_VariableSet* Node = nullptr;
+
+    if (!TargetClassName.IsEmpty())
+    {
+        // Resolve the owning class — try direct find first, then iterate all UClasses
+        UClass* OwnerClass = FindFirstObject<UClass>(*TargetClassName, EFindFirstObjectOptions::None);
+        if (!OwnerClass)
+        {
+            for (TObjectIterator<UClass> It; It; ++It)
+            {
+                if (It->GetName().Equals(TargetClassName, ESearchCase::IgnoreCase))
+                { OwnerClass = *It; break; }
+            }
+        }
+        if (!OwnerClass)
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("target_class not found: %s"), *TargetClassName));
+
+        // Verify the property exists on the resolved class
+        FProperty* Prop = FindFProperty<FProperty>(OwnerClass, FName(*VarName));
+        if (!Prop)
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Variable '%s' not found on class '%s'"), *VarName, *TargetClassName));
+
+        // Create node and bind it to the external member
+        Node = NewObject<UK2Node_VariableSet>(Graph);
+        Node->VariableReference.SetExternalMember(FName(*VarName), OwnerClass);
+        Node->NodePosX = (int32)Pos.X;
+        Node->NodePosY = (int32)Pos.Y;
+        Node->CreateNewGuid();
+        Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+        Node->PostPlacedNewNode();
+        Node->AllocateDefaultPins();
+    }
+    else
+    {
+        // Self variable — original path
+        Node = FUnrealMCPCommonUtils::CreateVariableSetNode(Graph, BP, VarName, Pos);
+    }
+
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(
         FString::Printf(TEXT("Failed to create VariableSet node for '%s'"), *VarName));
 
@@ -3244,5 +3292,192 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         EntryNode ? EntryNode->NodeGuid.ToString() : TEXT(""));
     Result->SetStringField(TEXT("result_node_id"),
         ResultNode ? ResultNode->NodeGuid.ToString() : TEXT(""));
+    return Result;
+}
+
+// ============================================================
+// add_component_overlap_event  (BUG-030)
+// Params: blueprint_name, component_name, [event_name], [node_position]
+// Creates a K2Node_ComponentBoundEvent scoped to a specific SCS component's
+// VariableGuid so N components each get their own bound-event node.
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddComponentOverlapEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!BP) return FUnrealMCPCommonUtils::CreateErrorResponse(
+        FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+
+    FString ComponentName;
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'component_name'"));
+
+    // Default to OnComponentBeginOverlap if not specified
+    FString EventName = TEXT("OnComponentBeginOverlap");
+    Params->TryGetStringField(TEXT("event_name"), EventName);
+
+    FVector2D Pos(0, 0);
+    if (Params->HasField(TEXT("node_position")))
+        Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
+
+    // Find the SCS node for this component by name
+    USCS_Node* TargetSCSNode = nullptr;
+    UClass* ComponentClass = nullptr;
+    if (BP->SimpleConstructionScript)
+    {
+        for (USCS_Node* SCSNode : BP->SimpleConstructionScript->GetAllNodes())
+        {
+            if (!SCSNode) continue;
+            if (SCSNode->GetVariableName().ToString().Equals(ComponentName, ESearchCase::IgnoreCase))
+            {
+                TargetSCSNode = SCSNode;
+                ComponentClass = SCSNode->ComponentClass;
+                break;
+            }
+        }
+    }
+    if (!TargetSCSNode)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("SCS component '%s' not found in Blueprint '%s'"), *ComponentName, *BlueprintName));
+
+    // Resolve the UFunction for the requested event on the component class
+    UFunction* EventFunc = nullptr;
+    if (ComponentClass)
+        EventFunc = ComponentClass->FindFunctionByName(FName(*EventName));
+    // Also search the MulticastDelegate property if FindFunctionByName misses it
+    if (!EventFunc && ComponentClass)
+    {
+        for (TFieldIterator<FMulticastDelegateProperty> It(ComponentClass); It; ++It)
+        {
+            if (It->GetName().Equals(EventName, ESearchCase::IgnoreCase))
+            {
+                // Use the delegate's signature function
+                EventFunc = It->SignatureFunction;
+                break;
+            }
+        }
+    }
+    if (!EventFunc)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Event '%s' not found on component class '%s'"),
+                *EventName, ComponentClass ? *ComponentClass->GetName() : TEXT("unknown")));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    // Dedup: skip if a ComponentBoundEvent for this (component, event) pair already exists
+    for (UEdGraphNode* ExistingNode : Graph->Nodes)
+    {
+        UK2Node_ComponentBoundEvent* CBE = Cast<UK2Node_ComponentBoundEvent>(ExistingNode);
+        if (CBE &&
+            CBE->ComponentPropertyName == FName(*ComponentName) &&
+            CBE->DelegatePropertyName  == FName(*EventName))
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetStringField(TEXT("node_id"),        CBE->NodeGuid.ToString());
+            R->SetStringField(TEXT("component_name"), ComponentName);
+            R->SetStringField(TEXT("event_name"),     EventName);
+            R->SetBoolField(TEXT("already_existed"),  true);
+            return R;
+        }
+    }
+
+    // Create the ComponentBoundEvent node
+    UK2Node_ComponentBoundEvent* CBENode = NewObject<UK2Node_ComponentBoundEvent>(Graph);
+    if (!CBENode) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create K2Node_ComponentBoundEvent"));
+
+    CBENode->InitializeComponentBoundEventParams(TargetSCSNode, EventFunc);
+    CBENode->NodePosX = (int32)Pos.X;
+    CBENode->NodePosY = (int32)Pos.Y;
+    CBENode->CreateNewGuid();
+
+    // AddNode first so CreatePin assertions pass, then allocate pins — no PostPlacedNewNode (CRASH-003 pattern)
+    Graph->AddNode(CBENode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+    CBENode->AllocateDefaultPins();
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetStringField(TEXT("node_id"),        CBENode->NodeGuid.ToString());
+    R->SetStringField(TEXT("node_name"),      CBENode->GetName());
+    R->SetStringField(TEXT("component_name"), ComponentName);
+    R->SetStringField(TEXT("event_name"),     EventName);
+    R->SetBoolField(TEXT("already_existed"),  false);
+    TArray<TSharedPtr<FJsonValue>> Pins;
+    for (UEdGraphPin* P : CBENode->Pins) if (P && !P->bHidden) Pins.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
+    R->SetArrayField(TEXT("pins"), Pins);
+    return R;
+}
+
+// ============================================================
+// get_scs_nodes  (BUG-035)
+// Params: blueprint_name
+// Returns all SCS nodes: name, component_class, variable_guid,
+//         parent_name, is_root, supports_overlap_events
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetSCSNodes(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!BP) return FUnrealMCPCommonUtils::CreateErrorResponse(
+        FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+
+    if (!BP->SimpleConstructionScript)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint has no SimpleConstructionScript"));
+
+    TArray<TSharedPtr<FJsonValue>> NodesArray;
+    TArray<USCS_Node*> AllNodes = BP->SimpleConstructionScript->GetAllNodes();
+    TArray<USCS_Node*> RootNodes = BP->SimpleConstructionScript->GetRootNodes();
+
+    for (USCS_Node* SCSNode : AllNodes)
+    {
+        if (!SCSNode) continue;
+
+        TSharedPtr<FJsonObject> NodeObj = MakeShared<FJsonObject>();
+        NodeObj->SetStringField(TEXT("name"),           SCSNode->GetVariableName().ToString());
+        NodeObj->SetStringField(TEXT("component_class"),
+            SCSNode->ComponentClass ? SCSNode->ComponentClass->GetName() : TEXT("Unknown"));
+        NodeObj->SetStringField(TEXT("variable_guid"),  SCSNode->VariableGuid.ToString());
+
+        // Parent name
+        FString ParentName;
+        USCS_Node* ParentNode = BP->SimpleConstructionScript->FindParentNode(SCSNode);
+        if (ParentNode) ParentName = ParentNode->GetVariableName().ToString();
+        NodeObj->SetStringField(TEXT("parent_name"), ParentName);
+
+        // Is this a root node?
+        bool bIsRoot = RootNodes.Contains(SCSNode);
+        NodeObj->SetBoolField(TEXT("is_root"), bIsRoot);
+
+        // Does this component class have overlap-related delegates?
+        bool bSupportsOverlap = false;
+        if (SCSNode->ComponentClass)
+        {
+            bSupportsOverlap = (SCSNode->ComponentClass->FindFunctionByName(TEXT("OnComponentBeginOverlap")) != nullptr);
+            if (!bSupportsOverlap)
+            {
+                for (TFieldIterator<FMulticastDelegateProperty> It(SCSNode->ComponentClass); It; ++It)
+                {
+                    if (It->GetName().Contains(TEXT("Overlap")))
+                    { bSupportsOverlap = true; break; }
+                }
+            }
+        }
+        NodeObj->SetBoolField(TEXT("supports_overlap_events"), bSupportsOverlap);
+
+        NodesArray.Add(MakeShared<FJsonValueObject>(NodeObj));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetArrayField(TEXT("scs_nodes"), NodesArray);
+    Result->SetNumberField(TEXT("count"), (double)NodesArray.Num());
     return Result;
 }
