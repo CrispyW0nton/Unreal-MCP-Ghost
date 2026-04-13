@@ -317,6 +317,21 @@ UFunction* FUnrealMCPBlueprintNodeCommands::ResolveFunction(
             // Gameplay Abilities
             {TEXT("AbilitySystemComponent"),    TEXT("/Script/GameplayAbilities.AbilitySystemComponent")},
             {TEXT("AbilitySystemBlueprintLibrary"), TEXT("/Script/GameplayAbilities.AbilitySystemBlueprintLibrary")},
+            // Text / UI components
+            {TEXT("TextRenderComponent"),       TEXT("/Script/Engine.TextRenderComponent")},
+            {TEXT("TextBlock"),                 TEXT("/Script/UMG.TextBlock")},
+            {TEXT("WidgetComponent"),           TEXT("/Script/UMG.WidgetComponent")},
+            // Lights
+            {TEXT("PointLightComponent"),       TEXT("/Script/Engine.PointLightComponent")},
+            {TEXT("SpotLightComponent"),        TEXT("/Script/Engine.SpotLightComponent")},
+            {TEXT("DirectionalLightComponent"), TEXT("/Script/Engine.DirectionalLightComponent")},
+            // Collision / overlap
+            {TEXT("SphereComponent"),           TEXT("/Script/Engine.SphereComponent")},
+            {TEXT("BoxComponent"),              TEXT("/Script/Engine.BoxComponent")},
+            {TEXT("CapsuleComponent"),          TEXT("/Script/Engine.CapsuleComponent")},
+            // Camera
+            {TEXT("CameraComponent"),           TEXT("/Script/Engine.CameraComponent")},
+            {TEXT("SpringArmComponent"),        TEXT("/Script/Engine.SpringArmComponent")},
         };
         if (!TargetClass)
         {
@@ -357,15 +372,17 @@ UFunction* FUnrealMCPBlueprintNodeCommands::ResolveFunction(
     }
 
     // --- 4. Global search: walk every loaded UClass looking for the function ---
-    // This is a heavyweight fallback that handles functions in plugin classes that
-    // are not in the shortname map and whose module is unknown to the caller.
+    // Case A: no target class given — search only Library/Statics/Subsystem classes (fast).
+    // Case B: target class was given but could not be resolved above — search ALL classes
+    //         whose name contains the target class string (handles component subclasses,
+    //         plugin classes, etc.). This covers TextRenderComponent::SetText,
+    //         SceneComponent::SetVisibility, etc. that aren't in the shortnames map.
     if (TargetClassStr.IsEmpty())
     {
         for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
         {
             UClass* C = *ClassIt;
             if (!C) continue;
-            // Only search library/subsystem classes to keep the search fast
             FString CName = C->GetName();
             if (!CName.Contains(TEXT("Library")) && !CName.Contains(TEXT("Statics")) &&
                 !CName.Contains(TEXT("BlueprintLibrary")) && !CName.Contains(TEXT("Subsystem")))
@@ -375,10 +392,29 @@ UFunction* FUnrealMCPBlueprintNodeCommands::ResolveFunction(
                 if (It->GetName().Equals(FunctionPath, ESearchCase::IgnoreCase))
                 {
                     UE_LOG(LogMCPNode, Display,
-                        TEXT("ResolveFunction: found '%s' via global search in class '%s'"),
+                        TEXT("ResolveFunction: found '%s' via global library search in class '%s'"),
                         *FunctionPath, *CName);
                     return *It;
                 }
+            }
+        }
+    }
+    else if (!TargetClass)
+    {
+        // Target class was specified but not resolved via shortnames/paths.
+        // Walk all loaded classes looking for one whose name matches TargetClassStr,
+        // then check if it (or a superclass) has the requested function.
+        for (TObjectIterator<UClass> ClassIt; ClassIt; ++ClassIt)
+        {
+            UClass* C = *ClassIt;
+            if (!C) continue;
+            if (!C->GetName().Equals(TargetClassStr, ESearchCase::IgnoreCase)) continue;
+            if (UFunction* F = C->FindFunctionByName(*FunctionPath, EIncludeSuperFlag::IncludeSuper))
+            {
+                UE_LOG(LogMCPNode, Display,
+                    TEXT("ResolveFunction: found '%s' via class-name walk on '%s'"),
+                    *FunctionPath, *C->GetName());
+                return F;
             }
         }
     }
@@ -1182,6 +1218,16 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
         { TEXT("K2_GetActorRotation"),  TEXT("K2_GetActorRotation"),   TEXT("Actor") },
         { TEXT("K2_SetActorRotation"),  TEXT("K2_SetActorRotation"),   TEXT("Actor") },
         { TEXT("AddMovementInput"),     TEXT("AddMovementInput"),      TEXT("Pawn") },
+        // TextRenderComponent — BUG-036
+        { TEXT("SetText"),              TEXT("SetText"),               TEXT("TextRenderComponent") },
+        { TEXT("SetTextRenderColor"),   TEXT("SetTextRenderColor"),    TEXT("TextRenderComponent") },
+        { TEXT("SetWorldSize"),         TEXT("SetWorldSize"),          TEXT("TextRenderComponent") },
+        // SceneComponent / ActorComponent visibility — BUG-036
+        { TEXT("SetVisibility"),        TEXT("SetVisibility"),         TEXT("SceneComponent") },
+        { TEXT("SetHiddenInGame"),      TEXT("SetHiddenInGame"),       TEXT("SceneComponent") },
+        // Actor component access — BUG-036
+        { TEXT("GetComponentByClass"),  TEXT("GetComponentByClass"),   TEXT("Actor") },
+        { TEXT("GetComponentsByClass"), TEXT("GetComponentsByClass"),  TEXT("Actor") },
     };
     for (const FFuncAlias& A : FuncAliases)
     {
@@ -1263,10 +1309,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
             FuncNode->NodePosX = (int32)Pos.X;
             FuncNode->NodePosY = (int32)Pos.Y;
             FuncNode->CreateNewGuid();
-            Graph->AddNode(FuncNode);
-            FuncNode->PostPlacedNewNode();
+            // CRASH-003 pattern: no PostPlacedNewNode/ReconstructNode
+            Graph->AddNode(FuncNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
             FuncNode->AllocateDefaultPins();
-            FuncNode->ReconstructNode();
         }
     }
 
@@ -2106,10 +2151,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintBranc
     Node->NodePosX = (int32)Pos.X;
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
-    Graph->AddNode(Node);
-    Node->PostPlacedNewNode();
+    // CRASH-003 pattern: PostPlacedNewNode/ReconstructNode → MarkBlueprintAsStructurallyModified
+    // → MassEntityEditor observer → EXCEPTION_ACCESS_VIOLATION. Use safe sequence instead.
+    Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     Node->AllocateDefaultPins();
-    Node->ReconstructNode();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);

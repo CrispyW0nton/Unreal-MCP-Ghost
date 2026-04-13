@@ -533,10 +533,12 @@ UK2Node_CallFunction* FUnrealMCPCommonUtils::CreateFunctionCallNode(UEdGraph* Gr
     FunctionNode->NodePosX = Position.X;
     FunctionNode->NodePosY = Position.Y;
     FunctionNode->CreateNewGuid();
-    Graph->AddNode(FunctionNode, true);
-    FunctionNode->PostPlacedNewNode();
+    // CRASH-003 pattern: PostPlacedNewNode→MarkBlueprintAsStructurallyModified crashes UE5.6.
+    // AddNode(bFromUI=false) then AllocateDefaultPins() — SetFromFunction already set the
+    // function reference so AllocateDefaultPins() produces all typed pins correctly.
+    Graph->AddNode(FunctionNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     FunctionNode->AllocateDefaultPins();
-    
+
     return FunctionNode;
 }
 
