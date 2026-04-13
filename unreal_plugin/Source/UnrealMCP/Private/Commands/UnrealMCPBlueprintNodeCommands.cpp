@@ -959,8 +959,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetSpawnActorClas
     const UEdGraphSchema_K2* K2 = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
     if (!K2) return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Could not get K2 schema"));
 
-    K2->TrySetDefaultObject(*ClassPin, ActorClass);
-    SpawnNode->ReconstructNode(); // refresh pins now the class is set
+    // CRASH-003: TrySetDefaultObject triggers ReconstructNode -> MarkBlueprintAsStructurallyModified
+    // -> UE5 MassEntityEditor observer -> EXCEPTION_ACCESS_VIOLATION.
+    // Directly assign DefaultObject instead — avoids the entire reconstruction chain.
+    ClassPin->DefaultObject = ActorClass;
+    ClassPin->DefaultValue  = TEXT("");
+    // ReconstructNode() intentionally OMITTED — crashes UE5 via wildcard-pin expansion.
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     if (BP)
@@ -2480,15 +2484,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSpawn
     Node->NodePosY = (int32)Pos.Y;
     Node->CreateNewGuid();
 
-    // Correct initialisation order for wildcard nodes (UK2Node_SpawnActorFromClass):
-    // 1. AddNode first  — gives the node a valid graph outer so CreatePin succeeds
-    // 2. PostPlacedNewNode — sets up class-pin default state
-    // 3. AllocateDefaultPins — creates all pins now that the node is in the graph
-    // Doing PostPlacedNewNode or AllocateDefaultPins before AddNode causes
-    // EdGraphNode.h:586 "Assertion failed: Result" because CreatePin asserts
-    // that the owning graph's Nodes array already contains this node.
+    // CRASH-003 definitive fix: NEVER call PostPlacedNewNode() or ReconstructNode()
+    // on UK2Node_SpawnActorFromClass. PostPlacedNewNode() calls AllocateDefaultPins()
+    // which triggers MarkBlueprintAsStructurallyModified() -> UE5 MassEntityEditor
+    // observer -> EXCEPTION_ACCESS_VIOLATION (WinError 10053/10038).
+    // Safe sequence: AddNode first (required for CreatePin), then AllocateDefaultPins directly.
     Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
-    Node->PostPlacedNewNode();
+    // PostPlacedNewNode() intentionally OMITTED — crashes UE5 via wildcard-pin expansion.
     Node->AllocateDefaultPins();
 
     // Optionally set the class pin default
@@ -2507,8 +2509,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSpawn
         {
             if (UEdGraphPin* ClassPin = FUnrealMCPCommonUtils::FindPin(Node, TEXT("Class")))
             {
-                const UEdGraphSchema_K2* K2 = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
-                if (K2) K2->TrySetDefaultObject(*ClassPin, ActorClass);
+                // CRASH-003: TrySetDefaultObject triggers ReconstructNode which crashes.
+                // Directly assign DefaultObject and clear DefaultValue — safe alternative.
+                ClassPin->DefaultObject = ActorClass;
+                ClassPin->DefaultValue  = TEXT("");
             }
         }
     }

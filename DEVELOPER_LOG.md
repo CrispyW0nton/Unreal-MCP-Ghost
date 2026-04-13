@@ -86,6 +86,7 @@
 | ID | Tool | Error | Status | Fix Commit |
 |----|------|-------|--------|-----------|
 | BUG-008 / CRASH-001 | `add_blueprint_spawn_actor_node` | Assertion `EdGraphNode.h:586` — null `GeneratedClass` | ✅ Fixed | `SafeMarkBlueprintModified` bulk |
+| CRASH-003 | `add_blueprint_spawn_actor_node` / `set_spawn_actor_class` | `EXCEPTION_ACCESS_VIOLATION` — `PostPlacedNewNode()` triggers wildcard-pin expansion → `MarkBlueprintAsStructurallyModified` → MassEntityEditor observer → crash; `TrySetDefaultObject` + `ReconstructNode` cause the same chain | ✅ Fixed (2026-04-13) | `HandleAddBlueprintSpawnActorNode`: removed `PostPlacedNewNode()`, set class pin via `ClassPin->DefaultObject` directly. `HandleSetSpawnActorClass`: removed `TrySetDefaultObject` + `ReconstructNode`, set `ClassPin->DefaultObject` directly. Both handlers now use `AllocateDefaultPins()` only. |
 
 ### 🔴 Critical
 
@@ -105,6 +106,13 @@
 | J1 (BUG-023) | `add_blueprint_self_reference` | CLIENT-TIMEOUT >45s — `UK2Node_Self::PostPlacedNewNode()` calls `GetSchema()->GetGraphType()` → dereferences `GeneratedClass`, blocking 20-45s on intermediate compile state | ✅ Fixed | `CreateSelfReferenceNode` now uses `Graph->AddNode(bFromUI=false)` + `AllocateDefaultPins()` directly — same approach as BUG-019 fix |
 | BUG-024 | `add_component_to_blueprint` | CLIENT-TIMEOUT >45s — `SafeMarkBlueprintModified` broadcasts to all AssetRegistry and ContentBrowser listeners synchronously (30-60s on large projects) | ✅ Fixed | `HandleAddComponentToBlueprint` now calls only `Blueprint->Modify()`; `SCS->AddNode()` already triggers necessary `PostEditChange()` |
 | BUG-025 | WinError 10038 (WSAENOTSOCK) | `receive_full_response` calls `sock.settimeout()` on socket already closed by UE5 watchdog restart; Python error classifier didn't include 10038 | ✅ Fixed | Added `sock.fileno()` pre-check to detect closed handle early; added `10038`/`WSAENOTSOCK`/`OSError` to retryable-socket-error classifier in `_send_command_raw` |
+| BUG-030 | `add_overlap_event` | Can only create `K2Node_ComponentBoundEvent` for **one** component per Blueprint; subsequent calls for other components produce actor-level `K2Node_Event` instead | ✅ Fixed | New `add_component_overlap_event` C++ command creates `UK2Node_ComponentBoundEvent` with `InitializeComponentBoundEventParams` scoped to the SCS_Node's `VariableGuid`; dedup check is per-(component_name, event_name) so N components get N nodes |
+| BUG-031 | `add_blueprint_event_node` | Creates `K2Node_CustomEvent` (no `OtherActor` pin) for unrecognized event names | No fix needed — this tool is correct; gap was in BUG-030 |
+| BUG-032 | `add_blueprint_variable_set_node` | Cross-BP variable creates shell node with only exec/then — no value pin, no target pin | ✅ Fixed | Added optional `target_class` param; uses `SetExternalMember(FName, UClass*)` to create a properly-typed node referencing the foreign class |
+| BUG-033 | `add_blueprint_sequence_node` / `add_sequence_node` | Returns `"Failed to create Sequence macro node"` or claims success without placing a node | ✅ Fixed | `CreateMacroNode` (BlueprintNodeCommands) and `AddFlowControlMacroNode` (ExtendedCommands): replaced `PostPlacedNewNode`+`ReconstructNode` with `AddNode(bFromUI=false)` + `AllocateDefaultPins()` — same CRASH-003 pattern |
+| BUG-NEW | `connect_blueprint_nodes` | Pydantic validation error when AI passes `source_pin_name`/`target_pin_name` — tool signature uses `source_pin`/`target_pin` | ✅ Fixed | Added `source_pin_name`/`target_pin_name` as optional alias parameters; Python resolver picks whichever is non-empty |
+| BUG-034 | `set_node_pin_value` | Returns `"Pin not found"` for pins not yet materialised on the node | Expected — doc note added |
+| BUG-035 | `exec_python` / graph introspection | `EdGraph.Nodes` not readable; `scs.get_all_nodes()` drops loop output | ✅ Partially fixed | New `get_scs_nodes` MCP tool returns name/class/variable_guid/parent_name/supports_overlap_events for every SCS component; avoids exec_python entirely |
 
 > **Note:** Full param names for BUG-009 through BUG-016 to be populated from next test run results.
 
@@ -114,7 +122,7 @@
 |----|------|-------|--------|
 | BUG-017 | `add_blueprint_event_node` (BeginPlay) | Node not found / already exists | 🔍 Needs verify |
 | BUG-018 | `add_print_string_node` | UE5 30s timeout on first call | 🔍 Needs verify |
-| BUG-019 | `add_blueprint_sequence_node` | Macro library lookup fails | 🔍 Needs verify |
+| BUG-019 | `add_blueprint_sequence_node` | Macro library lookup fails | ✅ Fixed (2026-04-13) — CRASH-003 pattern: replaced PostPlacedNewNode+ReconstructNode with AddNode(bFromUI=false)+AllocateDefaultPins |
 | BUG-020 | `add_blueprint_input_action_node` | UE5 30s timeout — GameThread hang | 🔍 Needs verify |
 | BUG-021 | `exec_python` create BehaviorTree | CLIENT-TIMEOUT >60s — heavy factory | ⚠️ Expected / acceptable |
 | BUG-022 | `exec_python` create WidgetBlueprint | CLIENT-TIMEOUT >60s — heavy factory | ⚠️ Expected / acceptable |
