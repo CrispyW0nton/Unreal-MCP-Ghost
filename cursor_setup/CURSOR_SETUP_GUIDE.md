@@ -4,8 +4,8 @@ This guide sets up **Cursor IDE** to control UE5 directly via the 321-tool MCP s
 using `stdio` transport (no port-forwarding, no SSE, no Playit tunnel needed).
 
 There are now two supported backends:
-- **plugin** — default, full existing Ghost behavior through the UnrealMCP plugin
-- **native-python** — plugin-free, uses UE5 Python Remote Execution and supports `exec_python`-based workflows
+- **native-python** — default, plugin-free, uses UE5 Python Remote Execution and supports `exec_python`-based workflows
+- **plugin** — opt-in compatibility mode for full existing Ghost behavior through the UnrealMCP plugin
 
 ---
 
@@ -47,8 +47,23 @@ EnclaveProject\
 ## Step 3 — Pick a config
 
 Use one of the bundled examples:
-- `cursor_setup/mcp.json` — plugin mode
-- `cursor_setup/mcp.native-python.json` — native mode
+- `cursor_setup/mcp.json` — native mode (default)
+- `cursor_setup/mcp.plugin.json` — plugin mode
+
+### Native mode
+
+```json
+{
+  "mcpServers": {
+    "unreal-mcp": {
+      "command": "python",
+      "args": [
+        "C:\\Users\\NewAdmin\\Documents\\Academy of Art University\\2026\\Gam270\\Project2\\EnclaveProject\\unreal_mcp_server\\unreal_mcp_server.py"
+      ]
+    }
+  }
+}
+```
 
 ### Plugin mode
 
@@ -61,26 +76,8 @@ Use one of the bundled examples:
         "C:\\Users\\NewAdmin\\Documents\\Academy of Art University\\2026\\Gam270\\Project2\\EnclaveProject\\unreal_mcp_server\\unreal_mcp_server.py"
       ],
       "env": {
-        "UNREAL_HOST": "127.0.0.1",
+        "UNREAL_MCP_BACKEND": "plugin",
         "UNREAL_PORT": "55557"
-      }
-    }
-  }
-}
-```
-
-### Native mode
-
-```json
-{
-  "mcpServers": {
-    "unreal-mcp": {
-      "command": "python",
-      "args": [
-        "C:\\Users\\NewAdmin\\Documents\\Academy of Art University\\2026\\Gam270\\Project2\\EnclaveProject\\unreal_mcp_server\\unreal_mcp_server.py"
-      ],
-      "env": {
-        "UNREAL_MCP_BACKEND": "native-python"
       }
     }
   }
@@ -101,14 +98,15 @@ Use one of the bundled examples:
 2. Open the Chat panel (Ctrl+L or Cmd+L).
 3. Make sure **Agent** mode is selected (not "Ask" or "Edit").
 4. Type one of these:
-  - Plugin mode: `List the actors in the current UE5 level`
   - Native mode: `Use exec_python to print unreal.SystemLibrary.get_engine_version()`
+  - Plugin mode: `List the actors in the current UE5 level`
 
 If connected, you'll see tool calls like `get_actors_in_level` being invoked and results returned.
 
 If you get "MCP server not found" errors, check:
 - The `python` command works in your terminal (or use the full path: `C:\Python312\python.exe`)
-- UE5 is open and the Output Log shows `[MCP] Server listening on port 55557`
+- Native mode: UE5 is open with Python Script Plugin + Remote Python Execution enabled
+- Plugin mode: UE5 is open and the Output Log shows `[MCP] Server listening on port 55557`
 - The path in `mcp.json` exactly matches the location of `unreal_mcp_server.py`
 
 ---
@@ -128,7 +126,7 @@ retry logic, and workflow order.
 
 | Symptom | Fix |
 |---------|-----|
-| `Connection refused` | UE5 is not open or the plugin is not loaded. Check Output Log. |
+| `Connection refused` | UE5 is not open, or plugin mode is enabled and the plugin is not loaded. Check Output Log. |
 | `No UE5 Python Remote Execution endpoint was discovered` | Enable the UE5 Python Script Plugin and Remote Python Execution, or supply a direct `UNREAL_PORT`. |
 | `Command '...' requires the UnrealMCP plugin backend` | That tool still needs the plugin path. Use `exec_python` or switch back to plugin mode. |
 | `Timeout after 30s` | The command is slow (compile, add_component). The server auto-retries up to 90–150 s. Wait. |

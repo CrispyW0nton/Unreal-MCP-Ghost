@@ -2,7 +2,7 @@
 
 Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logic, create assets, wire nodes, spawn actors, set up AI, animation, UI, and VFX — all without touching the UE5 editor manually. Every AI agent — local or remote — uses the **311 MCP tools** via the Model Context Protocol.
 
-By default, Unreal-MCP-Ghost keeps its existing **plugin-backed** workflow. It now also supports an optional **native Python backend** that uses UE5's built-in Python Remote Execution path, so the server can be used without installing the custom UnrealMCP plugin when the user prefers that setup.
+By default, Unreal-MCP-Ghost now starts with the **native Python backend** that uses UE5's built-in Python Remote Execution path, so the server can be used without installing the custom UnrealMCP plugin. The existing plugin-backed workflow is still available as an explicit compatibility mode.
 
 > **Forked from:** [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp)  
 > **Active branch:** `genspark_ai_developer` — all new features and bug fixes live here  
@@ -26,7 +26,7 @@ By default, Unreal-MCP-Ghost keeps its existing **plugin-backed** workflow. It n
                                     │  plugin backend: TCP JSON  port 55557
                                     │  or native backend: UE Python Remote Execution
                                     ▼
-                                 UnrealMCP Plugin (default) / UE5 Python Plugin (optional)
+                                 UE5 Python Plugin (default) / UnrealMCP Plugin (optional)
                                     │
                                     │  UE5 Editor API
                                     ▼
@@ -42,17 +42,17 @@ By default, Unreal-MCP-Ghost keeps its existing **plugin-backed** workflow. It n
 
 - **`unreal_mcp_server.py`** — The MCP server. Runs on the developer's machine. All 311 tools are registered here. Supports `stdio`, `sse`, and `streamable-http` transports.
 - **`sandbox_ue5cli.py`** — Low-level debug CLI for directly testing the C++ plugin's 119 raw commands. Not intended for normal AI agent use — agents should use MCP tools instead.
-- **C++ Plugin** — Receives JSON commands on `localhost:55557`, executes them on UE5's game thread, returns JSON results.
+- **C++ Plugin** — Optional compatibility backend. Receives JSON commands on `localhost:55557`, executes them on UE5's game thread, returns JSON results.
 
 ## Backend Modes
 
 | Mode | Requires custom UnrealMCP plugin | What you get |
 |---|---|---|
-| **plugin** (default) | Yes | Full existing Ghost behavior and the complete specialized tool surface |
-| **native-python** | No | Plugin-free startup via UE5 Python Remote Execution; supports `exec_python` and tools layered on top of it, while plugin-only commands return explicit errors |
+| **native-python** (default) | No | Plugin-free startup via UE5 Python Remote Execution; supports `exec_python` and tools layered on top of it, while plugin-only commands return explicit errors |
+| **plugin** | Yes | Full existing Ghost behavior and the complete specialized tool surface |
 
+Use **native-python** when you want the default plugin-free setup closer to `mcp-unreal`'s execution model.
 Use **plugin** when you want the full Ghost command set.
-Use **native-python** when you want a plugin-free setup closer to `mcp-unreal`'s execution model.
 
 ---
 
@@ -259,14 +259,14 @@ For **local** AI clients (Claude Desktop, Cursor, Windsurf), the server uses the
 
 ### Choose your backend in the client config
 
-- **Plugin mode**: no extra env vars needed; this remains the default.
-- **Native mode**: add `UNREAL_MCP_BACKEND=native-python`.
+- **Native mode**: no extra env vars needed; this is now the default.
+- **Plugin mode**: add `UNREAL_MCP_BACKEND=plugin`, and usually `UNREAL_PORT=55557`.
 - To let native mode use UDP discovery, omit `UNREAL_PORT`.
 - To force a direct native connection, set both `UNREAL_HOST` and `UNREAL_PORT` to the UE5 Python Remote Execution endpoint.
 
 Ready-made examples live in:
-- `cursor_setup/mcp.json` — plugin mode
-- `cursor_setup/mcp.native-python.json` — native mode
+- `cursor_setup/mcp.json` — native mode (default)
+- `cursor_setup/mcp.plugin.json` — plugin mode
 
 ### Claude Desktop
 
@@ -283,7 +283,7 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
-Native mode example:
+Plugin mode example:
 
 ```json
 {
@@ -292,7 +292,8 @@ Native mode example:
       "command": "python",
       "args": ["C:/Dev/Unreal-MCP/unreal_mcp_server/unreal_mcp_server.py"],
       "env": {
-        "UNREAL_MCP_BACKEND": "native-python"
+        "UNREAL_MCP_BACKEND": "plugin",
+        "UNREAL_PORT": "55557"
       }
     }
   }
@@ -314,7 +315,7 @@ Edit `%APPDATA%\Cursor\User\mcp.json`:
 }
 ```
 
-Native mode example:
+Plugin mode example:
 
 ```json
 {
@@ -323,7 +324,8 @@ Native mode example:
       "command": "python",
       "args": ["C:/Dev/Unreal-MCP/unreal_mcp_server/unreal_mcp_server.py"],
       "env": {
-        "UNREAL_MCP_BACKEND": "native-python"
+        "UNREAL_MCP_BACKEND": "plugin",
+        "UNREAL_PORT": "55557"
       }
     }
   }

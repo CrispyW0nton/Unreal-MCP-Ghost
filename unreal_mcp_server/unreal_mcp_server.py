@@ -119,10 +119,14 @@ logger = logging.getLogger("UnrealMCP")
 # ─── Configuration ──────────────────────────────────────────────────────────
 # UE5 backend connection
 # Priority: CLI flags > environment variables > defaults
-UNREAL_MCP_BACKEND = os.environ.get("UNREAL_MCP_BACKEND", "plugin")
+def _default_unreal_port(backend: str) -> Optional[int]:
+    return 55557 if backend == "plugin" else None
+
+
+UNREAL_MCP_BACKEND = os.environ.get("UNREAL_MCP_BACKEND", "native-python")
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
 _UNREAL_PORT_ENV = os.environ.get("UNREAL_PORT")
-UNREAL_PORT = int(_UNREAL_PORT_ENV) if _UNREAL_PORT_ENV else (55557 if UNREAL_MCP_BACKEND == "plugin" else None)
+UNREAL_PORT = int(_UNREAL_PORT_ENV) if _UNREAL_PORT_ENV else _default_unreal_port(UNREAL_MCP_BACKEND)
 UNREAL_DISCOVERY_TIMEOUT = float(os.environ.get("UNREAL_DISCOVERY_TIMEOUT", "5.0"))
 
 # MCP HTTP server settings (used for sse / streamable-http transports)
@@ -1121,9 +1125,9 @@ Transport modes:
                    Example: python unreal_mcp_server.py --transport streamable-http
 
 Unreal Engine connection:
-    --backend        plugin (default) or native-python.
-                                     plugin         → existing UnrealMCP plugin on TCP 55557.
+    --backend        native-python (default) or plugin.
                                      native-python  → UE5 Python Remote Execution, no custom plugin.
+                                     plugin         → existing UnrealMCP plugin on TCP 55557.
     --unreal-host    Hostname/IP of the UE5 machine. Used by plugin mode, or by
                                      native-python when --unreal-port is supplied for direct connect.
     --unreal-port    Plugin TCP port (plugin mode) or direct remote-exec port
@@ -1209,8 +1213,8 @@ Environment variable equivalents:
         UNREAL_HOST = args.unreal_host
     if args.unreal_port is not None:
         UNREAL_PORT = args.unreal_port
-    elif args.backend == "native-python" and _UNREAL_PORT_ENV is None:
-        UNREAL_PORT = None
+    elif args.backend is not None and _UNREAL_PORT_ENV is None:
+        UNREAL_PORT = _default_unreal_port(UNREAL_MCP_BACKEND)
     if args.discovery_timeout is not None:
         UNREAL_DISCOVERY_TIMEOUT = args.discovery_timeout
     if args.mcp_host is not None:
