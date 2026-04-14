@@ -2,6 +2,8 @@
 
 Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logic, create assets, wire nodes, spawn actors, set up AI, animation, UI, and VFX — all without touching the UE5 editor manually. Every AI agent — local or remote — uses the **311 MCP tools** via the Model Context Protocol.
 
+By default, Unreal-MCP-Ghost keeps its existing **plugin-backed** workflow. It now also supports an optional **native Python backend** that uses UE5's built-in Python Remote Execution path, so the server can be used without installing the custom UnrealMCP plugin when the user prefers that setup.
+
 > **Forked from:** [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp)  
 > **Active branch:** `genspark_ai_developer` — all new features and bug fixes live here  
 > **MCP tools:** 311 Python tools (local stdio) + 119 C++ plugin commands (all accessible via MCP)  
@@ -21,15 +23,14 @@ Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logi
                         unreal_mcp_server.py
                    (MCP server, 311 tools registered)
                                 │
-                                │  TCP JSON  port 55557
-                                │  (via Playit tunnel if UE5 is remote)
-                                ▼
-                    UnrealMCP C++ Plugin
-                    (Editor Subsystem, compiled into your UE5 project)
-                                │
-                                │  UE5 Editor API (GameThread)
-                                ▼
-                        Unreal Engine 5
+                                    │  plugin backend: TCP JSON  port 55557
+                                    │  or native backend: UE Python Remote Execution
+                                    ▼
+                                 UnrealMCP Plugin (default) / UE5 Python Plugin (optional)
+                                    │
+                                    │  UE5 Editor API
+                                    ▼
+                                  Unreal Engine 5
 ```
 
 **Every AI agent uses the same 311 MCP tools.** The transport layer differs by agent type:
@@ -42,6 +43,16 @@ Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logi
 - **`unreal_mcp_server.py`** — The MCP server. Runs on the developer's machine. All 311 tools are registered here. Supports `stdio`, `sse`, and `streamable-http` transports.
 - **`sandbox_ue5cli.py`** — Low-level debug CLI for directly testing the C++ plugin's 119 raw commands. Not intended for normal AI agent use — agents should use MCP tools instead.
 - **C++ Plugin** — Receives JSON commands on `localhost:55557`, executes them on UE5's game thread, returns JSON results.
+
+## Backend Modes
+
+| Mode | Requires custom UnrealMCP plugin | What you get |
+|---|---|---|
+| **plugin** (default) | Yes | Full existing Ghost behavior and the complete specialized tool surface |
+| **native-python** | No | Plugin-free startup via UE5 Python Remote Execution; supports `exec_python` and tools layered on top of it, while plugin-only commands return explicit errors |
+
+Use **plugin** when you want the full Ghost command set.
+Use **native-python** when you want a plugin-free setup closer to `mcp-unreal`'s execution model.
 
 ---
 
@@ -76,6 +87,8 @@ Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logi
 ### Visual Studio 2022 — Required Workload
 
 The C++ plugin **will not compile** without this workload.
+
+If you plan to use `--backend native-python`, you can skip the plugin build/install path entirely and jump from Section 2 to Section 7.
 
 1. Open **Visual Studio Installer**
 2. Click **Modify** next to Visual Studio 2022
@@ -112,6 +125,8 @@ Expected: `UnrealMCP.uplugin`, `Source\`
 
 ## 3. Copy the Plugin into Your UE5 Project
 
+Skip this section if you are using `--backend native-python`.
+
 The plugin must live inside your project's `Plugins\` folder.
 
 ```powershell
@@ -140,6 +155,8 @@ Expected: `Source\`, `UnrealMCP.uplugin`
 
 ## 4. Generate Visual Studio Project Files
 
+Skip this section if you are using `--backend native-python`.
+
 **Option A — Right-click (simplest):**
 1. Open File Explorer and navigate to your project folder
 2. Right-click `YourProject.uproject`
@@ -159,6 +176,8 @@ $UE_VER   = "5.6"   # Change to match your installed version
 ---
 
 ## 5. Compile the Plugin
+
+Skip this section if you are using `--backend native-python`.
 
 1. Double-click `MyGame.sln`
 2. Set **Configuration:** `Development Editor` and **Platform:** `Win64`
@@ -188,6 +207,8 @@ MyGame\Plugins\UnrealMCP\Binaries\Win64\UnrealEditor-UnrealMCP.dll
 ---
 
 ## 6. Open UE5 and Verify the Plugin
+
+Skip this section if you are using `--backend native-python`.
 
 1. Double-click your `.uproject`
 2. If a **"Missing modules — rebuild now?"** dialog appears, click **Yes**
@@ -236,6 +257,17 @@ python -c "import mcp; import fastmcp; import uvicorn; print('OK')"
 
 For **local** AI clients (Claude Desktop, Cursor, Windsurf), the server uses the **stdio** transport. No extra setup is needed beyond registering the server in your client's config.
 
+### Choose your backend in the client config
+
+- **Plugin mode**: no extra env vars needed; this remains the default.
+- **Native mode**: add `UNREAL_MCP_BACKEND=native-python`.
+- To let native mode use UDP discovery, omit `UNREAL_PORT`.
+- To force a direct native connection, set both `UNREAL_HOST` and `UNREAL_PORT` to the UE5 Python Remote Execution endpoint.
+
+Ready-made examples live in:
+- `cursor_setup/mcp.json` — plugin mode
+- `cursor_setup/mcp.native-python.json` — native mode
+
 ### Claude Desktop
 
 Edit `%APPDATA%\Claude\claude_desktop_config.json`:
@@ -251,6 +283,22 @@ Edit `%APPDATA%\Claude\claude_desktop_config.json`:
 }
 ```
 
+Native mode example:
+
+```json
+{
+  "mcpServers": {
+    "unrealMCP": {
+      "command": "python",
+      "args": ["C:/Dev/Unreal-MCP/unreal_mcp_server/unreal_mcp_server.py"],
+      "env": {
+        "UNREAL_MCP_BACKEND": "native-python"
+      }
+    }
+  }
+}
+```
+
 ### Cursor
 
 Edit `%APPDATA%\Cursor\User\mcp.json`:
@@ -261,6 +309,22 @@ Edit `%APPDATA%\Cursor\User\mcp.json`:
     "unreal-mcp": {
       "command": "python",
       "args": ["C:/Dev/Unreal-MCP/unreal_mcp_server/unreal_mcp_server.py"]
+    }
+  }
+}
+```
+
+Native mode example:
+
+```json
+{
+  "mcpServers": {
+    "unreal-mcp": {
+      "command": "python",
+      "args": ["C:/Dev/Unreal-MCP/unreal_mcp_server/unreal_mcp_server.py"],
+      "env": {
+        "UNREAL_MCP_BACKEND": "native-python"
+      }
     }
   }
 }
@@ -293,6 +357,11 @@ Point it to: `python "C:\Dev\Unreal-MCP\unreal_mcp_server\unreal_mcp_server.py"`
 
 Remote AI agents (GenSpark AI Developer and any cloud-based MCP client) cannot use stdio. Instead, run the MCP server in **SSE mode** — it becomes an HTTP server that remote agents connect to over a public URL.
 
+### Backend choice for SSE
+
+- **Plugin mode**: keep the existing two-tunnel setup below.
+- **Native mode**: if the MCP server is running on the same machine as UE5, you only need to expose the MCP HTTP server. There is no custom plugin tunnel because UE5 is reached locally via Python Remote Execution.
+
 ### Step 1 — Set up Playit tunnels
 
 You need **two Playit tunnels** running simultaneously:
@@ -303,6 +372,8 @@ You need **two Playit tunnels** running simultaneously:
 | **Tunnel 2** | `localhost:8000` | MCP HTTP server — lets GenSpark reach the MCP server |
 
 In the [Playit dashboard](https://playit.gg/), create a second **TCP tunnel** pointing to `localhost:8000`. Note the new public address it gives you (e.g. `your-mcp.with.playit.plus:54321`).
+
+If you are using `--backend native-python` and the MCP server runs on the same machine as UE5, you only need the MCP HTTP tunnel for `localhost:8000`.
 
 ### Step 2 — Start the MCP server in SSE mode
 
@@ -316,10 +387,21 @@ python unreal_mcp_server\unreal_mcp_server.py `
     --unreal-port YOUR-TUNNEL-1-PORT
 ```
 
+Native mode on the UE5 machine:
+
+```powershell
+cd "C:\Dev\Unreal-MCP"
+python unreal_mcp_server\unreal_mcp_server.py `
+  --transport sse `
+  --backend native-python `
+  --mcp-host 0.0.0.0 `
+  --mcp-port 8000
+```
+
 You should see:
 ```
 [UnrealMCP] SSE server listening on http://0.0.0.0:8000/sse
-[UnrealMCP] UE5 plugin target: YOUR-TUNNEL-1-HOST.with.playit.plus:PORT
+[UnrealMCP] UE5 backend: plugin | target: YOUR-TUNNEL-1-HOST.with.playit.plus:PORT
 ```
 
 The MCP server is now reachable at:
@@ -356,10 +438,17 @@ For clients supporting the MCP 2025-03-26 spec, use `--transport streamable-http
 
 ### Local agents — via AI client
 
+Plugin mode test:
 Open a new chat and send:
 > "List all the actors in the current Unreal Engine level."
 
 The AI calls `get_actors_in_level` and returns actor data.
+
+Native mode test:
+Open a new chat and send:
+> "Use exec_python to print unreal.SystemLibrary.get_engine_version()."
+
+The AI should call `exec_python` successfully without the custom UnrealMCP plugin being installed.
 
 ### Remote agents — verify SSE endpoint
 
@@ -418,6 +507,8 @@ Copy-Item -Recurse -Force "$REPO\unreal_plugin\Source\" "$PROJECT\Plugins\Unreal
 | Symptom | Fix |
 |---|---|
 | AI says "I cannot connect to Unreal Engine" | UE5 not open, or port 55557 closed — re-check Step 6 |
+| Native mode says no UE Python endpoint was discovered | Enable the UE5 Python Script Plugin and Remote Python Execution in Project Settings, or pass `--unreal-port` for a direct native connection |
+| Native mode returns "command requires the UnrealMCP plugin backend" | That tool still depends on the plugin-backed command surface. Use `exec_python` or restart the server with `--backend plugin` |
 | AI doesn't show any Unreal tools | Config file path wrong, or AI client not restarted — re-check Step 8 |
 | `JSONDecodeError` or empty response | Command timed out — try again; check UE5 didn't freeze |
 

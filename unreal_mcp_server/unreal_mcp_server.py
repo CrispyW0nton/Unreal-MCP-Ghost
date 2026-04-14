@@ -21,8 +21,9 @@ Architecture:
   Remote AI Agent (GenSpark)
     → HTTP POST/SSE to MCP server  (MCP_SERVER_HOST:MCP_SERVER_PORT, default 8000)
     → unreal_mcp_server.py  (this file, running on developer's machine)
-    → TCP JSON  (UNREAL_HOST:UNREAL_PORT, default 55557, via Playit tunnel if needed)
-    → UnrealMCP C++ Plugin inside UE5 Editor
+        → plugin backend: TCP JSON  (UNREAL_HOST:UNREAL_PORT, default 55557)
+            or
+            native-python backend: UE5 Python Remote Execution (plugin-free)
 
 Quick start for remote agents (GenSpark AI Developer):
   # On the developer's machine, run:
@@ -32,6 +33,14 @@ Quick start for remote agents (GenSpark AI Developer):
   # Set up a second Playit tunnel pointing to localhost:8000 (or use any port-forward)
   # Then in GenSpark, connect to the MCP server SSE URL:
   #   http://<playit-address>:<playit-port>/sse
+
+Optional plugin-free mode:
+    python unreal_mcp_server.py --backend native-python
+
+This leaves the current plugin workflow as the default, but allows Ghost to be used
+without the custom plugin when the user prefers UE5's built-in Python Remote
+Execution path. Native mode currently supports exec_python-based workflows and
+returns explicit errors for plugin-only commands.
 """
 
 import argparse
@@ -43,8 +52,9 @@ import sys
 import json
 import functools
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Dict, Any, Optional
+from typing import AsyncIterator, Dict, Any, Optional, cast
 from mcp.server.fastmcp import FastMCP
+from native_remote import ExecMode as NativeExecMode, NativeRemoteExecutionClient
 
 # ─── Async thread-offload patch ─────────────────────────────────────────────
 # Problem: FastMCP calls sync tool functions with a plain `return fn(**args)`,
@@ -107,10 +117,13 @@ logging.basicConfig(
 logger = logging.getLogger("UnrealMCP")
 
 # ─── Configuration ──────────────────────────────────────────────────────────
-# UE5 plugin connection (the TCP socket to Unreal Engine)
+# UE5 backend connection
 # Priority: CLI flags > environment variables > defaults
+UNREAL_MCP_BACKEND = os.environ.get("UNREAL_MCP_BACKEND", "plugin")
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
-UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55557"))
+_UNREAL_PORT_ENV = os.environ.get("UNREAL_PORT")
+UNREAL_PORT = int(_UNREAL_PORT_ENV) if _UNREAL_PORT_ENV else (55557 if UNREAL_MCP_BACKEND == "plugin" else None)
+UNREAL_DISCOVERY_TIMEOUT = float(os.environ.get("UNREAL_DISCOVERY_TIMEOUT", "5.0"))
 
 # MCP HTTP server settings (used for sse / streamable-http transports)
 MCP_SERVER_HOST = os.environ.get("MCP_SERVER_HOST", "0.0.0.0")
@@ -223,7 +236,7 @@ class UnrealConnection:
             raise Exception(f"Incomplete JSON response ({len(data)} bytes): {e}")
         return data
 
-    def send_command(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    def send_command(self, command: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Public dispatcher — routes to _send_command_raw (no health-check).
 
         After get_unreal_connection() has been called once, this is monkey-
@@ -232,7 +245,7 @@ class UnrealConnection:
         """
         return self._send_command_raw(command, params)
 
-    def _send_command_raw(self, command: str, params: Dict[str, Any] = None) -> Optional[Dict[str, Any]]:
+    def _send_command_raw(self, command: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
         """Send a JSON command to UE5 and return the parsed response."""
         # ── Per-command socket timeout budget (seconds) ──────────────────────
         #
@@ -460,7 +473,7 @@ class UnrealConnection:
     def send_command_with_health_check(
         self,
         command: str,
-        params: Dict[str, Any] = None,
+        params: Optional[Dict[str, Any]] = None,
         max_wait: float = 30.0,
         ping_timeout: float = 4.0,
     ) -> Optional[Dict[str, Any]]:
@@ -517,11 +530,102 @@ class UnrealConnection:
         return result
 
 
+class NativePythonConnection:
+    """Optional plugin-free backend using UE5 Python Remote Execution."""
+
+    def __init__(self):
+        host = UNREAL_HOST if UNREAL_PORT is not None else None
+        self.client = NativeRemoteExecutionClient(
+            host=host,
+            port=UNREAL_PORT,
+            discovery_timeout=UNREAL_DISCOVERY_TIMEOUT,
+            command_timeout=60.0,
+        )
+        self.connected = False
+
+    def connect(self) -> bool:
+        try:
+            result = self.client.run("pass", exec_mode=NativeExecMode.EXECUTE_STATEMENT, unattended=True)
+            if not result.success and result.error:
+                raise RuntimeError(result.error)
+            self.connected = True
+            logger.info("Connected to UE5 via Python Remote Execution")
+            return True
+        except Exception as e:
+            logger.error(f"Failed to connect to UE5 Python Remote Execution: {e}")
+            self.connected = False
+            return False
+
+    def disconnect(self):
+        self.connected = False
+
+    def send_command(self, command: str, params: Optional[Dict[str, Any]] = None) -> Optional[Dict[str, Any]]:
+        params = params or {}
+
+        if command == "ping":
+            return {"success": True, "status": "success", "result": "pong", "output": "pong"}
+
+        if command != "exec_python":
+            return {
+                "success": False,
+                "status": "error",
+                "message": (
+                    f"Command '{command}' requires the UnrealMCP plugin backend. "
+                    "Native Python mode is plugin-free but currently supports exec_python "
+                    "and tools layered on top of it. Use exec_python directly or restart the "
+                    "server with --backend plugin for the full tool surface."
+                ),
+            }
+
+        code = params.get("code")
+        if not code:
+            return {
+                "success": False,
+                "status": "error",
+                "message": "exec_python requires a non-empty 'code' parameter",
+            }
+
+        mode = self._normalize_exec_mode(params.get("mode"))
+        result = self.client.run(
+            code,
+            exec_mode=mode,
+            unattended=bool(params.get("unattended", True)),
+        )
+        return self._format_exec_result(result)
+
+    def _normalize_exec_mode(self, mode: Optional[str]) -> str:
+        if not mode:
+            return NativeExecMode.EXECUTE_STATEMENT
+
+        normalized = str(mode).strip().lower()
+        if normalized in {"executefile", "execute_file"}:
+            return NativeExecMode.EXECUTE_FILE
+        if normalized in {"evaluatestatement", "evaluate_statement", "eval"}:
+            return NativeExecMode.EVALUATE_STATEMENT
+        return NativeExecMode.EXECUTE_STATEMENT
+
+    def _format_exec_result(self, result) -> Dict[str, Any]:
+        output_lines = [entry.get("output", "") for entry in result.output if entry.get("output")]
+        if result.return_value not in (None, ""):
+            output_lines.append(f"Return: {result.return_value}")
+
+        response = {
+            "success": bool(result.success and not result.error),
+            "status": "success" if result.success and not result.error else "error",
+            "result": result.return_value,
+            "output": "\n".join(output_lines).strip(),
+        }
+        if result.error:
+            response["error"] = result.error
+            response["message"] = result.error
+        return response
+
+
 # ─── Global connection ───────────────────────────────────────────────────────
-_unreal_connection: UnrealConnection = None
+_unreal_connection: Any = None
 
 
-def get_unreal_connection() -> Optional["UnrealConnection"]:
+def get_unreal_connection() -> Optional[Any]:
     """Return the global UnrealConnection, creating it on first call.
 
     All tool functions call unreal.send_command(…).  That method now routes
@@ -531,11 +635,17 @@ def get_unreal_connection() -> Optional["UnrealConnection"]:
     global _unreal_connection
     try:
         if _unreal_connection is None:
-            _unreal_connection = UnrealConnection()
+            if UNREAL_MCP_BACKEND == "native-python":
+                _unreal_connection = NativePythonConnection()
+            else:
+                _unreal_connection = UnrealConnection()
             if not _unreal_connection.connect():
-                logger.warning("Could not connect to Unreal Engine")
+                logger.warning(
+                    "Could not connect to Unreal Engine using backend=%s",
+                    UNREAL_MCP_BACKEND,
+                )
                 _unreal_connection = None
-        if _unreal_connection is not None:
+        if _unreal_connection is not None and hasattr(_unreal_connection, "send_command_with_health_check"):
             # Redirect .send_command → .send_command_with_health_check so all
             # 321 tool functions automatically benefit from the GameThread
             # backoff logic without requiring changes to 21 individual files.
@@ -560,23 +670,24 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         _unreal_connection = get_unreal_connection()
         if _unreal_connection:
             logger.info("Connected to Unreal Engine on startup")
-            # ── Python interpreter warm-up ────────────────────────────────
-            # UE5's Python plugin cold-starts on the FIRST ExecPythonCommandEx
-            # call per session — it loads all 'unreal' module stubs, which can
-            # take 30-60 s and causes the very first exec_python / get_actors_in_level
-            # tool call to appear hung.  Fire a trivial no-op now so the cost is
-            # paid at startup (invisible to the user) rather than on the first
-            # tool call (visible as a 60 s timeout in the test report).
-            try:
-                logger.info("Warming up UE5 Python interpreter (first-call latency reduction)...")
-                warmup_result = _unreal_connection._send_command_raw(
-                    "exec_python",
-                    {"code": "pass", "mode": "execute_statement"}
-                )
-                logger.info(f"Python warm-up complete: {str(warmup_result)[:100]}")
-            except Exception as warmup_err:
-                # Non-fatal — warm-up failure just means the first real call pays the cost
-                logger.warning(f"Python warm-up skipped (UE5 not ready yet): {warmup_err}")
+            if UNREAL_MCP_BACKEND == "plugin":
+                # ── Python interpreter warm-up ────────────────────────────
+                # UE5's Python plugin cold-starts on the FIRST ExecPythonCommandEx
+                # call per session — it loads all 'unreal' module stubs, which can
+                # take 30-60 s and causes the very first exec_python / get_actors_in_level
+                # tool call to appear hung.  Fire a trivial no-op now so the cost is
+                # paid at startup (invisible to the user) rather than on the first
+                # tool call (visible as a 60 s timeout in the test report).
+                try:
+                    logger.info("Warming up UE5 Python interpreter (first-call latency reduction)...")
+                    warmup_result = _unreal_connection._send_command_raw(
+                        "exec_python",
+                        {"code": "pass", "mode": "execute_statement"}
+                    )
+                    logger.info(f"Python warm-up complete: {str(warmup_result)[:100]}")
+                except Exception as warmup_err:
+                    # Non-fatal — warm-up failure just means the first real call pays the cost
+                    logger.warning(f"Python warm-up skipped (UE5 not ready yet): {warmup_err}")
         else:
             logger.warning("Could not connect to Unreal Engine on startup - will retry on first tool call")
     except Exception as e:
@@ -1010,15 +1121,32 @@ Transport modes:
                    Example: python unreal_mcp_server.py --transport streamable-http
 
 Unreal Engine connection:
-  --unreal-host    Hostname/IP of the UE5 machine (default: 127.0.0.1)
-                   Set to your Playit tunnel address when UE5 is remote.
-  --unreal-port    Port the UnrealMCP plugin listens on (default: 55557)
-                   Set to your Playit tunnel port when using a tunnel.
+    --backend        plugin (default) or native-python.
+                                     plugin         → existing UnrealMCP plugin on TCP 55557.
+                                     native-python  → UE5 Python Remote Execution, no custom plugin.
+    --unreal-host    Hostname/IP of the UE5 machine. Used by plugin mode, or by
+                                     native-python when --unreal-port is supplied for direct connect.
+    --unreal-port    Plugin TCP port (plugin mode) or direct remote-exec port
+                                     (native-python). Omit in native-python mode to use UDP discovery.
+    --discovery-timeout
+                                     UDP discovery timeout for native-python mode when no port is given.
 
 Environment variable equivalents:
-  UNREAL_HOST, UNREAL_PORT      — UE5 plugin TCP address
+    UNREAL_MCP_BACKEND            — plugin or native-python
+    UNREAL_HOST, UNREAL_PORT      — UE5 backend address
+    UNREAL_DISCOVERY_TIMEOUT      — native-python UDP discovery timeout
   MCP_SERVER_HOST, MCP_SERVER_PORT — HTTP server bind address (sse/streamable-http)
         """
+    )
+
+    parser.add_argument(
+        "--backend",
+        choices=["plugin", "native-python"],
+        default=None,
+        help=(
+            "UE5 backend to use. 'plugin' keeps the existing UnrealMCP plugin path; "
+            "'native-python' uses UE5 Python Remote Execution and does not require the custom plugin."
+        ),
     )
 
     # Transport
@@ -1041,7 +1169,20 @@ Environment variable equivalents:
         type=int,
         default=None,
         metavar="PORT",
-        help="Port the UnrealMCP plugin listens on (overrides UNREAL_PORT env var)"
+        help=(
+            "Plugin TCP port, or direct UE Python Remote Execution port when using "
+            "--backend native-python (overrides UNREAL_PORT env var)"
+        )
+    )
+    parser.add_argument(
+        "--discovery-timeout",
+        type=float,
+        default=None,
+        metavar="SECONDS",
+        help=(
+            "UDP discovery timeout for --backend native-python when --unreal-port is omitted "
+            "(overrides UNREAL_DISCOVERY_TIMEOUT env var)"
+        )
     )
 
     # MCP HTTP server address (sse / streamable-http only)
@@ -1062,10 +1203,16 @@ Environment variable equivalents:
     args = parser.parse_args()
 
     # ── Apply CLI overrides ─────────────────────────────────────────────────
+    if args.backend is not None:
+        UNREAL_MCP_BACKEND = args.backend
     if args.unreal_host is not None:
         UNREAL_HOST = args.unreal_host
     if args.unreal_port is not None:
         UNREAL_PORT = args.unreal_port
+    elif args.backend == "native-python" and _UNREAL_PORT_ENV is None:
+        UNREAL_PORT = None
+    if args.discovery_timeout is not None:
+        UNREAL_DISCOVERY_TIMEOUT = args.discovery_timeout
     if args.mcp_host is not None:
         MCP_SERVER_HOST = args.mcp_host
     if args.mcp_port is not None:
@@ -1079,27 +1226,27 @@ Environment variable equivalents:
         # Allow any Host header so reverse proxies / Playit tunnels work correctly.
         # Without this uvicorn returns 421 Misdirected Request for tunnel hostnames.
         try:
-            mcp.settings.allowed_hosts = ["*"]
+            cast(Any, mcp.settings).allowed_hosts = ["*"]
         except Exception:
             pass
 
     # ── Launch ──────────────────────────────────────────────────────────────
     if args.transport == "stdio":
         logger.info(
-            f"Starting UnrealMCP server | transport=stdio | "
-            f"UE5={UNREAL_HOST}:{UNREAL_PORT}"
+            f"Starting UnrealMCP server | transport=stdio | backend={UNREAL_MCP_BACKEND} | "
+            f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
         )
         mcp.run(transport="stdio")
 
     elif args.transport == "sse":
         logger.info(
-            f"Starting UnrealMCP server | transport=sse | "
+            f"Starting UnrealMCP server | transport=sse | backend={UNREAL_MCP_BACKEND} | "
             f"HTTP={MCP_SERVER_HOST}:{MCP_SERVER_PORT} | "
-            f"UE5={UNREAL_HOST}:{UNREAL_PORT}"
+            f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
         )
         print(f"[UnrealMCP] SSE server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/sse")
         print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/sse")
-        print(f"[UnrealMCP] UE5 plugin target: {UNREAL_HOST}:{UNREAL_PORT}")
+        print(f"[UnrealMCP] UE5 backend: {UNREAL_MCP_BACKEND} | target: {UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}")
         # Run uvicorn directly with DNS rebinding protection disabled.
         # The MCP library's SseServerTransport has its own TransportSecurityMiddleware
         # that rejects any Host header not in its allowed list, returning 421.
@@ -1185,11 +1332,11 @@ Environment variable equivalents:
 
     elif args.transport == "streamable-http":
         logger.info(
-            f"Starting UnrealMCP server | transport=streamable-http | "
+            f"Starting UnrealMCP server | transport=streamable-http | backend={UNREAL_MCP_BACKEND} | "
             f"HTTP={MCP_SERVER_HOST}:{MCP_SERVER_PORT} | "
-            f"UE5={UNREAL_HOST}:{UNREAL_PORT}"
+            f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
         )
         print(f"[UnrealMCP] Streamable-HTTP server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/mcp")
         print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/mcp")
-        print(f"[UnrealMCP] UE5 plugin target: {UNREAL_HOST}:{UNREAL_PORT}")
+        print(f"[UnrealMCP] UE5 backend: {UNREAL_MCP_BACKEND} | target: {UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}")
         mcp.run(transport="streamable-http")
