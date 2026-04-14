@@ -34,13 +34,16 @@ Quick start for remote agents (GenSpark AI Developer):
   # Then in GenSpark, connect to the MCP server SSE URL:
   #   http://<playit-address>:<playit-port>/sse
 
-Optional plugin-free mode:
-    python unreal_mcp_server.py --backend native-python
+Default plugin-free mode:
+    python unreal_mcp_server.py
 
-This leaves the current plugin workflow as the default, but allows Ghost to be used
-without the custom plugin when the user prefers UE5's built-in Python Remote
-Execution path. Native mode currently supports exec_python-based workflows and
-returns explicit errors for plugin-only commands.
+Optional compatibility mode:
+    python unreal_mcp_server.py --backend plugin
+
+Ghost now defaults to UE5's built-in Python Remote Execution path, while still
+allowing the existing UnrealMCP plugin workflow as an explicit compatibility
+mode. Native mode currently supports exec_python-based workflows and returns
+explicit errors for plugin-only commands.
 """
 
 import argparse

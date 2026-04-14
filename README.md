@@ -88,7 +88,7 @@ Use **plugin** when you want the full Ghost command set.
 
 The C++ plugin **will not compile** without this workload.
 
-If you plan to use `--backend native-python`, you can skip the plugin build/install path entirely and jump from Section 2 to Section 7.
+If you plan to use the default `native-python` backend, you can skip the plugin build/install path entirely and jump from Section 2 to Section 7.
 
 1. Open **Visual Studio Installer**
 2. Click **Modify** next to Visual Studio 2022
@@ -125,7 +125,7 @@ Expected: `UnrealMCP.uplugin`, `Source\`
 
 ## 3. Copy the Plugin into Your UE5 Project
 
-Skip this section if you are using `--backend native-python`.
+Skip this section if you are using the default `native-python` backend.
 
 The plugin must live inside your project's `Plugins\` folder.
 
@@ -155,7 +155,7 @@ Expected: `Source\`, `UnrealMCP.uplugin`
 
 ## 4. Generate Visual Studio Project Files
 
-Skip this section if you are using `--backend native-python`.
+Skip this section if you are using the default `native-python` backend.
 
 **Option A — Right-click (simplest):**
 1. Open File Explorer and navigate to your project folder
@@ -177,7 +177,7 @@ $UE_VER   = "5.6"   # Change to match your installed version
 
 ## 5. Compile the Plugin
 
-Skip this section if you are using `--backend native-python`.
+Skip this section if you are using the default `native-python` backend.
 
 1. Double-click `MyGame.sln`
 2. Set **Configuration:** `Development Editor` and **Platform:** `Win64`
@@ -208,7 +208,7 @@ MyGame\Plugins\UnrealMCP\Binaries\Win64\UnrealEditor-UnrealMCP.dll
 
 ## 6. Open UE5 and Verify the Plugin
 
-Skip this section if you are using `--backend native-python`.
+Skip this section if you are using the default `native-python` backend.
 
 1. Double-click your `.uproject`
 2. If a **"Missing modules — rebuild now?"** dialog appears, click **Yes**
@@ -375,7 +375,7 @@ You need **two Playit tunnels** running simultaneously:
 
 In the [Playit dashboard](https://playit.gg/), create a second **TCP tunnel** pointing to `localhost:8000`. Note the new public address it gives you (e.g. `your-mcp.with.playit.plus:54321`).
 
-If you are using `--backend native-python` and the MCP server runs on the same machine as UE5, you only need the MCP HTTP tunnel for `localhost:8000`.
+If you are using the default `native-python` backend and the MCP server runs on the same machine as UE5, you only need the MCP HTTP tunnel for `localhost:8000`.
 
 ### Step 2 — Start the MCP server in SSE mode
 
@@ -395,7 +395,6 @@ Native mode on the UE5 machine:
 cd "C:\Dev\Unreal-MCP"
 python unreal_mcp_server\unreal_mcp_server.py `
   --transport sse `
-  --backend native-python `
   --mcp-host 0.0.0.0 `
   --mcp-port 8000
 ```
