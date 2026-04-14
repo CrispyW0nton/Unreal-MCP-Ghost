@@ -23,6 +23,8 @@ Architecture:
     → unreal_mcp_server.py  (this file, running on developer's machine)
         → plugin backend: TCP JSON  (UNREAL_HOST:UNREAL_PORT, default 55557)
             or
+                        http-bridge backend: HTTP bridge  (UNREAL_BRIDGE_URL, default http://127.0.0.1:6800)
+                        or
             native-python backend: UE5 Python Remote Execution (plugin-free)
 
 Quick start for remote agents (GenSpark AI Developer):
@@ -34,16 +36,19 @@ Quick start for remote agents (GenSpark AI Developer):
   # Then in GenSpark, connect to the MCP server SSE URL:
   #   http://<playit-address>:<playit-port>/sse
 
-Default plugin-free mode:
+Default full-featured mode:
     python unreal_mcp_server.py
+
+Bridge mode against the UE Python server on port 6800:
+    python unreal_mcp_server.py --backend http-bridge --bridge-url http://127.0.0.1:6800
 
 Optional compatibility mode:
     python unreal_mcp_server.py --backend plugin
 
-Ghost now defaults to UE5's built-in Python Remote Execution path, while still
-allowing the existing UnrealMCP plugin workflow as an explicit compatibility
-mode. Native mode currently supports exec_python-based workflows and returns
-explicit errors for plugin-only commands.
+Ghost now defaults to the existing UnrealMCP plugin workflow unless a bridge
+URL is configured. The new http-bridge backend keeps the structured Ghost tool
+surface usable over the UE Python server on port 6800, while native-python
+remains available for exec_python-centric workflows.
 """
 
 import argparse
@@ -57,6 +62,7 @@ import functools
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional, cast
 from mcp.server.fastmcp import FastMCP
+from http_bridge import HTTPBridgeConnection
 from native_remote import ExecMode as NativeExecMode, NativeRemoteExecutionClient
 
 # ─── Async thread-offload patch ─────────────────────────────────────────────
@@ -122,11 +128,26 @@ logger = logging.getLogger("UnrealMCP")
 # ─── Configuration ──────────────────────────────────────────────────────────
 # UE5 backend connection
 # Priority: CLI flags > environment variables > defaults
+def _default_backend() -> str:
+    explicit_backend = os.environ.get("UNREAL_MCP_BACKEND")
+    if explicit_backend:
+        return explicit_backend
+    if os.environ.get("UNREAL_BRIDGE_URL") or os.environ.get("UE_BRIDGE_URL") or os.environ.get("BRIDGE_URL"):
+        return "http-bridge"
+    return "plugin"
+
+
 def _default_unreal_port(backend: str) -> Optional[int]:
     return 55557 if backend == "plugin" else None
 
 
-UNREAL_MCP_BACKEND = os.environ.get("UNREAL_MCP_BACKEND", "native-python")
+UNREAL_MCP_BACKEND = _default_backend()
+UNREAL_BRIDGE_URL = (
+    os.environ.get("UNREAL_BRIDGE_URL")
+    or os.environ.get("UE_BRIDGE_URL")
+    or os.environ.get("BRIDGE_URL")
+    or "http://127.0.0.1:6800"
+)
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
 _UNREAL_PORT_ENV = os.environ.get("UNREAL_PORT")
 UNREAL_PORT = int(_UNREAL_PORT_ENV) if _UNREAL_PORT_ENV else _default_unreal_port(UNREAL_MCP_BACKEND)
@@ -628,6 +649,12 @@ class NativePythonConnection:
         return response
 
 
+def _backend_target_description() -> str:
+    if UNREAL_MCP_BACKEND == "http-bridge":
+        return f"bridge={UNREAL_BRIDGE_URL}"
+    return f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
+
+
 # ─── Global connection ───────────────────────────────────────────────────────
 _unreal_connection: Any = None
 
@@ -644,6 +671,11 @@ def get_unreal_connection() -> Optional[Any]:
         if _unreal_connection is None:
             if UNREAL_MCP_BACKEND == "native-python":
                 _unreal_connection = NativePythonConnection()
+            elif UNREAL_MCP_BACKEND == "http-bridge":
+                _unreal_connection = HTTPBridgeConnection(
+                    bridge_url=UNREAL_BRIDGE_URL,
+                    timeout=150.0,
+                )
             else:
                 _unreal_connection = UnrealConnection()
             if not _unreal_connection.connect():
@@ -677,7 +709,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
         _unreal_connection = get_unreal_connection()
         if _unreal_connection:
             logger.info("Connected to Unreal Engine on startup")
-            if UNREAL_MCP_BACKEND == "plugin":
+            if UNREAL_MCP_BACKEND in {"plugin", "http-bridge"}:
                 # ── Python interpreter warm-up ────────────────────────────
                 # UE5's Python plugin cold-starts on the FIRST ExecPythonCommandEx
                 # call per session — it loads all 'unreal' module stubs, which can
@@ -687,7 +719,7 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
                 # tool call (visible as a 60 s timeout in the test report).
                 try:
                     logger.info("Warming up UE5 Python interpreter (first-call latency reduction)...")
-                    warmup_result = _unreal_connection._send_command_raw(
+                    warmup_result = _unreal_connection.send_command(
                         "exec_python",
                         {"code": "pass", "mode": "execute_statement"}
                     )
@@ -1128,9 +1160,11 @@ Transport modes:
                    Example: python unreal_mcp_server.py --transport streamable-http
 
 Unreal Engine connection:
-    --backend        native-python (default) or plugin.
-                                     native-python  → UE5 Python Remote Execution, no custom plugin.
+    --backend        plugin (default), http-bridge, or native-python.
                                      plugin         → existing UnrealMCP plugin on TCP 55557.
+                                     http-bridge    → structured HTTP bridge, default http://127.0.0.1:6800.
+                                     native-python  → UE5 Python Remote Execution, no custom plugin.
+    --bridge-url     Base URL for the HTTP bridge when using --backend http-bridge.
     --unreal-host    Hostname/IP of the UE5 machine. Used by plugin mode, or by
                                      native-python when --unreal-port is supplied for direct connect.
     --unreal-port    Plugin TCP port (plugin mode) or direct remote-exec port
@@ -1139,7 +1173,9 @@ Unreal Engine connection:
                                      UDP discovery timeout for native-python mode when no port is given.
 
 Environment variable equivalents:
-    UNREAL_MCP_BACKEND            — plugin or native-python
+    UNREAL_MCP_BACKEND            — plugin, http-bridge, or native-python
+    UNREAL_BRIDGE_URL / UE_BRIDGE_URL / BRIDGE_URL
+                                   base URL for the HTTP bridge backend
     UNREAL_HOST, UNREAL_PORT      — UE5 backend address
     UNREAL_DISCOVERY_TIMEOUT      — native-python UDP discovery timeout
   MCP_SERVER_HOST, MCP_SERVER_PORT — HTTP server bind address (sse/streamable-http)
@@ -1148,12 +1184,19 @@ Environment variable equivalents:
 
     parser.add_argument(
         "--backend",
-        choices=["plugin", "native-python"],
+        choices=["plugin", "http-bridge", "native-python"],
         default=None,
         help=(
             "UE5 backend to use. 'plugin' keeps the existing UnrealMCP plugin path; "
-            "'native-python' uses UE5 Python Remote Execution and does not require the custom plugin."
+            "'http-bridge' uses the UE Python bridge on port 6800; 'native-python' uses UE5 Python "
+            "Remote Execution and does not require the custom plugin."
         ),
+    )
+    parser.add_argument(
+        "--bridge-url",
+        default=None,
+        metavar="URL",
+        help="Base URL for the HTTP bridge backend (overrides UNREAL_BRIDGE_URL / UE_BRIDGE_URL / BRIDGE_URL)"
     )
 
     # Transport
@@ -1212,6 +1255,10 @@ Environment variable equivalents:
     # ── Apply CLI overrides ─────────────────────────────────────────────────
     if args.backend is not None:
         UNREAL_MCP_BACKEND = args.backend
+    if args.bridge_url is not None:
+        UNREAL_BRIDGE_URL = args.bridge_url
+        if args.backend is None:
+            UNREAL_MCP_BACKEND = "http-bridge"
     if args.unreal_host is not None:
         UNREAL_HOST = args.unreal_host
     if args.unreal_port is not None:
@@ -1241,7 +1288,7 @@ Environment variable equivalents:
     if args.transport == "stdio":
         logger.info(
             f"Starting UnrealMCP server | transport=stdio | backend={UNREAL_MCP_BACKEND} | "
-            f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
+            f"{_backend_target_description()}"
         )
         mcp.run(transport="stdio")
 
@@ -1249,11 +1296,11 @@ Environment variable equivalents:
         logger.info(
             f"Starting UnrealMCP server | transport=sse | backend={UNREAL_MCP_BACKEND} | "
             f"HTTP={MCP_SERVER_HOST}:{MCP_SERVER_PORT} | "
-            f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
+            f"{_backend_target_description()}"
         )
         print(f"[UnrealMCP] SSE server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/sse")
         print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/sse")
-        print(f"[UnrealMCP] UE5 backend: {UNREAL_MCP_BACKEND} | target: {UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}")
+        print(f"[UnrealMCP] UE5 backend: {UNREAL_MCP_BACKEND} | target: {_backend_target_description()}")
         # Run uvicorn directly with DNS rebinding protection disabled.
         # The MCP library's SseServerTransport has its own TransportSecurityMiddleware
         # that rejects any Host header not in its allowed list, returning 421.
@@ -1341,9 +1388,9 @@ Environment variable equivalents:
         logger.info(
             f"Starting UnrealMCP server | transport=streamable-http | backend={UNREAL_MCP_BACKEND} | "
             f"HTTP={MCP_SERVER_HOST}:{MCP_SERVER_PORT} | "
-            f"UE5={UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}"
+            f"{_backend_target_description()}"
         )
         print(f"[UnrealMCP] Streamable-HTTP server listening on http://{MCP_SERVER_HOST}:{MCP_SERVER_PORT}/mcp")
         print(f"[UnrealMCP] Remote agents: connect to  http://<your-public-ip-or-tunnel>:{MCP_SERVER_PORT}/mcp")
-        print(f"[UnrealMCP] UE5 backend: {UNREAL_MCP_BACKEND} | target: {UNREAL_HOST}:{UNREAL_PORT if UNREAL_PORT is not None else 'discovery'}")
+        print(f"[UnrealMCP] UE5 backend: {UNREAL_MCP_BACKEND} | target: {_backend_target_description()}")
         mcp.run(transport="streamable-http")
