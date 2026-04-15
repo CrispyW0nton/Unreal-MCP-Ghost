@@ -652,6 +652,29 @@ def register_data_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def add_object_type_make_array_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a real K2Node_MakeArray node typed as EObjectTypeQuery (byte enum).
+        This is used to provide a valid 'Object Types' array input to
+        SphereOverlapActors / SphereOverlapComponents nodes.
+        Defaults to ObjectTypeQuery3 (WorldDynamic) on the first pin.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_object_type_make_array_node", {
+            "blueprint_name": blueprint_name,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
     def add_random_array_item_node(
         ctx: Context,
         blueprint_name: str,

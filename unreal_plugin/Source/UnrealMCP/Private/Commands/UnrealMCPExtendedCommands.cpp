@@ -38,6 +38,7 @@
 #include "K2Node_CallDelegate.h"
 #include "K2Node_InputAction.h"
 #include "K2Node_CommutativeAssociativeBinaryOperator.h"
+#include "K2Node_MakeArray.h"
 
 // Enhanced Input
 #include "InputMappingContext.h"
@@ -257,6 +258,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
 
     // ── Data Containers (Ch. 13) ─────────────────────────────────────────────
     if (CommandType == TEXT("add_make_array_node"))              return HandleAddMakeArrayNode(Params);
+    if (CommandType == TEXT("add_object_type_make_array_node"))   return HandleAddObjectTypeMakeArrayNode(Params);
     if (CommandType == TEXT("add_make_map_node"))                return HandleAddMakeMapNode(Params);
     if (CommandType == TEXT("add_make_set_node"))                return HandleAddMakeSetNode(Params);
     if (CommandType == TEXT("add_break_struct_node"))            return HandleAddBreakStructNode(Params);
@@ -3190,6 +3192,65 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateCircularMovement
 }
 
 // ── Data Container nodes ─────────────────────────────────────────────────────
+
+// Helper: create a real K2Node_MakeArray for EObjectTypeQuery with WorldDynamic preset
+// Returns {"success":true, "node_id":"<GUID>"} or error.
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddObjectTypeMakeArrayNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    FVector2D Pos = GetNodePosition(Params);
+
+    // Create the K2Node_MakeArray node
+    UK2Node_MakeArray* MakeArrayNode = NewObject<UK2Node_MakeArray>(Graph);
+    MakeArrayNode->NodePosX = static_cast<int32>(Pos.X);
+    MakeArrayNode->NodePosY = static_cast<int32>(Pos.Y);
+    MakeArrayNode->CreateNewGuid();
+    Graph->AddNode(MakeArrayNode, false, false);
+    MakeArrayNode->PostPlacedNewNode();
+    MakeArrayNode->AllocateDefaultPins();
+
+    // Set the pin type to EObjectTypeQuery (byte enum)
+    // The MakeArray node starts with a wildcard; we need to set element type
+    // Find the first input pin ("[0]" or "Element 0") and set its type
+    UEdGraphSchema_K2 const* K2Schema = Cast<UEdGraphSchema_K2>(Graph->GetSchema());
+    for (UEdGraphPin* Pin : MakeArrayNode->Pins)
+    {
+        if (Pin && Pin->Direction == EGPD_Input && Pin->PinName != TEXT("execute"))
+        {
+            // Set pin type to EObjectTypeQuery enum
+            Pin->PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+            UEnum* ObjTypeEnum = FindObject<UEnum>(nullptr, TEXT("/Script/Engine.EObjectTypeQuery"), true);
+            if (!ObjTypeEnum)
+            {
+                ObjTypeEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Engine.EObjectTypeQuery"));
+            }
+            Pin->PinType.PinSubCategoryObject = ObjTypeEnum;
+            // Default to WorldDynamic (value 2 in EObjectTypeQuery)
+            Pin->DefaultValue = TEXT("ObjectTypeQuery3"); // WorldDynamic = ECC_WorldDynamic mapped to ObjectTypeQuery3
+            break;
+        }
+    }
+
+    // Propagate the type through the MakeArray node
+    MakeArrayNode->PropagatePinType();
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("node_id"), MakeArrayNode->NodeGuid.ToString());
+    Result->SetStringField(TEXT("message"), TEXT("Created K2Node_MakeArray for EObjectTypeQuery"));
+    return Result;
+}
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddMakeArrayNode(
     const TSharedPtr<FJsonObject>& Params)
