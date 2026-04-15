@@ -175,9 +175,14 @@ uint32 FMCPServerRunnable::Run()
             }
             else
             {
-                // BytesRead == 0 → peer closed connection (health-check probe)
-                UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Zero-byte recv — health-check probe, closing"));
-                break;
+                // bRecvOk == true but BytesRead == 0.
+                // On a non-blocking socket this does NOT mean the peer closed —
+                // it means no data is available yet (equivalent to EWOULDBLOCK).
+                // This is common through NAT / tunnel proxies (e.g. Playit) where
+                // the TCP handshake completes before the payload arrives.
+                // Sleep briefly and retry instead of closing prematurely.
+                FPlatformProcess::Sleep(0.005f);
+                continue;
             }
         }
 

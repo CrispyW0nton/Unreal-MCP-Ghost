@@ -6,6 +6,8 @@ Covers Chapter 13 from the Blueprint book:
 - Flow Control: Switch, FlipFlop, Sequence, ForEach, DoOnce, DoN, Gate, MultiGate
 """
 import logging
+import base64
+import os
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -652,6 +654,29 @@ def register_data_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def add_object_type_make_array_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """
+        Add a real K2Node_MakeArray node typed as EObjectTypeQuery (byte enum).
+        This is used to provide a valid 'Object Types' array input to
+        SphereOverlapActors / SphereOverlapComponents nodes.
+        Defaults to ObjectTypeQuery3 (WorldDynamic) on the first pin.
+
+        Args:
+            blueprint_name: Blueprint to add the node to
+            node_position: [X, Y] graph position
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_object_type_make_array_node", {
+            "blueprint_name": blueprint_name,
+            "node_position": node_position
+        })
+
+    @mcp.tool()
     def add_random_array_item_node(
         ctx: Context,
         blueprint_name: str,
@@ -786,5 +811,184 @@ def register_data_tools(mcp: FastMCP):
             "row_name": row_name,
             "node_position": node_position
         })
+
+    # ── Asset Import Tools ────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def import_sound_asset(
+        ctx: Context,
+        local_file_path: str,
+        asset_name: str,
+        destination_path: str = "/Game/Audio",
+        loop: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Import a local audio file (on the sandbox) into the UE5 Content Browser as a
+        SoundWave asset. Works entirely through exec_python — no plugin rebuild needed.
+
+        The file at `local_file_path` is read, base64-encoded, embedded in a Python
+        script that runs inside UE5, decoded back to bytes, written to the Windows temp
+        folder on the UE machine, and then imported with AssetTools.
+
+        Typical workflow:
+            1. Use audio_generation to create a sound → get a Genspark file URL
+            2. Use DownloadFileWrapper to save the file to /home/user/webapp/<name>.mp3
+            3. Call import_sound_asset(local_file_path="/home/user/webapp/<name>.mp3", ...)
+
+        Args:
+            local_file_path:  Absolute path to the audio file on the sandbox
+                              (e.g. "/home/user/webapp/SFX_TurretFire.mp3")
+            asset_name:       Name for the new UE SoundWave asset (no spaces, e.g. "SFX_TurretFire")
+            destination_path: UE content-browser folder (default "/Game/Audio")
+            loop:             If True, sets the SoundWave looping flag
+
+        Returns:
+            Dict with 'asset_path' (e.g. "/Game/Audio/SFX_TurretFire.SFX_TurretFire")
+            on success, or 'error' on failure.
+        """
+        if not os.path.isfile(local_file_path):
+            return {"error": f"File not found on sandbox: {local_file_path}"}
+
+        ext = os.path.splitext(local_file_path)[1].lower() or ".mp3"
+        with open(local_file_path, "rb") as fh:
+            audio_b64 = base64.b64encode(fh.read()).decode("utf-8")
+
+        python_code = f"""
+import unreal, base64, os, tempfile, sys
+
+audio_b64  = {audio_b64!r}
+asset_name = {asset_name!r}
+dest_path  = {destination_path!r}
+ext        = {ext!r}
+do_loop    = {loop!r}
+
+# 1. Decode bytes and write to Windows temp
+audio_bytes = base64.b64decode(audio_b64)
+tmp_file = os.path.join(tempfile.gettempdir(), asset_name + ext)
+with open(tmp_file, 'wb') as f:
+    f.write(audio_bytes)
+sys.stdout.write(f'[MCP] Wrote {{len(audio_bytes)}} bytes to {{tmp_file}}\\n')
+sys.stdout.flush()
+
+# 2. Import via AssetTools
+asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+task = unreal.AssetImportTask()
+task.filename         = tmp_file
+task.destination_path = dest_path
+task.destination_name = asset_name
+task.replace_existing = True
+task.automated        = True
+task.save             = True
+asset_tools.import_asset_tasks([task])
+
+imported = task.get_editor_property('imported_object_paths')
+if not imported:
+    sys.stdout.write('[MCP] ERROR: Import returned no paths\\n')
+    sys.stdout.flush()
+else:
+    asset_path = imported[0]
+    sys.stdout.write(f'[MCP] Imported sound: {{asset_path}}\\n')
+    sys.stdout.flush()
+
+    # 3. Optionally enable looping
+    if do_loop:
+        sw = unreal.load_asset(asset_path)
+        if sw and isinstance(sw, unreal.SoundWave):
+            sw.set_editor_property('looping', True)
+            unreal.EditorAssetLibrary.save_asset(asset_path)
+            sys.stdout.write(f'[MCP] Set looping=True on {{asset_path}}\\n')
+"""
+        resp = _send("exec_python", {"code": python_code})
+        inner = resp.get("result", resp)
+        output = inner.get("output", resp.get("output", ""))
+
+        if "[MCP] ERROR:" in output or not inner.get("success", True):
+            return {"error": output or "Import failed inside UE"}
+
+        asset_path = None
+        for line in output.splitlines():
+            if "[MCP] Imported sound:" in line:
+                asset_path = line.split("[MCP] Imported sound:")[-1].strip()
+                break
+        if not asset_path:
+            asset_path = f"{destination_path}/{asset_name}.{asset_name}"
+
+        return {
+            "success": True,
+            "asset_path": asset_path,
+            "asset_name": asset_name,
+            "destination_path": destination_path,
+            "output": output,
+        }
+
+    @mcp.tool()
+    def wire_play_sound_to_blueprint(
+        ctx: Context,
+        blueprint_name: str,
+        sound_asset_path: str,
+        after_node_id: str,
+        node_position: List[float] = None,
+        use_play_at_location: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add a PlaySound2D (or PlaySoundAtLocation) node to a Blueprint wired after
+        a specific node. Used to attach imported sound assets to Blueprint events.
+
+        Args:
+            blueprint_name:       Blueprint to modify (e.g. "BP_LaserTurret")
+            sound_asset_path:     UE content-browser path of the SoundWave
+                                  (e.g. "/Game/Audio/SFX_TurretFire.SFX_TurretFire")
+            after_node_id:        Full node GUID — the 'then' pin of this node will connect
+                                  to the new PlaySound node's 'execute' pin
+            node_position:        [X, Y] graph position for the new node
+            use_play_at_location: If True, use PlaySoundAtLocation (3D); otherwise PlaySound2D (2D/UI)
+        """
+        if node_position is None:
+            node_position = [0, 0]
+
+        func_name = "PlaySoundAtLocation" if use_play_at_location else "PlaySound2D"
+
+        # 1. Add the PlaySound node
+        add_resp = _send("add_blueprint_function_node", {
+            "blueprint_name": blueprint_name,
+            "function_name": func_name,
+            "node_position": node_position,
+        })
+        if add_resp.get("status") == "error":
+            return {"error": f"Could not add {func_name} node: {add_resp.get('error', '')}"}
+
+        result_inner = add_resp.get("result", add_resp)
+        node_id = result_inner.get("node_id", "")
+        if not node_id:
+            return {"error": "No node_id returned from add_blueprint_function_node"}
+
+        # 2. Set the Sound pin default value to the asset path
+        pin_resp = _send("set_node_pin_value", {
+            "blueprint_name": blueprint_name,
+            "node_id": node_id,
+            "pin_name": "Sound",
+            "value": sound_asset_path,
+        })
+
+        # 3. Wire after_node_id.then -> PlaySound.execute
+        wire_resp = _send("connect_blueprint_nodes", {
+            "blueprint_name": blueprint_name,
+            "source_node_id": after_node_id,
+            "source_pin": "then",
+            "target_node_id": node_id,
+            "target_pin": "execute",
+        })
+
+        # 4. Compile
+        compile_resp = _send("compile_blueprint", {"blueprint_name": blueprint_name})
+
+        return {
+            "success": True,
+            "play_sound_node_id": node_id,
+            "function": func_name,
+            "sound_asset_path": sound_asset_path,
+            "wire_result": wire_resp.get("result", {}),
+            "compile_had_errors": compile_resp.get("result", {}).get("had_errors", False),
+        }
 
     logger.info("Data tools registered")
