@@ -238,18 +238,27 @@ python3 sandbox_ue5cli.py add_spawn_niagara_at_location_node '{
 
 ---
 
-### 19. `add_sound_cue_node`
-**Why needed:** Play sound effects from Blueprint graph (footsteps, lightsaber sounds).
+### 19. `import_sound_asset` ✅ IMPLEMENTED
 
-**Proposed spec:**
-```bash
-python3 sandbox_ue5cli.py add_play_sound_node '{
-  "blueprint_name": "BP_PlayerJediCharacter",
-  "graph_name": "EventGraph",
-  "sound_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing",
-  "node_position": {"x": 400, "y": 200}
-}'
+**Why needed:** Import WAV/OGG/MP3 files from the UE5 host machine directly into the Content Browser as SoundWave assets, with optional SoundCue auto-creation.
+
+**Implemented in:** `audio_tools.py` (registered in `unreal_mcp_server.py`)
+
+**Actual usage:**
+```python
+# Via MCP tool call:
+import_sound_asset(
+    file_path="C:/Sounds/SFX_SaberSwing.wav",
+    destination_path="/Game/Dantooine/Art/Audio/SFX/",
+    auto_create_cue=True
+)
+# Returns: {"success": true, "asset_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing",
+#            "asset_type": "SoundWave", "cue_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing_Cue"}
 ```
+
+**For sandbox-side files** (from `audio_generation` / `DownloadFileWrapper`), use `import_sound_asset_from_sandbox` instead.
+
+See `12_MCP_TOOL_USAGE_GUIDE.md` § AUDIO IMPORT TOOLS for full documentation.
 
 ---
 

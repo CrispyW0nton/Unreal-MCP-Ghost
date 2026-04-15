@@ -620,6 +620,8 @@ from tools.variant_tools import register_variant_tools
 # 3rd pass: Physics/Math/Trace tools (Ch.14), expanded AI (Ch.10)
 from tools.physics_tools import register_physics_tools
 from tools.knowledge_tools import register_knowledge_tools
+# Audio import tools
+from tools.audio_tools import register_audio_tools
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -642,6 +644,8 @@ register_variant_tools(mcp)
 # 3rd pass additions
 register_physics_tools(mcp)
 register_knowledge_tools(mcp)
+# Audio import tools
+register_audio_tools(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
@@ -982,10 +986,16 @@ def info():
 - Object Reference, Class Reference, Interface Reference
 - Array<T>, Map<K,V>, Set<T> (use add_array_variable, add_map_variable, add_set_variable)
 
+## AUDIO IMPORT TOOLS
+- `import_sound_asset(file_path, destination_path, auto_create_cue)` - Import WAV/OGG/MP3 from UE5 host machine into Content Browser as SoundWave; optionally auto-creates SoundCue
+- `import_sound_asset_from_sandbox(local_file_path, asset_name, destination_path, loop)` - Import audio from sandbox (Linux side) via base64 transfer; use when file is generated/downloaded in the sandbox
+- `wire_play_sound_to_blueprint(blueprint_name, sound_asset_path, after_node_id, node_position, use_play_at_location)` - Add PlaySound2D or PlaySoundAtLocation node wired after a specific node
+
 ## PDF AUDIT STATUS: 100% of all 20 chapters fully audited (566 pages, all 3 passes)
-## TOTAL: 283 MCP TOOLS (3rd deep pass, deduplicated) covering all 20 chapters of "Blueprints Visual Scripting for Unreal Engine 5"
+## TOTAL: 312 MCP TOOLS — 283 (3rd deep pass) + 1 renamed (import_sound_asset_from_sandbox) + 1 new (import_sound_asset direct-path)
 ## New in 3rd pass: physics_tools.py (Ch.14 Math/Trace/Vectors), expanded ai_tools.py (Ch.10 attack/hearing/spawner/wander),
 ##   expanded advanced_node_tools.py (Ch.2 operators, Ch.3 actor queries, Ch.5/6/8 math nodes, timers, delta time)
+## Audio pass: audio_tools.py — import_sound_asset for direct UE5 host paths (WAV/OGG/MP3 → SoundWave + optional SoundCue)
 """
 
 

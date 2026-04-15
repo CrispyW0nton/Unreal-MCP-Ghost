@@ -1002,9 +1002,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetSpawnActorClas
 
     // CRASH-003: TrySetDefaultObject triggers ReconstructNode -> MarkBlueprintAsStructurallyModified
     // -> UE5 MassEntityEditor observer -> EXCEPTION_ACCESS_VIOLATION.
-    // Directly assign DefaultObject instead — avoids the entire reconstruction chain.
+    // Directly assign DefaultObject AND SpawnClass (the node's serialized UPROPERTY) instead.
+    // Setting only DefaultObject is insufficient — UE serializes SpawnClass not the pin DefaultObject.
     ClassPin->DefaultObject = ActorClass;
     ClassPin->DefaultValue  = TEXT("");
+    // Also set the node's internal SpawnClass property so it serializes correctly on save.
+    SpawnNode->SpawnClass = ActorClass;
     // ReconstructNode() intentionally OMITTED — crashes UE5 via wildcard-pin expansion.
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
@@ -1573,10 +1576,28 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
         PinType.PinCategory = UEdGraphSchema_K2::PC_Object;
         PinType.PinSubCategoryObject = ObjClass;
     }
+    else if (VarType.StartsWith(TEXT("Class/")) || VarType.StartsWith(TEXT("class/")))
+    {
+        // TSubclassOf<T> variable — PC_Class with the base class as SubCategoryObject
+        FString ClassPath = VarType.Mid(6); // strip "Class/"
+        UClass* BaseClass = LoadObject<UClass>(nullptr, *ClassPath);
+        if (!BaseClass)
+        {
+            // Try by name using TObjectIterator
+            for (TObjectIterator<UClass> It; It; ++It)
+            {
+                if (It->GetName().Equals(ClassPath, ESearchCase::IgnoreCase))
+                { BaseClass = *It; break; }
+            }
+        }
+        if (!BaseClass) BaseClass = AActor::StaticClass(); // fallback to Actor
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Class;
+        PinType.PinSubCategoryObject = BaseClass;
+    }
     else
     {
         return FUnrealMCPCommonUtils::CreateErrorResponse(
-            FString::Printf(TEXT("Unsupported variable type '%s'. Supported: Boolean, Integer, Integer64, Float, Double, String, Name, Text, Vector, Rotator, Transform, Object/<ClassPath>"), *VarType));
+            FString::Printf(TEXT("Unsupported variable type '%s'. Supported: Boolean, Integer, Integer64, Float, Double, String, Name, Text, Vector, Rotator, Transform, Object/<ClassPath>, Class/<ClassPath>"), *VarType));
     }
 
     FBlueprintEditorUtils::AddMemberVariable(BP, FName(*VarName), PinType);
@@ -2602,6 +2623,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSpawn
                 ClassPin->DefaultObject = ActorClass;
                 ClassPin->DefaultValue  = TEXT("");
             }
+            // Also set the node's internal SpawnClass property so it serializes on save.
+            Node->SpawnClass = ActorClass;
         }
     }
 
