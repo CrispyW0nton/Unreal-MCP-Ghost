@@ -815,7 +815,7 @@ def register_data_tools(mcp: FastMCP):
     # ── Asset Import Tools ────────────────────────────────────────────────────
 
     @mcp.tool()
-    def import_sound_asset(
+    def import_sound_asset_from_sandbox(
         ctx: Context,
         local_file_path: str,
         asset_name: str,
@@ -823,17 +823,22 @@ def register_data_tools(mcp: FastMCP):
         loop: bool = False,
     ) -> Dict[str, Any]:
         """
-        Import a local audio file (on the sandbox) into the UE5 Content Browser as a
-        SoundWave asset. Works entirely through exec_python — no plugin rebuild needed.
+        Import an audio file that lives on the sandbox (Linux side) into the UE5
+        Content Browser as a SoundWave asset.
 
         The file at `local_file_path` is read, base64-encoded, embedded in a Python
         script that runs inside UE5, decoded back to bytes, written to the Windows temp
         folder on the UE machine, and then imported with AssetTools.
 
+        For audio files that already exist on the UE5 Windows machine (e.g. downloaded
+        via a browser or placed manually), use import_sound_asset instead — it is
+        simpler and does not require base64 transfer.
+
         Typical workflow:
             1. Use audio_generation to create a sound → get a Genspark file URL
             2. Use DownloadFileWrapper to save the file to /home/user/webapp/<name>.mp3
-            3. Call import_sound_asset(local_file_path="/home/user/webapp/<name>.mp3", ...)
+            3. Call import_sound_asset_from_sandbox(
+                   local_file_path="/home/user/webapp/<name>.mp3", ...)
 
         Args:
             local_file_path:  Absolute path to the audio file on the sandbox
