@@ -336,3 +336,95 @@ for v in bp.new_variables:
 ```
 
 ---
+
+---
+
+## ASSET IMPORT PIPELINE — STATUS ✅ FULLY IMPLEMENTED (2026-04-16)
+
+### Category C — Single-Asset Import (asset_import_tools.py) ✅
+- `import_texture` ✅ — PNG/JPG/TGA/EXR/HDR/BMP → Texture2D with auto compression detection
+- `import_static_mesh` ✅ — FBX/OBJ/glTF/GLB → StaticMesh with full FBX options
+- `import_skeletal_mesh` ✅ — FBX → SkeletalMesh with skeleton reuse + morph targets
+
+### Category B — Folder/Batch Import (folder_import_tools.py) ✅
+- `scan_export_folder` ✅ — local scan, categorised manifest, no UE5 connection needed
+- `batch_import_folder` ✅ — batch import all assets, preserves subfolder structure
+- `import_folder_as_character` ✅ — full character import (mesh + textures + animations)
+
+### Category A — GhostRigger IPC Bridge (ghostrigger_tools.py) ✅
+- `ghostrigger_health` ✅ — GET /api/health
+- `ghostrigger_ping` ✅ — POST /api/ping
+- `ghostrigger_open_model` ✅ — POST /api/open_mdl
+- `ghostrigger_open_creature` ✅ — POST /api/open_utc
+- `ghostrigger_list_mcp_tools` ✅ — GET /mcp/tools/list (68 KotorMCP tools)
+- `ghostrigger_call_mcp_tool` ✅ — POST /mcp/tools/call
+- `ghostrigger_list_resources` ✅ — GET /mcp/resources/list
+- `ghostrigger_read_resource` ✅ — POST /mcp/resources/read
+- `ghostrigger_export_model` ✅ — MDL → FBX via GhostRigger tool call
+- `ghostrigger_import_to_ue5` ✅ — full KotOR→FBX→UE5 pipeline
+
+**Total new tools: 16 (3 Category C + 3 Category B + 10 Category A)**
+**New total: 362 MCP tools**
+
+---
+
+## SCRIPTING SUPREMACY SPRINT — STATUS ✅ PHASE 0+1+2 COMPLETE (2026-04-16)
+
+### Phase 0 — PR #15 Stabilization ✅
+- Scope verified: Categories A/B/C all confirmed present
+- Test suite: 48 tests, all passing (tests/test_import_tools.py)
+- Shared result schema: `{success, stage, message, inputs, outputs, warnings, errors, log_tail}`
+- Tool/module count reconciled: **362 tools / 24 modules**
+
+### Phase 1 — Safe Execution Substrate ✅ (exec_substrate.py)
+New tools (3):
+- `ue_exec_safe` — structured try/except wrapper for any Python snippet
+- `ue_exec_transact` — ScopedEditorTransaction wrapper (one undo step)
+- `ue_exec_progress` — ScopedSlowTask wrapper (progress dialog + cancel button)
+
+Internal helpers (not MCP tools):
+- `exec_python_transactional(user_code, transaction_name)` — callable by other modules
+- `exec_python_with_progress(user_code, task_name, total_work)` — callable by other modules
+- `exec_python_structured(user_code, stage_name)` — called by asset_import_tools + folder_import_tools
+- `make_result(...)` — builds a normalized StructuredResult dict
+
+**Integration:** `asset_import_tools.py` and `folder_import_tools.py` now use
+`exec_python_structured` instead of raw `exec_python` + `_parse_ue_json`.
+All UE5 code snippets in these modules now populate `_result`, `_warnings`,
+`_errors` and are wrapped in try/except by the substrate.
+
+### Phase 2 — Reflection & Diagnostics ✅ (reflection_tools.py)
+New tools (8):
+- `ue_reflect_class(class_name)` — parent chain, flags, module
+- `ue_list_uclass_properties(class_name, include_inherited)` — editor properties
+- `ue_list_uclass_methods(class_name, filter_prefix)` — callable methods
+- `ue_describe_asset(asset_path)` — full asset metadata
+- `ue_find_assets_by_class(class_name, search_path, limit)` — content browser search
+- `ue_list_editor_selection()` — current viewport selection
+- `get_recent_output_log(lines, filter_category)` — Output Log tail
+- `ue_summarize_operation_effects(search_path)` — asset count by class (snapshot)
+
+New MCP Resources (5):
+- `unreal://knowledge/python-best-practices`
+- `unreal://knowledge/import-recipes`
+- `unreal://knowledge/blueprint-recipes`
+- `unreal://knowledge/material-recipes`
+- `unreal://project/context`
+
+### Phase 2b — Skills Library ✅ (skills/)
+New skill files (7):
+- `SKILL_import_texture.md`
+- `SKILL_import_static_mesh.md`
+- `SKILL_import_skeletal_mesh.md`
+- `SKILL_batch_import_folder.md`
+- `SKILL_import_folder_as_character.md`
+- `SKILL_diagnose_failed_import.md`
+- `SKILL_compile_validate_blueprint.md`
+
+**New total: 362 MCP tools (351 + 11 new) / 24 modules**
+
+### Next: Phase 3 — Graph-aware Blueprint/Material diagnostics
+- `compile_blueprint_and_report` — compile + structured error list
+- `compile_material_and_report` — material compile + warnings
+- `validate_import_result` — post-import asset health check
+- `get_changed_assets_since(timestamp)` — diff Content Browser
