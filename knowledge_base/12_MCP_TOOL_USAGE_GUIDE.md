@@ -1486,6 +1486,107 @@ for name, path, parent in assets_to_create:
 
 ---
 
+## ASSET IMPORT PIPELINE — CATEGORY C (single-asset imports)
+
+> Module: `asset_import_tools.py`  
+> All three tools use the `exec_python` + JSON-return pattern.  
+> Files must exist on the **UE5 Windows host machine** (not the sandbox).
+
+---
+
+### `import_texture`
+
+Imports a PNG/JPG/TGA/EXR/HDR/BMP file as a `Texture2D`, automatically setting the correct compression settings and sRGB flag based on the filename suffix.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `file_path` | `str` | required | OS path on UE5 machine, e.g. `"C:/Textures/T_Wood_BaseColor.png"` |
+| `destination_path` | `str` | `"/Game/Textures/"` | Content Browser folder |
+| `texture_type` | `str` | `"auto"` | `"auto"` \| `"diffuse"` \| `"normal"` \| `"roughness"` \| `"metallic"` \| `"ao"` \| `"emissive"` \| `"height"` \| `"default"` |
+
+**Auto-detection rules (applied to filename without extension):**
+
+| Filename contains | Detected type | Compression | sRGB |
+|---|---|---|---|
+| `_n` `_normal` `_nrm` | Normal | `TC_NORMALMAP` | False |
+| `_r` `_rough` `_m` `_metal` `_ao` `_occlusion` `_mask` `_orm` | Mask | `TC_MASKS` | False |
+| `_h` `_height` `_disp` | Height | `TC_MASKS` | False |
+| `_e` `_emissive` `_emit` | Emissive | `TC_DEFAULT` | True |
+| anything else | BaseColor | `TC_DEFAULT` | True |
+
+**Returns:**
+```json
+{"success": true, "asset_path": "/Game/Textures/T_Wood_BaseColor",
+ "asset_type": "Texture2D", "texture_type": "BaseColor",
+ "srgb": true, "compression": "TC_DEFAULT"}
+```
+
+---
+
+### `import_static_mesh`
+
+Imports an FBX, OBJ, glTF, or GLB file as a `StaticMesh`.  
+FBX import options are configured via `FbxImportUI`; glTF/GLB uses UE5's Interchange Framework automatically.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `file_path` | `str` | required | OS path, e.g. `"C:/Models/SM_Table.fbx"` |
+| `destination_path` | `str` | `"/Game/Meshes/"` | Content Browser folder |
+| `combine_meshes` | `bool` | `True` | Merge all meshes into one asset |
+| `generate_lightmap_uvs` | `bool` | `True` | Auto-generate UV channel 1 for lightmaps |
+| `auto_generate_collision` | `bool` | `True` | Auto-generate simple collision hull |
+| `import_materials` | `bool` | `True` | Import embedded materials |
+| `import_textures` | `bool` | `True` | Import embedded textures |
+
+**Returns:**
+```json
+{"success": true, "asset_path": "/Game/Meshes/SM_Table",
+ "asset_type": "StaticMesh", "poly_count": -1}
+```
+> `poly_count` is `-1` when the mesh imported successfully but triangle count isn't directly exposed via Python API.
+
+---
+
+### `import_skeletal_mesh`
+
+Imports an FBX file as a `SkeletalMesh`, with optional skeleton reuse, animation import, and morph target support.
+
+**Parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `file_path` | `str` | required | OS path to FBX, e.g. `"C:/Characters/Bastila.fbx"` |
+| `destination_path` | `str` | `"/Game/Characters/"` | Content Browser folder |
+| `skeleton` | `str` | `""` | Content Browser path to existing skeleton to reuse (e.g. `"/Game/Mannequin/SK_Mannequin_Skeleton"`). Empty = create new skeleton. |
+| `import_animations` | `bool` | `True` | Import embedded animations as `AnimSequence` assets |
+| `import_morph_targets` | `bool` | `True` | Import morph targets / blend shapes |
+| `import_materials` | `bool` | `True` | Import embedded materials |
+
+**Returns:**
+```json
+{"success": true,
+ "asset_path": "/Game/Characters/SK_Bastila",
+ "asset_type": "SkeletalMesh",
+ "skeleton_path": "/Game/Characters/SK_Bastila_Skeleton",
+ "animations_imported": ["Idle", "Walk", "Run"],
+ "reused_skeleton": false}
+```
+
+**Skeleton reuse example:**
+```python
+import_skeletal_mesh(
+    file_path="C:/KotOR/Bastila_Walk.fbx",
+    destination_path="/Game/Characters/Bastila/",
+    skeleton="/Game/Characters/Bastila/SK_Bastila_Skeleton"
+)
+```
+
+---
+
 ## AUDIO IMPORT TOOLS
 
 > Module: `audio_tools.py` — registered as part of the MCP server.
@@ -1631,3 +1732,360 @@ python3 sandbox_ue5cli.py wire_play_sound_to_blueprint '{
 | `BFL_` | Blueprint Function Library | `BFL_DantooineHelpers` |
 
 ---
+
+---
+
+## ASSET IMPORT PIPELINE (Categories A, B, C)
+
+### Overview
+
+The import pipeline uses **three communication channels**:
+- **TCP 55557** → UE5 C++ plugin (all existing 315 tools)
+- **HTTP 7001** → GhostRigger IPC server (KotOR model pipeline)
+- **Filesystem export folder** → shared path for FBX/texture transfer
+
+| Category | Module | Tools | Purpose |
+|---|---|---|---|
+| C — Single asset | `asset_import_tools.py` | 3 | Import individual texture/mesh/audio |
+| B — Batch/folder | `folder_import_tools.py` | 3 | Scan and batch-import asset folders |
+| A — GhostRigger | `ghostrigger_tools.py` | 10 | KotOR→FBX→UE5 via IPC bridge |
+
+---
+
+### Category C — Single-Asset Import Tools
+
+#### `import_texture`
+Import a PNG/JPG/TGA/EXR/HDR/BMP into UE5 as Texture2D.
+
+**Auto type detection from filename suffix:**
+| Suffix | Type | Compression | sRGB |
+|---|---|---|---|
+| `_n`, `_normal`, `_nrm` | Normal | TC_NORMALMAP | False |
+| `_r`, `_rough`, `_m`, `_metal`, `_ao`, `_mask`, `_orm` | Mask | TC_MASKS | False |
+| `_h`, `_height`, `_disp` | Height | TC_MASKS | False |
+| `_e`, `_emissive` | Emissive | TC_DEFAULT | True |
+| anything else | BaseColor | TC_DEFAULT | True |
+
+```python
+import_texture(
+    file_path="C:/Exports/T_Bastila_n.tga",
+    destination_path="/Game/Characters/Bastila/Textures/",
+    texture_type="auto"   # or "normal","roughness","metallic","ao","height","emissive","diffuse"
+)
+# Returns: {"success": true, "asset_path": "/Game/.../T_Bastila_n", "texture_type": "Normal",
+#            "srgb": false, "compression": "TC_NORMALMAP"}
+```
+
+#### `import_static_mesh`
+Import FBX/OBJ/glTF/GLB as StaticMesh.
+
+```python
+import_static_mesh(
+    file_path="C:/Exports/SM_Table.fbx",
+    destination_path="/Game/Props/",
+    combine_meshes=True,
+    generate_lightmap_uvs=True,
+    auto_generate_collision=True,
+    import_materials=True,
+    import_textures=True
+)
+# Returns: {"success": true, "asset_path": "/Game/Props/SM_Table", "asset_type": "StaticMesh", ...}
+```
+
+#### `import_skeletal_mesh`
+Import FBX as SkeletalMesh with optional skeleton reuse.
+
+```python
+import_skeletal_mesh(
+    file_path="C:/Exports/SK_Bastila.fbx",
+    destination_path="/Game/Characters/Bastila/",
+    skeleton="",           # leave empty to auto-create, or pass /Game/.../SK_Bastila_Skeleton
+    import_animations=True,
+    import_morph_targets=True,
+    import_materials=True
+)
+# Returns: {"success": true, "asset_path": "...", "asset_type": "SkeletalMesh",
+#            "skeleton_path": "...", "imported_objects": [...]}
+```
+
+---
+
+### Category B — Folder/Batch Import Tools
+
+#### `scan_export_folder`
+Scan a local folder without touching UE5. Use this before batch_import_folder to preview what will be imported.
+
+```python
+scan_export_folder(
+    folder_path="/home/user/exports/Bastila",
+    recursive=True
+)
+# Returns: {"folder": "...", "total_files": 12, "importable": 10, "skipped": 2,
+#            "categories": {"texture": [...], "mesh": [...], "audio": [...], "unknown": [...]},
+#            "subdirs": ["textures", "animations"]}
+```
+
+#### `batch_import_folder`
+Import all recognised assets from a folder into UE5 in a single exec_python call.
+
+```python
+batch_import_folder(
+    folder_path="/home/user/exports/Bastila",
+    ue5_base_path="/Game/Characters/Bastila/",
+    recursive=True,
+    import_textures=True,
+    import_meshes=True,
+    import_audio=True,
+    preserve_folder_structure=True,
+    dry_run=False          # set True to preview without importing
+)
+# Returns: {"success": true, "total": 10, "imported": 9, "failed": 1, "results": [...]}
+```
+
+#### `import_folder_as_character`
+Specialised: imports a character export folder (mesh + textures + animations) as a complete set.
+
+Expected folder layout:
+```
+<folder>/
+  <name>.fbx           ← skeletal mesh (required)
+  textures/
+    T_<name>_d.tga     ← diffuse
+    T_<name>_n.tga     ← normal map
+  animations/          ← optional
+    Idle.fbx
+    Walk.fbx
+```
+
+```python
+import_folder_as_character(
+    folder_path="/home/user/exports/Bastila",
+    character_name="Bastila",
+    ue5_base_path="/Game/Characters/",
+    skeleton="",           # leave empty to auto-create skeleton
+    import_animations=True,
+    import_morph_targets=True
+)
+# Returns: {"success": true, "character_name": "Bastila",
+#            "ue5_destination": "/Game/Characters/Bastila",
+#            "skeletal_mesh": "/Game/Characters/Bastila/SK_Bastila",
+#            "skeleton": "/Game/Characters/Bastila/SK_Bastila_Skeleton",
+#            "textures": [...], "animations": ["Idle", "Walk"],
+#            "reused_skeleton": false, "errors": []}
+```
+
+---
+
+### Category A — GhostRigger IPC Bridge Tools
+
+GhostRigger runs on `http://localhost:7001`.  Override with env vars `GHOSTRIGGER_HOST` / `GHOSTRIGGER_PORT`.
+
+#### Health / Status
+
+```python
+ghostrigger_health()   # GET /api/health — check if GhostRigger is running
+ghostrigger_ping()     # POST /api/ping  — ping the IPC server
+```
+
+#### Open KotOR Assets in GhostRigger Viewport
+
+```python
+ghostrigger_open_model(resref="n_bastila", module_dir="")
+ghostrigger_open_creature(resref="n_bastila001", module_dir="")
+```
+
+#### KotorMCP Tool Bridge
+
+```python
+# List all ~68 available KotorMCP tools
+ghostrigger_list_mcp_tools()
+
+# Call any KotorMCP tool
+ghostrigger_call_mcp_tool(
+    tool_name="kotor_lookup_2da",
+    arguments='{"table": "appearance", "row": "BASTILA"}'
+)
+
+# Common KotorMCP tool names:
+# ghostrigger_open_model      — open model by resref
+# ghostrigger_render_model    — render model to PNG
+# ghostrigger_model_info      — get geometry/bone/material info
+# ghostrigger_list_game_models — list all models
+# ghostrigger_audit           — audit model for issues
+# kotor_lookup_2da            — look up 2DA table row
+# kotor_lookup_tlk            — look up TLK dialog string
+# kotor_list_modules          — list all game modules
+# kotor_describe_module       — describe module contents
+# kotor_read_gff              — read GFF file
+# kotor_list_archive          — list ERF/BIF/RIM archive
+# kotor_extract_resource      — extract a resource from archive
+```
+
+#### Resource Reading
+
+```python
+# List all kotor:// URI templates
+ghostrigger_list_resources()
+
+# Read a specific resource
+ghostrigger_read_resource(uri="kotor://k1/2da/appearance")
+ghostrigger_read_resource(uri="kotor://k1/tlk/42")
+ghostrigger_read_resource(uri="kotor://k1/module/danm13/utc/n_bastila001")
+```
+
+#### Full KotOR→UE5 Pipeline
+
+```python
+# Step 1 only: export MDL to FBX on disk
+ghostrigger_export_model(
+    resref="n_bastila",
+    export_path="C:/Shared/n_bastila.fbx",
+    module_dir="",
+    format="fbx"
+)
+
+# Full pipeline: export MDL via GhostRigger + import FBX into UE5
+ghostrigger_import_to_ue5(
+    resref="n_bastila",
+    export_path="C:/Shared/n_bastila.fbx",     # shared path accessible to both
+    ue5_destination_path="/Game/KotOR/Models/",
+    is_skeletal=True,
+    skeleton="",   # empty = auto-create skeleton
+    module_dir=""
+)
+# Returns: {"success": true, "resref": "n_bastila",
+#            "asset_path": "/Game/KotOR/Models/n_bastila",
+#            "asset_type": "SkeletalMesh",
+#            "ghostrigger_export": {...}, "ue5_import": {...}}
+```
+
+**Important**: The `export_path` must be a filesystem path accessible to **both** GhostRigger (running on the Windows machine) and UE5 (also on Windows). Use a shared folder or the same Windows path for both.
+
+
+---
+
+## Scripting Supremacy Substrate (2026-04-16)
+
+### Safe Execution Substrate (`exec_substrate.py`)
+
+These tools wrap raw `exec_python` with structured error handling and Unreal
+editor patterns.  **Use these instead of raw exec_python for all new work.**
+
+#### ue_exec_safe
+```
+ue_exec_safe(code: str, stage_name: str = "script") → StructuredResult JSON
+```
+Wrap any Python snippet in a try/except that always returns valid JSON:
+```json
+{
+  "success": true,
+  "stage": "script",
+  "message": "Operation completed",
+  "inputs": {},
+  "outputs": {"my_key": "my_value"},
+  "warnings": [],
+  "errors": [],
+  "log_tail": []
+}
+```
+In your code, populate `_result`, `_warnings`, `_errors`:
+```python
+ue_exec_safe(code="""
+import unreal
+bp = unreal.load_asset("/Game/Blueprints/BP_Player")
+if bp:
+    _result["class"] = bp.get_class().get_name()
+else:
+    _errors.append("Blueprint not found")
+""")
+```
+
+#### ue_exec_transact
+```
+ue_exec_transact(code: str, transaction_name: str = "MCP Operation") → StructuredResult JSON
+```
+Run code inside `ScopedEditorTransaction` — the entire operation appears as **one undo step**.
+Rolls back automatically if an exception is raised.
+**Required for all Blueprint/asset mutations.**
+
+#### ue_exec_progress
+```
+ue_exec_progress(code: str, task_name: str = "MCP Task", total_work: int = 100) → StructuredResult JSON
+```
+Shows a progress dialog with cancel button.  Use `_task.enter_progress_frame(N, "step")` in your code.
+
+---
+
+### Reflection & Diagnostics (`reflection_tools.py`)
+
+**Always inspect before mutating** — these tools prevent hallucination.
+
+#### ue_reflect_class
+```
+ue_reflect_class(class_name: str) → JSON {success, class_name, parent_chain, class_path, found}
+```
+Verify a class exists and see its parent hierarchy before using it.
+
+#### ue_list_uclass_properties
+```
+ue_list_uclass_properties(class_name: str, include_inherited: bool = False)
+  → JSON {success, class_name, properties: [{name, owner}], count}
+```
+Discover the correct property names for `set_editor_property` / `get_editor_property`.
+
+#### ue_list_uclass_methods
+```
+ue_list_uclass_methods(class_name: str, filter_prefix: str = "")
+  → JSON {success, class_name, methods: [{name, doc}], count}
+```
+Discover callable methods on a class before calling them.
+
+#### ue_describe_asset
+```
+ue_describe_asset(asset_path: str)
+  → JSON {success, asset_path, exists, class_name, object_path, package_name, loaded_class, metadata}
+```
+**Use after every import to verify it succeeded.**
+
+#### ue_find_assets_by_class
+```
+ue_find_assets_by_class(class_name: str, search_path: str = "/Game/", limit: int = 50)
+  → JSON {success, assets: [...], count, truncated}
+```
+
+#### ue_list_editor_selection
+```
+ue_list_editor_selection() → JSON {success, selected_actors: [{name, class, location}], count}
+```
+
+#### get_recent_output_log
+```
+get_recent_output_log(lines: int = 200, filter_category: str = "")
+  → JSON {success, lines: [...], count, filter}
+```
+**Call after every operation.** Use `filter_category="Error"` for error-only scan.
+
+#### ue_summarize_operation_effects
+```
+ue_summarize_operation_effects(search_path: str = "/Game/")
+  → JSON {success, total_assets, by_class: {ClassName: count}}
+```
+Take a snapshot of the Content Browser before/after to see what changed.
+
+---
+
+### StructuredResult Schema
+
+All substrate + import tools return this schema:
+
+| Key | Type | Description |
+|---|---|---|
+| `success` | bool | True if operation completed without fatal errors |
+| `stage` | str | Operation name (e.g. "import_texture", "transaction_complete") |
+| `message` | str | Human-readable summary |
+| `inputs` | dict | Input parameters (optional) |
+| `outputs` | dict | Tool-specific output data |
+| `warnings` | list[str] | Non-fatal warnings |
+| `errors` | list[str] | Error messages (also in exception if `success=false`) |
+| `log_tail` | list[str] | Last 10 lines of the traceback if an exception occurred |
+

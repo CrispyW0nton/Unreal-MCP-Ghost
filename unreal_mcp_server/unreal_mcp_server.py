@@ -622,6 +622,16 @@ from tools.physics_tools import register_physics_tools
 from tools.knowledge_tools import register_knowledge_tools
 # Audio import tools
 from tools.audio_tools import register_audio_tools
+# Asset import pipeline — Category C (single-asset)
+from tools.asset_import_tools import register_asset_import_tools
+# Folder/batch import pipeline — Category B
+from tools.folder_import_tools import register_folder_import_tools
+# GhostRigger IPC bridge — Category A
+from tools.ghostrigger_tools import register_ghostrigger_tools
+# Safe execution substrate (Pillar 1 — Scripting Supremacy)
+from tools.exec_substrate import register_exec_substrate_tools
+# Reflection & diagnostics tools (Pillar 2 — Scripting Supremacy)
+from tools.reflection_tools import register_reflection_tools
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -646,6 +656,16 @@ register_physics_tools(mcp)
 register_knowledge_tools(mcp)
 # Audio import tools
 register_audio_tools(mcp)
+# Asset import pipeline — Category C (single-asset)
+register_asset_import_tools(mcp)
+# Folder/batch import pipeline — Category B
+register_folder_import_tools(mcp)
+# GhostRigger IPC bridge — Category A
+register_ghostrigger_tools(mcp)
+# Safe execution substrate — ue_exec_safe, ue_exec_transact, ue_exec_progress
+register_exec_substrate_tools(mcp)
+# Reflection & diagnostics — ue_reflect_class, ue_list_uclass_*, ue_describe_asset, etc.
+register_reflection_tools(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
@@ -991,11 +1011,36 @@ def info():
 - `import_sound_asset_from_sandbox(local_file_path, asset_name, destination_path, loop)` - Import audio from sandbox (Linux side) via base64 transfer; use when file is generated/downloaded in the sandbox
 - `wire_play_sound_to_blueprint(blueprint_name, sound_asset_path, after_node_id, node_position, use_play_at_location)` - Add PlaySound2D or PlaySoundAtLocation node wired after a specific node
 
+## ASSET IMPORT PIPELINE — CATEGORY C (single-asset)
+- `import_texture(file_path, destination_path, texture_type)` - Import PNG/JPG/TGA/EXR/HDR/BMP as Texture2D; auto-detects compression (TC_NORMALMAP/TC_MASKS/TC_DEFAULT) and sRGB from filename suffix
+- `import_static_mesh(file_path, destination_path, combine_meshes, generate_lightmap_uvs, auto_generate_collision, import_materials, import_textures)` - Import FBX/OBJ/glTF/GLB as StaticMesh with configurable FBX import options
+- `import_skeletal_mesh(file_path, destination_path, skeleton, import_animations, import_morph_targets, import_materials)` - Import FBX as SkeletalMesh; supports skeleton reuse, animations, and morph targets
+
+## FOLDER / BATCH IMPORT PIPELINE — CATEGORY B
+- `scan_export_folder(folder_path, recursive)` - Scan a local folder for importable assets; returns categorised manifest (textures/meshes/audio/unknown) without touching UE5
+- `batch_import_folder(folder_path, ue5_base_path, recursive, import_textures, import_meshes, import_audio, preserve_folder_structure, dry_run)` - Batch-import all recognised assets from a folder into UE5; mirrors subfolder structure in Content Browser
+- `import_folder_as_character(folder_path, character_name, ue5_base_path, skeleton, import_animations, import_morph_targets)` - Import a character export folder (skeletal mesh + textures + animations) as a complete set; reuses skeleton for animation FBXs
+
+## GHOSTRIGGER IPC BRIDGE — CATEGORY A (http://localhost:7001)
+- `ghostrigger_health()` - Check GhostRigger health via GET /api/health
+- `ghostrigger_ping()` - Ping GhostRigger via POST /api/ping
+- `ghostrigger_open_model(resref, module_dir)` - Tell GhostRigger to open a KotOR MDL model in its viewport
+- `ghostrigger_open_creature(resref, module_dir)` - Tell GhostRigger to open a KotOR UTC creature blueprint
+- `ghostrigger_list_mcp_tools()` - List all ~68 KotorMCP tools available through GhostRigger
+- `ghostrigger_call_mcp_tool(tool_name, arguments)` - Call any KotorMCP tool (installation, discovery, game data, models, modules, GFF, 2da, decompile)
+- `ghostrigger_list_resources()` - List all kotor:// URI resource templates
+- `ghostrigger_read_resource(uri)` - Read a kotor:// resource (e.g. kotor://k1/2da/appearance)
+- `ghostrigger_export_model(resref, export_path, module_dir, format)` - Export KotOR MDL to FBX via GhostRigger tool call
+- `ghostrigger_import_to_ue5(resref, export_path, ue5_destination_path, is_skeletal, skeleton, module_dir)` - Full KotOR→UE5 pipeline: export MDL via GhostRigger then import FBX into UE5
+
 ## PDF AUDIT STATUS: 100% of all 20 chapters fully audited (566 pages, all 3 passes)
-## TOTAL: 312 MCP TOOLS — 283 (3rd deep pass) + 1 renamed (import_sound_asset_from_sandbox) + 1 new (import_sound_asset direct-path)
+## TOTAL: 328 MCP TOOLS — 315 (Category C) + 3 (Category B) + 10 (GhostRigger/Category A)
 ## New in 3rd pass: physics_tools.py (Ch.14 Math/Trace/Vectors), expanded ai_tools.py (Ch.10 attack/hearing/spawner/wander),
 ##   expanded advanced_node_tools.py (Ch.2 operators, Ch.3 actor queries, Ch.5/6/8 math nodes, timers, delta time)
 ## Audio pass: audio_tools.py — import_sound_asset for direct UE5 host paths (WAV/OGG/MP3 → SoundWave + optional SoundCue)
+## Asset import pass: asset_import_tools.py — Category C single-asset imports (texture/static mesh/skeletal mesh)
+## Folder import pass: folder_import_tools.py — Category B batch imports (scan + batch + character folder)
+## GhostRigger pass: ghostrigger_tools.py — Category A KotOR→3D→UE5 pipeline via HTTP IPC (10 tools)
 """
 
 

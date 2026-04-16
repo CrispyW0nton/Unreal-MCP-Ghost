@@ -1,10 +1,10 @@
 # Unreal-MCP-Ghost — AI Blueprint Scripting for UE5
 
-Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logic, create assets, wire nodes, spawn actors, set up AI, animation, UI, and VFX — all without touching the UE5 editor manually. Every AI agent — local or remote — uses the **312 MCP tools** via the Model Context Protocol.
+Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logic, create assets, wire nodes, spawn actors, set up AI, animation, UI, and VFX — all without touching the UE5 editor manually. Every AI agent — local or remote — uses the **362 MCP tools** via the Model Context Protocol.
 
 > **Forked from:** [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp)  
 > **Active branch:** `genspark_ai_developer` — all new features and bug fixes live here  
-> **MCP tools:** 312 Python tools (local stdio) + 119 C++ plugin commands (all accessible via MCP)  
+> **MCP tools:** 362 Python tools (local stdio) + 119 C++ plugin commands (all accessible via MCP)  
 > **Knowledge base:** 19 markdown files documenting every tool, pattern, and UE5 system  
 
 ---
@@ -19,7 +19,7 @@ Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logi
            │  (configured in client JSON)               │  (HTTP POST to /sse endpoint)
            ▼                                            ▼
                         unreal_mcp_server.py
-                   (MCP server, 312 tools registered)
+                   (MCP server, 362 tools registered)
                                 │
                                 │  TCP JSON  port 55557
                                 │  (via Playit tunnel if UE5 is remote)
@@ -32,14 +32,14 @@ Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logi
                         Unreal Engine 5
 ```
 
-**Every AI agent uses the same 312 MCP tools.** The transport layer differs by agent type:
+**Every AI agent uses the same 362 MCP tools.** The transport layer differs by agent type:
 
 | Agent Type | Transport | How to Configure |
 |---|---|---|
 | Claude Desktop, Cursor, Windsurf | **stdio** (local) | Add server to client's MCP config JSON (Section 8) |
 | GenSpark AI Developer, cloud agents | **SSE** (HTTP) | Run server with `--transport sse`, connect via `/sse` URL (Section 9) |
 
-- **`unreal_mcp_server.py`** — The MCP server. Runs on the developer's machine. All 312 tools are registered here. Supports `stdio`, `sse`, and `streamable-http` transports.
+- **`unreal_mcp_server.py`** — The MCP server. Runs on the developer's machine. All 362 tools are registered here. Supports `stdio`, `sse`, and `streamable-http` transports.
 - **`sandbox_ue5cli.py`** — Low-level debug CLI for directly testing the C++ plugin's 119 raw commands. Not intended for normal AI agent use — agents should use MCP tools instead.
 - **C++ Plugin** — Receives JSON commands on `localhost:55557`, executes them on UE5's game thread, returns JSON results.
 
@@ -334,7 +334,7 @@ In the GenSpark AI Developer interface, configure the MCP server URL to:
 http://your-mcp.with.playit.plus:54321/sse
 ```
 
-GenSpark will connect via MCP SSE and automatically discover all 312 tools. See [Section 14](#14-ai-agent-onboarding-prompt) for the onboarding prompt to paste into your first GenSpark session.
+GenSpark will connect via MCP SSE and automatically discover all 362 tools. See [Section 14](#14-ai-agent-onboarding-prompt) for the onboarding prompt to paste into your first GenSpark session.
 
 ### Environment variable alternative
 
@@ -450,7 +450,7 @@ taskkill /PID 1234 /F
 
 ## 13. Available MCP Tools Reference
 
-The MCP server exposes **312 Python tools** across 19 tool modules. All tools are called by the AI agent via its MCP connection — local agents call them directly, remote agents call them via SSE. The 312 Python tools cover all 20 chapters of "Blueprints Visual Scripting for Unreal Engine 5" and internally translate to 119 C++ plugin commands.
+The MCP server exposes **362 Python tools** across 24 tool modules. All tools are called by the AI agent via its MCP connection — local agents call them directly, remote agents call them via SSE. The 362 Python tools cover all 20 chapters of "Blueprints Visual Scripting for Unreal Engine 5" and internally translate to 119 C++ plugin commands.
 
 > **For AI agents:** Call tools by name through your MCP interface. See Section 14 for the onboarding prompt.
 >
@@ -680,7 +680,7 @@ When calling `create_blueprint`, use these exact C++ class names:
 
 **Use this prompt when starting any new AI developer session** (GenSpark, Claude, Cursor, or any MCP-connected agent) for any UE5 project using this plugin.
 
-Every AI agent — local or remote — uses the same 312 MCP tools. There is **no separate "cloud mode"** or special CLI interface; the MCP connection (stdio for local, SSE for remote) is the one and only interface.
+Every AI agent — local or remote — uses the same 362 MCP tools. There is **no separate "cloud mode"** or special CLI interface; the MCP connection (stdio for local, SSE for remote) is the one and only interface.
 
 The full prompt is also saved at [`knowledge_base/AI_DEVELOPER_ONBOARDING_PROMPT.md`](knowledge_base/AI_DEVELOPER_ONBOARDING_PROMPT.md). Copy the block below and paste it as your first message. Replace the `[BRACKETED]` placeholders in Section 9 with your project's specifics.
 
@@ -698,7 +698,7 @@ You interact with Unreal Engine EXCLUSIVELY THROUGH MCP TOOL CALLS — the same 
 interface you use for everything else. There is no shell, no CLI script to run, no raw TCP
 socket to manage. The MCP server handles all communication with UE5 on your behalf.
 
-You have 312 MCP tools available. Call them directly by name, e.g.:
+You have 362 MCP tools available. Call them directly by name, e.g.:
   get_actors_in_level()
   create_blueprint(name="BP_MyActor", parent_class="Actor")
   compile_blueprint(blueprint_name="BP_MyActor")
@@ -749,7 +749,7 @@ Count existing assets:
 ═══════════════════════════════════════════════
 
 1. CALL MCP TOOLS ONLY. You interact with UE5 exclusively through MCP tool calls.
-   Do not attempt to run shell commands. All 312 tools are available directly.
+   Do not attempt to run shell commands. All 362 tools are available directly.
 
 2. NEVER invent a tool name. If unsure whether a tool exists, check Section 4.
    Use exec_python as a fallback for anything not covered by a dedicated tool.
@@ -810,7 +810,7 @@ Count existing assets:
   connect_blueprint_nodes         → always call get_blueprint_nodes first for exact pin names
 
 ═══════════════════════════════════════════════
-4. COMPLETE TOOL REFERENCE (312 TOOLS)
+4. COMPLETE TOOL REFERENCE (362 TOOLS)
 ═══════════════════════════════════════════════
 
 ACTOR / LEVEL
