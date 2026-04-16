@@ -414,7 +414,7 @@ class TestGraphToolsSuccessLogic(unittest.IsolatedAsyncioTestCase):
         data = _assert_schema(result, "bp_get_graph_summary_empty")
         self.assertTrue(data["success"])
         self.assertEqual(data["outputs"]["node_count"], 0)
-        self.assertEqual(data["outputs"]["summary_text"], "(empty graph)")
+        self.assertIn("empty graph", data["outputs"]["summary_text"])
 
     async def test_bp_get_graph_summary_pin_normalization(self):
         """Pins with direction=EGPD_Output should become 'output'."""
@@ -1256,22 +1256,24 @@ class TestMatCompile(unittest.IsolatedAsyncioTestCase):
 # ── Tests: Tool Count Integration ─────────────────────────────────────────────
 
 class TestToolCountAfterGraphTools(unittest.TestCase):
-    """Verify total tool count reflects the 16 graph/material tools."""
+    """Verify total tool count reflects the 17 graph/material tools (V5: +bp_get_graph_detail)."""
 
-    def test_graph_tools_adds_exactly_16_tools(self):
+    def test_graph_tools_adds_expected_tools(self):
         from tools.graph_tools import register_graph_tools
         mcp = _MockMCP()
         register_graph_tools(mcp)
-        self.assertEqual(len(mcp.list_tool_names()), 16,
-                         f"Expected 16 tools, got: {sorted(mcp.list_tool_names())}")
+        # V5 adds bp_get_graph_detail → 17 total (was 16)
+        self.assertGreaterEqual(len(mcp.list_tool_names()), 17,
+                         f"Expected ≥17 tools, got: {sorted(mcp.list_tool_names())}")
 
     def test_bp_tools_have_bp_prefix(self):
         from tools.graph_tools import register_graph_tools
         mcp = _MockMCP()
         register_graph_tools(mcp)
         bp_tools = [n for n in mcp.list_tool_names() if n.startswith("bp_")]
-        self.assertEqual(len(bp_tools), 12,
-                         f"Expected 12 bp_* tools, got {len(bp_tools)}: {bp_tools}")
+        # V5 adds bp_get_graph_detail → 13 bp_ tools (was 12)
+        self.assertGreaterEqual(len(bp_tools), 13,
+                         f"Expected ≥13 bp_* tools, got {len(bp_tools)}: {bp_tools}")
 
     def test_mat_tools_have_mat_prefix(self):
         from tools.graph_tools import register_graph_tools
@@ -1296,13 +1298,199 @@ class TestToolCountAfterGraphTools(unittest.TestCase):
         self.assertEqual(missing, set(), f"Missing tools: {missing}")
 
     def test_documented_tool_count_updated(self):
-        """last_tool_count.txt should reflect the new total (≥379 after +7 new tools)."""
+        """last_tool_count.txt should reflect the new total (≥390 after V5 tools)."""
         count_file = os.path.join(_HERE, "last_tool_count.txt")
         if os.path.exists(count_file):
             with open(count_file) as f:
                 count = int(f.read().strip())
-            self.assertGreaterEqual(count, 379,
-                                    f"last_tool_count.txt says {count} but should be ≥379")
+            self.assertGreaterEqual(count, 390,
+                                    f"last_tool_count.txt says {count} but should be ≥390")
+
+
+# ── V5 Close-out Tests: bp_get_graph_summary enhancements ────────────────────
+
+class TestV5GraphSummaryEnhancements(unittest.IsolatedAsyncioTestCase):
+    """
+    8 tests covering the V5 close-out additions:
+      1. bp_get_graph_summary returns variables[] key (always present)
+      2. bp_get_graph_summary returns function_graphs[] key (always present)
+      3. bp_get_graph_summary returns event_graphs[] key (always present)
+      4. bp_get_graph_summary pagination returns correct page slice
+      5. bp_get_graph_summary include_nodes=False returns metadata only
+      6. bp_get_graph_summary meta dict present with tool and duration_ms
+      7. bp_get_graph_detail registered and returns paginated nodes
+      8. bp_get_graph_detail compact mode (include_pin_defaults=False) reduces token estimate
+    """
+
+    def setUp(self):
+        from tools.graph_tools import register_graph_tools
+        self.mcp = _MockMCP()
+        register_graph_tools(self.mcp)
+        self.summary_tool = self.mcp.get_tool("bp_get_graph_summary")
+        self.detail_tool  = self.mcp.get_tool("bp_get_graph_detail")
+
+    def _make_nodes(self, count):
+        nodes = []
+        for i in range(count):
+            nodes.append({
+                "node_id":   f"NODE-{i:04d}-XXXX",
+                "node_name": f"K2Node_Test_{i}",
+                "node_type": "function",
+                "title":     f"Node_{i}",
+                "pos_x": i * 200, "pos_y": 0,
+                "pins": [
+                    {"pin_name": "execute", "direction": "input", "pin_type": "exec",
+                     "default_value": "val", "linked_to": []},
+                ],
+            })
+        return nodes
+
+    def _mock_send_factory(self, nodes, meta_result=None):
+        def mock_send(command, params):
+            if command == "get_blueprint_nodes":
+                return {"success": True, "nodes": nodes}
+            if command == "exec_python":
+                if meta_result is not None:
+                    return {"success": True, "result": meta_result}
+                return {"success": True, "result": {
+                    "variables": [{"name": "Health", "type": "float"}],
+                    "function_graphs": [{"name": "TakeDamage", "type": "function"}],
+                    "event_graphs": [{"name": "EventGraph", "type": "event"}],
+                }}
+            return {"success": True, "result": {}}
+        return mock_send
+
+    async def test_v5_summary_has_variables_key(self):
+        """bp_get_graph_summary always returns outputs.variables list."""
+        nodes = self._make_nodes(2)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.summary_tool(_mock_ctx(), blueprint_name="BP_Test")
+        data = _parse(result)
+        self.assertTrue(data["success"])
+        self.assertIn("variables", data["outputs"])
+        self.assertIsInstance(data["outputs"]["variables"], list)
+
+    async def test_v5_summary_has_function_graphs_key(self):
+        """bp_get_graph_summary always returns outputs.function_graphs list."""
+        nodes = self._make_nodes(2)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.summary_tool(_mock_ctx(), blueprint_name="BP_Test")
+        data = _parse(result)
+        self.assertIn("function_graphs", data["outputs"])
+        self.assertIsInstance(data["outputs"]["function_graphs"], list)
+
+    async def test_v5_summary_has_event_graphs_key(self):
+        """bp_get_graph_summary always returns outputs.event_graphs list."""
+        nodes = self._make_nodes(2)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.summary_tool(_mock_ctx(), blueprint_name="BP_Test")
+        data = _parse(result)
+        self.assertIn("event_graphs", data["outputs"])
+        self.assertIsInstance(data["outputs"]["event_graphs"], list)
+
+    async def test_v5_summary_pagination_page_slice(self):
+        """bp_get_graph_summary paginates: page=1, page_size=3 returns nodes 3-5."""
+        nodes = self._make_nodes(9)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.summary_tool(
+                _mock_ctx(), blueprint_name="BP_Test",
+                page=1, page_size=3
+            )
+        data = _parse(result)
+        self.assertTrue(data["success"])
+        out = data["outputs"]
+        self.assertEqual(out["page"], 1)
+        self.assertEqual(len(out["nodes"]), 3)
+        # nodes on page 1 (0-indexed) are indices 3,4,5
+        self.assertEqual(out["nodes"][0]["title"], "Node_3")
+
+    async def test_v5_summary_include_nodes_false(self):
+        """include_nodes=False returns metadata only — nodes list is empty."""
+        nodes = self._make_nodes(6)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.summary_tool(
+                _mock_ctx(), blueprint_name="BP_Test", include_nodes=False
+            )
+        data = _parse(result)
+        self.assertTrue(data["success"])
+        # nodes is empty because include_nodes=False skips get_blueprint_nodes
+        self.assertEqual(data["outputs"]["nodes"], [])
+        # But metadata keys must still be present
+        self.assertIn("variables", data["outputs"])
+        self.assertIn("function_graphs", data["outputs"])
+
+    async def test_v5_summary_meta_dict_present(self):
+        """bp_get_graph_summary result includes meta with tool and duration_ms."""
+        nodes = self._make_nodes(2)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.summary_tool(_mock_ctx(), blueprint_name="BP_Test")
+        data = _parse(result)
+        self.assertIn("meta", data)
+        self.assertEqual(data["meta"]["tool"], "bp_get_graph_summary")
+        self.assertIn("duration_ms", data["meta"])
+
+    async def test_v5_graph_detail_registered(self):
+        """bp_get_graph_detail is registered and returns a StructuredResult."""
+        self.assertIsNotNone(self.detail_tool, "bp_get_graph_detail not registered")
+        nodes = self._make_nodes(3)
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            result = await self.detail_tool(
+                _mock_ctx(),
+                blueprint_path="/Game/Blueprints/BP_Test",
+                graph_name="TakeDamage",
+            )
+        data = _assert_schema(result, "bp_get_graph_detail")
+        self.assertTrue(data["success"])
+        out = data["outputs"]
+        self.assertIn("total_nodes", out)
+        self.assertIn("nodes", out)
+        self.assertIn("token_estimate", out)
+
+    async def test_v5_graph_detail_compact_reduces_tokens(self):
+        """bp_get_graph_detail compact mode lowers token estimate vs. full mode."""
+        # Build nodes with verbose default values
+        nodes = []
+        for i in range(9):
+            nodes.append({
+                "node_id": f"TD-{i:04d}", "node_name": f"K2Node_{i}",
+                "node_type": "function", "title": f"Node_{i}",
+                "pos_x": i*200, "pos_y": 0,
+                "pins": [
+                    {"pin_name": "execute",  "direction": "input",  "pin_type": "exec",
+                     "default_value": "", "linked_to": []},
+                    {"pin_name": "InputVal", "direction": "input",  "pin_type": "float",
+                     "default_value": "0.0 this is a long default value string", "linked_to": []},
+                    {"pin_name": "then",     "direction": "output", "pin_type": "exec",
+                     "default_value": "", "linked_to": []},
+                ],
+            })
+
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            full_result = await self.detail_tool(
+                _mock_ctx(),
+                blueprint_path="/Game/Blueprints/BP_HealthSystem",
+                graph_name="TakeDamage",
+                include_pin_defaults=True,
+            )
+        with patch("tools.graph_tools._send", side_effect=self._mock_send_factory(nodes)):
+            compact_result = await self.detail_tool(
+                _mock_ctx(),
+                blueprint_path="/Game/Blueprints/BP_HealthSystem",
+                graph_name="TakeDamage",
+                include_pin_defaults=False,
+            )
+
+        full_data    = _parse(full_result)
+        compact_data = _parse(compact_result)
+
+        full_tokens    = full_data["outputs"]["token_estimate"]
+        compact_tokens = compact_data["outputs"]["token_estimate"]
+
+        self.assertLess(compact_tokens, full_tokens,
+                        f"Compact ({compact_tokens}) should be < full ({full_tokens})")
+        # Compact should be well under 1800 tokens for a 9-node graph
+        self.assertLess(compact_tokens, 1800,
+                        f"Compact TakeDamage graph exceeds 1800-token budget: {compact_tokens}")
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

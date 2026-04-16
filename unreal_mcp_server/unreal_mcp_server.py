@@ -636,6 +636,14 @@ from tools.reflection_tools import register_reflection_tools
 from tools.graph_tools import register_graph_tools
 # V4 Skills — higher-order composition workflows
 from skills.health_system import register_health_system_skill
+# V5 Project Intelligence — asset registry, reference tracing, subsystem enumeration
+from tools.project_intelligence_tools import register_project_intelligence_tools
+# V5 C++ Bridge — off-process tree-sitter source analysis
+from tools.cpp_bridge_tools import register_cpp_bridge_tools
+# V5 Source Control — read-only SC provider queries
+from tools.source_control_tools import register_source_control_tools
+# V5 Skills — skill_audit_blueprint_health
+from skills.audit_blueprint_health.skill import register_audit_blueprint_health_skill
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -674,6 +682,14 @@ register_reflection_tools(mcp)
 register_graph_tools(mcp)
 # V4 Skills — skill_create_health_system
 register_health_system_skill(mcp)
+# V5 Project Intelligence — project_find_assets, project_get_references, etc.
+register_project_intelligence_tools(mcp)
+# V5 C++ Bridge — cpp_set_codebase_path, cpp_analyze_class, cpp_find_references
+register_cpp_bridge_tools(mcp)
+# V5 Source Control — sc_get_provider_info, sc_get_status, sc_get_changelist
+register_source_control_tools(mcp)
+# V5 Skills — skill_audit_blueprint_health
+register_audit_blueprint_health_skill(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────

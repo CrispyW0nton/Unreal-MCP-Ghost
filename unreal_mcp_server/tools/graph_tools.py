@@ -100,74 +100,14 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
     # bp_get_graph_summary
     # ──────────────────────────────────────────────────────────────────────────
 
-    @mcp.tool()
-    async def bp_get_graph_summary(
-        ctx: Context,
-        blueprint_name: str,
-        graph_name: str = "EventGraph",
-        include_pin_defaults: bool = True,
-        include_positions: bool = True,
-    ) -> str:
-        """Get a compact, AI-readable summary of a Blueprint graph.
+    # ── shared node-processing helper (used by both summary and detail) ─────────
 
-        This is the primary tool for understanding a graph before editing it.
-        Returns a structured JSON with every node's id, type, title, position,
-        pins (name, direction, type, default value, connections), and comments.
-
-        Use this BEFORE calling bp_add_node, bp_connect_pins, or any mutation
-        to understand the existing graph state.
-
-        Output format (outputs dict):
-          blueprint:    str  — Blueprint asset name
-          graph:        str  — Graph name
-          node_count:   int  — Total nodes
-          nodes:        list — Each entry:
-            node_id:      str  — Stable GUID for use in other bp_* tools
-            node_name:    str  — Short object name (K2Node_...)
-            node_type:    str  — 'event', 'function', 'variable_get', etc.
-            title:        str  — Human-readable node title
-            pos_x:        int
-            pos_y:        int
-            pins:         list — Each entry:
-              pin_name:      str
-              direction:     'input' | 'output'
-              pin_type:      str
-              default_value: str   (empty if not set)
-              linked_to:     list  — [{node_id, pin_name}]
-          summary_text: str  — Compact one-liner per node for quick scanning
-
-        Args:
-            blueprint_name:      Blueprint asset name (e.g. 'BP_MyActor')
-            graph_name:          Graph to inspect. Default 'EventGraph'.
-            include_pin_defaults: Include pin default values. Default True.
-            include_positions:    Include node canvas positions. Default True.
-
-        Returns:
-            JSON string with StructuredResult.
-        """
-        # Delegate to existing C++ get_blueprint_nodes, then reformat into summary
-        raw = _send("get_blueprint_nodes", {
-            "blueprint_name": blueprint_name,
-            "graph_name": graph_name,
-            "include_hidden_pins": False,
-        })
-
-        if not raw or raw.get("success") is False or raw.get("status") == "error":
-            msg = (raw or {}).get("message") or (raw or {}).get("error") or "get_blueprint_nodes failed"
-            return json.dumps(_make_result(
-                success=False,
-                stage="bp_get_graph_summary",
-                message=msg,
-                errors=[msg],
-            ))
-
-        nodes_raw = raw.get("nodes") or raw.get("result", {}).get("nodes") or []
-
-        summary_lines = []
+    def _process_nodes_raw(nodes_raw, include_pin_defaults, include_positions):
+        """Convert raw C++ node dicts into clean, JSON-safe output entries."""
         nodes_out = []
-
+        summary_lines = []
         for n in nodes_raw:
-            node_id = n.get("node_id") or n.get("node_guid") or ""
+            node_id   = n.get("node_id") or n.get("node_guid") or ""
             node_name = n.get("node_name") or n.get("name") or ""
             node_type = n.get("node_type") or ""
             title = (
@@ -181,31 +121,31 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             pos_x = n.get("pos_x", 0) if include_positions else None
             pos_y = n.get("pos_y", 0) if include_positions else None
 
-            # Process pins
             pins_out = []
             for p in n.get("pins") or []:
-                direction = "output" if p.get("direction") in ("output", "EGPD_Output", 1) else "input"
+                direction  = "output" if p.get("direction") in ("output", "EGPD_Output", 1) else "input"
                 default_val = p.get("default_value", "") if include_pin_defaults else ""
-                linked_to = []
-                for link in p.get("linked_to") or []:
-                    linked_to.append({
-                        "node_id": link.get("node_id") or link.get("node_guid") or "",
-                        "pin_name": link.get("pin_name") or link.get("pin") or "",
-                    })
+                linked_to  = [
+                    {
+                        "node_id":  lk.get("node_id") or lk.get("node_guid") or "",
+                        "pin_name": lk.get("pin_name") or lk.get("pin") or "",
+                    }
+                    for lk in (p.get("linked_to") or [])
+                ]
                 pins_out.append({
-                    "pin_name": p.get("pin_name") or p.get("name") or "",
-                    "direction": direction,
-                    "pin_type": p.get("pin_type") or p.get("type") or "",
+                    "pin_name":     p.get("pin_name") or p.get("name") or "",
+                    "direction":    direction,
+                    "pin_type":     p.get("pin_type") or p.get("type") or "",
                     "default_value": default_val,
-                    "linked_to": linked_to,
+                    "linked_to":    linked_to,
                 })
 
             entry: Dict[str, Any] = {
-                "node_id": node_id,
+                "node_id":   node_id,
                 "node_name": node_name,
                 "node_type": node_type,
-                "title": title,
-                "pins": pins_out,
+                "title":     title,
+                "pins":      pins_out,
             }
             if include_positions:
                 entry["pos_x"] = pos_x
@@ -213,31 +153,319 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
             nodes_out.append(entry)
 
-            # Build compact summary line
-            connected_pins = [p for p in pins_out if p["linked_to"]]
+            connected = [p for p in pins_out if p["linked_to"]]
             pin_summary = ", ".join(
                 f"{p['pin_name']}→{p['linked_to'][0]['pin_name']}@{p['linked_to'][0]['node_id'][:8]}"
-                for p in connected_pins[:4]
+                for p in connected[:4]
             )
             summary_lines.append(
                 f"[{node_id[:8] if node_id else '?'}] {title} ({node_type}) — {len(pins_out)} pins"
                 + (f" | connects: {pin_summary}" if pin_summary else "")
             )
+        return nodes_out, summary_lines
+
+    # ── shared metadata-fetcher via exec_python ──────────────────────────────
+
+    def _fetch_bp_metadata(blueprint_name: str) -> Dict[str, Any]:
+        """Return variables[], function_graphs[], event_graphs[] for a Blueprint.
+
+        Executed off-thread via exec_python; returns empty lists on any failure
+        so the summary can still be returned successfully.
+        """
+        import textwrap as _tw
+        code = _tw.dedent(f"""
+            import unreal, json
+            _result = {{'variables': [], 'function_graphs': [], 'event_graphs': []}}
+            bp_name = {blueprint_name!r}
+            # Try direct load first
+            for prefix in ['/Game/Blueprints/', '/Game/']:
+                bp = unreal.load_asset(prefix + bp_name)
+                if bp:
+                    break
+            else:
+                # Asset-registry search
+                reg = unreal.AssetRegistryHelpers.get_asset_registry()
+                hits = reg.get_assets_by_class('Blueprint', True)
+                bp = next((unreal.load_asset(str(h.object_path)) for h in hits
+                           if h.asset_name == bp_name), None)
+            if bp:
+                # Variables
+                for p in bp.get_all_member_variables():
+                    _result['variables'].append({{
+                        'name': p.variable_name,
+                        'type': str(p.variable_type.get_display_name_text()),
+                    }})
+                # Function graphs
+                for g in bp.get_all_graphs():
+                    gname = g.get_name()
+                    if gname == 'EventGraph':
+                        _result['event_graphs'].append({{'name': gname, 'type': 'event'}})
+                    else:
+                        _result['function_graphs'].append({{'name': gname, 'type': 'function'}})
+        """)
+        raw = _send("exec_python", {"code": code})
+        out = (raw or {}).get("result") or (raw or {}).get("outputs") or {}
+        if isinstance(out, dict):
+            return {
+                "variables":      out.get("variables", []),
+                "function_graphs": out.get("function_graphs", []),
+                "event_graphs":   out.get("event_graphs", []),
+            }
+        return {"variables": [], "function_graphs": [], "event_graphs": []}
+
+    @mcp.tool()
+    async def bp_get_graph_summary(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        include_pin_defaults: bool = True,
+        include_positions: bool = True,
+        include_nodes: bool = True,
+        page: int = 0,
+        page_size: int = 50,
+    ) -> str:
+        """Get a compact, AI-readable summary of a Blueprint graph.
+
+        V5 enhancements over V4.1:
+          - Always returns top-level variables[], function_graphs[], event_graphs[]
+          - Pagination when include_nodes=True (page / page_size)
+          - include_nodes=False returns only metadata (variables, graphs) — very compact
+
+        Output format (outputs dict):
+          blueprint:       str  — Blueprint asset name
+          graph:           str  — Graph name queried
+          node_count:      int  — Total nodes in this graph
+          page:            int  — Current page (0-based)
+          total_pages:     int  — Total pages
+          variables:       list — [{name, type}] — all Blueprint member variables
+          function_graphs: list — [{name, type:'function'}]
+          event_graphs:    list — [{name, type:'event'}]
+          nodes:           list — Node entries (empty when include_nodes=False)
+          summary_text:    str  — Compact one-liner per node
+
+        Args:
+            blueprint_name:      Blueprint asset name (e.g. 'BP_HealthSystem')
+            graph_name:          Graph to inspect. Default 'EventGraph'.
+            include_pin_defaults: Include pin default values. Default True.
+            include_positions:    Include node canvas positions. Default True.
+            include_nodes:        Include node list. Set False for metadata-only. Default True.
+            page:                 0-based page index when include_nodes=True. Default 0.
+            page_size:            Nodes per page. Default 50.
+
+        Returns:
+            JSON string with StructuredResult.
+        """
+        import time as _time
+        t0 = _time.monotonic()
+
+        # ── fetch node data ──────────────────────────────────────────────────
+        nodes_raw: List[Any] = []
+        if include_nodes:
+            raw = _send("get_blueprint_nodes", {
+                "blueprint_name": blueprint_name,
+                "graph_name": graph_name,
+                "include_hidden_pins": False,
+            })
+            if not raw or raw.get("success") is False or raw.get("status") == "error":
+                msg = (raw or {}).get("message") or (raw or {}).get("error") or "get_blueprint_nodes failed"
+                return json.dumps(_make_result(
+                    success=False,
+                    stage="bp_get_graph_summary",
+                    message=msg,
+                    errors=[msg],
+                ))
+            nodes_raw = raw.get("nodes") or raw.get("result", {}).get("nodes") or []
+
+        # ── pagination ───────────────────────────────────────────────────────
+        total_nodes  = len(nodes_raw)
+        total_pages  = max(1, -(-total_nodes // page_size)) if total_nodes else 1
+        page         = max(0, min(page, total_pages - 1))
+        paged_nodes  = nodes_raw[page * page_size:(page + 1) * page_size]
+
+        nodes_out, summary_lines = _process_nodes_raw(paged_nodes, include_pin_defaults, include_positions)
+
+        # ── fetch blueprint metadata via exec_python ─────────────────────────
+        meta = _fetch_bp_metadata(blueprint_name)
+
+        duration_ms = int((_time.monotonic() - t0) * 1000)
+        token_estimate = len(json.dumps(nodes_out)) // 4
 
         outputs = {
-            "blueprint": blueprint_name,
-            "graph": graph_name,
-            "node_count": len(nodes_out),
-            "nodes": nodes_out,
-            "summary_text": "\n".join(summary_lines) if summary_lines else "(empty graph)",
+            "blueprint":       blueprint_name,
+            "graph":           graph_name,
+            "node_count":      total_nodes,
+            "page":            page,
+            "total_pages":     total_pages,
+            "variables":       meta["variables"],
+            "function_graphs": meta["function_graphs"],
+            "event_graphs":    meta["event_graphs"],
+            "nodes":           nodes_out,
+            "summary_text":    "\n".join(summary_lines) if summary_lines else "(empty graph / no nodes on page)",
         }
 
-        return json.dumps(_make_result(
+        result = _make_result(
             success=True,
             stage="bp_get_graph_summary",
-            message=f"Graph '{graph_name}' in '{blueprint_name}': {len(nodes_out)} nodes",
+            message=(
+                f"Graph '{graph_name}' in '{blueprint_name}': {total_nodes} nodes"
+                + (f" (page {page+1}/{total_pages})" if total_pages > 1 else "")
+                + f", {len(meta['variables'])} vars, {len(meta['function_graphs'])} fns"
+            ),
             outputs=outputs,
-        ))
+        )
+        result["meta"] = {"tool": "bp_get_graph_summary", "duration_ms": duration_ms,
+                          "token_estimate": token_estimate, "page": page, "total_pages": total_pages}
+        return json.dumps(result)
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # bp_get_graph_detail  (V5 — V4.1 close-out)
+    # ──────────────────────────────────────────────────────────────────────────
+
+    @mcp.tool()
+    async def bp_get_graph_detail(
+        ctx: Context,
+        blueprint_path: str,
+        graph_name: str,
+        page: int = 0,
+        page_size: int = 50,
+        include_pin_defaults: bool = True,
+    ) -> str:
+        """Return full paginated node detail for a single Blueprint graph.
+
+        This is the precision tool for large graphs — use instead of
+        bp_get_graph_summary when a graph has many nodes or when
+        include_pin_defaults=False is needed for token budget.
+
+        The TakeDamage function graph (9 nodes) fits in <1800 tokens with
+        include_pin_defaults=False.
+
+        Output format (data dict):
+          blueprint_path:  str  — Full package path or asset name
+          graph_name:      str  — Graph queried
+          graph_type:      str  — 'EventGraph' | 'Function' | 'Macro'
+          total_nodes:     int  — Total nodes in graph
+          page:            int  — 0-based page index returned
+          total_pages:     int
+          nodes:           list — [{guid, title, class, position:[x,y], pins:[...]}]
+          token_estimate:  int  — Rough token budget for this page
+
+        Also returned in top-level meta: tool, duration_ms, token_estimate, page, total_pages.
+
+        Args:
+            blueprint_path:      Full path OR bare name (e.g. '/Game/Blueprints/BP_HealthSystem'
+                                 or 'BP_HealthSystem').
+            graph_name:          Graph to detail (e.g. 'TakeDamage', 'EventGraph').
+            page:                0-based page. Default 0.
+            page_size:           Nodes per page (1–200). Default 50.
+            include_pin_defaults: Include pin default values. False saves ~30% tokens.
+
+        Returns:
+            JSON string with StructuredResult.
+        """
+        import time as _time
+        t0 = _time.monotonic()
+
+        # Normalise blueprint_path → bare name for the C++ bridge
+        bp_name = blueprint_path.rstrip("/").rsplit("/", 1)[-1]
+        # Strip .uasset extension if present
+        if bp_name.endswith(".uasset"):
+            bp_name = bp_name[:-7]
+
+        page_size = max(1, min(page_size, 200))
+
+        # Detect graph_type from name heuristic (EventGraph is always EventGraph)
+        if graph_name == "EventGraph":
+            graph_type = "EventGraph"
+        elif graph_name == "ConstructionScript":
+            graph_type = "ConstructionScript"
+        else:
+            graph_type = "Function"
+
+        raw = _send("get_blueprint_nodes", {
+            "blueprint_name": bp_name,
+            "graph_name": graph_name,
+            "include_hidden_pins": False,
+        })
+
+        if not raw or raw.get("success") is False or raw.get("status") == "error":
+            msg = (raw or {}).get("message") or (raw or {}).get("error") or "get_blueprint_nodes failed"
+            return json.dumps(_make_result(
+                success=False,
+                stage="bp_get_graph_detail",
+                message=msg,
+                errors=[msg],
+            ))
+
+        nodes_raw  = raw.get("nodes") or raw.get("result", {}).get("nodes") or []
+        total_nodes = len(nodes_raw)
+        total_pages = max(1, -(-total_nodes // page_size)) if total_nodes else 1
+        page        = max(0, min(page, total_pages - 1))
+        paged_raw   = nodes_raw[page * page_size:(page + 1) * page_size]
+
+        nodes_out = []
+        for n in paged_raw:
+            node_id   = n.get("node_id") or n.get("node_guid") or ""
+            node_name = n.get("node_name") or n.get("name") or ""
+            node_type = n.get("node_type") or ""
+            title = (
+                n.get("function_name") or n.get("event_name")
+                or n.get("variable_name") or n.get("title")
+                or node_type or node_name
+            )
+            pins_out = []
+            for p in n.get("pins") or []:
+                direction   = "output" if p.get("direction") in ("output", "EGPD_Output", 1) else "input"
+                default_val  = p.get("default_value", "") if include_pin_defaults else ""
+                linked_to    = [
+                    {"node_id": lk.get("node_id") or "", "pin_name": lk.get("pin_name") or ""}
+                    for lk in (p.get("linked_to") or [])
+                ]
+                pins_out.append({
+                    "pin_name":      p.get("pin_name") or p.get("name") or "",
+                    "direction":     direction,
+                    "pin_type":      p.get("pin_type") or p.get("type") or "",
+                    "default_value": default_val,
+                    "linked_to":     linked_to,
+                })
+            nodes_out.append({
+                "guid":     node_id,
+                "title":    title,
+                "class":    node_name,
+                "position": [n.get("pos_x", 0), n.get("pos_y", 0)],
+                "pins":     pins_out,
+            })
+
+        duration_ms    = int((_time.monotonic() - t0) * 1000)
+        token_estimate = len(json.dumps(nodes_out)) // 4
+
+        data = {
+            "blueprint_path": blueprint_path,
+            "graph_name":     graph_name,
+            "graph_type":     graph_type,
+            "total_nodes":    total_nodes,
+            "page":           page,
+            "total_pages":    total_pages,
+            "nodes":          nodes_out,
+            "token_estimate": token_estimate,
+        }
+
+        result = _make_result(
+            success=True,
+            stage="bp_get_graph_detail",
+            message=(
+                f"Graph '{graph_name}' ({graph_type}): {total_nodes} nodes total, "
+                f"page {page+1}/{total_pages}, ~{token_estimate} tokens"
+            ),
+            outputs=data,
+        )
+        result["meta"] = {
+            "tool":           "bp_get_graph_detail",
+            "duration_ms":    duration_ms,
+            "token_estimate": token_estimate,
+            "page":           page,
+            "total_pages":    total_pages,
+        }
+        return json.dumps(result)
 
     # ──────────────────────────────────────────────────────────────────────────
     # bp_create_graph
@@ -2098,8 +2326,8 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
     logger.info(
         "Graph scripting core tools registered: "
-        "bp_get_graph_summary, bp_create_graph, bp_add_node, bp_inspect_node, "
-        "bp_connect_pins, bp_set_pin_default, bp_add_variable, bp_compile, "
+        "bp_get_graph_summary (V5), bp_get_graph_detail (V5), bp_create_graph, bp_add_node, "
+        "bp_inspect_node, bp_connect_pins, bp_set_pin_default, bp_add_variable, bp_compile, "
         "bp_auto_format_graph, bp_remove_node, bp_disconnect_pin, bp_add_function, "
         "mat_create_material, mat_add_expression, mat_connect_expressions, mat_compile"
     )
