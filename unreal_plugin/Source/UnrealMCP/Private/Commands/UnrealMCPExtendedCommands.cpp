@@ -3241,8 +3241,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddObjectTypeMakeArray
         }
     }
 
-    // Propagate the type through the MakeArray node
-    MakeArrayNode->PropagatePinType();
+    // Propagate the type through the MakeArray node.
+    // UE 5.6: UK2Node_MakeContainer::PropagatePinType() became protected.
+    // ReconstructNode() is the public API that internally invokes PropagatePinType()
+    // and is safe for UK2Node_MakeArray (no wildcard-expansion crash risk).
+    MakeArrayNode->ReconstructNode();
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
