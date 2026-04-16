@@ -9,13 +9,30 @@ __pycache__/
 *.pdf
 frame_*.jpg
 preview_*
-fix_*.py
 *_ORIGINAL.cpp
 *.patch
 
-# Session scratch files — keep repo clean
+# -------------------------------------------------------
+# Project-specific one-off scripts (never commit these)
+# -------------------------------------------------------
+fix_*.py
+build_enhanced_input.py
+diagnose_*.py
+build_*.py
+# (exceptions: sandbox_ue5cli.py and mcp_client.py are generic utilities)
+
+# Session scratch / per-project knowledge dumps
 books/
 pdf_books/
+reference_books/
+pdf_pages/
+dantooine_setup/
+*_PROJECT_REFERENCE.md
+*_SESSION_PROMPT.md
+cursor_system_prompt.md
+GAM*.md
+
+# Crash-fix and one-off markdown notes
 CRASH_FIX*.md
 CRITICAL_CRASH*.md
 FLOATING_BOT*.md
@@ -36,5 +53,25 @@ create_complete_*.py
 create_floating_*.py
 build_floating_*.sh
 BP_PASSIVEBOT_*.md
-dantooine_setup/
 
+# -------------------------------------------------------
+# Common UE project-specific dumps (added V4)
+# -------------------------------------------------------
+# Saved/Intermediate UE build artefacts dropped into root
+Saved/
+Intermediate/
+Binaries/
+DerivedDataCache/
+*.uasset
+*.umap
+# Large binary test/audio/video sessions
+SFX_*.mp3
+SFX_*.wav
+*.mp4
+# IDE scratch
+.vscode/
+.idea/
+# pip scratch
+*.egg-info/
+dist/
+build/

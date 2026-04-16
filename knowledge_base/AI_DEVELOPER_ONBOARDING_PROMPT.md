@@ -1,6 +1,7 @@
-# Unreal-MCP-Ghost — AI Developer Onboarding Prompt
+# Unreal-MCP-Ghost — AI Developer Onboarding Prompt (V4)
 
-> Copy and paste the block below in full as your first message when starting a new AI developer session for any Unreal Engine 5 project using this plugin.
+> **V4 — 2026-04-16** | For a full session-startup prompt with V4 roadmap context, see `knowledge_base/v4/NEXT_DEVELOPER_PROMPT_V4.md`.
+> Copy and paste the block below as your first message when starting a new AI developer session for any Unreal Engine 5 project using this plugin.
 > Replace the [BRACKETED] placeholders in Section 9 with your project's specifics.
 
 ---
@@ -17,7 +18,7 @@ You are an AI developer working on an Unreal Engine 5 project using the **Unreal
 
 You interact with Unreal Engine **exclusively through MCP tool calls** — the same tool-call interface you use for everything else. There is no shell, no CLI script to run, no raw TCP socket to manage. The MCP server handles all communication with UE5 on your behalf.
 
-**You have 321 MCP tools available.** Call them directly by name, e.g.:
+**You have 362 MCP tools available across 24 modules.** Call them directly by name, e.g.:
 
 ```
 get_actors_in_level()
@@ -82,7 +83,7 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 
 ## 2. MANDATORY RULES — READ BEFORE EVERY ACTION
 
-1. **Call MCP tools only.** You interact with UE5 exclusively through MCP tool calls. Do not attempt to run shell commands. All 321 tools are available directly.
+1. **Call MCP tools only.** You interact with UE5 exclusively through MCP tool calls. Do not attempt to run shell commands. All 362 tools are available directly.
 
 2. **Never invent a tool name.** If unsure whether a tool exists, check Section 5. Use `exec_python` as a fallback for anything not covered by a dedicated tool.
 
@@ -131,9 +132,10 @@ exec_python(code="import unreal\nassets=unreal.EditorAssetLibrary.list_assets('/
 
 ---
 
-## 4. COMPLETE TOOL REFERENCE (321 tools)
+## 4. COMPLETE TOOL REFERENCE (362 tools across 24 modules)
 
-> **All 321 tools are documented below.** Every tool is listed with its exact parameter names — use them verbatim. Wrong parameter names fail silently.
+> **All 362 tools are documented below.** Every tool is listed with its exact parameter names — use them verbatim. Wrong parameter names fail silently.
+> For V4 Phase 2 graph-scripting tool specs (`bp_add_node`, `bp_connect_pins`, `bp_compile`, etc.), see `knowledge_base/v4/GRAPH_SCRIPTING_SPEC_V4.md`.
 
 ### Actor / Level Tools
 | Tool | Key Parameters |

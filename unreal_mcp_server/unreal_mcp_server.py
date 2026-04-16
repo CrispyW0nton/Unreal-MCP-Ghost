@@ -632,6 +632,10 @@ from tools.ghostrigger_tools import register_ghostrigger_tools
 from tools.exec_substrate import register_exec_substrate_tools
 # Reflection & diagnostics tools (Pillar 2 — Scripting Supremacy)
 from tools.reflection_tools import register_reflection_tools
+# V4 Graph Scripting Core (Pillar 3 — atomic Blueprint graph editing)
+from tools.graph_tools import register_graph_tools
+# V4 Skills — higher-order composition workflows
+from skills.health_system import register_health_system_skill
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -666,6 +670,10 @@ register_ghostrigger_tools(mcp)
 register_exec_substrate_tools(mcp)
 # Reflection & diagnostics — ue_reflect_class, ue_list_uclass_*, ue_describe_asset, etc.
 register_reflection_tools(mcp)
+# V4 Graph Scripting Core — bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile, etc.
+register_graph_tools(mcp)
+# V4 Skills — skill_create_health_system
+register_health_system_skill(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────

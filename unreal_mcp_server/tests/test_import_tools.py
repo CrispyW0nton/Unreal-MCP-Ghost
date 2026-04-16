@@ -525,6 +525,9 @@ class TestToolCountAudit(unittest.TestCase):
         from tools.ghostrigger_tools import register_ghostrigger_tools
         from tools.exec_substrate import register_exec_substrate_tools
         from tools.reflection_tools import register_reflection_tools
+        from tools.graph_tools import register_graph_tools
+        sys.path.insert(0, os.path.join(os.path.dirname(_HERE), "skills"))
+        from skills.health_system import register_health_system_skill
 
         mcp = FastMCP("count_audit")
         for reg in [register_editor_tools, register_blueprint_tools, register_blueprint_node_tools,
@@ -535,7 +538,8 @@ class TestToolCountAudit(unittest.TestCase):
                     register_vr_tools, register_variant_tools, register_physics_tools,
                     register_knowledge_tools, register_audio_tools, register_asset_import_tools,
                     register_folder_import_tools, register_ghostrigger_tools,
-                    register_exec_substrate_tools, register_reflection_tools]:
+                    register_exec_substrate_tools, register_reflection_tools,
+                    register_graph_tools, register_health_system_skill]:
             reg(mcp)
 
         actual = len(mcp._tool_manager.list_tools())
@@ -543,8 +547,8 @@ class TestToolCountAudit(unittest.TestCase):
         with open(os.path.join(_HERE, "last_tool_count.txt"), "w") as f:
             f.write(str(actual))
 
-        # We don't assert a hardcoded number — just that it's > 300
-        assert actual >= 300, f"Tool count dropped below 300: {actual}"
+        # Must be >= 379 (362 legacy + 16 graph/mat tools + 1 health_system skill)
+        assert actual >= 379, f"Tool count dropped below 379: {actual}"
         print(f"\n  [Tool count audit] Actual: {actual} tools registered")
 
 

@@ -1,6 +1,6 @@
 # KNOWLEDGE BASE — MASTER INDEX
-> Unreal-MCP-Ghost Plugin | EnclaveProject (Dantooine) | UE5.6.1
-> Version: 2026-04-10
+> Unreal-MCP-Ghost Plugin | UE 5.6
+> Version: 2026-04-16 (V4)
 > **START HERE** if you need to find anything quickly.
 
 ---
@@ -10,7 +10,7 @@
 This is the complete documentation library for the **Unreal-MCP-Ghost** project — an AI agent toolchain for controlling Unreal Engine 5. It contains:
 - Full reference for every MCP command the plugin supports
 - UE5 system knowledge extracted from 4 professional books
-- Complete asset registry for the Dantooine (EnclaveProject) game project
+- V4 roadmap, architecture specs, and research reports
 - Step-by-step implementation recipes for all game systems
 
 ---
@@ -20,24 +20,53 @@ This is the complete documentation library for the **Unreal-MCP-Ghost** project 
 ```
 What do you need?
 │
-├─ "I need to use an MCP command"          → Read 12_MCP_TOOL_USAGE_GUIDE.md
-├─ "I need to see what assets exist"       → Read 14_DANTOOINE_PROJECT_REFERENCE.md
-├─ "I need to build AI / NavMesh"          → Read 04_AI_SYSTEMS.md
-├─ "I need to build a Blueprint graph"     → Read 01_BLUEPRINT_FUNDAMENTALS.md
-├─ "I need to connect two Blueprints"      → Read 02_BLUEPRINT_COMMUNICATION.md
-├─ "I need to make a UI widget"            → Read 06_UI_UMG_SYSTEMS.md
-├─ "I need to add animations"              → Read 05_ANIMATION_SYSTEM.md
-├─ "I need to implement a game feature"    → Read 17_GAME_SYSTEMS_COOKBOOK.md
+├─ "Where do I start? What's the V4 plan?"  → Read v4/NEXT_DEVELOPER_PROMPT_V4.md
+├─ "I need to use an MCP command"           → Read 12_MCP_TOOL_USAGE_GUIDE.md
+├─ "I need to build AI / NavMesh"           → Read 04_AI_SYSTEMS.md
+├─ "I need to build a Blueprint graph"      → Read 01_BLUEPRINT_FUNDAMENTALS.md + graph_tools.py (bp_* tools)
+├─ "I need to connect two Blueprints"       → Read 02_BLUEPRINT_COMMUNICATION.md
+├─ "I need to make a UI widget"             → Read 06_UI_UMG_SYSTEMS.md
+├─ "I need to add animations"               → Read 05_ANIMATION_SYSTEM.md
+├─ "I need to implement a game feature"     → Read 17_GAME_SYSTEMS_COOKBOOK.md
 ├─ "I need to understand GameMode/Controller" → Read 03_GAMEPLAY_FRAMEWORK.md
-├─ "I need to set up player input"         → Read 15_INPUT_SYSTEM_AND_UMG.md
-├─ "I need to add materials/shaders"       → Read 08_MATERIALS_AND_RENDERING.md
-├─ "I need to add VFX particles"           → Read 09_NIAGARA_VFX.md
-├─ "I need to build the level/world"       → Read 10_WORLD_BUILDING.md
+├─ "I need to set up player input"          → Read 15_INPUT_SYSTEM_AND_UMG.md
+├─ "I need to add materials/shaders"        → Read 08_MATERIALS_AND_RENDERING.md
+├─ "I need to add VFX particles"            → Read 09_NIAGARA_VFX.md
+├─ "I need to build the level/world"        → Read 10_WORLD_BUILDING.md
 ├─ "I need to work with data (arrays/structs)" → Read 07_DATA_STRUCTURES.md
-├─ "I need to add new MCP commands"        → Read 13_TOOL_EXPANSION_ROADMAP.md
-├─ "I need to ship/package the game"       → Read 18_PACKAGING_AND_OPTIMIZATION.md
-└─ "I need everything"                     → Read 00_AGENT_KNOWLEDGE_BASE.md
+├─ "I need to add new MCP commands"         → Read 13_TOOL_EXPANSION_ROADMAP.md + v4/GRAPH_SCRIPTING_SPEC_V4.md
+├─ "I need to edit a Blueprint graph (V4)" → Use bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile
+├─ "I need to remove a node / break a pin" → Use bp_remove_node, bp_disconnect_pin
+├─ "I need a new function in a Blueprint"   → Use bp_add_function, then bp_add_node with graph_name=<fn>
+├─ "I need to create/edit a Material"       → Use mat_create_material, mat_add_expression, mat_connect_expressions, mat_compile
+├─ "I need to ship/package the game"        → Read 18_PACKAGING_AND_OPTIMIZATION.md
+├─ "I need to understand the architecture"  → Read v4/ARCHITECTURE_BLUEPRINT.md
+├─ "I need UE Python API references"        → Read v4/API_REFERENCE_CHEATSHEET.md
+└─ "I need everything"                      → Read 00_AGENT_KNOWLEDGE_BASE.md
 ```
+
+---
+
+## V4 ROADMAP DOCS (`knowledge_base/v4/`)
+
+> The V4 package represents the strategic direction as of 2026-04-16.
+> **Product identity**: "The best AI-native scripting and graph-authoring layer for Unreal Engine."
+
+| File | Purpose |
+|------|---------|
+| `v4/NEXT_DEVELOPER_PROMPT_V4.md` | **START HERE for new sessions** — full context, roadmap, decision framework |
+| `v4/ROADMAP_V4.md` | Phased roadmap (6 phases, 16 weeks) with deliverables and exit criteria |
+| `v4/GRAPH_SCRIPTING_SPEC_V4.md` | Technical spec for Phase 2: 12 BP graph ops + 6 material ops |
+| `v4/VALIDATION_TEST_MATRIX_V4.md` | 165 test scenarios across 5 phases |
+| `v4/DEEP_RESEARCH_REPORT_V4.md` | Full competitive analysis + UE engine systems deep dive |
+| `v4/REPO_PRIORITIZATION_MATRIX_V4.md` | 15 repos scored and tiered with action items |
+| `v4/ENGINE_SOURCE_STUDY_GUIDE_V4.md` | 8 UE subsystems mapped with study guides |
+| `v4/ARCHITECTURE_BLUEPRINT.md` | Current and target system architecture |
+| `v4/API_REFERENCE_CHEATSHEET.md` | Consolidated UE5 Python API reference (import, materials, IK, utilities) |
+| `v4/GHOSTRIGGER_INTEGRATION_SPEC.md` | GhostRigger ↔ Ghost IPC specification |
+| `v4/NATIVE_MODE_ENHANCEMENT_SPEC.md` | Making Claude Desktop experience equal to GenSpark |
+| `v4/SPRINT_TRACKER.md` | 12-sprint (24-week) delivery timeline |
+| `v4/README.md` | Package overview and 30/60/90 day summary |
 
 ---
 
@@ -45,42 +74,55 @@ What do you need?
 
 ### 🔴 TIER 1 — ALWAYS READ FIRST
 
-| # | File | Lines | Description |
-|---|------|-------|-------------|
-| 00 | `00_AGENT_KNOWLEDGE_BASE.md` | 342 | Master index, all 12 agent rules, build order, quick patterns, parent class lookup |
-| 12 | `12_MCP_TOOL_USAGE_GUIDE.md` | 817 | **Every** MCP command with exact params, pin names, exec_python patterns, error table |
-| 14 | `14_DANTOOINE_PROJECT_REFERENCE.md` | 369 | All 49 assets, 52 folders, asset paths, manual checklist, pending tasks |
+| # | File | Description |
+|---|------|-------------|
+| 00 | `00_AGENT_KNOWLEDGE_BASE.md` | Master index, all 12 agent rules, build order, quick patterns, parent class lookup |
+| 12 | `12_MCP_TOOL_USAGE_GUIDE.md` | **Every** MCP command with exact params, pin names, exec_python patterns, error table |
+| V4 | `v4/NEXT_DEVELOPER_PROMPT_V4.md` | V4 session startup prompt — mission, current state, roadmap, decision framework |
 
 ### 🟡 TIER 2 — READ BEFORE WORKING ON THAT SYSTEM
 
-| # | File | Lines | Key Topics |
-|---|------|-------|------------|
-| 01 | `01_BLUEPRINT_FUNDAMENTALS.md` | 531 | Variables, all node types, flow control, math, traces, timelines, construction script |
-| 02 | `02_BLUEPRINT_COMMUNICATION.md` | 304 | Direct refs, casting, event dispatchers, interfaces, Level BP, Game Instance |
-| 03 | `03_GAMEPLAY_FRAMEWORK.md` | 418 | Actor/Pawn/Character/Controller/GameMode/GameInstance lifecycle and patterns |
-| 04 | `04_AI_SYSTEMS.md` | 446 | AIController, BT, Blackboard, NavMesh, PawnSensing, AI Perception, EQS, SpawnDefaultController |
-| 05 | `05_ANIMATION_SYSTEM.md` | 421 | ABP structure, State Machines, Blend Spaces, Montages, Slots, Notifies, IK overview |
-| 06 | `06_UI_UMG_SYSTEMS.md` | 306 | All widget types, bindings, animations, dialogue/quest/sparring HUD patterns |
-| 07 | `07_DATA_STRUCTURES.md` | 392 | Arrays, Sets, Maps, Enums, Structs, Data Tables, flow control nodes deep-dive |
+| # | File | Key Topics |
+|---|------|------------|
+| 01 | `01_BLUEPRINT_FUNDAMENTALS.md` | Variables, all node types, flow control, math, traces, timelines, construction script |
+| 02 | `02_BLUEPRINT_COMMUNICATION.md` | Direct refs, casting, event dispatchers, interfaces, Level BP, Game Instance |
+| 03 | `03_GAMEPLAY_FRAMEWORK.md` | Actor/Pawn/Character/Controller/GameMode/GameInstance lifecycle and patterns |
+| 04 | `04_AI_SYSTEMS.md` | AIController, BT, Blackboard, NavMesh, PawnSensing, AI Perception, EQS |
+| 05 | `05_ANIMATION_SYSTEM.md` | ABP structure, State Machines, Blend Spaces, Montages, Slots, Notifies, IK overview |
+| 06 | `06_UI_UMG_SYSTEMS.md` | All widget types, bindings, animations, dialogue/quest/HUD patterns |
+| 07 | `07_DATA_STRUCTURES.md` | Arrays, Sets, Maps, Enums, Structs, Data Tables, flow control nodes deep-dive |
 
 ### 🟢 TIER 3 — SPECIALIZED REFERENCES
 
-| # | File | Lines | Key Topics |
-|---|------|-------|------------|
-| 08 | `08_MATERIALS_AND_RENDERING.md` | 547 | PBR workflow, all material node types, master materials, Lumen, RVT, post-process |
-| 09 | `09_NIAGARA_VFX.md` | 268 | Emitter modules, renderers, GPU vs CPU, events, 3 complete VFX recipes |
-| 10 | `10_WORLD_BUILDING.md` | 325 | World Partition, Landscape, PCG node reference, lighting, Level Sequencer |
-| 11 | `11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md` | 318 | Function/Macro Libraries, Actor/Scene Components, procedural generation |
+| # | File | Key Topics |
+|---|------|------------|
+| 08 | `08_MATERIALS_AND_RENDERING.md` | PBR workflow, all material node types, master materials, Lumen, RVT, post-process |
+| 09 | `09_NIAGARA_VFX.md` | Emitter modules, renderers, GPU vs CPU, events, VFX recipes |
+| 10 | `10_WORLD_BUILDING.md` | World Partition, Landscape, PCG node reference, lighting, Level Sequencer |
+| 11 | `11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md` | Function/Macro Libraries, Actor/Scene Components, procedural generation |
 
 ### 🔵 TIER 4 — DEEP DIVES AND EXTENDED REFERENCES
 
-| # | File | Lines | Key Topics |
-|---|------|-------|------------|
-| 13 | `13_TOOL_EXPANSION_ROADMAP.md` | 341 | 20 new MCP commands to build, priority, C++ implementation hints, workarounds |
-| 15 | `15_INPUT_SYSTEM_AND_UMG.md` | 439 | Enhanced Input deep-dive, Input Modifiers, Widget hierarchy, dialogue/quest/sparring patterns |
-| 16 | `16_ANIMATION_DEEP_DIVE.md` | 370 | Root Motion, advanced IK, Dantooine ABP specs, montage callbacks, performance tips |
-| 17 | `17_GAME_SYSTEMS_COOKBOOK.md` | 442 | 11 step-by-step recipes (health, interaction, dialogue, AI, sparring, camera, save/load, etc.) |
-| 18 | `18_PACKAGING_AND_OPTIMIZATION.md` | 385 | Build configs, packaging steps, stat commands, Blueprint/rendering/memory optimization |
+| # | File | Key Topics |
+|---|------|------------|
+| 13 | `13_TOOL_EXPANSION_ROADMAP.md` | 20 new MCP commands to build, priority, C++ implementation hints, workarounds |
+| 15 | `15_INPUT_SYSTEM_AND_UMG.md` | Enhanced Input deep-dive, Input Modifiers, Widget hierarchy |
+| 16 | `16_ANIMATION_DEEP_DIVE.md` | Root Motion, advanced IK, montage callbacks, performance tips |
+| 17 | `17_GAME_SYSTEMS_COOKBOOK.md` | 11 step-by-step recipes (health, interaction, dialogue, AI, save/load, etc.) |
+| 18 | `18_PACKAGING_AND_OPTIMIZATION.md` | Build configs, packaging steps, stat commands, Blueprint/rendering/memory optimization |
+
+### 🟣 V4 RESEARCH DOCS
+
+| File | Key Topics |
+|------|------------|
+| `v4/GRAPH_SCRIPTING_SPEC_V4.md` | bp_add_node, bp_connect_pins, bp_compile, mat_* — full function signatures and schemas |
+| `v4/DEEP_RESEARCH_REPORT_V4.md` | flopperam, UnrealCopilot, NodeToCode, GraphFormatter competitive analysis |
+| `v4/REPO_PRIORITIZATION_MATRIX_V4.md` | 15 repos scored (flopperam 9.2, UnrealCopilot 9.0, TAPython 8.5, OpenUnrealUtils 8.1) |
+| `v4/ENGINE_SOURCE_STUDY_GUIDE_V4.md` | KismetCompiler, BlueprintGraph, AssetRegistry, Interchange, AutomationTest |
+| `v4/API_REFERENCE_CHEATSHEET.md` | AssetImportTask, MaterialEditingLibrary, IKRigController, EditorAssetLibrary |
+| `v4/ARCHITECTURE_BLUEPRINT.md` | Current TCP+Python architecture, target clean architecture with abstract ports |
+| `v4/GHOSTRIGGER_INTEGRATION_SPEC.md` | GhostRigger port 7001 IPC, KotOR MCP endpoints, FBX/OBJ exporter |
+| `v4/NATIVE_MODE_ENHANCEMENT_SPEC.md` | MCP Resources for KB docs, project context tool, onboarding tool |
 
 ---
 
@@ -89,124 +131,64 @@ What do you need?
 ### Blueprint Graphs
 | Topic | Primary File | Also See |
 |-------|-------------|----------|
-| Adding/connecting nodes | `12_MCP_TOOL_USAGE_GUIDE.md` §Commands | `01_BLUEPRINT_FUNDAMENTALS.md` |
+| Adding/connecting nodes (existing) | `12_MCP_TOOL_USAGE_GUIDE.md` §Commands | `01_BLUEPRINT_FUNDAMENTALS.md` |
+| Atomic graph ops (Phase 2 spec) | `v4/GRAPH_SCRIPTING_SPEC_V4.md` | `v4/DEEP_RESEARCH_REPORT_V4.md` §flopperam |
 | Variable types | `01_BLUEPRINT_FUNDAMENTALS.md` §Variables | `07_DATA_STRUCTURES.md` |
 | Flow control (Branch/Sequence/Loop) | `01_BLUEPRINT_FUNDAMENTALS.md` §Flow | `07_DATA_STRUCTURES.md` §Control |
-| Timelines | `01_BLUEPRINT_FUNDAMENTALS.md` §Timelines | — |
-| Math nodes | `01_BLUEPRINT_FUNDAMENTALS.md` §Math | — |
-| Trace/Line Cast | `01_BLUEPRINT_FUNDAMENTALS.md` §Traces | — |
 | exec_python asset creation | `12_MCP_TOOL_USAGE_GUIDE.md` §exec_python | — |
-
-### Blueprint Communication
-| Topic | Primary File | Also See |
-|-------|-------------|----------|
-| Casting to another Blueprint | `02_BLUEPRINT_COMMUNICATION.md` §Casting | `01_BLUEPRINT_FUNDAMENTALS.md` |
-| Event Dispatchers | `02_BLUEPRINT_COMMUNICATION.md` §Dispatchers | — |
-| Blueprint Interfaces | `02_BLUEPRINT_COMMUNICATION.md` §Interfaces | — |
-| Game Instance (global state) | `02_BLUEPRINT_COMMUNICATION.md` §GameInstance | `03_GAMEPLAY_FRAMEWORK.md` |
-| Save / Load game | `02_BLUEPRINT_COMMUNICATION.md` §SaveGame | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 10 |
-
-### Gameplay Framework
-| Topic | Primary File | Also See |
-|-------|-------------|----------|
-| GameMode setup | `03_GAMEPLAY_FRAMEWORK.md` §GameMode | `14_DANTOOINE_PROJECT_REFERENCE.md` |
-| PlayerController patterns | `03_GAMEPLAY_FRAMEWORK.md` §PlayerController | `15_INPUT_SYSTEM_AND_UMG.md` |
-| Character movement | `03_GAMEPLAY_FRAMEWORK.md` §Character | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 7 |
-| Pawn possession | `03_GAMEPLAY_FRAMEWORK.md` §Pawn | `04_AI_SYSTEMS.md` |
 
 ### AI Systems
 | Topic | Primary File | Also See |
 |-------|-------------|----------|
 | AIController + Behavior Tree | `04_AI_SYSTEMS.md` §AIController | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 5/6 |
-| Blackboard setup | `04_AI_SYSTEMS.md` §Blackboard | `14_DANTOOINE_PROJECT_REFERENCE.md` §BB_ keys |
+| Blackboard setup | `04_AI_SYSTEMS.md` §Blackboard | — |
 | NavMesh placement | `04_AI_SYSTEMS.md` §NavMesh | `10_WORLD_BUILDING.md` |
 | Custom BT Task | `04_AI_SYSTEMS.md` §BTTask | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 5 |
-| SpawnDefaultController | `04_AI_SYSTEMS.md` §SpawnDefaultController | `12_MCP_TOOL_USAGE_GUIDE.md` |
-| Pawn Sensing / AI Perception | `04_AI_SYSTEMS.md` §Sensing | — |
-| EQS | `04_AI_SYSTEMS.md` §EQS | — |
 
 ### Animation
 | Topic | Primary File | Also See |
 |-------|-------------|----------|
-| ABP structure (EventGraph/AnimGraph) | `05_ANIMATION_SYSTEM.md` §Structure | `16_ANIMATION_DEEP_DIVE.md` |
-| State Machines | `05_ANIMATION_SYSTEM.md` §StateMachines | `16_ANIMATION_DEEP_DIVE.md` §SM |
-| Blend Spaces | `05_ANIMATION_SYSTEM.md` §BlendSpaces | `16_ANIMATION_DEEP_DIVE.md` §BS |
-| Montages | `05_ANIMATION_SYSTEM.md` §Montages | `16_ANIMATION_DEEP_DIVE.md` §Montages |
-| Notifies (trigger events from animation) | `05_ANIMATION_SYSTEM.md` §Notifies | `16_ANIMATION_DEEP_DIVE.md` §Notifies |
-| IK (foot placement, hand grip) | `05_ANIMATION_SYSTEM.md` §IK | `16_ANIMATION_DEEP_DIVE.md` §IK |
-| Root Motion | `16_ANIMATION_DEEP_DIVE.md` §RootMotion | — |
-| Dantooine ABP specs | `16_ANIMATION_DEEP_DIVE.md` §Dantooine | `14_DANTOOINE_PROJECT_REFERENCE.md` |
-
-### UI / HUD
-| Topic | Primary File | Also See |
-|-------|-------------|----------|
-| Widget Blueprint creation | `06_UI_UMG_SYSTEMS.md` §Creating | `15_INPUT_SYSTEM_AND_UMG.md` |
-| Widget variable bindings | `06_UI_UMG_SYSTEMS.md` §Bindings | — |
-| Input modes (Game/UI/Game+UI) | `06_UI_UMG_SYSTEMS.md` §InputModes | `15_INPUT_SYSTEM_AND_UMG.md` §InputModes |
-| Dialogue box UI | `06_UI_UMG_SYSTEMS.md` §Dialogue | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 3 |
-| Quest tracker UI | `15_INPUT_SYSTEM_AND_UMG.md` §QuestTracker | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 4 |
-| Widget animations | `15_INPUT_SYSTEM_AND_UMG.md` §WidgetAnim | — |
-
-### Data / Structs / Enums
-| Topic | Primary File | Also See |
-|-------|-------------|----------|
-| Enum creation | `07_DATA_STRUCTURES.md` §Enums | `14_DANTOOINE_PROJECT_REFERENCE.md` |
-| Struct fields | `07_DATA_STRUCTURES.md` §Structs | `14_DANTOOINE_PROJECT_REFERENCE.md` |
-| Arrays (for loops, add/remove) | `07_DATA_STRUCTURES.md` §Arrays | `01_BLUEPRINT_FUNDAMENTALS.md` |
-| Data Tables | `07_DATA_STRUCTURES.md` §DataTables | `17_GAME_SYSTEMS_COOKBOOK.md` §Recipe 3 |
-| Dantooine struct definitions | `14_DANTOOINE_PROJECT_REFERENCE.md` §Structs | `07_DATA_STRUCTURES.md` |
-
-### Input
-| Topic | Primary File | Also See |
-|-------|-------------|----------|
-| Enhanced Input setup | `15_INPUT_SYSTEM_AND_UMG.md` §EnhancedInput | `03_GAMEPLAY_FRAMEWORK.md` |
-| Binding IA_ actions in Blueprint | `15_INPUT_SYSTEM_AND_UMG.md` §Binding | — |
-| IMC_Dantooine configuration | `14_DANTOOINE_PROJECT_REFERENCE.md` §Input | `15_INPUT_SYSTEM_AND_UMG.md` |
-| Input modifiers | `15_INPUT_SYSTEM_AND_UMG.md` §Modifiers | — |
+| ABP structure | `05_ANIMATION_SYSTEM.md` §Structure | `16_ANIMATION_DEEP_DIVE.md` |
+| State Machines / Blend Spaces / Montages | `05_ANIMATION_SYSTEM.md` | `16_ANIMATION_DEEP_DIVE.md` |
+| IK Rig retargeting (auto setup) | `v4/API_REFERENCE_CHEATSHEET.md` §IK | `v4/ENGINE_SOURCE_STUDY_GUIDE_V4.md` §Priority7 |
 
 ### Materials / Rendering
 | Topic | Primary File | Also See |
 |-------|-------------|----------|
 | PBR setup | `08_MATERIALS_AND_RENDERING.md` §PBR | — |
-| Master material pattern | `08_MATERIALS_AND_RENDERING.md` §Master | — |
-| Material instances | `08_MATERIALS_AND_RENDERING.md` §Instances | — |
-| Lumen GI | `08_MATERIALS_AND_RENDERING.md` §Lumen | `10_WORLD_BUILDING.md` §Lighting |
-| Runtime Virtual Textures | `08_MATERIALS_AND_RENDERING.md` §RVT | `10_WORLD_BUILDING.md` §RVT |
+| Material Python API | `v4/API_REFERENCE_CHEATSHEET.md` §Materials | `v4/GRAPH_SCRIPTING_SPEC_V4.md` §3 |
+| Material graph ops (Phase 2) | `v4/GRAPH_SCRIPTING_SPEC_V4.md` §mat_* | — |
 
-### VFX
+### Import Pipeline
 | Topic | Primary File | Also See |
 |-------|-------------|----------|
-| Niagara system overview | `09_NIAGARA_VFX.md` §Overview | — |
-| GPU vs CPU particles | `09_NIAGARA_VFX.md` §GPUvsCPU | — |
-| Saber glow VFX (Dantooine) | `09_NIAGARA_VFX.md` §Recipes | `14_DANTOOINE_PROJECT_REFERENCE.md` §VFX |
+| Import Python APIs | `v4/API_REFERENCE_CHEATSHEET.md` §1 | `12_MCP_TOOL_USAGE_GUIDE.md` |
+| Interchange framework | `v4/ENGINE_SOURCE_STUDY_GUIDE_V4.md` §Priority4 | — |
+| Batch import / character import | `skills/SKILL_batch_import_folder.md` | `skills/SKILL_import_folder_as_character.md` |
+
+### Plugin Architecture
+| Topic | Primary File | Also See |
+|-------|-------------|----------|
+| System overview | `v4/ARCHITECTURE_BLUEPRINT.md` | `v4/NEXT_DEVELOPER_PROMPT_V4.md` §Architecture |
+| V4 Phase 1 stabilization tasks | `v4/ROADMAP_V4.md` §Phase1 | `v4/SPRINT_TRACKER.md` §Sprint1 |
+| V4 Phase 2 graph scripting | `v4/GRAPH_SCRIPTING_SPEC_V4.md` | `v4/ROADMAP_V4.md` §Phase2 |
+| Test matrix | `v4/VALIDATION_TEST_MATRIX_V4.md` | — |
+| GhostRigger bridge | `v4/GHOSTRIGGER_INTEGRATION_SPEC.md` | — |
 
 ---
 
-## DANTOOINE PROJECT QUICK FACTS
+## PLUGIN QUICK FACTS
 
 | Property | Value |
 |----------|-------|
-| Engine | UE5.6.1 |
-| Project | EnclaveProject |
-| Content Root | `/Game/Dantooine/` |
-| Total Blueprints | 22 |
-| Total Assets | 49 |
-| Total Folders | 52 |
+| Engine | UE 5.6 |
+| MCP Tools | 378 (362 + 16 V4 graph/mat tools) |
+| Modules | 25 (added graph_tools.py) |
+| C++ Commands | 119 |
+| Transports | stdio, SSE, streamable-HTTP |
 | Plugin Port | 55557 |
-| AI CLI | `python3 sandbox_ue5cli.py <command> '<json>'` |
-
-### Build Status Summary
-| Phase | Description | Status |
-|-------|-------------|--------|
-| 1 | Data Layer (Enums, Structs, Interfaces, Input) | ✅ Done |
-| 2 | Core Framework (GameMode, Controller, Player, QuestManager) | ✅ Done |
-| 3 | UI Widgets (HUD, Dialogue, Quest, Interact, Sparring, Complete) | ✅ Done |
-| 4 | World Actors (MasterJedi, Workbench, Trigger, LevelHandler) | ✅ Done |
-| 5 | Ambient Systems (SkyShip, RoamingNPC Base/A/B) | ✅ Done |
-| 6 | Combat AI (SparringOpponent, AIControllers, BTs, BBs, BTTask) | ✅ Done |
-| 7 | Animation Blueprints (3 ABPs — skeleton assignment pending) | ✅ Done |
-| 8 | Cinematics (LS_LightsaberBuild Level Sequence) | ✅ Done |
-| 9 | Logic wiring, artist assets, project settings | ⏳ Pending |
+| Tests | 103 (48 import + 55 graph-core) |
+| GitHub | https://github.com/CrispyW0nton/Unreal-MCP-Ghost |
 
 ---
 
@@ -221,4 +203,4 @@ What do you need?
 
 ---
 
-*Generated: 2026-04-10 | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
+*Updated: 2026-04-16 (V4) | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
