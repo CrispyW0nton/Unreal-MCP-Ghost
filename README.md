@@ -1221,8 +1221,8 @@ Unreal-MCP-Ghost/
 │
 ├── unreal_mcp_server/
 │   ├── unreal_mcp_server.py               ← MCP server entry point (for AI clients)
-│   ├── tools/                             ← MCP tool wrappers (29 Python modules, 390 tools)
-│   └── skills/                            ← Composition skills (2 modules, 2 skill tools)
+│   ├── tools/                             ← MCP tool wrappers (29 Python modules, 391 tools)
+│   └── skills/                            ← Composition skills (2 modules, 1 skill tool)
 │
 └── unreal_plugin/
     ├── UnrealMCP.uplugin
