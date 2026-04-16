@@ -1002,12 +1002,11 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetSpawnActorClas
 
     // CRASH-003: TrySetDefaultObject triggers ReconstructNode -> MarkBlueprintAsStructurallyModified
     // -> UE5 MassEntityEditor observer -> EXCEPTION_ACCESS_VIOLATION.
-    // Directly assign DefaultObject AND SpawnClass (the node's serialized UPROPERTY) instead.
-    // Setting only DefaultObject is insufficient — UE serializes SpawnClass not the pin DefaultObject.
+    // UE 5.6 fix: SpawnClass was a public UPROPERTY in <=5.5 but is no longer accessible.
+    // Set DefaultObject directly on the Class pin — this is the correct UE 5.6 approach.
+    // The node serializes the class via the pin's DefaultObject, not a separate SpawnClass field.
     ClassPin->DefaultObject = ActorClass;
     ClassPin->DefaultValue  = TEXT("");
-    // Also set the node's internal SpawnClass property so it serializes correctly on save.
-    SpawnNode->SpawnClass = ActorClass;
     // ReconstructNode() intentionally OMITTED — crashes UE5 via wildcard-pin expansion.
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
@@ -2619,12 +2618,11 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintSpawn
             if (UEdGraphPin* ClassPin = FUnrealMCPCommonUtils::FindPin(Node, TEXT("Class")))
             {
                 // CRASH-003: TrySetDefaultObject triggers ReconstructNode which crashes.
-                // Directly assign DefaultObject and clear DefaultValue — safe alternative.
+                // UE 5.6 fix: SpawnClass is no longer a public member; set DefaultObject
+                // on the Class pin directly — correct and safe for UE 5.6+.
                 ClassPin->DefaultObject = ActorClass;
                 ClassPin->DefaultValue  = TEXT("");
             }
-            // Also set the node's internal SpawnClass property so it serializes on save.
-            Node->SpawnClass = ActorClass;
         }
     }
 
