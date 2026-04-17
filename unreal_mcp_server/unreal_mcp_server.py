@@ -632,6 +632,24 @@ from tools.ghostrigger_tools import register_ghostrigger_tools
 from tools.exec_substrate import register_exec_substrate_tools
 # Reflection & diagnostics tools (Pillar 2 — Scripting Supremacy)
 from tools.reflection_tools import register_reflection_tools
+# V4 Graph Scripting Core (Pillar 3 — atomic Blueprint graph editing)
+from tools.graph_tools import register_graph_tools
+# V4 Skills — higher-order composition workflows
+from skills.health_system import register_health_system_skill
+# V5 Project Intelligence — asset registry, reference tracing, subsystem enumeration
+from tools.project_intelligence_tools import register_project_intelligence_tools
+# V5 C++ Bridge — off-process tree-sitter source analysis
+from tools.cpp_bridge_tools import register_cpp_bridge_tools
+# V5 Source Control — read-only SC provider queries
+from tools.source_control_tools import register_source_control_tools
+# V5 Skills — skill_audit_blueprint_health
+from skills.audit_blueprint_health.skill import register_audit_blueprint_health_skill
+# V6 Diagnostics — bp_get_compile_diagnostics, bp_validate_blueprint, mat_validate_material, etc.
+from tools.diagnostics_tools import register_diagnostics_tools
+# V6 Repair Atomics — bp_repair_exec_chain, bp_remove_orphaned_nodes, bp_set_pin_default
+from tools.repair_tools import register_repair_tools
+# V6 Skills — skill_repair_broken_blueprint
+from skills.repair_broken_blueprint.skill import register_repair_broken_blueprint_skill
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -666,6 +684,24 @@ register_ghostrigger_tools(mcp)
 register_exec_substrate_tools(mcp)
 # Reflection & diagnostics — ue_reflect_class, ue_list_uclass_*, ue_describe_asset, etc.
 register_reflection_tools(mcp)
+# V4 Graph Scripting Core — bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile, etc.
+register_graph_tools(mcp)
+# V4 Skills — skill_create_health_system
+register_health_system_skill(mcp)
+# V5 Project Intelligence — project_find_assets, project_get_references, etc.
+register_project_intelligence_tools(mcp)
+# V5 C++ Bridge — cpp_set_codebase_path, cpp_analyze_class, cpp_find_references
+register_cpp_bridge_tools(mcp)
+# V5 Source Control — sc_get_provider_info, sc_get_status, sc_get_changelist
+register_source_control_tools(mcp)
+# V5 Skills — skill_audit_blueprint_health
+register_audit_blueprint_health_skill(mcp)
+# V6 Diagnostics — compiler-aware diagnostic tools
+register_diagnostics_tools(mcp)
+# V6 Repair atomics — deterministic repair helpers
+register_repair_tools(mcp)
+# V6 Skills — skill_repair_broken_blueprint
+register_repair_broken_blueprint_skill(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
