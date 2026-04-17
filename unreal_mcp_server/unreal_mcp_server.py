@@ -644,6 +644,12 @@ from tools.cpp_bridge_tools import register_cpp_bridge_tools
 from tools.source_control_tools import register_source_control_tools
 # V5 Skills — skill_audit_blueprint_health
 from skills.audit_blueprint_health.skill import register_audit_blueprint_health_skill
+# V6 Diagnostics — bp_get_compile_diagnostics, bp_validate_blueprint, mat_validate_material, etc.
+from tools.diagnostics_tools import register_diagnostics_tools
+# V6 Repair Atomics — bp_repair_exec_chain, bp_remove_orphaned_nodes, bp_set_pin_default
+from tools.repair_tools import register_repair_tools
+# V6 Skills — skill_repair_broken_blueprint
+from skills.repair_broken_blueprint.skill import register_repair_broken_blueprint_skill
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -690,6 +696,12 @@ register_cpp_bridge_tools(mcp)
 register_source_control_tools(mcp)
 # V5 Skills — skill_audit_blueprint_health
 register_audit_blueprint_health_skill(mcp)
+# V6 Diagnostics — compiler-aware diagnostic tools
+register_diagnostics_tools(mcp)
+# V6 Repair atomics — deterministic repair helpers
+register_repair_tools(mcp)
+# V6 Skills — skill_repair_broken_blueprint
+register_repair_broken_blueprint_skill(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
