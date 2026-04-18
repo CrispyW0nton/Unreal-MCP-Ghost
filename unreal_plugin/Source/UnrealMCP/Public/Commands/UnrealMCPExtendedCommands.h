@@ -100,6 +100,13 @@ private:
     TSharedPtr<FJsonObject> HandleAddBTNode(const TSharedPtr<FJsonObject>& Params);
     /** get_bt_graph_info: inspect current BT graph nodes and connections */
     TSharedPtr<FJsonObject> HandleGetBTGraphInfo(const TSharedPtr<FJsonObject>& Params);
+    /**
+     * bt_add_selector_wait: restructure BT_Enemy_Infantry so the Root drives a
+     * Selector with the existing Sequence as left child and a Wait(2s) as right child.
+     * Params: bt_path (string, e.g. "/Game/.../BT_Enemy_Infantry")
+     *         wait_time (float, default 2.0)
+     */
+    TSharedPtr<FJsonObject> HandleBTAddSelectorWait(const TSharedPtr<FJsonObject>& Params);
 
     // ?? Level / World ?????????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> HandleSetGameModeForLevel(const TSharedPtr<FJsonObject>& Params);

@@ -560,6 +560,14 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
     {
         TimeoutSeconds = 80.0;   // AR scan + possible notification chain
     }
+    else if (CommandType == TEXT("bt_add_selector_wait") ||
+             CommandType == TEXT("build_behavior_tree")  ||
+             CommandType == TEXT("add_bt_node")          ||
+             CommandType == TEXT("bt_get_info")          ||
+             CommandType == TEXT("get_bt_graph_info"))
+    {
+        TimeoutSeconds = 80.0;   // BT graph UpdateAsset + SaveAsset can be slow
+    }
 
     const FTimespan WaitTimeout = FTimespan::FromSeconds(TimeoutSeconds);
     const bool bCompleted = Future.WaitFor(WaitTimeout);

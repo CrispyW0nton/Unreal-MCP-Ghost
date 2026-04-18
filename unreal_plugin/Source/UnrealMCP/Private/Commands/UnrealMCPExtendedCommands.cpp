@@ -239,6 +239,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
     if (CommandType == TEXT("add_bt_node"))                     return HandleAddBTNode(Params);
     if (CommandType == TEXT("get_bt_graph_info"))               return HandleGetBTGraphInfo(Params);
+    if (CommandType == TEXT("bt_add_selector_wait"))            return HandleBTAddSelectorWait(Params);
+    if (CommandType == TEXT("bt_get_info"))                     return HandleGetBTGraphInfo(Params); // alias
 
     // Level/World
     if (CommandType == TEXT("set_game_mode_for_level"))         return HandleSetGameModeForLevel(Params);
@@ -4492,6 +4494,197 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleGetBTGraphInfo(
     R->SetStringField(TEXT("behavior_tree"), BTName);
     R->SetNumberField(TEXT("node_count"), (double)BTGraph->Nodes.Num());
     R->SetArrayField(TEXT("nodes"), NodeList);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// bt_add_selector_wait
+//
+// Restructures a BT so that the Root drives a Selector composite with two
+// children:
+//   left  (child 0) → the existing first child of Root (e.g. the Sequence)
+//   right (child 1) → a new Wait task (default WaitTime = 2.0 s)
+//
+// Params:
+//   bt_path   (string)  – full game path, e.g.
+//             "/Game/DestinyContent/Blueprints/Enemies/EnemiesV2/AI/BT_Enemy_Infantry"
+//             OR just the asset name, e.g. "BT_Enemy_Infantry"
+//   wait_time (float)   – optional, defaults to 2.0
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    // ── 1.  Resolve the BehaviorTree asset ───────────────────────────────────
+    FString BTPath;
+    Params->TryGetStringField(TEXT("bt_path"), BTPath);
+    if (BTPath.IsEmpty())
+        Params->TryGetStringField(TEXT("behavior_tree_name"), BTPath);
+    if (BTPath.IsEmpty())
+        return CreateErrorResponse(TEXT("Missing 'bt_path' (or 'behavior_tree_name')"));
+
+    // Accept both full game path and bare name
+    UBehaviorTree* BT = nullptr;
+    if (BTPath.StartsWith(TEXT("/")))
+    {
+        // Load by full object path  (e.g. "/Game/.../BT_Enemy_Infantry")
+        BT = LoadObject<UBehaviorTree>(nullptr, *BTPath);
+        if (!BT)
+        {
+            // Try appending the short name as the sub-object
+            FString ShortName = FPackageName::GetShortName(BTPath);
+            FString FullObjPath = BTPath + TEXT(".") + ShortName;
+            BT = LoadObject<UBehaviorTree>(nullptr, *FullObjPath);
+        }
+    }
+    if (!BT)
+    {
+        // Fall back to AR search by name
+        FString ShortName = FPackageName::GetShortName(BTPath);
+        BT = FindBehaviorTree(ShortName);
+    }
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(
+            TEXT("BehaviorTree asset not found: %s"), *BTPath));
+
+    // ── 2.  Get / create the editor graph ───────────────────────────────────
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get BehaviorTreeGraph"));
+
+    // ── 3.  Find the Root node ───────────────────────────────────────────────
+    UBehaviorTreeGraphNode_Root* RootNode = nullptr;
+    for (UEdGraphNode* N : BTGraph->Nodes)
+    {
+        RootNode = Cast<UBehaviorTreeGraphNode_Root>(N);
+        if (RootNode) break;
+    }
+    if (!RootNode)
+        return CreateErrorResponse(TEXT("BT graph has no Root node"));
+
+    // ── 4.  Find Root's output pin and its current first child ──────────────
+    UEdGraphPin* RootOutPin = nullptr;
+    for (UEdGraphPin* P : RootNode->Pins)
+        if (P && P->Direction == EGPD_Output) { RootOutPin = P; break; }
+    if (!RootOutPin)
+        return CreateErrorResponse(TEXT("Root node has no output pin"));
+
+    // Collect nodes already directly connected to Root (the existing Sequence etc.)
+    TArray<UEdGraphPin*> OldChildInputPins;
+    for (UEdGraphPin* Link : RootOutPin->LinkedTo)
+        if (Link) OldChildInputPins.Add(Link);
+
+    // ── 5.  Check: already has a Selector child? bail early ─────────────────
+    for (UEdGraphPin* ChildIn : OldChildInputPins)
+    {
+        if (!ChildIn->GetOwningNode()) continue;
+        if (UAIGraphNode* AIN = Cast<UAIGraphNode>(ChildIn->GetOwningNode()))
+        {
+            if (AIN->NodeInstance &&
+                AIN->NodeInstance->IsA(UBTComposite_Selector::StaticClass()))
+            {
+                TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+                R->SetBoolField(TEXT("success"), true);
+                R->SetStringField(TEXT("note"),
+                    TEXT("Root already connected to a Selector — no change made."));
+                return R;
+            }
+        }
+    }
+
+    // ── 6.  Create Selector graph node ──────────────────────────────────────
+    float SelX = RootNode->NodePosX;
+    float SelY = (float)RootNode->NodePosY + 200.0f;
+
+    UBehaviorTreeGraphNode* SelNode =
+        NewObject<UBehaviorTreeGraphNode>(
+            BTGraph, UBehaviorTreeGraphNode_Composite::StaticClass(), NAME_None, RF_Transactional);
+    BTGraph->AddNode(SelNode, false, false);
+    SelNode->NodePosX = FMath::RoundToInt(SelX);
+    SelNode->NodePosY = FMath::RoundToInt(SelY);
+    SelNode->ClassData = FGraphNodeClassData(UBTComposite_Selector::StaticClass(), FString());
+    SelNode->InitializeInstance();
+    SelNode->AllocateDefaultPins();
+
+    // ── 7.  Rewire Root → Selector ──────────────────────────────────────────
+    // Disconnect Root from its old children
+    RootOutPin->BreakAllPinLinks();
+
+    UEdGraphPin* SelInPin = nullptr;
+    for (UEdGraphPin* P : SelNode->Pins)
+        if (P && P->Direction == EGPD_Input) { SelInPin = P; break; }
+    if (SelInPin)
+        RootOutPin->MakeLinkTo(SelInPin);
+
+    // ── 8.  Re-connect old children to Selector ─────────────────────────────
+    UEdGraphPin* SelOutPin = nullptr;
+    for (UEdGraphPin* P : SelNode->Pins)
+        if (P && P->Direction == EGPD_Output) { SelOutPin = P; break; }
+
+    // Re-position old children below Selector (left side)
+    int32 OldChildIdx = 0;
+    for (UEdGraphPin* ChildIn : OldChildInputPins)
+    {
+        if (!ChildIn->GetOwningNode()) continue;
+        UEdGraphNode* OldChild = ChildIn->GetOwningNode();
+        OldChild->NodePosX = FMath::RoundToInt(SelX + (float)(OldChildIdx * 350) - 175.0f);
+        OldChild->NodePosY = FMath::RoundToInt(SelY + 200.0f);
+        if (SelOutPin)
+            SelOutPin->MakeLinkTo(ChildIn);
+        OldChildIdx++;
+    }
+
+    // ── 9.  Create Wait task ─────────────────────────────────────────────────
+    double WaitTimeSec = 2.0;
+    Params->TryGetNumberField(TEXT("wait_time"), WaitTimeSec);
+
+    float WaitX = SelX + (float)(OldChildIdx * 350) - 175.0f;
+    float WaitY = SelY + 200.0f;
+
+    UBehaviorTreeGraphNode* WaitNode =
+        NewObject<UBehaviorTreeGraphNode>(
+            BTGraph, UBehaviorTreeGraphNode_Task::StaticClass(), NAME_None, RF_Transactional);
+    BTGraph->AddNode(WaitNode, false, false);
+    WaitNode->NodePosX = FMath::RoundToInt(WaitX);
+    WaitNode->NodePosY = FMath::RoundToInt(WaitY);
+    WaitNode->ClassData = FGraphNodeClassData(UBTTask_Wait::StaticClass(), FString());
+    WaitNode->InitializeInstance();
+    WaitNode->AllocateDefaultPins();
+
+    // Set WaitTime on the runtime instance
+    if (WaitNode->NodeInstance)
+    {
+        FProperty* WTProp = WaitNode->NodeInstance->GetClass()->FindPropertyByName(
+            FName(TEXT("WaitTime")));
+        if (WTProp)
+        {
+            FString WaitStr = FString::SanitizeFloat((float)WaitTimeSec);
+            WTProp->ImportText_Direct(
+                *WaitStr,
+                WTProp->ContainerPtrToValuePtr<void>(WaitNode->NodeInstance),
+                WaitNode->NodeInstance, PPF_None);
+        }
+    }
+
+    // Connect Selector → Wait
+    UEdGraphPin* WaitInPin = nullptr;
+    for (UEdGraphPin* P : WaitNode->Pins)
+        if (P && P->Direction == EGPD_Input) { WaitInPin = P; break; }
+    if (SelOutPin && WaitInPin)
+        SelOutPin->MakeLinkTo(WaitInPin);
+
+    // ── 10.  Recompile & save ────────────────────────────────────────────────
+    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+    BT->MarkPackageDirty();
+    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+
+    // ── 11.  Return summary ──────────────────────────────────────────────────
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BT->GetName());
+    R->SetStringField(TEXT("selector_node"), TEXT("BTComposite_Selector"));
+    R->SetStringField(TEXT("wait_node"),     TEXT("BTTask_Wait"));
+    R->SetNumberField(TEXT("wait_time"),     WaitTimeSec);
+    R->SetNumberField(TEXT("old_children_rewired"), (double)OldChildIdx);
     return R;
 }
 
