@@ -3896,6 +3896,60 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnem
 // BT Graph Node Manipulation
 // ════════════════════════════════════════════════════════════════════════════
 
+/**
+ * CloseAllBTEditors – MUST be called before ANY modification to BTGraph.
+ *
+ * ROOT CAUSE of all 0x68 crashes:
+ * The BehaviorTreeEditor module registers an FOnObjectPropertyChanged
+ * listener on every UBehaviorTreeGraph it touches.  ANY UPROPERTY
+ * modification — including TArray::Add/Remove on BTGraph->Nodes, pin
+ * LinkedTo changes, or field writes — fires that listener.  When no
+ * BT editor window is open the handler dereferences a null
+ * IBehaviorTreeEditor* at offset +0x68, crashing UE5.
+ *
+ * CloseAllEditorsForAsset() tears down the editor window AND unregisters
+ * those listeners.  Once this returns it is safe to mutate BTGraph freely.
+ */
+static void CloseAllBTEditors(UBehaviorTree* BT)
+{
+    if (!BT || !GEditor) return;
+    if (UAssetEditorSubsystem* AES =
+            GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+    {
+        AES->CloseAllEditorsForAsset(BT);
+    }
+}
+
+/**
+ * SafeRemoveBTNodes – removes every non-root node from BTGraph.
+ * MUST be called after CloseAllBTEditors() so no listener fires.
+ */
+static void SafeRemoveBTNodes(UBehaviorTreeGraph* BTGraph)
+{
+    if (!BTGraph) return;
+
+    TArray<UEdGraphNode*> ToRemove;
+    for (UEdGraphNode* N : BTGraph->Nodes)
+    {
+        if (N && !N->IsA<UBehaviorTreeGraphNode_Root>())
+            ToRemove.Add(N);
+    }
+
+    for (UEdGraphNode* N : ToRemove)
+    {
+        // Break all pin links (safe — no editor listener active after CloseAllBTEditors)
+        for (UEdGraphPin* Pin : N->Pins)
+        {
+            if (Pin) Pin->BreakAllPinLinks();
+        }
+        // Direct array removal — no RemoveNode() delegate
+        BTGraph->Nodes.Remove(N);
+        // Mark transient so GC can collect it and it won't re-save
+        N->ClearFlags(RF_Transactional);
+        N->SetFlags(RF_Transient);
+    }
+}
+
 /** Helper: find a BehaviorTree asset by name */
 static UBehaviorTree* FindBehaviorTree(const FString& BTName)
 {
@@ -3912,41 +3966,38 @@ static UBehaviorTree* FindBehaviorTree(const FString& BTName)
 }
 
 /**
- * Helper: close any open editor windows for a BT asset, rebuild the runtime
- * tree from the editor graph (UpdateAsset(RebuildGraph)), then save.
+ * SafeUpdateBTAsset – build runtime BT tree and save.
  *
- * WHY THIS IS NEEDED:
- *  - UpdateAsset(RebuildGraph) converts editor graph nodes → runtime UBTComposite/
- *    UBTTask chain under BT->RootNode.  Without it the saved uasset has graph nodes
- *    with NodeInstance set but BT->RootNode still points to an old/empty runtime
- *    chain.  When the BT editor opens the asset it tries to reconcile graph vs.
- *    runtime and crashes (EXCEPTION_ACCESS_VIOLATION at offset 0x68).
+ * PRECONDITION: CloseAllBTEditors(BT) MUST have been called before any
+ * graph modification in the same command handler.  By the time this
+ * function runs, no BehaviorTreeEditor listener is active, so
+ * SpawnMissingNodes / CreateBTFromGraph / OnSave are all safe.
  *
- *  - The crash seen in earlier attempts happened because UpdateAsset was called
- *    while the BT editor had the asset open.  Closing the editor first eliminates
- *    the reentrancy (and any Slate/render-thread conflict) that caused the AV.
+ * Do NOT call UpdateAsset(RebuildGraph) — it re-registers the editor
+ * listener internally and then fires it, reproducing the 0x68 crash.
  */
 static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
 {
     if (!BT || !BTGraph) return;
 
-    // 1. Close any open editor windows for this asset so UpdateAsset does not
-    //    collide with live Slate/render state (the source of the 0x68 crash).
-    if (GEditor)
-    {
-        UAssetEditorSubsystem* AES =
-            GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
-        if (AES)
-            AES->CloseAllEditorsForAsset(BT);
-    }
+    // Ensure editors are closed (idempotent — safe to call again here).
+    CloseAllBTEditors(BT);
 
-    // 2. Rebuild the runtime tree from the editor graph.
-    //    EUpdateFlags::RebuildGraph → graph nodes → UBTComposite / UBTTask chain.
-    //    This serializes proper NodeInstance data and populates BT->RootNode so
-    //    the BT editor can open the asset without crashing.
-    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+    // Ensure every graph node has a valid NodeInstance.
+    BTGraph->SpawnMissingNodes();
 
-    // 3. Mark dirty and save.
+    // Build the runtime BT tree (BT->RootNode + Children arrays).
+    UBehaviorTreeGraphNode_Root* RootGN = nullptr;
+    for (UEdGraphNode* N : BTGraph->Nodes)
+        if ((RootGN = Cast<UBehaviorTreeGraphNode_Root>(N))) break;
+
+    if (RootGN)
+        BTGraph->CreateBTFromGraph(RootGN);
+
+    // Pre-save hook: execution order, abort-mode metadata.
+    BTGraph->OnSave();
+
+    // Serialise — NodeInstance objects have outer=BT + RF_Transactional.
     BT->MarkPackageDirty();
     UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
 }
@@ -4209,6 +4260,13 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
     if (!BT)
         return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
 
+    // ── MUST be first: close editors BEFORE any graph mutation ───────────────
+    // Every UPROPERTY write on BTGraph fires FOnObjectPropertyChanged which the
+    // BT editor module intercepts and dereferences a null IBehaviorTreeEditor*
+    // at +0x68.  CloseAllEditorsForAsset unregisters those listeners so all
+    // subsequent graph modifications (AddNode, Nodes.Remove, MakeLinkTo, …) are safe.
+    CloseAllBTEditors(BT);
+
     UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
     if (!BTGraph)
         return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
@@ -4218,19 +4276,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
     Params->TryGetBoolField(TEXT("clear_existing"), bClearExisting);
 
     if (bClearExisting)
-    {
-        // Collect non-root nodes for deletion
-        TArray<UEdGraphNode*> NodesToRemove;
-        for (UEdGraphNode* Node : BTGraph->Nodes)
-        {
-            if (Node && !Node->IsA<UBehaviorTreeGraphNode_Root>())
-                NodesToRemove.Add(Node);
-        }
-        for (UEdGraphNode* Node : NodesToRemove)
-        {
-            BTGraph->RemoveNode(Node);
-        }
-    }
+        SafeRemoveBTNodes(BTGraph);
 
     // Find root node
     UBehaviorTreeGraphNode_Root* RootNode = nullptr;
@@ -4251,7 +4297,6 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
     if (!TopNode)
         return CreateErrorResponse(TEXT("Failed to create top-level BT node from 'tree' JSON"));
 
-    // Close any open BT editor, rebuild runtime tree from graph, then save.
     SafeUpdateBTAsset(BT, BTGraph);
 
     // Collect info about created nodes
@@ -4306,6 +4351,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
     UBehaviorTree* BT = FindBehaviorTree(BTName);
     if (!BT)
         return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // Close editors FIRST — before any graph access — to unregister BT editor
+    // property-change listeners that crash at 0x68 on any BTGraph UPROPERTY write.
+    CloseAllBTEditors(BT);
 
     UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
     if (!BTGraph)
@@ -4584,6 +4633,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     if (!BT)
         return CreateErrorResponse(FString::Printf(
             TEXT("BehaviorTree asset not found: %s"), *BTPath));
+
+    // Close editors FIRST — unregisters BT editor property-change listeners
+    // that crash at 0x68 on any BTGraph UPROPERTY write (MakeLinkTo, AddNode, …).
+    CloseAllBTEditors(BT);
 
     // ── 2.  Get / create the editor graph ───────────────────────────────────
     UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
