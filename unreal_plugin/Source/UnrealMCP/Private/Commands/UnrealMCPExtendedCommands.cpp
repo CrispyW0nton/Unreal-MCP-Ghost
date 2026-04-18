@@ -3897,31 +3897,52 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnem
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * ROOT CAUSE of all 0x68 crashes (definitive analysis):
+ * ROOT CAUSE of all 0x68 crashes — DEFINITIVE ANALYSIS (from UE5 source):
  *
- * UBehaviorTreeGraph is a UAIGraph. The BehaviorTreeEditor module registers
- * a handler on UEdGraph::OnGraphChanged multicast delegate for every
- * UBehaviorTreeGraph it touches (at the module level, not per-editor-window).
- * Any call that fires NotifyGraphChanged() invokes this handler, which calls
- * into IBehaviorTreeEditor* — null when no BT window is open — at +0x68.
+ * SOURCE FILES STUDIED: BehaviorTreeGraph.cpp, AIGraph.cpp, AIGraphNode.cpp,
+ *   BehaviorTreeGraphNode.cpp, BehaviorTreeEditorModule.cpp, EdGraph.cpp, EdGraph.h
  *
- * Functions that fire NotifyGraphChanged:
- *   UEdGraph::AddNode()          — always fires at the end
- *   UEdGraphPin::MakeLinkTo()    — fires on both pins
- *   UEdGraphPin::BreakAllPinLinks() — fires on both sides
- *   UEdGraphNode::BreakAllNodeLinks() — calls BreakAllPinLinks
- *   UAIGraphNode::AddSubNode()   — may call NotifyGraphChanged
- *   UEdGraph::RemoveNode()       — always fires
+ * CRASH CHAIN:
+ *   Any graph mutation → NotifyGraphChanged() → OnGraphChanged.Broadcast()
+ *   → BT editor module's handler → IBehaviorTreeEditor* (null at +0x68)
  *
- * SAFE alternatives that do NOT call NotifyGraphChanged:
- *   BTGraph->Nodes.Add(N)        — raw array add (no notification)
- *   BTGraph->Nodes.Remove(N)     — raw array remove (no notification)
- *   BTSafeLinkPins(A,B)          — direct LinkedTo manipulation (see below)
- *   BTSafeUnlinkPin(P)           — direct LinkedTo manipulation (see below)
- *   N->SubNodes.Add(Sub)         — raw SubNodes array (no notification)
+ * FUNCTIONS THAT FIRE NotifyGraphChanged (EdGraph.cpp:244, 276, 284, 298):
+ *   UEdGraph::AddNode()              — always, at line 244
+ *   UEdGraph::RemoveNode()           — always, at line 276
+ *   UEdGraph::NotifyGraphChanged()   — direct call
+ *   UEdGraphPin::MakeLinkTo()        — fires on both pins' nodes
+ *   UEdGraphPin::BreakAllPinLinks()  — fires on both sides
+ *   UEdGraphNode::BreakAllNodeLinks()— calls BreakAllPinLinks
+ *   UAIGraphNode::AddSubNode()       — fires at line 297 (AIGraphNode.cpp)
+ *   UAIGraphNode::NodeConnectionListChanged() — calls UpdateAsset (AIGraphNode.cpp:240)
+ *   UAIGraph::OnSubNodeDropped()     — fires at AIGraph.cpp:282
+ *   UAIGraph::UnlockUpdates()        — calls UpdateAsset (AIGraph.cpp:277)
  *
- * CloseAllEditorsForAsset alone is NOT enough because the OnGraphChanged
- * listener is registered at module level, not per editor-window level.
+ * NODE INSTANCE CREATION (CRITICAL):
+ *   UAIGraphNode::PostPlacedNewNode() creates NodeInstance = NewObject<UObject>(GraphOwner, Class)
+ *   where GraphOwner = MyGraph->GetOuter() = the UBehaviorTree ASSET (not the graph!).
+ *   This means NodeInstance has outer=BT and IS serialized as a BT subobject.
+ *   InitializeInstance() must be called AFTER PostPlacedNewNode().
+ *   ClassData must be set BEFORE PostPlacedNewNode() (it calls ClassData.GetClass()).
+ *
+ * SUPPRESSION MECHANISM:
+ *   UAIGraph::bLockUpdates (checked at BehaviorTreeGraph.cpp:104) suppresses UpdateAsset().
+ *   Setting BTGraph->bLockUpdates=true before SpawnMissingNodes/CreateBTFromGraph is safe.
+ *   Do NOT call UAIGraph::UnlockUpdates() — it calls UpdateAsset() which crashes.
+ *
+ * SAFE OPERATIONS (do NOT fire NotifyGraphChanged):
+ *   BTGraph->Nodes.Add(N)        — raw array add
+ *   BTGraph->Nodes.Remove(N)     — raw array remove
+ *   BTSafeLinkPins(A,B)          — direct LinkedTo manipulation
+ *   BTSafeUnlinkPin(P)           — direct LinkedTo manipulation
+ *   N->SubNodes.Add(Sub)         — raw SubNodes array
+ *   N->OnSubNodeAdded(Sub)       — populates Decorators[]/Services[] (no NotifyGraphChanged)
+ *   N->AllocateDefaultPins()     — just calls CreatePin, no notification
+ *   N->PostPlacedNewNode()       — creates NodeInstance, no notification
+ *   N->InitializeInstance()      — initializes BTNode, no notification
+ *
+ * CloseAllEditorsForAsset alone is NOT enough — the OnGraphChanged listener
+ * is registered at module load time on every UBehaviorTreeGraph, not per window.
  */
 
 /**
@@ -4044,25 +4065,58 @@ static UBehaviorTree* FindBehaviorTree(const FString& BTName)
 /**
  * SafeUpdateBTAsset – build runtime BT tree and save.
  *
- * PRECONDITION: CloseAllBTEditors(BT) MUST have been called before any
- * graph modification in the same command handler.  By the time this
- * function runs, no BehaviorTreeEditor listener is active, so
- * SpawnMissingNodes / CreateBTFromGraph / OnSave are all safe.
+ * ROOT CAUSE ANALYSIS (from UE5 source BehaviorTreeGraph.cpp):
+ *   - UEdGraph::AddNode() always fires NotifyGraphChanged (EdGraph.cpp:244)
+ *   - UAIGraphNode::NodeConnectionListChanged() calls UpdateAsset() (AIGraphNode.cpp:240)
+ *   - UAIGraphNode::AddSubNode() calls NotifyGraphChanged AND UpdateAsset() (AIGraphNode.cpp:297-298)
+ *   - UBehaviorTreeGraph::OnSave() calls SpawnMissingNodesForParallel() then UpdateAsset() (BehaviorTreeGraph.cpp:211)
+ *   - UBehaviorTreeGraph::UpdateAsset() checks bLockUpdates first (BehaviorTreeGraph.cpp:104)
  *
- * Do NOT call UpdateAsset(RebuildGraph) — it re-registers the editor
- * listener internally and then fires it, reproducing the 0x68 crash.
+ * CRASH MECHANISM:
+ *   NotifyGraphChanged → OnGraphChanged.Broadcast → BT editor handler → IBehaviorTreeEditor* (null at +0x68)
+ *
+ * FIX STRATEGY:
+ *   1. BTSafeAddNode/BTSafeLinkPins/BTSafeUnlinkPin bypass NotifyGraphChanged for graph construction.
+ *   2. For OnSave(), we set bLockUpdates=true to suppress UpdateAsset() re-entrant calls.
+ *      OnSave() = SpawnMissingNodesForParallel() + UpdateAsset(). We call SpawnMissingNodesForParallel
+ *      indirectly via SpawnMissingNodes first, then call UpdateAsset ourselves with bLockUpdates=false.
+ *      Actually the safest approach: call CreateBTFromGraph directly (which is what UpdateAsset does)
+ *      and skip OnSave() entirely since OnSave() will call UpdateAsset() which fires OnGraphChanged.
+ *
+ * CORRECT SEQUENCE (matches what UE5 editor does but without NotifyGraphChanged):
+ *   1. SpawnMissingNodes() — ensures NodeInstance objects are valid
+ *   2. Find root graph node
+ *   3. CreateBTFromGraph(RootGN) — builds runtime BT->RootNode hierarchy
+ *   4. MarkPackageDirty() + SaveAsset()
+ *   SKIP OnSave() — it calls UpdateAsset() which calls NotifyGraphChanged indirectly
+ *                    via NodeConnectionListChanged if pins get modified.
+ *
+ * NOTE: bLockUpdates is the correct UE5 suppression mechanism (UAIGraph::LockUpdates/UnlockUpdates)
+ *   but SpawnMissingNodes internally calls AddSubNode which fires both NotifyGraphChanged AND UpdateAsset.
+ *   So we must lock BEFORE SpawnMissingNodes, then unlock AFTER, but NOT call UpdateAsset ourselves
+ *   (it will be called by UnlockUpdates). However UnlockUpdates calls UpdateAsset which crashes.
+ *   Therefore: lock updates, call SpawnMissingNodes (safe because UpdateAsset is suppressed),
+ *   then call CreateBTFromGraph directly while still locked, then unlock WITHOUT calling UpdateAsset.
  */
 static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
 {
     if (!BT || !BTGraph) return;
 
-    // Ensure editors are closed (idempotent — safe to call again here).
+    // Ensure editors are closed (idempotent).
     CloseAllBTEditors(BT);
 
-    // Ensure every graph node has a valid NodeInstance.
+    // Lock updates to suppress UpdateAsset() calls triggered by SpawnMissingNodes
+    // (SpawnMissingNodes → AddSubNode → UpdateAsset/NotifyGraphChanged).
+    // bLockUpdates is checked at the TOP of UBehaviorTreeGraph::UpdateAsset() (line 104).
+    BTGraph->bLockUpdates = true;
+
+    // SpawnMissingNodes ensures every graph node has a valid NodeInstance.
+    // With bLockUpdates=true any internal UpdateAsset() calls are suppressed.
     BTGraph->SpawnMissingNodes();
 
-    // Build the runtime BT tree (BT->RootNode + Children arrays).
+    // Build the runtime BT tree (BT->RootNode + Children arrays) by calling
+    // CreateBTFromGraph directly — this is the core of UpdateAsset() without
+    // the NotifyGraphChanged side-effects.
     UBehaviorTreeGraphNode_Root* RootGN = nullptr;
     for (UEdGraphNode* N : BTGraph->Nodes)
         if ((RootGN = Cast<UBehaviorTreeGraphNode_Root>(N))) break;
@@ -4070,8 +4124,10 @@ static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
     if (RootGN)
         BTGraph->CreateBTFromGraph(RootGN);
 
-    // Pre-save hook: execution order, abort-mode metadata.
-    BTGraph->OnSave();
+    // Unlock updates.  Do NOT call UpdateAsset() after this — it fires
+    // NotifyGraphChanged which crashes when no BT editor window is open.
+    // (UAIGraph::UnlockUpdates calls UpdateAsset() internally — avoid it.)
+    BTGraph->bLockUpdates = false;
 
     // Serialise — NodeInstance objects have outer=BT + RF_Transactional.
     BT->MarkPackageDirty();
@@ -4198,8 +4254,23 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
     NewNode->NodePosY = FMath::RoundToInt(Y);
 
     // Set runtime class data on the graph node
+    // Set ClassData so PostPlacedNewNode knows which class to instantiate.
     NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
-    NewNode->InitializeInstance();
+
+    // PostPlacedNewNode creates NodeInstance = NewObject<UObject>(GraphOwner=BT, RuntimeClass)
+    // This is the correct UE5 pattern (AIGraphNode.cpp:36-48): ClassData.GetClass() → NewObject.
+    // It sets outer=BT (the UBehaviorTree asset) so NodeInstance IS a subobject of BT
+    // and WILL be serialized when the package is saved.
+    NewNode->PostPlacedNewNode();
+
+    // InitializeInstance (BehaviorTreeGraphNode.cpp:54-64) initializes the BTNode:
+    // BTNode->InitializeFromAsset(*BTAsset) + InitializeNode + OnNodeCreated.
+    // This must come AFTER PostPlacedNewNode has created NodeInstance.
+    if (NewNode->NodeInstance)
+        NewNode->InitializeInstance();
+
+    // AllocateDefaultPins creates the input/output pins on the graph node.
+    // UBehaviorTreeGraphNode::AllocateDefaultPins just calls CreatePin (no NotifyGraphChanged).
     NewNode->AllocateDefaultPins();
 
     // Apply properties to runtime node instance
@@ -4260,16 +4331,27 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             UClass* DecClass = ResolveBTNodeClass(DecType);
             if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
 
+            // Create decorator graph node as outer=BTGraph (it's a graph node, not a runtime node)
             UBehaviorTreeGraphNode_Decorator* DecNode =
                 NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
             if (DecNode)
             {
                 DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
-                DecNode->InitializeInstance();
-                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                // PostPlacedNewNode creates NodeInstance with outer=BT (the UBehaviorTree asset)
+                DecNode->PostPlacedNewNode();
+                if (DecNode->NodeInstance)
+                    DecNode->InitializeInstance();
+                // Manually wire sub-node relationships (mirrors AddSubNode without NotifyGraphChanged)
+                DecNode->SetFlags(RF_Transactional);
+                // Set outer to BTGraph so the sub-node is properly owned
+                if (DecNode->GetOuter() != BTGraph)
+                    DecNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
                 DecNode->bIsSubNode = 1;
                 DecNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(DecNode);
+                // OnSubNodeAdded routes to BehaviorTreeGraphNode::OnSubNodeAdded which
+                // adds to Decorators[] or Services[] array (BehaviorTreeGraphNode.cpp:224-249)
+                NewNode->OnSubNodeAdded(DecNode);
             }
         }
     }
@@ -4293,11 +4375,18 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             if (SvcNode)
             {
                 SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
-                SvcNode->InitializeInstance();
-                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                // PostPlacedNewNode creates NodeInstance with outer=BT
+                SvcNode->PostPlacedNewNode();
+                if (SvcNode->NodeInstance)
+                    SvcNode->InitializeInstance();
+                // Manually wire sub-node relationships
+                SvcNode->SetFlags(RF_Transactional);
+                if (SvcNode->GetOuter() != BTGraph)
+                    SvcNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
                 SvcNode->bIsSubNode = 1;
                 SvcNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(SvcNode);
+                NewNode->OnSubNodeAdded(SvcNode);
             }
         }
     }
@@ -4484,16 +4573,20 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
         Y = ParentGraphNode->NodePosY + 200.0;
     }
 
-    // Create node with RF_Transactional so it and its NodeInstance sub-object
-    // are properly included in the package object chain for serialization.
+    // Create node. NewObject outer=BTGraph ensures the graph node is owned by the graph.
     // Use BTSafeAddNode instead of AddNode() to avoid NotifyGraphChanged crash.
     UBehaviorTreeGraphNode* NewNode =
         NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
     BTSafeAddNode(BTGraph, NewNode);
     NewNode->NodePosX = FMath::RoundToInt((float)X);
     NewNode->NodePosY = FMath::RoundToInt((float)Y);
+    // Set ClassData so PostPlacedNewNode knows which runtime class to instantiate.
     NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
-    NewNode->InitializeInstance();
+    // PostPlacedNewNode creates NodeInstance with outer=BT (the UBehaviorTree asset)
+    // so NodeInstance is a subobject of BT and will be serialized with the package.
+    NewNode->PostPlacedNewNode();
+    if (NewNode->NodeInstance)
+        NewNode->InitializeInstance();
     NewNode->AllocateDefaultPins();
 
     // Apply properties
@@ -4544,11 +4637,16 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             if (DecNode)
             {
                 DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
-                DecNode->InitializeInstance();
-                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                DecNode->PostPlacedNewNode(); // creates NodeInstance with outer=BT
+                if (DecNode->NodeInstance)
+                    DecNode->InitializeInstance();
+                // Wire sub-node without calling AddSubNode (which calls NotifyGraphChanged)
+                if (DecNode->GetOuter() != BTGraph)
+                    DecNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
                 DecNode->bIsSubNode = 1;
                 DecNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(DecNode);
+                NewNode->OnSubNodeAdded(DecNode); // populates Decorators[] array
             }
         }
     }
@@ -4570,11 +4668,16 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             if (SvcNode)
             {
                 SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
-                SvcNode->InitializeInstance();
-                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                SvcNode->PostPlacedNewNode(); // creates NodeInstance with outer=BT
+                if (SvcNode->NodeInstance)
+                    SvcNode->InitializeInstance();
+                // Wire sub-node without calling AddSubNode (which calls NotifyGraphChanged)
+                if (SvcNode->GetOuter() != BTGraph)
+                    SvcNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
                 SvcNode->bIsSubNode = 1;
                 SvcNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(SvcNode);
+                NewNode->OnSubNodeAdded(SvcNode); // populates Services[] array
             }
         }
     }
@@ -4798,7 +4901,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     SelNode->NodePosX = FMath::RoundToInt(SelX);
     SelNode->NodePosY = FMath::RoundToInt(SelY);
     SelNode->ClassData = FGraphNodeClassData(UBTComposite_Selector::StaticClass(), FString());
-    SelNode->InitializeInstance();
+    // PostPlacedNewNode creates NodeInstance=UBTComposite_Selector with outer=BT (the asset)
+    // so it will be serialized as a subobject of the BT package.
+    SelNode->PostPlacedNewNode();
+    if (SelNode->NodeInstance)
+        SelNode->InitializeInstance();
     SelNode->AllocateDefaultPins();
 
     // ── 7.  Rewire Root → Selector ──────────────────────────────────────────
@@ -4844,7 +4951,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     WaitNode->NodePosX = FMath::RoundToInt(WaitX);
     WaitNode->NodePosY = FMath::RoundToInt(WaitY);
     WaitNode->ClassData = FGraphNodeClassData(UBTTask_Wait::StaticClass(), FString());
-    WaitNode->InitializeInstance();
+    // PostPlacedNewNode creates NodeInstance=UBTTask_Wait with outer=BT (the asset)
+    WaitNode->PostPlacedNewNode();
+    if (WaitNode->NodeInstance)
+        WaitNode->InitializeInstance();
     WaitNode->AllocateDefaultPins();
 
     // Set WaitTime on the runtime instance
