@@ -4673,33 +4673,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
         SelOutPin->MakeLinkTo(WaitInPin);
 
     // ── 10.  Recompile & save ────────────────────────────────────────────────
-    // NOTE: UpdateAsset(RebuildGraph) triggers a full synchronous graph
-    // recompile which can crash UE5.6 when called from the MCP thread
-    // (access violation inside UBehaviorTreeGraph::UpdateAsset ->
-    // UBehaviorTreeGraphNode::ReinstanceNodeForBackwardsCompatibility).
-    // Instead we:
-    //   (a) call UpdateAsset with NO flags — this only refreshes node data
-    //       without destroying/recreating the runtime tree objects
-    //   (b) mark the package dirty so UE5 knows it needs saving
-    //   (c) use GEditor->RequestEndPlayMap guard so the save is safe
-    BTGraph->UpdateAsset(0);   // 0 = no RebuildGraph flag → safe lightweight refresh
+    // UpdateAsset(RebuildGraph) crashes UE5.6 from the MCP thread.
+    // UpdateAsset(0) does a lightweight node-data refresh with no recompile.
+    BTGraph->UpdateAsset(0);
     BT->MarkPackageDirty();
-    // Save via the package directly (avoids EditorAssetLibrary internals
-    // that can trigger additional asset registry notifications mid-command)
-    if (UPackage* Pkg = BT->GetOutermost())
-    {
-        FString PackageFilename;
-        if (FPackageName::TryConvertLongPackageNameToFilename(
-                Pkg->GetName(), PackageFilename, FPackageName::GetAssetPackageExtension()))
-        {
-            FSavePackageArgs SaveArgs;
-            SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
-            SaveArgs.Error = GError;
-            SaveArgs.bForceByteSwapping = false;
-            SaveArgs.bWarnOfLongFilename = false;
-            UPackage::SavePackage(Pkg, BT, *PackageFilename, SaveArgs);
-        }
-    }
+    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
 
     // ── 11.  Return summary ──────────────────────────────────────────────────
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
