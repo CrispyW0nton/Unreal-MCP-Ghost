@@ -3926,9 +3926,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnem
  *   ClassData must be set BEFORE PostPlacedNewNode() (it calls ClassData.GetClass()).
  *
  * SUPPRESSION MECHANISM:
- *   UAIGraph::bLockUpdates (checked at BehaviorTreeGraph.cpp:104) suppresses UpdateAsset().
- *   Setting BTGraph->bLockUpdates=true before SpawnMissingNodes/CreateBTFromGraph is safe.
- *   Do NOT call UAIGraph::UnlockUpdates() — it calls UpdateAsset() which crashes.
+ *   UAIGraph::bLockUpdates is PROTECTED (AIGraph.h:62) — cannot access directly.
+ *   Public API: LockUpdates() sets true, UnlockUpdates() sets false then calls UpdateAsset().
+ *   UpdateAsset() does NOT call NotifyGraphChanged (safe to call from UnlockUpdates()).
+ *   Pattern: LockUpdates() → SpawnMissingNodes() → UnlockUpdates() (safe — no NotifyGraphChanged).
+ *   Skip OnSave() — it calls SpawnMissingNodesForParallel → AddSubNode → NotifyGraphChanged → crash.
  *
  * SAFE OPERATIONS (do NOT fire NotifyGraphChanged):
  *   BTGraph->Nodes.Add(N)        — raw array add
@@ -4065,38 +4067,36 @@ static UBehaviorTree* FindBehaviorTree(const FString& BTName)
 /**
  * SafeUpdateBTAsset – build runtime BT tree and save.
  *
- * ROOT CAUSE ANALYSIS (from UE5 source BehaviorTreeGraph.cpp):
- *   - UEdGraph::AddNode() always fires NotifyGraphChanged (EdGraph.cpp:244)
- *   - UAIGraphNode::NodeConnectionListChanged() calls UpdateAsset() (AIGraphNode.cpp:240)
- *   - UAIGraphNode::AddSubNode() calls NotifyGraphChanged AND UpdateAsset() (AIGraphNode.cpp:297-298)
- *   - UBehaviorTreeGraph::OnSave() calls SpawnMissingNodesForParallel() then UpdateAsset() (BehaviorTreeGraph.cpp:211)
- *   - UBehaviorTreeGraph::UpdateAsset() checks bLockUpdates first (BehaviorTreeGraph.cpp:104)
+ * ROOT CAUSE ANALYSIS (verified from UE5 source):
  *
- * CRASH MECHANISM:
- *   NotifyGraphChanged → OnGraphChanged.Broadcast → BT editor handler → IBehaviorTreeEditor* (null at +0x68)
+ *   CRASH PATH: NotifyGraphChanged → OnGraphChanged.Broadcast →
+ *               BT editor handler → IBehaviorTreeEditor* (null at +0x68)
  *
- * FIX STRATEGY:
- *   1. BTSafeAddNode/BTSafeLinkPins/BTSafeUnlinkPin bypass NotifyGraphChanged for graph construction.
- *   2. For OnSave(), we set bLockUpdates=true to suppress UpdateAsset() re-entrant calls.
- *      OnSave() = SpawnMissingNodesForParallel() + UpdateAsset(). We call SpawnMissingNodesForParallel
- *      indirectly via SpawnMissingNodes first, then call UpdateAsset ourselves with bLockUpdates=false.
- *      Actually the safest approach: call CreateBTFromGraph directly (which is what UpdateAsset does)
- *      and skip OnSave() entirely since OnSave() will call UpdateAsset() which fires OnGraphChanged.
+ *   SpawnMissingNodes() calls AddSubNode() (AIGraphNode.cpp:274-298) which
+ *   fires ParentGraph->NotifyGraphChanged() (line 297) — this is the crash.
  *
- * CORRECT SEQUENCE (matches what UE5 editor does but without NotifyGraphChanged):
- *   1. SpawnMissingNodes() — ensures NodeInstance objects are valid
- *   2. Find root graph node
- *   3. CreateBTFromGraph(RootGN) — builds runtime BT->RootNode hierarchy
+ *   UpdateAsset() itself does NOT call NotifyGraphChanged (confirmed from source).
+ *   Only AddSubNode() and OnSubNodeDropped() fire NotifyGraphChanged.
+ *
+ *   UAIGraph::LockUpdates() sets bLockUpdates=true (public API, AIGraph.h:50).
+ *   UpdateAsset() checks bLockUpdates at top and returns early (BehaviorTreeGraph.cpp:104).
+ *   UAIGraph::UnlockUpdates() sets bLockUpdates=false then calls UpdateAsset() (AIGraph.cpp:276-278).
+ *   UpdateAsset() is safe — it rebuilds the runtime tree without firing NotifyGraphChanged.
+ *
+ *   UBehaviorTreeGraph::OnSave() = SpawnMissingNodesForParallel() + UpdateAsset() (line 211).
+ *   SpawnMissingNodesForParallel calls AddSubNode() → NotifyGraphChanged → crash.
+ *   So we skip OnSave() and call the pieces safely ourselves.
+ *
+ * CORRECT SEQUENCE:
+ *   1. LockUpdates()         — suppress UpdateAsset() re-entrancy during SpawnMissingNodes
+ *   2. SpawnMissingNodes()   — ensures NodeInstance objects are valid (AddSubNode suppressed by lock)
+ *   3. UnlockUpdates()       — sets bLockUpdates=false, then calls UpdateAsset() which is SAFE
+ *                              (UpdateAsset does NOT call NotifyGraphChanged)
  *   4. MarkPackageDirty() + SaveAsset()
- *   SKIP OnSave() — it calls UpdateAsset() which calls NotifyGraphChanged indirectly
- *                    via NodeConnectionListChanged if pins get modified.
+ *   SKIP OnSave() — it calls SpawnMissingNodesForParallel → AddSubNode → NotifyGraphChanged → crash
  *
- * NOTE: bLockUpdates is the correct UE5 suppression mechanism (UAIGraph::LockUpdates/UnlockUpdates)
- *   but SpawnMissingNodes internally calls AddSubNode which fires both NotifyGraphChanged AND UpdateAsset.
- *   So we must lock BEFORE SpawnMissingNodes, then unlock AFTER, but NOT call UpdateAsset ourselves
- *   (it will be called by UnlockUpdates). However UnlockUpdates calls UpdateAsset which crashes.
- *   Therefore: lock updates, call SpawnMissingNodes (safe because UpdateAsset is suppressed),
- *   then call CreateBTFromGraph directly while still locked, then unlock WITHOUT calling UpdateAsset.
+ * NOTE: bLockUpdates is protected in UAIGraph (UAIGraph.h:62). Use LockUpdates()/UnlockUpdates()
+ *   public API. Do NOT access bLockUpdates directly — it causes a compile error.
  */
 static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
 {
@@ -4105,29 +4105,21 @@ static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
     // Ensure editors are closed (idempotent).
     CloseAllBTEditors(BT);
 
-    // Lock updates to suppress UpdateAsset() calls triggered by SpawnMissingNodes
-    // (SpawnMissingNodes → AddSubNode → UpdateAsset/NotifyGraphChanged).
-    // bLockUpdates is checked at the TOP of UBehaviorTreeGraph::UpdateAsset() (line 104).
-    BTGraph->bLockUpdates = true;
+    // Lock updates via the public API so that AddSubNode calls inside SpawnMissingNodes
+    // do not trigger UpdateAsset re-entrantly (UpdateAsset returns early when locked).
+    // Note: bLockUpdates is protected — use LockUpdates() public method (AIGraph.h:50).
+    BTGraph->LockUpdates();
 
     // SpawnMissingNodes ensures every graph node has a valid NodeInstance.
-    // With bLockUpdates=true any internal UpdateAsset() calls are suppressed.
+    // With bLockUpdates=true, any internal UpdateAsset() calls are suppressed.
+    // AddSubNode still fires NotifyGraphChanged, but because editors are closed
+    // CloseAllEditorsForAsset has already removed the crashing listener.
     BTGraph->SpawnMissingNodes();
 
-    // Build the runtime BT tree (BT->RootNode + Children arrays) by calling
-    // CreateBTFromGraph directly — this is the core of UpdateAsset() without
-    // the NotifyGraphChanged side-effects.
-    UBehaviorTreeGraphNode_Root* RootGN = nullptr;
-    for (UEdGraphNode* N : BTGraph->Nodes)
-        if ((RootGN = Cast<UBehaviorTreeGraphNode_Root>(N))) break;
-
-    if (RootGN)
-        BTGraph->CreateBTFromGraph(RootGN);
-
-    // Unlock updates.  Do NOT call UpdateAsset() after this — it fires
-    // NotifyGraphChanged which crashes when no BT editor window is open.
-    // (UAIGraph::UnlockUpdates calls UpdateAsset() internally — avoid it.)
-    BTGraph->bLockUpdates = false;
+    // UnlockUpdates() sets bLockUpdates=false then calls UpdateAsset() (AIGraph.cpp:276-278).
+    // UpdateAsset() is SAFE — it builds the runtime BT tree (BT->RootNode hierarchy)
+    // without calling NotifyGraphChanged (confirmed from BehaviorTreeGraph.cpp source).
+    BTGraph->UnlockUpdates();
 
     // Serialise — NodeInstance objects have outer=BT + RF_Transactional.
     BT->MarkPackageDirty();
