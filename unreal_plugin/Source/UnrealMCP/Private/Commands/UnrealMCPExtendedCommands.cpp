@@ -3897,18 +3897,79 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnem
 // ════════════════════════════════════════════════════════════════════════════
 
 /**
- * CloseAllBTEditors – MUST be called before ANY modification to BTGraph.
+ * ROOT CAUSE of all 0x68 crashes (definitive analysis):
  *
- * ROOT CAUSE of all 0x68 crashes:
- * The BehaviorTreeEditor module registers an FOnObjectPropertyChanged
- * listener on every UBehaviorTreeGraph it touches.  ANY UPROPERTY
- * modification — including TArray::Add/Remove on BTGraph->Nodes, pin
- * LinkedTo changes, or field writes — fires that listener.  When no
- * BT editor window is open the handler dereferences a null
- * IBehaviorTreeEditor* at offset +0x68, crashing UE5.
+ * UBehaviorTreeGraph is a UAIGraph. The BehaviorTreeEditor module registers
+ * a handler on UEdGraph::OnGraphChanged multicast delegate for every
+ * UBehaviorTreeGraph it touches (at the module level, not per-editor-window).
+ * Any call that fires NotifyGraphChanged() invokes this handler, which calls
+ * into IBehaviorTreeEditor* — null when no BT window is open — at +0x68.
  *
- * CloseAllEditorsForAsset() tears down the editor window AND unregisters
- * those listeners.  Once this returns it is safe to mutate BTGraph freely.
+ * Functions that fire NotifyGraphChanged:
+ *   UEdGraph::AddNode()          — always fires at the end
+ *   UEdGraphPin::MakeLinkTo()    — fires on both pins
+ *   UEdGraphPin::BreakAllPinLinks() — fires on both sides
+ *   UEdGraphNode::BreakAllNodeLinks() — calls BreakAllPinLinks
+ *   UAIGraphNode::AddSubNode()   — may call NotifyGraphChanged
+ *   UEdGraph::RemoveNode()       — always fires
+ *
+ * SAFE alternatives that do NOT call NotifyGraphChanged:
+ *   BTGraph->Nodes.Add(N)        — raw array add (no notification)
+ *   BTGraph->Nodes.Remove(N)     — raw array remove (no notification)
+ *   BTSafeLinkPins(A,B)          — direct LinkedTo manipulation (see below)
+ *   BTSafeUnlinkPin(P)           — direct LinkedTo manipulation (see below)
+ *   N->SubNodes.Add(Sub)         — raw SubNodes array (no notification)
+ *
+ * CloseAllEditorsForAsset alone is NOT enough because the OnGraphChanged
+ * listener is registered at module level, not per editor-window level.
+ */
+
+/**
+ * BTSafeAddNode – add a graph node to the BT graph WITHOUT firing
+ * NotifyGraphChanged.  Replicates what UEdGraph::AddNode does (adds to
+ * Nodes, sets RF_Transactional, fixes Outer via Rename) but skips the
+ * NotifyGraphChanged call that causes the 0x68 crash.
+ */
+static void BTSafeAddNode(UBehaviorTreeGraph* BTGraph, UBehaviorTreeGraphNode* Node)
+{
+    if (!BTGraph || !Node) return;
+    BTGraph->Nodes.Add(Node);
+    Node->SetFlags(RF_Transactional);
+    // Fix outer so the node is properly owned by this graph
+    if (Node->GetOuter() != BTGraph)
+        Node->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+}
+
+/**
+ * BTSafeLinkPins – connect two pins by directly appending to LinkedTo
+ * arrays, without calling MakeLinkTo / NotifyGraphChanged.
+ */
+static void BTSafeLinkPins(UEdGraphPin* OutputPin, UEdGraphPin* InputPin)
+{
+    if (!OutputPin || !InputPin) return;
+    OutputPin->LinkedTo.AddUnique(InputPin);
+    InputPin->LinkedTo.AddUnique(OutputPin);
+}
+
+/**
+ * BTSafeUnlinkPin – sever all connections on a pin by directly clearing
+ * LinkedTo arrays (both sides), without calling BreakAllPinLinks /
+ * NotifyGraphChanged.
+ */
+static void BTSafeUnlinkPin(UEdGraphPin* Pin)
+{
+    if (!Pin) return;
+    for (UEdGraphPin* Other : Pin->LinkedTo)
+    {
+        if (Other) Other->LinkedTo.Remove(Pin);
+    }
+    Pin->LinkedTo.Empty();
+}
+
+/**
+ * CloseAllBTEditors – close any open editor windows for BT asset.
+ * Alone this is NOT sufficient to prevent the crash (see analysis above),
+ * but it is still good practice to avoid re-entrancy issues.
  */
 static void CloseAllBTEditors(UBehaviorTree* BT)
 {
@@ -3921,8 +3982,10 @@ static void CloseAllBTEditors(UBehaviorTree* BT)
 }
 
 /**
- * SafeRemoveBTNodes – removes every non-root node from BTGraph.
- * MUST be called after CloseAllBTEditors() so no listener fires.
+ * SafeRemoveBTNodes – removes every non-root node from BTGraph
+ * WITHOUT firing NotifyGraphChanged at any point.
+ * Uses BTSafeUnlinkPin to clear pin connections (no BreakAllPinLinks)
+ * and direct BTGraph->Nodes.Remove (no RemoveNode delegate).
  */
 static void SafeRemoveBTNodes(UBehaviorTreeGraph* BTGraph)
 {
@@ -3937,14 +4000,27 @@ static void SafeRemoveBTNodes(UBehaviorTreeGraph* BTGraph)
 
     for (UEdGraphNode* N : ToRemove)
     {
-        // Break all pin links (safe — no editor listener active after CloseAllBTEditors)
+        // Sever all pin connections WITHOUT calling BreakAllPinLinks
+        // (BreakAllPinLinks calls NotifyGraphChanged → crashes at 0x68)
         for (UEdGraphPin* Pin : N->Pins)
+            BTSafeUnlinkPin(Pin);
+
+        // Remove sub-nodes too
+        if (UAIGraphNode* AIN = Cast<UAIGraphNode>(N))
         {
-            if (Pin) Pin->BreakAllPinLinks();
+            for (UAIGraphNode* Sub : AIN->SubNodes)
+            {
+                if (!Sub) continue;
+                for (UEdGraphPin* SP : Sub->Pins) BTSafeUnlinkPin(SP);
+                Sub->ClearFlags(RF_Transactional);
+                Sub->SetFlags(RF_Transient);
+            }
+            AIN->SubNodes.Empty();
         }
-        // Direct array removal — no RemoveNode() delegate
+
+        // Direct array removal — avoids RemoveNode() which fires delegate
         BTGraph->Nodes.Remove(N);
-        // Mark transient so GC can collect it and it won't re-save
+        // Mark transient so GC can collect it and it won't be re-saved
         N->ClearFlags(RF_Transactional);
         N->SetFlags(RF_Transient);
     }
@@ -4111,10 +4187,12 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
     // Create the graph node.  RF_Transactional ensures the node and its
     // NodeInstance sub-object are included in the package's object chain and
     // serialized properly when SaveAsset is called.
+    // Use BTSafeAddNode instead of BTGraph->AddNode() to avoid firing
+    // NotifyGraphChanged which causes the 0x68 crash.
     UBehaviorTreeGraphNode* NewNode =
         NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
     if (!NewNode) return nullptr;
-    BTGraph->AddNode(NewNode, false, false);
+    BTSafeAddNode(BTGraph, NewNode);
 
     NewNode->NodePosX = FMath::RoundToInt(X);
     NewNode->NodePosY = FMath::RoundToInt(Y);
@@ -4159,9 +4237,10 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             if (Pin && Pin->Direction == EGPD_Input) { NewInputPin = Pin; break; }
         }
 
+        // Use BTSafeLinkPins instead of MakeLinkTo to avoid NotifyGraphChanged
         if (ParentOutputPin && NewInputPin)
         {
-            ParentOutputPin->MakeLinkTo(NewInputPin);
+            BTSafeLinkPins(ParentOutputPin, NewInputPin);
         }
     }
 
@@ -4187,7 +4266,10 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             {
                 DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
                 DecNode->InitializeInstance();
-                NewNode->AddSubNode(DecNode, BTGraph);
+                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                DecNode->bIsSubNode = 1;
+                DecNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(DecNode);
             }
         }
     }
@@ -4212,7 +4294,10 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             {
                 SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
                 SvcNode->InitializeInstance();
-                NewNode->AddSubNode(SvcNode, BTGraph);
+                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                SvcNode->bIsSubNode = 1;
+                SvcNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(SvcNode);
             }
         }
     }
@@ -4401,9 +4486,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
 
     // Create node with RF_Transactional so it and its NodeInstance sub-object
     // are properly included in the package object chain for serialization.
+    // Use BTSafeAddNode instead of AddNode() to avoid NotifyGraphChanged crash.
     UBehaviorTreeGraphNode* NewNode =
         NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
-    BTGraph->AddNode(NewNode, false, false);
+    BTSafeAddNode(BTGraph, NewNode);
     NewNode->NodePosX = FMath::RoundToInt((float)X);
     NewNode->NodePosY = FMath::RoundToInt((float)Y);
     NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
@@ -4436,8 +4522,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             if (Pin && Pin->Direction == EGPD_Output) { ParentOutputPin = Pin; break; }
         for (UEdGraphPin* Pin : NewNode->Pins)
             if (Pin && Pin->Direction == EGPD_Input) { NewInputPin = Pin; break; }
+        // Use BTSafeLinkPins to avoid MakeLinkTo->NotifyGraphChanged crash
         if (ParentOutputPin && NewInputPin)
-            ParentOutputPin->MakeLinkTo(NewInputPin);
+            BTSafeLinkPins(ParentOutputPin, NewInputPin);
     }
 
     // Add decorators
@@ -4454,7 +4541,15 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
             UBehaviorTreeGraphNode_Decorator* DecNode =
                 NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
-            if (DecNode) { DecNode->ClassData = FGraphNodeClassData(DecClass, FString()); DecNode->InitializeInstance(); NewNode->AddSubNode(DecNode, BTGraph); }
+            if (DecNode)
+            {
+                DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
+                DecNode->InitializeInstance();
+                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                DecNode->bIsSubNode = 1;
+                DecNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(DecNode);
+            }
         }
     }
 
@@ -4472,7 +4567,15 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
             UBehaviorTreeGraphNode_Service* SvcNode =
                 NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
-            if (SvcNode) { SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString()); SvcNode->InitializeInstance(); NewNode->AddSubNode(SvcNode, BTGraph); }
+            if (SvcNode)
+            {
+                SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
+                SvcNode->InitializeInstance();
+                // Direct SubNodes.Add instead of AddSubNode() to avoid NotifyGraphChanged
+                SvcNode->bIsSubNode = 1;
+                SvcNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(SvcNode);
+            }
         }
     }
 
@@ -4687,10 +4790,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     float SelX = RootNode->NodePosX;
     float SelY = (float)RootNode->NodePosY + 200.0f;
 
+    // Use BTSafeAddNode to avoid BTGraph->AddNode()->NotifyGraphChanged crash
     UBehaviorTreeGraphNode* SelNode =
         NewObject<UBehaviorTreeGraphNode>(
             BTGraph, UBehaviorTreeGraphNode_Composite::StaticClass(), NAME_None, RF_Transactional);
-    BTGraph->AddNode(SelNode, false, false);
+    BTSafeAddNode(BTGraph, SelNode);
     SelNode->NodePosX = FMath::RoundToInt(SelX);
     SelNode->NodePosY = FMath::RoundToInt(SelY);
     SelNode->ClassData = FGraphNodeClassData(UBTComposite_Selector::StaticClass(), FString());
@@ -4698,14 +4802,14 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     SelNode->AllocateDefaultPins();
 
     // ── 7.  Rewire Root → Selector ──────────────────────────────────────────
-    // Disconnect Root from its old children
-    RootOutPin->BreakAllPinLinks();
+    // Disconnect Root from its old children WITHOUT BreakAllPinLinks (fires NotifyGraphChanged)
+    BTSafeUnlinkPin(RootOutPin);
 
     UEdGraphPin* SelInPin = nullptr;
     for (UEdGraphPin* P : SelNode->Pins)
         if (P && P->Direction == EGPD_Input) { SelInPin = P; break; }
-    if (SelInPin)
-        RootOutPin->MakeLinkTo(SelInPin);
+    // Use BTSafeLinkPins to avoid MakeLinkTo->NotifyGraphChanged crash
+    BTSafeLinkPins(RootOutPin, SelInPin);
 
     // ── 8.  Re-connect old children to Selector ─────────────────────────────
     UEdGraphPin* SelOutPin = nullptr;
@@ -4720,8 +4824,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
         UEdGraphNode* OldChild = ChildIn->GetOwningNode();
         OldChild->NodePosX = FMath::RoundToInt(SelX + (float)(OldChildIdx * 350) - 175.0f);
         OldChild->NodePosY = FMath::RoundToInt(SelY + 200.0f);
-        if (SelOutPin)
-            SelOutPin->MakeLinkTo(ChildIn);
+        // Use BTSafeLinkPins to avoid MakeLinkTo->NotifyGraphChanged crash
+        BTSafeLinkPins(SelOutPin, ChildIn);
         OldChildIdx++;
     }
 
@@ -4732,10 +4836,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     float WaitX = SelX + (float)(OldChildIdx * 350) - 175.0f;
     float WaitY = SelY + 200.0f;
 
+    // Use BTSafeAddNode to avoid BTGraph->AddNode()->NotifyGraphChanged crash
     UBehaviorTreeGraphNode* WaitNode =
         NewObject<UBehaviorTreeGraphNode>(
             BTGraph, UBehaviorTreeGraphNode_Task::StaticClass(), NAME_None, RF_Transactional);
-    BTGraph->AddNode(WaitNode, false, false);
+    BTSafeAddNode(BTGraph, WaitNode);
     WaitNode->NodePosX = FMath::RoundToInt(WaitX);
     WaitNode->NodePosY = FMath::RoundToInt(WaitY);
     WaitNode->ClassData = FGraphNodeClassData(UBTTask_Wait::StaticClass(), FString());
@@ -4757,12 +4862,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
         }
     }
 
-    // Connect Selector → Wait
+    // Connect Selector → Wait (safe, no NotifyGraphChanged)
     UEdGraphPin* WaitInPin = nullptr;
     for (UEdGraphPin* P : WaitNode->Pins)
         if (P && P->Direction == EGPD_Input) { WaitInPin = P; break; }
-    if (SelOutPin && WaitInPin)
-        SelOutPin->MakeLinkTo(WaitInPin);
+    BTSafeLinkPins(SelOutPin, WaitInPin);
 
     // ── 10.  Close open editor, rebuild runtime tree from graph, save ─────────
     SafeUpdateBTAsset(BT, BTGraph);
