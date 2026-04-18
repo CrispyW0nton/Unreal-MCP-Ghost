@@ -4206,8 +4206,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
     if (!TopNode)
         return CreateErrorResponse(TEXT("Failed to create top-level BT node from 'tree' JSON"));
 
-    // Recompile the BT graph into runtime data
-    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+    // UpdateAsset(RebuildGraph) crashes UE5.6 from the MCP game-thread async task
+    // (null ptr at offset 0x68 inside BehaviorTreeEditor). Just mark dirty and save;
+    // UE5 recompiles the runtime tree automatically when the asset is next opened.
     BT->MarkPackageDirty();
     UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
 
@@ -4386,8 +4387,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
         }
     }
 
-    // Recompile
-    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+    // UpdateAsset(RebuildGraph) crashes UE5.6 from the MCP game-thread async task.
+    // Just mark dirty and save; UE5 recompiles on next open.
     BT->MarkPackageDirty();
     UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
 
