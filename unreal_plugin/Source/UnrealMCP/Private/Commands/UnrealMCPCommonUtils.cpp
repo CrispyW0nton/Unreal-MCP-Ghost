@@ -1106,7 +1106,10 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
             return false;
         }
         FString AssetPath = Value->AsString();
-        FSoftObjectPtr SoftRef(FSoftObjectPath(AssetPath));
+        // Use brace-init to avoid the Most Vexing Parse:
+        // FSoftObjectPtr SoftRef(FSoftObjectPath(AssetPath)) is parsed by MSVC
+        // as a function declaration, not a constructor call, causing C2664.
+        FSoftObjectPtr SoftRef{FSoftObjectPath{AssetPath}};
         SoftProp->SetPropertyValue(PropertyAddr, SoftRef);
         UE_LOG(LogTemp, Display,
             TEXT("SetObjectProperty: set FSoftObjectProperty '%s' to '%s'"),
@@ -1180,7 +1183,10 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
             }
             if (FoundClass)
             {
-                FSoftObjectPtr SoftPtr(FoundClass);
+                // Build the soft path from the class's package+object path,
+                // then brace-init FSoftObjectPtr to avoid MSVC Most Vexing Parse (C2664).
+                FSoftObjectPath SoftPath(FoundClass);
+                FSoftObjectPtr SoftPtr{SoftPath};
                 SoftClassProp->SetPropertyValue(PropertyAddr, SoftPtr);
                 return true;
             }
