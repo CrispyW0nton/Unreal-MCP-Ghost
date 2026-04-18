@@ -1056,6 +1056,37 @@ def register_ai_tools(mcp: FastMCP):
     # ── BT Graph Editing Tools ───────────────────────────────────────────────
 
     @mcp.tool()
+    def repair_behavior_tree(
+        ctx: Context,
+        behavior_tree_name: str
+    ) -> Dict[str, Any]:
+        """
+        Repair a corrupted Behavior Tree asset so it can be opened in the UE5 BT editor.
+
+        BT assets created before the NotifyGraphChanged crash fix was applied may be
+        saved with incomplete node data. Opening them in the editor crashes at 0x68
+        because UpdateAsset() dereferences a null IBehaviorTreeEditor* listener.
+
+        This command:
+          1. Closes any open editor windows for the asset
+          2. Wipes all non-Root graph nodes (safe, no NotifyGraphChanged)
+          3. Recreates the Root node via schema if missing
+          4. Calls SpawnMissingNodes + UpdateAsset + saves to disk
+
+        After repair the asset is in a Root-only (empty) state that the editor
+        can open safely. Use build_behavior_tree to repopulate the tree logic.
+
+        Args:
+            behavior_tree_name: Name of the BT asset to repair (e.g. "BT_EnemyInfantry")
+
+        Returns:
+            Dict with 'success', 'behavior_tree', 'node_count_after_repair', 'message'
+        """
+        return _send("repair_behavior_tree", {
+            "behavior_tree_name": behavior_tree_name,
+        })
+
+    @mcp.tool()
     def build_behavior_tree(
         ctx: Context,
         behavior_tree_name: str,

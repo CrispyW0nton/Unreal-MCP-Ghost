@@ -89,6 +89,8 @@ private:
 
     // ?? AI / Behavior Tree ????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> HandleCreateBehaviorTree(const TSharedPtr<FJsonObject>& Params);
+    /** repair_behavior_tree: rebuild graph from scratch so it can be opened in the BT editor */
+    TSharedPtr<FJsonObject> HandleRepairBehaviorTree(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetBehaviorTreeBlackboard(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetBlueprintParentClass(const TSharedPtr<FJsonObject>& Params);

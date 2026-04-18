@@ -234,6 +234,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
 
     // AI
     if (CommandType == TEXT("create_behavior_tree"))            return HandleCreateBehaviorTree(Params);
+    if (CommandType == TEXT("repair_behavior_tree"))            return HandleRepairBehaviorTree(Params);
     if (CommandType == TEXT("create_blackboard"))               return HandleCreateBlackboard(Params);
     if (CommandType == TEXT("set_behavior_tree_blackboard"))    return HandleSetBehaviorTreeBlackboard(Params);
     if (CommandType == TEXT("set_blueprint_parent_class"))      return HandleSetBlueprintParentClass(Params);
@@ -1899,25 +1900,97 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBehaviorTree(
         return CreateErrorResponse(TEXT("Missing 'name'"));
     Params->TryGetStringField(TEXT("path"), Path);
     if (Path.IsEmpty()) Path = TEXT("/Game/AI");
-    
+
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-    
+
     // UE5.6: BehaviorTreeFactory header removed from public includes; create via dynamic class load
     UClass* BTFactClass = LoadClass<UFactory>(nullptr, TEXT("/Script/BehaviorTreeEditor.BehaviorTreeFactory"));
     UFactory* Factory = BTFactClass ? NewObject<UFactory>(GetTransientPackage(), BTFactClass) : nullptr;
     FString PackagePath = Path;
-    UObject* NewBT = AssetTools.CreateAsset(Name, PackagePath, UBehaviorTree::StaticClass(), Factory);
-    
-    if (NewBT)
+    UObject* NewBTObj = AssetTools.CreateAsset(Name, PackagePath, UBehaviorTree::StaticClass(), Factory);
+
+    if (!NewBTObj)
+        return CreateErrorResponse(TEXT("Failed to create Behavior Tree"));
+
+    // ── Immediately produce a clean, openable graph ───────────────────────────
+    // Without this the factory may leave BTGraph=null or with incomplete node
+    // data; opening such an asset in the BT editor crashes at 0x68 because
+    // UpdateAsset() dereferences a null IBehaviorTreeEditor* listener.
+    // We call GetOrCreateBTGraph (creates Root node via schema) then
+    // SafeUpdateBTAsset (SpawnMissingNodes + UpdateAsset + save) so the asset
+    // is fully valid on disk before anyone tries to open it.
+    UBehaviorTree* BT = Cast<UBehaviorTree>(NewBTObj);
+    if (BT)
     {
-        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-        Result->SetBoolField(TEXT("success"), true);
-        Result->SetStringField(TEXT("name"), Name);
-        Result->SetStringField(TEXT("path"), PackagePath + TEXT("/") + Name);
-        return Result;
+        UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+        if (BTGraph)
+            SafeUpdateBTAsset(BT, BTGraph);
     }
-    
-    return CreateErrorResponse(TEXT("Failed to create Behavior Tree"));
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("name"), Name);
+    Result->SetStringField(TEXT("path"), PackagePath + TEXT("/") + Name);
+    return Result;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// repair_behavior_tree
+// Rebuilds a BT asset's graph from scratch so it can be safely opened in the
+// Unreal BT editor without crashing at 0x68.
+//
+// Root cause of the open-crash:
+//   BT assets created or modified before the NotifyGraphChanged fix were saved
+//   with incomplete NodeInstance chains.  When the BT editor opens such an
+//   asset it calls UpdateAsset() which dereferences a cached
+//   IBehaviorTreeEditor* that is null (+0x68).
+//
+// Repair sequence:
+//   1. Close any open editor windows for this asset.
+//   2. Wipe all non-Root graph nodes (safe removal, no NotifyGraphChanged).
+//   3. Call GetOrCreateBTGraph — recreates Root node if missing.
+//   4. Call SafeUpdateBTAsset — SpawnMissingNodes + UnlockUpdates/UpdateAsset
+//      + save to disk, producing a valid graph the editor can open.
+//
+// Params:
+//   behavior_tree_name: string  — name of the BT asset to repair
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleRepairBehaviorTree(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // Step 1: close editors first — removes the crashing listener
+    CloseAllBTEditors(BT);
+
+    // Step 2: get or create the graph (creates schema Root node if missing)
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    // Step 3: wipe all non-root nodes so we start from a clean Root-only state
+    SafeRemoveBTNodes(BTGraph);
+
+    // Step 4: SpawnMissingNodes + UpdateAsset + save
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    int32 NodeCount = BTGraph->Nodes.Num();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetNumberField(TEXT("node_count_after_repair"), (double)NodeCount);
+    R->SetStringField(TEXT("message"),
+        TEXT("BT graph rebuilt to Root-only state. Asset saved. "
+             "It can now be opened in the BT editor without crashing. "
+             "Use build_behavior_tree to repopulate the tree logic."));
+    return R;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlackboard(
