@@ -79,6 +79,28 @@
 // #include "Factories/BehaviorTreeFactory.h"   // REMOVED
 // #include "Factories/BlackboardDataFactory.h" // REMOVED
 
+// BT Graph editing (editor-only, via BehaviorTreeEditor module)
+#include "BehaviorTreeGraph.h"
+#include "BehaviorTreeGraphNode.h"
+#include "BehaviorTreeGraphNode_Root.h"
+#include "BehaviorTreeGraphNode_Composite.h"
+#include "BehaviorTreeGraphNode_Task.h"
+#include "BehaviorTreeGraphNode_Service.h"
+#include "BehaviorTreeGraphNode_Decorator.h"
+#include "EdGraphSchema_BehaviorTree.h"
+#include "AIGraphNode.h"
+#include "AIGraphTypes.h"
+// BT base runtime classes (needed for IsChildOf checks)
+#include "BehaviorTree/BTCompositeNode.h"
+#include "BehaviorTree/BTTaskNode.h"
+#include "BehaviorTree/BTService.h"
+#include "BehaviorTree/BTDecorator.h"
+// Concrete BT node classes
+#include "BehaviorTree/Composites/BTComposite_Selector.h"
+#include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "BehaviorTree/Tasks/BTTask_MoveTo.h"
+
 // Data Assets ? paths fixed for UE 5.6
 #include "Engine/UserDefinedStruct.h"
 #include "Engine/UserDefinedEnum.h"
@@ -212,6 +234,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("create_blackboard"))               return HandleCreateBlackboard(Params);
     if (CommandType == TEXT("set_behavior_tree_blackboard"))    return HandleSetBehaviorTreeBlackboard(Params);
     if (CommandType == TEXT("set_blueprint_parent_class"))      return HandleSetBlueprintParentClass(Params);
+
+    // BT Graph Node Manipulation
+    if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
+    if (CommandType == TEXT("add_bt_node"))                     return HandleAddBTNode(Params);
+    if (CommandType == TEXT("get_bt_graph_info"))               return HandleGetBTGraphInfo(Params);
 
     // Level/World
     if (CommandType == TEXT("set_game_mode_for_level"))         return HandleSetGameModeForLevel(Params);
@@ -3859,6 +3886,616 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnem
              "via create_bt_attack_task and create_bt_wander_task."));
     return R;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// BT Graph Node Manipulation
+// ════════════════════════════════════════════════════════════════════════════
+
+/** Helper: find a BehaviorTree asset by name */
+static UBehaviorTree* FindBehaviorTree(const FString& BTName)
+{
+    IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+        TEXT("AssetRegistry")).Get();
+    TArray<FAssetData> BTAssets;
+    AR.GetAssetsByClass(FTopLevelAssetPath(TEXT("/Script/AIModule"), TEXT("BehaviorTree")), BTAssets, true);
+    for (const FAssetData& AD : BTAssets)
+    {
+        if (AD.AssetName.ToString().Equals(BTName, ESearchCase::IgnoreCase))
+            return Cast<UBehaviorTree>(AD.GetAsset());
+    }
+    return nullptr;
+}
+
+/** Helper: get or create the BehaviorTreeGraph on a BT asset */
+static UBehaviorTreeGraph* GetOrCreateBTGraph(UBehaviorTree* BT)
+{
+    if (!BT) return nullptr;
+    UBehaviorTreeGraph* BTGraph = Cast<UBehaviorTreeGraph>(BT->BTGraph);
+    if (!BTGraph)
+    {
+        // Create graph using NewObject (BT graphs are not Blueprint graphs)
+        BTGraph = NewObject<UBehaviorTreeGraph>(BT, NAME_None, RF_Transactional);
+        // Set schema class
+        BTGraph->Schema = UEdGraphSchema_BehaviorTree::StaticClass();
+        BTGraph->OnCreated();
+        BT->BTGraph = BTGraph;
+        // Let schema create the default Root node
+        const UEdGraphSchema* Schema = BTGraph->GetSchema();
+        if (Schema)
+            Schema->CreateDefaultNodesForGraph(*BTGraph);
+    }
+    return BTGraph;
+}
+
+/** Helper: resolve the UClass for a BT node type string */
+static UClass* ResolveBTNodeClass(const FString& NodeType)
+{
+    // Composites
+    if (NodeType.Equals(TEXT("Selector"),  ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTComposite_Selector"), ESearchCase::IgnoreCase))
+        return UBTComposite_Selector::StaticClass();
+    if (NodeType.Equals(TEXT("Sequence"),  ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTComposite_Sequence"), ESearchCase::IgnoreCase))
+        return UBTComposite_Sequence::StaticClass();
+
+    // Tasks
+    if (NodeType.Equals(TEXT("Wait"), ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTTask_Wait"), ESearchCase::IgnoreCase))
+        return UBTTask_Wait::StaticClass();
+    if (NodeType.Equals(TEXT("MoveTo"), ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTTask_MoveTo"), ESearchCase::IgnoreCase))
+        return UBTTask_MoveTo::StaticClass();
+
+    // Fallback: dynamic load by class path
+    FString ClassPath = FString::Printf(TEXT("/Script/AIModule.%s"), *NodeType);
+    UClass* DynClass = FindObject<UClass>(nullptr, *ClassPath);
+    if (DynClass) return DynClass;
+
+    // Try Blueprint class path directly
+    DynClass = LoadObject<UClass>(nullptr, *NodeType);
+    return DynClass;
+}
+
+/** Helper: determine graph node class for a runtime BT node class */
+static UClass* GetBTGraphNodeClass(UClass* RuntimeClass)
+{
+    if (!RuntimeClass) return nullptr;
+    if (RuntimeClass->IsChildOf(UBTCompositeNode::StaticClass()))
+        return UBehaviorTreeGraphNode_Composite::StaticClass();
+    if (RuntimeClass->IsChildOf(UBTTaskNode::StaticClass()))
+        return UBehaviorTreeGraphNode_Task::StaticClass();
+    if (RuntimeClass->IsChildOf(UBTService::StaticClass()))
+        return UBehaviorTreeGraphNode_Service::StaticClass();
+    if (RuntimeClass->IsChildOf(UBTDecorator::StaticClass()))
+        return UBehaviorTreeGraphNode_Decorator::StaticClass();
+    return nullptr;
+}
+
+/** Recursive helper to build BT graph from JSON tree description.
+ *  Returns the created graph node or nullptr on failure.
+ *  JSON format per node:
+ *  {
+ *    "type": "Selector" | "Sequence" | "Wait" | "MoveTo" | "<ClassName>",
+ *    "x": 0, "y": 0,           // optional position
+ *    "properties": { ... },    // optional: key=value pairs set on node instance
+ *    "children": [ ... ],      // optional: child nodes (composites only)
+ *    "decorators": [ ... ],    // optional: decorator sub-nodes
+ *    "services":   [ ... ]     // optional: service sub-nodes
+ *  }
+ */
+static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
+    UBehaviorTreeGraph* BTGraph,
+    const TSharedPtr<FJsonObject>& NodeJson,
+    UBehaviorTreeGraphNode* ParentGraphNode,
+    float BaseX, float BaseY, int32& NodeIndex)
+{
+    if (!BTGraph || !NodeJson.IsValid()) return nullptr;
+
+    FString NodeType;
+    NodeJson->TryGetStringField(TEXT("type"), NodeType);
+    if (NodeType.IsEmpty()) return nullptr;
+
+    // Resolve runtime class
+    UClass* RuntimeClass = ResolveBTNodeClass(NodeType);
+    if (!RuntimeClass) return nullptr;
+
+    // Determine graph node class
+    UClass* GraphNodeClass = GetBTGraphNodeClass(RuntimeClass);
+    if (!GraphNodeClass) return nullptr;
+
+    // Position
+    float X = BaseX + (float)(NodeIndex * 220);
+    float Y = BaseY;
+    double JsonX = 0, JsonY = 0;
+    NodeJson->TryGetNumberField(TEXT("x"), JsonX);
+    NodeJson->TryGetNumberField(TEXT("y"), JsonY);
+    if (JsonX != 0) X = (float)JsonX;
+    if (JsonY != 0) Y = (float)JsonY;
+
+    // Create the graph node directly via NewObject (BT graphs are not Blueprint graphs,
+    // so FBlueprintEditorUtils::CreateNewNode is not applicable here)
+    UBehaviorTreeGraphNode* NewNode = NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass);
+    if (!NewNode) return nullptr;
+    BTGraph->AddNode(NewNode, false, false);
+
+    NewNode->NodePosX = FMath::RoundToInt(X);
+    NewNode->NodePosY = FMath::RoundToInt(Y);
+
+    // Set runtime class data on the graph node
+    NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
+    NewNode->InitializeInstance();
+    NewNode->AllocateDefaultPins();
+
+    // Apply properties to runtime node instance
+    if (NewNode->NodeInstance)
+    {
+        const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+        if (NodeJson->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj)
+        {
+            for (auto& KV : (*PropsObj)->Values)
+            {
+                FProperty* Prop = NewNode->NodeInstance->GetClass()->FindPropertyByName(FName(*KV.Key));
+                if (Prop)
+                {
+                    FString ValStr;
+                    KV.Value->TryGetString(ValStr);
+                    if (!ValStr.IsEmpty())
+                        Prop->ImportText_Direct(*ValStr, Prop->ContainerPtrToValuePtr<void>(NewNode->NodeInstance), NewNode->NodeInstance, PPF_None);
+                }
+            }
+        }
+    }
+
+    // Connect to parent via pins
+    if (ParentGraphNode)
+    {
+        UEdGraphPin* ParentOutputPin = nullptr;
+        UEdGraphPin* NewInputPin = nullptr;
+
+        for (UEdGraphPin* Pin : ParentGraphNode->Pins)
+        {
+            if (Pin && Pin->Direction == EGPD_Output) { ParentOutputPin = Pin; break; }
+        }
+        for (UEdGraphPin* Pin : NewNode->Pins)
+        {
+            if (Pin && Pin->Direction == EGPD_Input) { NewInputPin = Pin; break; }
+        }
+
+        if (ParentOutputPin && NewInputPin)
+        {
+            ParentOutputPin->MakeLinkTo(NewInputPin);
+        }
+    }
+
+    NodeIndex++;
+
+    // Process decorators (sub-nodes)
+    const TArray<TSharedPtr<FJsonValue>>* DecoratorsArr = nullptr;
+    if (NodeJson->TryGetArrayField(TEXT("decorators"), DecoratorsArr) && DecoratorsArr)
+    {
+        for (const TSharedPtr<FJsonValue>& DecVal : *DecoratorsArr)
+        {
+            const TSharedPtr<FJsonObject>* DecObj = nullptr;
+            if (!DecVal->TryGetObject(DecObj) || !DecObj) continue;
+
+            FString DecType;
+            (*DecObj)->TryGetStringField(TEXT("type"), DecType);
+            UClass* DecClass = ResolveBTNodeClass(DecType);
+            if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
+
+            UBehaviorTreeGraphNode_Decorator* DecNode =
+                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph);
+            if (DecNode)
+            {
+                DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
+                DecNode->InitializeInstance();
+                NewNode->AddSubNode(DecNode, BTGraph);
+            }
+        }
+    }
+
+    // Process services (sub-nodes)
+    const TArray<TSharedPtr<FJsonValue>>* ServicesArr = nullptr;
+    if (NodeJson->TryGetArrayField(TEXT("services"), ServicesArr) && ServicesArr)
+    {
+        for (const TSharedPtr<FJsonValue>& SvcVal : *ServicesArr)
+        {
+            const TSharedPtr<FJsonObject>* SvcObj = nullptr;
+            if (!SvcVal->TryGetObject(SvcObj) || !SvcObj) continue;
+
+            FString SvcType;
+            (*SvcObj)->TryGetStringField(TEXT("type"), SvcType);
+            UClass* SvcClass = ResolveBTNodeClass(SvcType);
+            if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
+
+            UBehaviorTreeGraphNode_Service* SvcNode =
+                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph);
+            if (SvcNode)
+            {
+                SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
+                SvcNode->InitializeInstance();
+                NewNode->AddSubNode(SvcNode, BTGraph);
+            }
+        }
+    }
+
+    // Process children (composite nodes)
+    const TArray<TSharedPtr<FJsonValue>>* ChildrenArr = nullptr;
+    if (NodeJson->TryGetArrayField(TEXT("children"), ChildrenArr) && ChildrenArr)
+    {
+        int32 ChildIndex = 0;
+        float ChildY = Y + 200.0f;
+        float TotalWidth = (float)ChildrenArr->Num() * 220.0f;
+        float StartX = X - TotalWidth * 0.5f + 110.0f;
+
+        for (const TSharedPtr<FJsonValue>& ChildVal : *ChildrenArr)
+        {
+            const TSharedPtr<FJsonObject>* ChildObj = nullptr;
+            if (!ChildVal->TryGetObject(ChildObj) || !ChildObj) continue;
+            BuildBTNodeFromJson(BTGraph, *ChildObj, NewNode,
+                StartX + (float)ChildIndex * 220.0f, ChildY, ChildIndex);
+        }
+    }
+
+    return NewNode;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// build_behavior_tree
+// Params:
+//   behavior_tree_name: string   (name of existing BT asset to build into)
+//   tree: object                 (JSON tree description, root is a composite)
+//   clear_existing: bool         (default true – remove existing non-root nodes)
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+
+    const TSharedPtr<FJsonObject>* TreeObj = nullptr;
+    if (!Params->TryGetObjectField(TEXT("tree"), TreeObj) || !TreeObj)
+        return CreateErrorResponse(TEXT("Missing 'tree' object"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    // Optionally clear existing nodes (keep root)
+    bool bClearExisting = true;
+    Params->TryGetBoolField(TEXT("clear_existing"), bClearExisting);
+
+    if (bClearExisting)
+    {
+        // Collect non-root nodes for deletion
+        TArray<UEdGraphNode*> NodesToRemove;
+        for (UEdGraphNode* Node : BTGraph->Nodes)
+        {
+            if (Node && !Node->IsA<UBehaviorTreeGraphNode_Root>())
+                NodesToRemove.Add(Node);
+        }
+        for (UEdGraphNode* Node : NodesToRemove)
+        {
+            BTGraph->RemoveNode(Node);
+        }
+    }
+
+    // Find root node
+    UBehaviorTreeGraphNode_Root* RootNode = nullptr;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        RootNode = Cast<UBehaviorTreeGraphNode_Root>(Node);
+        if (RootNode) break;
+    }
+
+    // Build tree from JSON
+    int32 NodeIndex = 0;
+    float RootX = RootNode ? (float)RootNode->NodePosX : 0.0f;
+    float StartY = (RootNode ? (float)RootNode->NodePosY : 0.0f) + 200.0f;
+
+    UBehaviorTreeGraphNode* TopNode = BuildBTNodeFromJson(
+        BTGraph, *TreeObj, RootNode, RootX, StartY, NodeIndex);
+
+    if (!TopNode)
+        return CreateErrorResponse(TEXT("Failed to create top-level BT node from 'tree' JSON"));
+
+    // Recompile the BT graph into runtime data
+    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+    BT->MarkPackageDirty();
+    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+
+    // Collect info about created nodes
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetNumberField(TEXT("nodes_created"), (double)NodeIndex);
+
+    TArray<TSharedPtr<FJsonValue>> NodeList;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (!Node->IsA<UBehaviorTreeGraphNode_Root>())
+        {
+            TSharedPtr<FJsonObject> NObj = MakeShared<FJsonObject>();
+            NObj->SetStringField(TEXT("class"), Node->GetClass()->GetName());
+            NObj->SetNumberField(TEXT("x"), Node->NodePosX);
+            NObj->SetNumberField(TEXT("y"), Node->NodePosY);
+            if (UAIGraphNode* AIN = Cast<UAIGraphNode>(Node))
+            {
+                if (AIN->NodeInstance)
+                    NObj->SetStringField(TEXT("instance"), AIN->NodeInstance->GetClass()->GetName());
+            }
+            NodeList.Add(MakeShared<FJsonValueObject>(NObj));
+        }
+    }
+    R->SetArrayField(TEXT("nodes"), NodeList);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// add_bt_node
+// Params:
+//   behavior_tree_name: string
+//   node_type:   string   e.g. "Selector", "Sequence", "Wait", "MoveTo",
+//                         or full class path like "BTComposite_Selector"
+//   parent_node_index: int  (0-based index in current graph Nodes array, skip root)
+//                           -1 = attach to root
+//   x: float, y: float  (optional position)
+//   properties: object   (optional key=value for node instance)
+//   decorators: array    (optional decorator sub-nodes, each with "type")
+//   services:   array    (optional service sub-nodes)
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName, NodeType;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+    if (!Params->TryGetStringField(TEXT("node_type"), NodeType))
+        return CreateErrorResponse(TEXT("Missing 'node_type'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    UClass* RuntimeClass = ResolveBTNodeClass(NodeType);
+    if (!RuntimeClass)
+        return CreateErrorResponse(FString::Printf(TEXT("Unknown BT node type: %s"), *NodeType));
+
+    UClass* GraphNodeClass = GetBTGraphNodeClass(RuntimeClass);
+    if (!GraphNodeClass)
+        return CreateErrorResponse(FString::Printf(TEXT("Cannot determine graph node class for: %s"), *NodeType));
+
+    // Determine parent
+    double ParentIdx = -1;
+    Params->TryGetNumberField(TEXT("parent_node_index"), ParentIdx);
+
+    UBehaviorTreeGraphNode* ParentGraphNode = nullptr;
+    // Build list of non-root nodes
+    TArray<UBehaviorTreeGraphNode*> NonRootNodes;
+    UBehaviorTreeGraphNode_Root* RootNode = nullptr;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (UBehaviorTreeGraphNode_Root* Root = Cast<UBehaviorTreeGraphNode_Root>(Node))
+            RootNode = Root;
+        else if (UBehaviorTreeGraphNode* BTN = Cast<UBehaviorTreeGraphNode>(Node))
+            NonRootNodes.Add(BTN);
+    }
+
+    if ((int32)ParentIdx < 0)
+        ParentGraphNode = RootNode; // attach to root
+    else if ((int32)ParentIdx < NonRootNodes.Num())
+        ParentGraphNode = NonRootNodes[(int32)ParentIdx];
+
+    // Position
+    double X = 0, Y = 300;
+    Params->TryGetNumberField(TEXT("x"), X);
+    Params->TryGetNumberField(TEXT("y"), Y);
+    if (X == 0 && ParentGraphNode)
+    {
+        X = ParentGraphNode->NodePosX + (double)(NonRootNodes.Num() * 220);
+        Y = ParentGraphNode->NodePosY + 200.0;
+    }
+
+    // Create node
+    UBehaviorTreeGraphNode* NewNode = NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass);
+    BTGraph->AddNode(NewNode, false, false);
+    NewNode->NodePosX = FMath::RoundToInt((float)X);
+    NewNode->NodePosY = FMath::RoundToInt((float)Y);
+    NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
+    NewNode->InitializeInstance();
+    NewNode->AllocateDefaultPins();
+
+    // Apply properties
+    const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj && NewNode->NodeInstance)
+    {
+        for (auto& KV : (*PropsObj)->Values)
+        {
+            FProperty* Prop = NewNode->NodeInstance->GetClass()->FindPropertyByName(FName(*KV.Key));
+            if (Prop)
+            {
+                FString ValStr;
+                KV.Value->TryGetString(ValStr);
+                if (!ValStr.IsEmpty())
+                    Prop->ImportText_Direct(*ValStr, Prop->ContainerPtrToValuePtr<void>(NewNode->NodeInstance), NewNode->NodeInstance, PPF_None);
+            }
+        }
+    }
+
+    // Connect to parent
+    if (ParentGraphNode)
+    {
+        UEdGraphPin* ParentOutputPin = nullptr;
+        UEdGraphPin* NewInputPin = nullptr;
+        for (UEdGraphPin* Pin : ParentGraphNode->Pins)
+            if (Pin && Pin->Direction == EGPD_Output) { ParentOutputPin = Pin; break; }
+        for (UEdGraphPin* Pin : NewNode->Pins)
+            if (Pin && Pin->Direction == EGPD_Input) { NewInputPin = Pin; break; }
+        if (ParentOutputPin && NewInputPin)
+            ParentOutputPin->MakeLinkTo(NewInputPin);
+    }
+
+    // Add decorators
+    const TArray<TSharedPtr<FJsonValue>>* DecoratorsArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("decorators"), DecoratorsArr) && DecoratorsArr)
+    {
+        for (const TSharedPtr<FJsonValue>& DecVal : *DecoratorsArr)
+        {
+            const TSharedPtr<FJsonObject>* DecObj = nullptr;
+            if (!DecVal->TryGetObject(DecObj)) continue;
+            FString DecType;
+            (*DecObj)->TryGetStringField(TEXT("type"), DecType);
+            UClass* DecClass = ResolveBTNodeClass(DecType);
+            if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
+            UBehaviorTreeGraphNode_Decorator* DecNode =
+                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph);
+            DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
+            DecNode->InitializeInstance();
+            NewNode->AddSubNode(DecNode, BTGraph);
+        }
+    }
+
+    // Add services
+    const TArray<TSharedPtr<FJsonValue>>* ServicesArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("services"), ServicesArr) && ServicesArr)
+    {
+        for (const TSharedPtr<FJsonValue>& SvcVal : *ServicesArr)
+        {
+            const TSharedPtr<FJsonObject>* SvcObj = nullptr;
+            if (!SvcVal->TryGetObject(SvcObj)) continue;
+            FString SvcType;
+            (*SvcObj)->TryGetStringField(TEXT("type"), SvcType);
+            UClass* SvcClass = ResolveBTNodeClass(SvcType);
+            if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
+            UBehaviorTreeGraphNode_Service* SvcNode =
+                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph);
+            SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
+            SvcNode->InitializeInstance();
+            NewNode->AddSubNode(SvcNode, BTGraph);
+        }
+    }
+
+    // Recompile
+    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+    BT->MarkPackageDirty();
+    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+
+    // Return info
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetStringField(TEXT("node_type"), NodeType);
+    R->SetNumberField(TEXT("node_index"), (double)NonRootNodes.Num()); // its new index
+    R->SetNumberField(TEXT("x"), X);
+    R->SetNumberField(TEXT("y"), Y);
+    if (NewNode->NodeInstance)
+        R->SetStringField(TEXT("instance_class"), NewNode->NodeInstance->GetClass()->GetName());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// get_bt_graph_info
+// Params:
+//   behavior_tree_name: string
+// Returns list of current graph nodes with their types, positions, and connections.
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleGetBTGraphInfo(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    UBehaviorTreeGraph* BTGraph = Cast<UBehaviorTreeGraph>(BT->BTGraph);
+    if (!BTGraph)
+    {
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetStringField(TEXT("behavior_tree"), BTName);
+        R->SetStringField(TEXT("note"), TEXT("No graph exists yet — use build_behavior_tree to create one."));
+        R->SetArrayField(TEXT("nodes"), TArray<TSharedPtr<FJsonValue>>());
+        return R;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> NodeList;
+    int32 Idx = 0;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (!Node) continue;
+        TSharedPtr<FJsonObject> NObj = MakeShared<FJsonObject>();
+        bool bIsRoot = Node->IsA<UBehaviorTreeGraphNode_Root>();
+        NObj->SetBoolField(TEXT("is_root"), bIsRoot);
+        NObj->SetNumberField(TEXT("index"), Idx - (bIsRoot ? 0 : 0));
+        NObj->SetStringField(TEXT("graph_class"), Node->GetClass()->GetName());
+        NObj->SetNumberField(TEXT("x"), Node->NodePosX);
+        NObj->SetNumberField(TEXT("y"), Node->NodePosY);
+
+        if (UAIGraphNode* AIN = Cast<UAIGraphNode>(Node))
+        {
+            if (AIN->NodeInstance)
+            {
+                NObj->SetStringField(TEXT("runtime_class"), AIN->NodeInstance->GetClass()->GetName());
+                NObj->SetStringField(TEXT("display_name"), AIN->NodeInstance->GetClass()->GetDisplayNameText().ToString());
+            }
+            // Sub-nodes (decorators/services)
+            TArray<TSharedPtr<FJsonValue>> SubList;
+            for (UAIGraphNode* Sub : AIN->SubNodes)
+            {
+                if (!Sub) continue;
+                TSharedPtr<FJsonObject> SObj = MakeShared<FJsonObject>();
+                SObj->SetStringField(TEXT("graph_class"), Sub->GetClass()->GetName());
+                if (Sub->NodeInstance)
+                    SObj->SetStringField(TEXT("runtime_class"), Sub->NodeInstance->GetClass()->GetName());
+                SubList.Add(MakeShared<FJsonValueObject>(SObj));
+            }
+            if (SubList.Num() > 0)
+                NObj->SetArrayField(TEXT("sub_nodes"), SubList);
+        }
+
+        // Output connections
+        TArray<TSharedPtr<FJsonValue>> Connections;
+        for (UEdGraphPin* Pin : Node->Pins)
+        {
+            if (!Pin || Pin->Direction != EGPD_Output) continue;
+            for (UEdGraphPin* Link : Pin->LinkedTo)
+            {
+                if (Link && Link->GetOwningNode())
+                {
+                    TSharedPtr<FJsonObject> ConnObj = MakeShared<FJsonObject>();
+                    ConnObj->SetStringField(TEXT("target_class"), Link->GetOwningNode()->GetClass()->GetName());
+                    Connections.Add(MakeShared<FJsonValueObject>(ConnObj));
+                }
+            }
+        }
+        if (Connections.Num() > 0)
+            NObj->SetArrayField(TEXT("connections"), Connections);
+
+        NodeList.Add(MakeShared<FJsonValueObject>(NObj));
+        Idx++;
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetNumberField(TEXT("node_count"), (double)BTGraph->Nodes.Num());
+    R->SetArrayField(TEXT("nodes"), NodeList);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCallInterfaceFunctionNode(
     const TSharedPtr<FJsonObject>& Params)
