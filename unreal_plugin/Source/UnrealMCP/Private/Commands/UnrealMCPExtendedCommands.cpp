@@ -4672,10 +4672,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     if (SelOutPin && WaitInPin)
         SelOutPin->MakeLinkTo(WaitInPin);
 
-    // ── 10.  Recompile & save ────────────────────────────────────────────────
-    // UpdateAsset(RebuildGraph) crashes UE5.6 from the MCP thread.
-    // UpdateAsset(0) does a lightweight node-data refresh with no recompile.
-    BTGraph->UpdateAsset(0);
+    // ── 10.  Save ────────────────────────────────────────────────────────────
+    // Do NOT call UpdateAsset() at all — any flag crashes UE5.6 from the MCP
+    // game-thread async task. Just mark dirty and save; UE5 will recompile the
+    // runtime tree automatically the next time the asset is opened/loaded.
     BT->MarkPackageDirty();
     UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
 
