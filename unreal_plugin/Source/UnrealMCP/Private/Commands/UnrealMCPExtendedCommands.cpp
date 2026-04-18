@@ -79,6 +79,9 @@
 // #include "Factories/BehaviorTreeFactory.h"   // REMOVED
 // #include "Factories/BlackboardDataFactory.h" // REMOVED
 
+// Asset Editor management (close open editors before modifying assets)
+#include "Subsystems/AssetEditorSubsystem.h"
+
 // BT Graph editing (editor-only, via BehaviorTreeEditor module)
 #include "BehaviorTreeGraph.h"
 #include "BehaviorTreeGraphNode.h"
@@ -3908,6 +3911,46 @@ static UBehaviorTree* FindBehaviorTree(const FString& BTName)
     return nullptr;
 }
 
+/**
+ * Helper: close any open editor windows for a BT asset, rebuild the runtime
+ * tree from the editor graph (UpdateAsset(RebuildGraph)), then save.
+ *
+ * WHY THIS IS NEEDED:
+ *  - UpdateAsset(RebuildGraph) converts editor graph nodes → runtime UBTComposite/
+ *    UBTTask chain under BT->RootNode.  Without it the saved uasset has graph nodes
+ *    with NodeInstance set but BT->RootNode still points to an old/empty runtime
+ *    chain.  When the BT editor opens the asset it tries to reconcile graph vs.
+ *    runtime and crashes (EXCEPTION_ACCESS_VIOLATION at offset 0x68).
+ *
+ *  - The crash seen in earlier attempts happened because UpdateAsset was called
+ *    while the BT editor had the asset open.  Closing the editor first eliminates
+ *    the reentrancy (and any Slate/render-thread conflict) that caused the AV.
+ */
+static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
+{
+    if (!BT || !BTGraph) return;
+
+    // 1. Close any open editor windows for this asset so UpdateAsset does not
+    //    collide with live Slate/render state (the source of the 0x68 crash).
+    if (GEditor)
+    {
+        UAssetEditorSubsystem* AES =
+            GEditor->GetEditorSubsystem<UAssetEditorSubsystem>();
+        if (AES)
+            AES->CloseAllEditorsForAsset(BT);
+    }
+
+    // 2. Rebuild the runtime tree from the editor graph.
+    //    EUpdateFlags::RebuildGraph → graph nodes → UBTComposite / UBTTask chain.
+    //    This serializes proper NodeInstance data and populates BT->RootNode so
+    //    the BT editor can open the asset without crashing.
+    BTGraph->UpdateAsset(UBehaviorTreeGraph::EUpdateFlags::RebuildGraph);
+
+    // 3. Mark dirty and save.
+    BT->MarkPackageDirty();
+    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+}
+
 /** Helper: get or create the BehaviorTreeGraph on a BT asset */
 static UBehaviorTreeGraph* GetOrCreateBTGraph(UBehaviorTree* BT)
 {
@@ -4014,9 +4057,11 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
     if (JsonX != 0) X = (float)JsonX;
     if (JsonY != 0) Y = (float)JsonY;
 
-    // Create the graph node directly via NewObject (BT graphs are not Blueprint graphs,
-    // so FBlueprintEditorUtils::CreateNewNode is not applicable here)
-    UBehaviorTreeGraphNode* NewNode = NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass);
+    // Create the graph node.  RF_Transactional ensures the node and its
+    // NodeInstance sub-object are included in the package's object chain and
+    // serialized properly when SaveAsset is called.
+    UBehaviorTreeGraphNode* NewNode =
+        NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
     if (!NewNode) return nullptr;
     BTGraph->AddNode(NewNode, false, false);
 
@@ -4086,7 +4131,7 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
 
             UBehaviorTreeGraphNode_Decorator* DecNode =
-                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph);
+                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
             if (DecNode)
             {
                 DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
@@ -4111,7 +4156,7 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
             if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
 
             UBehaviorTreeGraphNode_Service* SvcNode =
-                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph);
+                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
             if (SvcNode)
             {
                 SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
@@ -4206,11 +4251,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
     if (!TopNode)
         return CreateErrorResponse(TEXT("Failed to create top-level BT node from 'tree' JSON"));
 
-    // UpdateAsset(RebuildGraph) crashes UE5.6 from the MCP game-thread async task
-    // (null ptr at offset 0x68 inside BehaviorTreeEditor). Just mark dirty and save;
-    // UE5 recompiles the runtime tree automatically when the asset is next opened.
-    BT->MarkPackageDirty();
-    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+    // Close any open BT editor, rebuild runtime tree from graph, then save.
+    SafeUpdateBTAsset(BT, BTGraph);
 
     // Collect info about created nodes
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
@@ -4308,8 +4350,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
         Y = ParentGraphNode->NodePosY + 200.0;
     }
 
-    // Create node
-    UBehaviorTreeGraphNode* NewNode = NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass);
+    // Create node with RF_Transactional so it and its NodeInstance sub-object
+    // are properly included in the package object chain for serialization.
+    UBehaviorTreeGraphNode* NewNode =
+        NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
     BTGraph->AddNode(NewNode, false, false);
     NewNode->NodePosX = FMath::RoundToInt((float)X);
     NewNode->NodePosY = FMath::RoundToInt((float)Y);
@@ -4360,10 +4404,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             UClass* DecClass = ResolveBTNodeClass(DecType);
             if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
             UBehaviorTreeGraphNode_Decorator* DecNode =
-                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph);
-            DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
-            DecNode->InitializeInstance();
-            NewNode->AddSubNode(DecNode, BTGraph);
+                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
+            if (DecNode) { DecNode->ClassData = FGraphNodeClassData(DecClass, FString()); DecNode->InitializeInstance(); NewNode->AddSubNode(DecNode, BTGraph); }
         }
     }
 
@@ -4380,17 +4422,13 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
             UClass* SvcClass = ResolveBTNodeClass(SvcType);
             if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
             UBehaviorTreeGraphNode_Service* SvcNode =
-                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph);
-            SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
-            SvcNode->InitializeInstance();
-            NewNode->AddSubNode(SvcNode, BTGraph);
+                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
+            if (SvcNode) { SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString()); SvcNode->InitializeInstance(); NewNode->AddSubNode(SvcNode, BTGraph); }
         }
     }
 
-    // UpdateAsset(RebuildGraph) crashes UE5.6 from the MCP game-thread async task.
-    // Just mark dirty and save; UE5 recompiles on next open.
-    BT->MarkPackageDirty();
-    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+    // Close any open BT editor, rebuild runtime tree from graph, then save.
+    SafeUpdateBTAsset(BT, BTGraph);
 
     // Return info
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
@@ -4673,12 +4711,8 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
     if (SelOutPin && WaitInPin)
         SelOutPin->MakeLinkTo(WaitInPin);
 
-    // ── 10.  Save ────────────────────────────────────────────────────────────
-    // Do NOT call UpdateAsset() at all — any flag crashes UE5.6 from the MCP
-    // game-thread async task. Just mark dirty and save; UE5 will recompile the
-    // runtime tree automatically the next time the asset is opened/loaded.
-    BT->MarkPackageDirty();
-    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+    // ── 10.  Close open editor, rebuild runtime tree from graph, save ─────────
+    SafeUpdateBTAsset(BT, BTGraph);
 
     // ── 11.  Return summary ──────────────────────────────────────────────────
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
