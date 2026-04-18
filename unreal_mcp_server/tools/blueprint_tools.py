@@ -328,6 +328,7 @@ def register_blueprint_tools(mcp: FastMCP):
 
     @mcp.tool()
     def set_blueprint_ai_controller(
+        ctx: Context,
         blueprint_name: str,
         controller_class: str = "AIController"
     ) -> dict:

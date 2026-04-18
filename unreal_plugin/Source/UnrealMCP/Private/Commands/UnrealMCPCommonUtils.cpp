@@ -1061,53 +1061,57 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
         }
     }
     
-    else if (Property->IsA<FObjectPropertyBase>() && !Property->IsA<FClassProperty>())
+    else if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Property))
     {
-        // Handles FObjectProperty (hard ref) and FSoftObjectProperty (soft ref) for
-        // asset references such as USkeletalMesh, UMaterialInterface, UTexture, etc.
-        // The JSON value must be a content path string, e.g. "/Game/Characters/SK_Hero".
-        if (Value->Type == EJson::String)
-        {
-            FString AssetPath = Value->AsString();
-
-            // Attempt to load the asset; try FindObject first (cheap, no I/O).
-            UObject* LoadedAsset = FindObject<UObject>(nullptr, *AssetPath);
-            if (!LoadedAsset)
-                LoadedAsset = StaticLoadObject(UObject::StaticClass(), nullptr, *AssetPath);
-
-            if (FObjectProperty* ObjProp = CastField<FObjectProperty>(Property))
-            {
-                if (LoadedAsset)
-                {
-                    ObjProp->SetObjectPropertyValue(PropertyAddr, LoadedAsset);
-                    UE_LOG(LogTemp, Display,
-                        TEXT("SetObjectProperty: set FObjectProperty '%s' to '%s'"),
-                        *PropertyName, *AssetPath);
-                    return true;
-                }
-                else
-                {
-                    OutErrorMessage = FString::Printf(
-                        TEXT("Asset not found for property '%s': %s"), *PropertyName, *AssetPath);
-                    return false;
-                }
-            }
-            else if (FSoftObjectProperty* SoftProp = CastField<FSoftObjectProperty>(Property))
-            {
-                FSoftObjectPtr SoftRef(FSoftObjectPath(AssetPath));
-                SoftProp->SetPropertyValue(PropertyAddr, SoftRef);
-                UE_LOG(LogTemp, Display,
-                    TEXT("SetObjectProperty: set FSoftObjectProperty '%s' to '%s'"),
-                    *PropertyName, *AssetPath);
-                return true;
-            }
-        }
-        else
+        // Hard UObject* reference (e.g. USkeletalMesh*, UMaterialInterface*, UTexture*).
+        // BUG-E FIX: Use UEditorAssetLibrary::LoadAsset (consistent with rest of codebase)
+        //   instead of StaticLoadObject(UObject::StaticClass(), ...) which skips type checks.
+        if (Value->Type != EJson::String)
         {
             OutErrorMessage = FString::Printf(
-                TEXT("Object/soft-object property '%s' requires a string asset path"), *PropertyName);
+                TEXT("FObjectProperty '%s' requires a string asset path"), *PropertyName);
             return false;
         }
+        FString AssetPath = Value->AsString();
+        UObject* LoadedAsset = UEditorAssetLibrary::LoadAsset(AssetPath);
+        if (!LoadedAsset)
+        {
+            // Fallback: FindObject (already-loaded assets, e.g. engine defaults).
+            LoadedAsset = FindObject<UObject>(nullptr, *AssetPath);
+        }
+        if (!LoadedAsset)
+        {
+            OutErrorMessage = FString::Printf(
+                TEXT("Asset not found for FObjectProperty '%s': %s"), *PropertyName, *AssetPath);
+            return false;
+        }
+        ObjProp->SetObjectPropertyValue(PropertyAddr, LoadedAsset);
+        UE_LOG(LogTemp, Display,
+            TEXT("SetObjectProperty: set FObjectProperty '%s' to '%s'"),
+            *PropertyName, *AssetPath);
+        return true;
+    }
+    else if (FSoftObjectProperty* SoftProp = CastField<FSoftObjectProperty>(Property))
+    {
+        // BUG-F FIX: FSoftObjectProperty is NOT a subclass of FObjectProperty — it IS-A
+        //   FObjectPropertyBase.  The original code put this branch inside the
+        //   FObjectPropertyBase block after the FObjectProperty cast, so it was
+        //   unreachable (if ObjProp cast succeeded we returned; if it failed the
+        //   SoftProp cast was never reached because they are siblings, not parent/child).
+        //   Fix: promote to a top-level else-if so it is always evaluated.
+        if (Value->Type != EJson::String)
+        {
+            OutErrorMessage = FString::Printf(
+                TEXT("FSoftObjectProperty '%s' requires a string asset path"), *PropertyName);
+            return false;
+        }
+        FString AssetPath = Value->AsString();
+        FSoftObjectPtr SoftRef(FSoftObjectPath(AssetPath));
+        SoftProp->SetPropertyValue(PropertyAddr, SoftRef);
+        UE_LOG(LogTemp, Display,
+            TEXT("SetObjectProperty: set FSoftObjectProperty '%s' to '%s'"),
+            *PropertyName, *AssetPath);
+        return true;
     }
     else if (Property->IsA<FClassProperty>())
     {

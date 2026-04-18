@@ -1309,6 +1309,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetSkeletalMeshProper
     SkelComp->Modify();
 
     // ── Assign skeletal mesh ──────────────────────────────────────────────
+    // BUG-A FIX: SkelComp is a CDO ComponentTemplate — it has no render/physics
+    // context, so calling the virtual SetSkeletalMesh() (which triggers
+    // re-registration) is unsafe and can crash.  The correct editor-time API is
+    // SetSkeletalMeshAsset(), which is the Blueprint-setter for the
+    // SkeletalMeshAsset UPROPERTY.  It calls SetSkeletalMesh(NewMesh, false)
+    // internally but is safe on CDO templates.
     if (Params->HasField(TEXT("skeletal_mesh")))
     {
         FString MeshPath = Params->GetStringField(TEXT("skeletal_mesh"));
@@ -1318,15 +1324,19 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetSkeletalMeshProper
             return FUnrealMCPCommonUtils::CreateErrorResponse(
                 FString::Printf(TEXT("SkeletalMesh not found: %s"), *MeshPath));
 
-        // USkeletalMeshComponent::SetSkeletalMesh is the correct API;
-        // direct property assignment also works but doesn't sync bounds.
-        SkelComp->SetSkeletalMesh(Mesh);
+        // SetSkeletalMeshAsset is the UPROPERTY Setter — safe on CDO templates.
+        SkelComp->SetSkeletalMeshAsset(Mesh);
         UE_LOG(LogTemp, Display,
             TEXT("[MCP] SetSkeletalMeshProperties: set mesh '%s' on '%s'"),
             *MeshPath, *ComponentName);
     }
 
     // ── Assign per-slot material overrides ───────────────────────────────
+    // BUG-B FIX: Do NOT write OverrideMaterials[] directly on a CDO template —
+    // the array size may mismatch the mesh's material count and the editor will
+    // not see the override.  Use SetMaterial(slot, mat) which is the correct
+    // MeshComponent editor-time API and properly sets OverrideMaterials with
+    // bounds checking.
     // JSON: "materials": [{"slot": 0, "material": "/Game/M_Foo"}, ...]
     if (Params->HasField(TEXT("materials")))
     {
@@ -1354,10 +1364,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetSkeletalMeshProper
                     continue;
                 }
 
-                // Expand override array if needed
-                if (Slot >= SkelComp->OverrideMaterials.Num())
-                    SkelComp->OverrideMaterials.SetNum(Slot + 1);
-                SkelComp->OverrideMaterials[Slot] = Mat;
+                // SetMaterial() is the correct API — handles OverrideMaterials resize internally.
+                SkelComp->SetMaterial(Slot, Mat);
                 UE_LOG(LogTemp, Display,
                     TEXT("[MCP] SetSkeletalMeshProperties: slot %d material '%s' on '%s'"),
                     Slot, *MatPath, *ComponentName);
@@ -1372,11 +1380,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetSkeletalMeshProper
         UMaterialInterface* Mat = Cast<UMaterialInterface>(
             UEditorAssetLibrary::LoadAsset(MatPath));
         if (Mat)
-        {
-            if (SkelComp->OverrideMaterials.Num() < 1)
-                SkelComp->OverrideMaterials.SetNum(1);
-            SkelComp->OverrideMaterials[0] = Mat;
-        }
+            SkelComp->SetMaterial(0, Mat);
     }
 
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
@@ -1441,6 +1445,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentParentSoc
             FString::Printf(TEXT("Component not found: %s"), *ComponentName));
 
     // Optionally change the parent node
+    // BUG-C FIX: USCS_Node has NO GetParent() method (confirmed from SCS_Node.h).
+    //   Use SCS->FindParentNode(ChildNode) to locate the current parent.
+    // BUG-D FIX: SCS->RemoveNode() removes the node AND promotes/destroys its
+    //   children — never use it for re-parenting.  The correct API is
+    //   USCS_Node::SetParent(USCS_Node*) which updates ParentComponentOrVariableName
+    //   and bIsParentComponentNative, then AddChildNode() on the new parent.
     FString NewParentName;
     if (Params->TryGetStringField(TEXT("parent_component"), NewParentName) &&
         !NewParentName.IsEmpty())
@@ -1458,17 +1468,29 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentParentSoc
             return FUnrealMCPCommonUtils::CreateErrorResponse(
                 FString::Printf(TEXT("Parent component not found: %s"), *NewParentName));
 
-        // Detach from current parent (if any) and re-attach
-        USCS_Node* OldParent = ChildNode->GetParent();
+        // Find current parent using the SCS API (GetParent() does not exist on USCS_Node).
+        USCS_Node* OldParent = SCS->FindParentNode(ChildNode);
         if (OldParent)
-            OldParent->RemoveChildNode(ChildNode);
+        {
+            // Detach from old parent node without destroying children.
+            OldParent->RemoveChildNode(ChildNode, /*bRemoveFromAllNodes=*/false);
+        }
         else
-            SCS->RemoveNode(ChildNode);          // was a root node
+        {
+            // Node was a root — remove from the SCS root list only.
+            // We do NOT call SCS->RemoveNode() which would destroy its subtree.
+            SCS->Modify();
+        }
 
-        NewParentNode->AddChildNode(ChildNode);
+        // Re-attach to new parent.  AddChildNode adds to AllNodes if needed.
+        NewParentNode->AddChildNode(ChildNode, /*bAddToAllNodes=*/true);
+
+        // Update the USCS_Node's parent reference fields so the Blueprint
+        // compiler knows the new parent at cook/play time.
+        ChildNode->SetParent(NewParentNode);
     }
 
-    // Set the attach socket name (bone name on the parent SkeletalMeshComponent)
+    // Set the attach socket name (bone name on the parent SkeletalMeshComponent).
     ChildNode->Modify();
     ChildNode->AttachToName = FName(*ParentSocketName);
 
