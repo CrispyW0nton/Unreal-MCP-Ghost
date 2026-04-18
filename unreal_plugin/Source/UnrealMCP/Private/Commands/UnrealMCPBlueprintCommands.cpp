@@ -17,6 +17,9 @@
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
+#include "Materials/MaterialInterface.h"
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
 #include "Kismet2/BlueprintEditorUtils.h"
@@ -68,6 +71,14 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     else if (CommandType == TEXT("set_static_mesh_properties"))
     {
         return HandleSetStaticMeshProperties(Params);
+    }
+    else if (CommandType == TEXT("set_skeletal_mesh_properties"))
+    {
+        return HandleSetSkeletalMeshProperties(Params);
+    }
+    else if (CommandType == TEXT("set_component_parent_socket"))
+    {
+        return HandleSetComponentParentSocket(Params);
     }
     else if (CommandType == TEXT("set_pawn_properties"))
     {
@@ -1239,6 +1250,240 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetStaticMeshProperti
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("component"), ComponentName);
     return ResultObj;
+}
+
+// ---------------------------------------------------------------------------
+// set_skeletal_mesh_properties
+// Params:
+//   blueprint_name   – Blueprint containing the SkeletalMeshComponent
+//   component_name   – SCS variable name of the SkeletalMeshComponent
+//   skeletal_mesh    – (optional) content path to USkeletalMesh asset
+//   materials        – (optional) JSON array of {"slot":0,"material":"/Game/M_Foo"}
+//                      Sets per-slot material overrides.  slot=0 means index 0.
+//
+// This is the correct way to assign a mesh + textures/materials to a
+// SkeletalMeshComponent at Blueprint-editor time.  set_static_mesh_properties
+// only handles UStaticMeshComponent; set_component_property's generic
+// reflection path has no FObjectProperty handler (fixed separately in
+// SetObjectProperty, but this dedicated handler is safer and more explicit).
+// ---------------------------------------------------------------------------
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetSkeletalMeshProperties(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    FString ComponentName;
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'component_name'"));
+
+    UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+
+    // Locate SCS node
+    if (!Blueprint->SimpleConstructionScript)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint has no SimpleConstructionScript"));
+
+    USCS_Node* TargetNode = nullptr;
+    for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
+    {
+        if (Node && Node->GetVariableName().ToString() == ComponentName)
+        {
+            TargetNode = Node;
+            break;
+        }
+    }
+    if (!TargetNode)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Component not found: %s"), *ComponentName));
+
+    USkeletalMeshComponent* SkelComp =
+        Cast<USkeletalMeshComponent>(TargetNode->ComponentTemplate);
+    if (!SkelComp)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Component '%s' is not a SkeletalMeshComponent"), *ComponentName));
+
+    SkelComp->Modify();
+
+    // ── Assign skeletal mesh ──────────────────────────────────────────────
+    if (Params->HasField(TEXT("skeletal_mesh")))
+    {
+        FString MeshPath = Params->GetStringField(TEXT("skeletal_mesh"));
+        USkeletalMesh* Mesh = Cast<USkeletalMesh>(
+            UEditorAssetLibrary::LoadAsset(MeshPath));
+        if (!Mesh)
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("SkeletalMesh not found: %s"), *MeshPath));
+
+        // USkeletalMeshComponent::SetSkeletalMesh is the correct API;
+        // direct property assignment also works but doesn't sync bounds.
+        SkelComp->SetSkeletalMesh(Mesh);
+        UE_LOG(LogTemp, Display,
+            TEXT("[MCP] SetSkeletalMeshProperties: set mesh '%s' on '%s'"),
+            *MeshPath, *ComponentName);
+    }
+
+    // ── Assign per-slot material overrides ───────────────────────────────
+    // JSON: "materials": [{"slot": 0, "material": "/Game/M_Foo"}, ...]
+    if (Params->HasField(TEXT("materials")))
+    {
+        const TArray<TSharedPtr<FJsonValue>>* MatArray = nullptr;
+        if (Params->TryGetArrayField(TEXT("materials"), MatArray) && MatArray)
+        {
+            for (const TSharedPtr<FJsonValue>& Entry : *MatArray)
+            {
+                const TSharedPtr<FJsonObject>* EntryObj = nullptr;
+                if (!Entry->TryGetObject(EntryObj) || !EntryObj) continue;
+
+                int32 Slot = 0;
+                (*EntryObj)->TryGetNumberField(TEXT("slot"), Slot);
+
+                FString MatPath;
+                if (!(*EntryObj)->TryGetStringField(TEXT("material"), MatPath)) continue;
+
+                UMaterialInterface* Mat = Cast<UMaterialInterface>(
+                    UEditorAssetLibrary::LoadAsset(MatPath));
+                if (!Mat)
+                {
+                    UE_LOG(LogTemp, Warning,
+                        TEXT("[MCP] SetSkeletalMeshProperties: material not found: %s (slot %d)"),
+                        *MatPath, Slot);
+                    continue;
+                }
+
+                // Expand override array if needed
+                if (Slot >= SkelComp->OverrideMaterials.Num())
+                    SkelComp->OverrideMaterials.SetNum(Slot + 1);
+                SkelComp->OverrideMaterials[Slot] = Mat;
+                UE_LOG(LogTemp, Display,
+                    TEXT("[MCP] SetSkeletalMeshProperties: slot %d material '%s' on '%s'"),
+                    Slot, *MatPath, *ComponentName);
+            }
+        }
+    }
+
+    // ── Assign single material shorthand (slot 0) ─────────────────────
+    if (Params->HasField(TEXT("material")))
+    {
+        FString MatPath = Params->GetStringField(TEXT("material"));
+        UMaterialInterface* Mat = Cast<UMaterialInterface>(
+            UEditorAssetLibrary::LoadAsset(MatPath));
+        if (Mat)
+        {
+            if (SkelComp->OverrideMaterials.Num() < 1)
+                SkelComp->OverrideMaterials.SetNum(1);
+            SkelComp->OverrideMaterials[0] = Mat;
+        }
+    }
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("component"), ComponentName);
+    Result->SetBoolField(TEXT("success"), true);
+    return Result;
+}
+
+// ---------------------------------------------------------------------------
+// set_component_parent_socket
+// Reparents an SCS node so that it attaches to a named bone/socket on its
+// parent SkeletalMeshComponent.  This is how armor pieces snap to the correct
+// bone (e.g. "hand_r", "spine_01") at editor time in the Blueprint SCS.
+//
+// Params:
+//   blueprint_name    – Blueprint to modify
+//   component_name    – SCS variable name of the child component to reparent
+//   parent_component  – (optional) SCS variable name of the new parent.
+//                       If omitted, the current parent is kept and only the
+//                       socket name is updated.
+//   parent_socket     – Socket/bone name to attach to (e.g. "hand_r")
+// ---------------------------------------------------------------------------
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentParentSocket(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    FString ComponentName;
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'component_name'"));
+
+    FString ParentSocketName;
+    if (!Params->TryGetStringField(TEXT("parent_socket"), ParentSocketName))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'parent_socket'"));
+
+    UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+
+    USimpleConstructionScript* SCS = Blueprint->SimpleConstructionScript;
+    if (!SCS)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Blueprint has no SimpleConstructionScript"));
+
+    // Locate the child SCS node
+    USCS_Node* ChildNode = nullptr;
+    for (USCS_Node* Node : SCS->GetAllNodes())
+    {
+        if (Node && Node->GetVariableName().ToString() == ComponentName)
+        {
+            ChildNode = Node;
+            break;
+        }
+    }
+    if (!ChildNode)
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Component not found: %s"), *ComponentName));
+
+    // Optionally change the parent node
+    FString NewParentName;
+    if (Params->TryGetStringField(TEXT("parent_component"), NewParentName) &&
+        !NewParentName.IsEmpty())
+    {
+        USCS_Node* NewParentNode = nullptr;
+        for (USCS_Node* Node : SCS->GetAllNodes())
+        {
+            if (Node && Node->GetVariableName().ToString() == NewParentName)
+            {
+                NewParentNode = Node;
+                break;
+            }
+        }
+        if (!NewParentNode)
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Parent component not found: %s"), *NewParentName));
+
+        // Detach from current parent (if any) and re-attach
+        USCS_Node* OldParent = ChildNode->GetParent();
+        if (OldParent)
+            OldParent->RemoveChildNode(ChildNode);
+        else
+            SCS->RemoveNode(ChildNode);          // was a root node
+
+        NewParentNode->AddChildNode(ChildNode);
+    }
+
+    // Set the attach socket name (bone name on the parent SkeletalMeshComponent)
+    ChildNode->Modify();
+    ChildNode->AttachToName = FName(*ParentSocketName);
+
+    Blueprint->Modify();
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+
+    UE_LOG(LogTemp, Display,
+        TEXT("[MCP] SetComponentParentSocket: '%s' → socket '%s'"),
+        *ComponentName, *ParentSocketName);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetStringField(TEXT("component"), ComponentName);
+    Result->SetStringField(TEXT("parent_socket"), ParentSocketName);
+    Result->SetBoolField(TEXT("success"), true);
+    return Result;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(const TSharedPtr<FJsonObject>& Params)

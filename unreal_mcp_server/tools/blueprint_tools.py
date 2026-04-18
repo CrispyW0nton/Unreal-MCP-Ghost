@@ -229,6 +229,104 @@ def register_blueprint_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def set_skeletal_mesh_properties(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str,
+        skeletal_mesh: str = "",
+        material: str = "",
+        materials: List[Dict[str, Any]] = []
+    ) -> Dict[str, Any]:
+        """
+        Assign a SkeletalMesh asset and/or materials to a SkeletalMeshComponent in a Blueprint.
+
+        Use this for character armor pieces, clothing, accessories — any SkeletalMeshComponent
+        that needs a mesh assigned and materials applied (textures).
+
+        Args:
+            blueprint_name: Blueprint containing the SkeletalMeshComponent
+            component_name: SCS variable name of the SkeletalMeshComponent
+            skeletal_mesh:  Content path to USkeletalMesh asset
+                            (e.g. "/Game/Characters/Armor/SK_ChestPlate")
+            material:       Shorthand — assign a single material to slot 0
+                            (e.g. "/Game/Materials/M_ArmorBlue")
+            materials:      Per-slot list: [{"slot": 0, "material": "/Game/M_Foo"},
+                                            {"slot": 1, "material": "/Game/M_Bar"}]
+                            Use this when the mesh has multiple material slots.
+
+        Returns:
+            Dict with 'success', 'component'
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            params: Dict[str, Any] = {
+                "blueprint_name": blueprint_name,
+                "component_name": component_name,
+            }
+            if skeletal_mesh:
+                params["skeletal_mesh"] = skeletal_mesh
+            if material:
+                params["material"] = material
+            if materials:
+                params["materials"] = materials
+            return unreal.send_command("set_skeletal_mesh_properties", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def set_component_parent_socket(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str,
+        parent_socket: str,
+        parent_component: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Attach a Blueprint component to a named bone/socket on its parent SkeletalMeshComponent.
+
+        This is the correct way to make armor pieces "snap" to the right place on a character.
+        Instead of manually tweaking relative transforms, you attach the armor SCS node to a
+        specific bone socket (e.g. "hand_r", "spine_01", "head") and UE5 positions it
+        automatically following skeleton animation.
+
+        Common bone socket names (UE5 Mannequin):
+          "pelvis", "spine_01", "spine_02", "spine_03",
+          "clavicle_l", "upperarm_l", "lowerarm_l", "hand_l",
+          "clavicle_r", "upperarm_r", "lowerarm_r", "hand_r",
+          "neck_01", "head",
+          "thigh_l", "calf_l", "foot_l", "ball_l",
+          "thigh_r", "calf_r", "foot_r", "ball_r"
+
+        Args:
+            blueprint_name:   Blueprint to modify
+            component_name:   SCS variable name of the child armor/accessory component
+            parent_socket:    Bone or socket name to attach to (e.g. "hand_r")
+            parent_component: (optional) SCS variable name of the SkeletalMeshComponent to attach to.
+                              If omitted, only the socket name is updated on the current parent.
+
+        Returns:
+            Dict with 'success', 'component', 'parent_socket'
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            params: Dict[str, Any] = {
+                "blueprint_name": blueprint_name,
+                "component_name": component_name,
+                "parent_socket": parent_socket,
+            }
+            if parent_component:
+                params["parent_component"] = parent_component
+            return unreal.send_command("set_component_parent_socket", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
     def set_blueprint_ai_controller(
         blueprint_name: str,
         controller_class: str = "AIController"
