@@ -1053,4 +1053,163 @@ def register_ai_tools(mcp: FastMCP):
 
         return results
 
+    # ── BT Graph Editing Tools ───────────────────────────────────────────────
+
+    @mcp.tool()
+    def build_behavior_tree(
+        ctx: Context,
+        behavior_tree_name: str,
+        tree: Dict[str, Any],
+        clear_existing: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Build an entire Behavior Tree graph from a JSON description in one call.
+
+        This is the primary tool for creating BT logic. Pass the full tree as a
+        nested JSON object and the C++ plugin will build every node, link pins,
+        attach decorators/services, and save the asset.
+
+        Node type strings (case-insensitive):
+          Composites : "Selector", "Sequence"
+          Tasks      : "Wait", "MoveTo"
+          Custom     : full class name e.g. "BTTask_MyCustomTask" or Blueprint path
+
+        Tree format:
+          {
+            "type": "Selector",
+            "children": [
+              {
+                "type": "Sequence",
+                "decorators": [{"type": "BTDecorator_Blackboard", "properties": {...}}],
+                "services":   [{"type": "BTService_DefaultFocus"}],
+                "children": [
+                  {"type": "MoveTo",  "properties": {"AcceptableRadius": "50.0"}},
+                  {"type": "Wait",    "properties": {"WaitTime": "2.0"}}
+                ]
+              }
+            ]
+          }
+
+        Args:
+            behavior_tree_name: Name of an EXISTING BT asset (create_behavior_tree first)
+            tree:               Root node JSON object (see format above)
+            clear_existing:     If True (default), remove all non-root nodes first
+
+        Returns:
+            Dict with 'success', 'behavior_tree', 'nodes_created', 'nodes' list
+        """
+        return _send("build_behavior_tree", {
+            "behavior_tree_name": behavior_tree_name,
+            "tree": tree,
+            "clear_existing": clear_existing,
+        })
+
+    @mcp.tool()
+    def add_bt_node(
+        ctx: Context,
+        behavior_tree_name: str,
+        node_type: str,
+        parent_node_index: int = -1,
+        x: float = 0.0,
+        y: float = 0.0,
+        properties: Dict[str, Any] = {},
+        decorators: List[Dict[str, Any]] = [],
+        services: List[Dict[str, Any]] = []
+    ) -> Dict[str, Any]:
+        """
+        Add a single node to an existing Behavior Tree graph.
+
+        Use this for incremental edits — add one node at a time after the
+        initial tree is built with build_behavior_tree.
+
+        Node type strings (case-insensitive):
+          "Selector", "Sequence", "Wait", "MoveTo"
+          or a full Blueprint class name/path for custom tasks.
+
+        Args:
+            behavior_tree_name: Name of the existing BT asset
+            node_type:          Node type string (see above)
+            parent_node_index:  0-based index in the graph Nodes array (skip root).
+                                -1 = attach directly to root.
+            x:                  Graph X position (0 = auto)
+            y:                  Graph Y position (0 = auto)
+            properties:         Dict of property name → string value for the node instance
+                                e.g. {"WaitTime": "3.0", "AcceptableRadius": "100.0"}
+            decorators:         List of {"type": "..."} objects for decorator sub-nodes
+            services:           List of {"type": "..."} objects for service sub-nodes
+
+        Returns:
+            Dict with 'success', 'node_type', 'node_index'
+        """
+        params: Dict[str, Any] = {
+            "behavior_tree_name": behavior_tree_name,
+            "node_type": node_type,
+            "parent_node_index": parent_node_index,
+        }
+        if x != 0.0:
+            params["x"] = x
+        if y != 0.0:
+            params["y"] = y
+        if properties:
+            params["properties"] = properties
+        if decorators:
+            params["decorators"] = decorators
+        if services:
+            params["services"] = services
+        return _send("add_bt_node", params)
+
+    @mcp.tool()
+    def get_bt_graph_info(
+        ctx: Context,
+        behavior_tree_name: str
+    ) -> Dict[str, Any]:
+        """
+        Inspect the current state of a Behavior Tree graph.
+
+        Returns every node in the BT graph with its type, position, instance class,
+        pin connections, and sub-nodes (decorators/services). Use this to verify
+        build_behavior_tree or add_bt_node worked correctly.
+
+        Args:
+            behavior_tree_name: Name of the BT asset to inspect
+
+        Returns:
+            Dict with 'success', 'node_count', 'nodes' array where each node has:
+              - 'class':    graph node class name
+              - 'instance': runtime BTNode class name
+              - 'x', 'y':  graph position
+              - 'pins':     pin names and connections
+              - 'subnodes': decorator/service sub-nodes
+        """
+        return _send("get_bt_graph_info", {
+            "behavior_tree_name": behavior_tree_name,
+        })
+
+    @mcp.tool()
+    def bt_add_selector_wait(
+        ctx: Context,
+        behavior_tree_name: str,
+        wait_time: float = 1.0
+    ) -> Dict[str, Any]:
+        """
+        Quick-build: add a root Selector with a single Wait task.
+
+        This is a shortcut for the most basic "idle" behavior tree structure:
+          Root → Selector → Wait(wait_time)
+
+        Use build_behavior_tree for full tree construction. This is a convenience
+        tool for testing or placeholder BTs.
+
+        Args:
+            behavior_tree_name: Name of the existing BT asset
+            wait_time:          Wait duration in seconds (default 1.0)
+
+        Returns:
+            Dict with 'success', 'behavior_tree'
+        """
+        return _send("bt_add_selector_wait", {
+            "behavior_tree_name": behavior_tree_name,
+            "wait_time": wait_time,
+        })
+
     logger.info("AI tools registered")

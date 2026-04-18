@@ -4150,30 +4150,120 @@ static UBehaviorTreeGraph* GetOrCreateBTGraph(UBehaviorTree* BT)
 /** Helper: resolve the UClass for a BT node type string */
 static UClass* ResolveBTNodeClass(const FString& NodeType)
 {
-    // Composites
-    if (NodeType.Equals(TEXT("Selector"),  ESearchCase::IgnoreCase) ||
+    // ── Composites ────────────────────────────────────────────────────────────
+    if (NodeType.Equals(TEXT("Selector"),          ESearchCase::IgnoreCase) ||
         NodeType.Equals(TEXT("BTComposite_Selector"), ESearchCase::IgnoreCase))
         return UBTComposite_Selector::StaticClass();
-    if (NodeType.Equals(TEXT("Sequence"),  ESearchCase::IgnoreCase) ||
+    if (NodeType.Equals(TEXT("Sequence"),          ESearchCase::IgnoreCase) ||
         NodeType.Equals(TEXT("BTComposite_Sequence"), ESearchCase::IgnoreCase))
         return UBTComposite_Sequence::StaticClass();
 
-    // Tasks
-    if (NodeType.Equals(TEXT("Wait"), ESearchCase::IgnoreCase) ||
-        NodeType.Equals(TEXT("BTTask_Wait"), ESearchCase::IgnoreCase))
+    // ── Tasks (built-in, /Script/AIModule) ───────────────────────────────────
+    if (NodeType.Equals(TEXT("Wait"),              ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTTask_Wait"),       ESearchCase::IgnoreCase))
         return UBTTask_Wait::StaticClass();
-    if (NodeType.Equals(TEXT("MoveTo"), ESearchCase::IgnoreCase) ||
-        NodeType.Equals(TEXT("BTTask_MoveTo"), ESearchCase::IgnoreCase))
+    if (NodeType.Equals(TEXT("MoveTo"),            ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTTask_MoveTo"),     ESearchCase::IgnoreCase))
         return UBTTask_MoveTo::StaticClass();
 
-    // Fallback: dynamic load by class path
-    FString ClassPath = FString::Printf(TEXT("/Script/AIModule.%s"), *NodeType);
-    UClass* DynClass = FindObject<UClass>(nullptr, *ClassPath);
-    if (DynClass) return DynClass;
+    // RunBehaviorTree — runs a child BT (sub-tree pattern)
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTTask_RunBehaviorTree"));
+        if (!C) C = FindObject<UClass>(nullptr, TEXT("/Script/GameplayTasks.BTTask_RunBehaviorTree"));
+        if (C && (NodeType.Equals(TEXT("RunBehaviorTree"), ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTTask_RunBehaviorTree"), ESearchCase::IgnoreCase)))
+            return C;
+    }
 
-    // Try Blueprint class path directly
-    DynClass = LoadObject<UClass>(nullptr, *NodeType);
-    return DynClass;
+    // ── Decorators (built-in) ─────────────────────────────────────────────────
+    // BTDecorator_Blackboard — gate on a BB key value
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_Blackboard"));
+        if (C && (NodeType.Equals(TEXT("BlackboardDecorator"),      ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_Blackboard"),   ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("Blackboard"),               ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_IsAtLocation
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_IsAtLocation"));
+        if (C && (NodeType.Equals(TEXT("IsAtLocation"),             ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_IsAtLocation"), ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_KeepInCone
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_KeepInCone"));
+        if (C && (NodeType.Equals(TEXT("KeepInCone"),               ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_KeepInCone"),   ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_Loop
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_Loop"));
+        if (C && (NodeType.Equals(TEXT("Loop"),                     ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_Loop"),         ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_TimeLimit
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_TimeLimit"));
+        if (C && (NodeType.Equals(TEXT("TimeLimit"),                ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_TimeLimit"),    ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_CooldownDecorator (CooldownDecorator)
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_Cooldown"));
+        if (C && (NodeType.Equals(TEXT("Cooldown"),                 ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_Cooldown"),     ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_ForceSuccess
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_ForceSuccess"));
+        if (C && (NodeType.Equals(TEXT("ForceSuccess"),             ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_ForceSuccess"), ESearchCase::IgnoreCase)))
+            return C;
+    }
+
+    // ── Services (built-in) ───────────────────────────────────────────────────
+    // BTService_DefaultFocus — keeps AI focused on BB actor key
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTService_DefaultFocus"));
+        if (C && (NodeType.Equals(TEXT("DefaultFocus"),             ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTService_DefaultFocus"),   ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTService_BlackboardBase / BTService_RunEQS (navigation mesh)
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTService_RunEQS"));
+        if (C && (NodeType.Equals(TEXT("RunEQS"),                   ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTService_RunEQS"),         ESearchCase::IgnoreCase)))
+            return C;
+    }
+
+    // ── Fallback 1: /Script/AIModule.<NodeType> ───────────────────────────────
+    {
+        FString ClassPath = FString::Printf(TEXT("/Script/AIModule.%s"), *NodeType);
+        UClass* DynClass = FindObject<UClass>(nullptr, *ClassPath);
+        if (DynClass) return DynClass;
+    }
+
+    // ── Fallback 2: /Script/GameplayTasks.<NodeType> ──────────────────────────
+    {
+        FString ClassPath = FString::Printf(TEXT("/Script/GameplayTasks.%s"), *NodeType);
+        UClass* DynClass = FindObject<UClass>(nullptr, *ClassPath);
+        if (DynClass) return DynClass;
+    }
+
+    // ── Fallback 3: Blueprint asset path or full object path ─────────────────
+    {
+        UClass* DynClass = LoadObject<UClass>(nullptr, *NodeType);
+        if (DynClass) return DynClass;
+    }
+
+    return nullptr;
 }
 
 /** Helper: determine graph node class for a runtime BT node class */
@@ -4384,20 +4474,27 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
     }
 
     // Process children (composite nodes)
+    // BUG-FIX: ChildSlot tracks the horizontal position of each sibling
+    // independently from NodeIndex (which counts all nodes ever created and is
+    // shared across the entire tree).  Previously ChildIndex was passed as the
+    // NodeIndex ref so it received the total subtree depth of every preceding
+    // child, making each sibling's X position wrong (too far to the right).
     const TArray<TSharedPtr<FJsonValue>>* ChildrenArr = nullptr;
     if (NodeJson->TryGetArrayField(TEXT("children"), ChildrenArr) && ChildrenArr)
     {
-        int32 ChildIndex = 0;
         float ChildY = Y + 200.0f;
         float TotalWidth = (float)ChildrenArr->Num() * 220.0f;
         float StartX = X - TotalWidth * 0.5f + 110.0f;
 
-        for (const TSharedPtr<FJsonValue>& ChildVal : *ChildrenArr)
+        for (int32 ChildSlot = 0; ChildSlot < ChildrenArr->Num(); ++ChildSlot)
         {
             const TSharedPtr<FJsonObject>* ChildObj = nullptr;
-            if (!ChildVal->TryGetObject(ChildObj) || !ChildObj) continue;
+            if (!(*ChildrenArr)[ChildSlot]->TryGetObject(ChildObj) || !ChildObj) continue;
+            // Pass global NodeIndex ref so every node gets a unique index,
+            // but use ChildSlot * 220 for horizontal placement so siblings
+            // are evenly spaced regardless of how large each child's subtree is.
             BuildBTNodeFromJson(BTGraph, *ChildObj, NewNode,
-                StartX + (float)ChildIndex * 220.0f, ChildY, ChildIndex);
+                StartX + (float)ChildSlot * 220.0f, ChildY, NodeIndex);
         }
     }
 
