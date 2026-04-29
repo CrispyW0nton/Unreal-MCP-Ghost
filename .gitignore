@@ -37,6 +37,7 @@ build_*.py
 # (exceptions: sandbox_ue5cli.py and mcp_client.py are generic utilities)
 
 # Session scratch / per-project knowledge dumps
+knowledge_base/Projects/
 books/
 pdf_books/
 reference_books/
