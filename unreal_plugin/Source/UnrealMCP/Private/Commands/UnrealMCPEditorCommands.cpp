@@ -26,6 +26,34 @@
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
 
+namespace UnrealMCPExecPythonDetail
+{
+	// ExecPythonCommandEx can AV inside EditorScriptingUtilities / MassEntity observers
+	// when Python dirties assets synchronously. MSVC SEH (__try/__except) returns cleanly
+	// so the editor survives and MCP returns JSON instead of EXCEPTION_ACCESS_VIOLATION.
+	//
+	// - Use __except(1) instead of EXCEPTION_EXECUTE_HANDLER so we do not depend on
+	//   <excpt.h> / Windows.h macro order in IWYU builds.
+	// - Gate on real MSVC only: Clang (and clang-cl) do not support __try/__except.
+	static bool ExecPythonWithSeh(IPythonScriptPlugin* Py, FPythonCommandEx& Cmd, bool& bOutSehCrash)
+	{
+		bOutSehCrash = false;
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+		__try
+		{
+			return Py->ExecPythonCommandEx(Cmd);
+		}
+		__except (1)
+		{
+			bOutSehCrash = true;
+			return false;
+		}
+#else
+		return Py->ExecPythonCommandEx(Cmd);
+#endif
+	}
+} // namespace UnrealMCPExecPythonDetail
+
 FUnrealMCPEditorCommands::FUnrealMCPEditorCommands()
 {
 }
@@ -429,18 +457,12 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint name is empty"));
     }
 
-    FString Root      = TEXT("/Game/Blueprints/");
-    FString AssetPath = Root + BlueprintName;
-
-    if (!FPackageName::DoesPackageExist(AssetPath))
+    // Resolve by short asset name anywhere under /Game (same as other MCP blueprint commands).
+    UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint || !IsValid(Blueprint))
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint '%s' not found ? it must reside under /Game/Blueprints"), *BlueprintName));
-    }
-
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (!Blueprint)
-    {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
     }
 
     // Get transform parameters
@@ -694,6 +716,15 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'code' parameter must not be empty"));
     }
 
+    // Hard cap: huge scripts blow up the repr-wrapper, Python lexer, and editor observers.
+    constexpr int32 MaxExecPythonChars = 384 * 1024;
+    if (Code.Len() > MaxExecPythonChars)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+            TEXT("code too large (%d chars, max %d). Split into multiple exec_python calls or use native MCP commands."),
+            Code.Len(), MaxExecPythonChars));
+    }
+
     // ?? 3. Parse optional 'mode' parameter ??????????????????????????????????
     //  "execute_file"      ? EPythonCommandExecutionMode::ExecuteFile      (default)
     //  "execute_statement" ? EPythonCommandExecutionMode::ExecuteStatement
@@ -810,7 +841,25 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         : EPythonCommandExecutionMode::ExecuteFile;
     Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
 
-    const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
+    // NOTE: UE 5.6+ no longer ships a stable public `EditorScriptExecutionGuard.h` on all
+    // installs; notification batching was removed here. SEH below is the primary guard.
+
+    bool bSehCrashMain = false;
+    const bool bOk = UnrealMCPExecPythonDetail::ExecPythonWithSeh(PythonPlugin, Command, bSehCrashMain);
+    if (bSehCrashMain)
+    {
+        TSharedPtr<FJsonObject> CrashObj = MakeShared<FJsonObject>();
+        CrashObj->SetBoolField(TEXT("success"), false);
+        CrashObj->SetStringField(TEXT("output"), TEXT(""));
+        CrashObj->SetStringField(TEXT("command_result"), TEXT(""));
+        CrashObj->SetStringField(
+            TEXT("error"),
+            TEXT("exec_python: native access violation inside ExecPythonCommandEx (often EditorScriptingUtilities / "
+                 "MassEntityEditor observers on synchronous asset work). The crash was caught — split the script into "
+                 "smaller exec_python payloads and prefer MCP compile_blueprint / save_blueprint / add_component."));
+        UE_LOG(LogTemp, Error, TEXT("[MCP] exec_python SEH crash (main ExecPythonCommandEx)"));
+        return CrashObj;
+    }
 
     // ── Detect Python exceptions ──────────────────────────────────────────
     // The wrapper stores errors silently in builtins._mcp_last_error to
@@ -826,7 +875,16 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         ReadCmd.Command       = TEXT("getattr(__import__('builtins'), '_mcp_last_error', '')");
         ReadCmd.ExecutionMode = EPythonCommandExecutionMode::EvaluateStatement;
         ReadCmd.FileExecutionScope = EPythonFileExecutionScope::Public;
-        if (PythonPlugin->ExecPythonCommandEx(ReadCmd) && ReadCmd.CommandResult.StartsWith(TEXT("__MCP_ERR__")))
+        bool bSehCrashRead = false;
+        const bool bReadOk =
+            UnrealMCPExecPythonDetail::ExecPythonWithSeh(PythonPlugin, ReadCmd, bSehCrashRead);
+        if (bSehCrashRead)
+        {
+            bHasPythonError  = true;
+            PythonErrorDetail =
+                TEXT("exec_python: SEH crash while reading _mcp_last_error after main run (Python interpreter unstable).");
+        }
+        else if (bReadOk && ReadCmd.CommandResult.StartsWith(TEXT("__MCP_ERR__")))
         {
             bHasPythonError  = true;
             PythonErrorDetail = ReadCmd.CommandResult.Mid(11); // strip "__MCP_ERR__" prefix

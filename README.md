@@ -5,7 +5,7 @@ Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logi
 > **Forked from:** [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp)  
 > **Active branch:** `genspark_ai_developer` — all new features and bug fixes live here  
 > **MCP tools:** 406 Python tools (local stdio) + 119 C++ plugin commands (all accessible via MCP)  
-> **Knowledge base:** 19 markdown files documenting every tool, pattern, and UE5 system  
+> **Knowledge base:** Tool/pattern docs plus [curated book study guides](docs/knowledge-base/README.md) (original notes; keep licensed PDFs outside the repo)
 
 ---
 

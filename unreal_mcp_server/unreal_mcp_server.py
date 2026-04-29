@@ -255,6 +255,7 @@ class UnrealConnection:
             "get_blueprint_functions",    # same AR scan path
             "get_blueprint_graphs",       # same AR scan path
             "add_component_to_blueprint", # SCS node creation + MarkStructurallyModified
+            "add_skeleton_socket",        # SavePackage on skeleton + PostEditChange
             "focus_viewport",             # GetAllActorsOfClass scan over 4256 actors
         }
         # exec_python is tier 3 — heavy factory scripts can run 60-120 s
@@ -450,6 +451,7 @@ class UnrealConnection:
         "save_blueprint",
         "add_blueprint_variable",
         "add_component_to_blueprint",
+        "add_skeleton_socket",
         "exec_python",
     }
 
@@ -793,6 +795,7 @@ def info():
 - `add_state_transition(anim_blueprint_name, state_machine_name, from_state, to_state, condition_var)` - Transitions
 - `set_animation_for_state(anim_blueprint_name, state_machine_name, state_name, animation_asset)` - Assign anim
 - `add_blend_space_node(anim_blueprint_name, blend_space_asset, node_position)` - BlendSpace
+- `insert_anim_graph_slot(anim_blueprint_name, slot_name, graph_name)` - Slot before Root (montage layering)
 
 ## AI TOOLS (NEW)
 - `create_behavior_tree(name)` - Create BehaviorTree asset

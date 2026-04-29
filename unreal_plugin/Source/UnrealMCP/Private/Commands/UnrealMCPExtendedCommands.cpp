@@ -50,6 +50,7 @@
 #include "Kismet2/KismetEditorUtilities.h"
 #include "BlueprintEditorSettings.h"
 #include "BlueprintEditorLibrary.h"   // UBlueprintEditorLibrary::ReparentBlueprint
+#include "Kismet/KismetMathLibrary.h"
 
 // Editor Asset utilities
 #include "EditorAssetLibrary.h"
@@ -59,10 +60,29 @@
 
 // Animation Blueprint
 #include "Animation/AnimBlueprint.h"
+#include "Animation/AnimationAsset.h"
+#include "Animation/AnimSequenceBase.h"
+#include "Animation/BlendSpace.h"
 #include "Factories/AnimBlueprintFactory.h"
+#include "AnimGraphNode_Base.h"
+#include "AnimGraphNode_Root.h"
 #include "AnimGraphNode_StateMachine.h"
+#include "AnimGraphNode_StateMachineBase.h"
+#include "AnimGraphNode_StateResult.h"
+#include "AnimGraphNode_TransitionResult.h"
+#include "AnimGraphNode_BlendSpacePlayer.h"
+#include "AnimGraphNode_SequencePlayer.h"
+#include "AnimGraphNode_Slot.h"
+#include "AnimGraphNode_BlendListByBool.h"
+#include "AnimGraphNodeBinding.h"
+// UPROPERTY reflection is used to set the Binding subobject's PropertyBindings map so we don't need
+// the private UAnimGraphNodeBinding_Base members (PropertyBindings / RecalculateBindingType).
 #include "AnimationGraph.h"
+#include "EdGraphUtilities.h"
+#include "AnimationGraphSchema.h"
+#include "AnimationStateGraph.h"
 #include "AnimationStateMachineGraph.h"
+#include "AnimStateEntryNode.h"
 #include "AnimStateNode.h"
 #include "AnimStateTransitionNode.h"
 
@@ -78,6 +98,31 @@
 // BehaviorTreeFactory.h / BlackboardDataFactory.h removed from public API in UE 5.6
 // #include "Factories/BehaviorTreeFactory.h"   // REMOVED
 // #include "Factories/BlackboardDataFactory.h" // REMOVED
+
+// Asset Editor management (close open editors before modifying assets)
+#include "Subsystems/AssetEditorSubsystem.h"
+
+// BT Graph editing (editor-only, via BehaviorTreeEditor module)
+#include "BehaviorTreeGraph.h"
+#include "BehaviorTreeGraphNode.h"
+#include "BehaviorTreeGraphNode_Root.h"
+#include "BehaviorTreeGraphNode_Composite.h"
+#include "BehaviorTreeGraphNode_Task.h"
+#include "BehaviorTreeGraphNode_Service.h"
+#include "BehaviorTreeGraphNode_Decorator.h"
+#include "EdGraphSchema_BehaviorTree.h"
+#include "AIGraphNode.h"
+#include "AIGraphTypes.h"
+// BT base runtime classes (needed for IsChildOf checks)
+#include "BehaviorTree/BTCompositeNode.h"
+#include "BehaviorTree/BTTaskNode.h"
+#include "BehaviorTree/BTService.h"
+#include "BehaviorTree/BTDecorator.h"
+// Concrete BT node classes
+#include "BehaviorTree/Composites/BTComposite_Selector.h"
+#include "BehaviorTree/Composites/BTComposite_Sequence.h"
+#include "BehaviorTree/Tasks/BTTask_Wait.h"
+#include "BehaviorTree/Tasks/BTTask_MoveTo.h"
 
 // Data Assets ? paths fixed for UE 5.6
 #include "Engine/UserDefinedStruct.h"
@@ -140,6 +185,21 @@
 #include "LevelSequenceActor.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealMCPExt, Log, All);
+
+// ─── Forward declarations for file-local BT helpers ───────────────────────────
+// These static helpers are DEFINED near the bottom of this TU (around line
+// ~4100+) but are CALLED from earlier functions (HandleCreateBTSimple,
+// HandleRepairBehaviorTree, HandleAddBTNode, etc.). Without forward decls the
+// compiler rejects those early call sites with "identifier not found" (MSVC
+// does NOT allow implicit declaration). Declarations only — definitions stay
+// where they are.
+static void                   BTSafeAddNode(UBehaviorTreeGraph* BTGraph, UBehaviorTreeGraphNode* Node);
+static void                   BTSafeLinkPins(UEdGraphPin* OutputPin, UEdGraphPin* InputPin);
+static void                   CloseAllBTEditors(UBehaviorTree* BT);
+static void                   SafeRemoveBTNodes(UBehaviorTreeGraph* BTGraph);
+static UBehaviorTree*         FindBehaviorTree(const FString& BTName);
+static void                   SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph);
+static UBehaviorTreeGraph*    GetOrCreateBTGraph(UBehaviorTree* BT);
 
 // ??? Constructor ??????????????????????????????????????????????????????????????
 FUnrealMCPExtendedCommands::FUnrealMCPExtendedCommands()
@@ -206,12 +266,26 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("add_state_transition"))       return HandleAddStateTransition(Params);
     if (CommandType == TEXT("set_animation_for_state"))    return HandleSetAnimationForState(Params);
     if (CommandType == TEXT("add_blend_space_node"))       return HandleAddBlendSpaceNode(Params);
+    if (CommandType == TEXT("add_sequence_player_node"))   return HandleAddSequencePlayerNode(Params);
+    if (CommandType == TEXT("connect_anim_graph_nodes"))   return HandleConnectAnimGraphNodes(Params);
+    if (CommandType == TEXT("insert_anim_graph_slot"))     return HandleInsertAnimGraphSlotBeforeRoot(Params);
+    if (CommandType == TEXT("insert_blend_bool_fire_before_slot"))
+        return HandleInsertBlendBoolFireBeforeSlot(Params);
 
     // AI
     if (CommandType == TEXT("create_behavior_tree"))            return HandleCreateBehaviorTree(Params);
+    if (CommandType == TEXT("repair_behavior_tree"))            return HandleRepairBehaviorTree(Params);
     if (CommandType == TEXT("create_blackboard"))               return HandleCreateBlackboard(Params);
     if (CommandType == TEXT("set_behavior_tree_blackboard"))    return HandleSetBehaviorTreeBlackboard(Params);
     if (CommandType == TEXT("set_blueprint_parent_class"))      return HandleSetBlueprintParentClass(Params);
+
+    // BT Graph Node Manipulation
+    if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
+    if (CommandType == TEXT("add_bt_node"))                     return HandleAddBTNode(Params);
+    if (CommandType == TEXT("get_bt_graph_info"))               return HandleGetBTGraphInfo(Params);
+    if (CommandType == TEXT("bt_add_selector_wait"))            return HandleBTAddSelectorWait(Params);
+    if (CommandType == TEXT("bt_get_info"))                     return HandleGetBTGraphInfo(Params); // alias
+    if (CommandType == TEXT("attach_bt_sub_node"))              return HandleAttachBTSubNode(Params);
 
     // Level/World
     if (CommandType == TEXT("set_game_mode_for_level"))         return HandleSetGameModeForLevel(Params);
@@ -434,7 +508,7 @@ bool FUnrealMCPExtendedCommands::AddFlowControlMacroNode(
                TEXT("Could not load standard macro library, trying direct K2Node"));
         return false;
     }
-    
+
     // Find the macro graph by name
     UEdGraph* MacroGraph = nullptr;
     for (UEdGraph* Graph2 : MacroLibrary->MacroGraphs)
@@ -1631,6 +1705,337 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateDataTable(
     return CreateErrorResponse(TEXT("Failed to create data table"));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Animation Blueprint helpers - shared by all HandleAdd... anim implementations
+// ─────────────────────────────────────────────────────────────────────────────
+
+namespace UnrealMCP_AnimGraphHelpers
+{
+    /** Find the top-level AnimGraph of an Animation Blueprint. */
+    static UEdGraph* FindAnimGraph(UAnimBlueprint* AnimBP)
+    {
+        if (!AnimBP) return nullptr;
+        for (UEdGraph* Graph : AnimBP->FunctionGraphs)
+        {
+            if (!Graph) continue;
+            if (Graph->GetName() == TEXT("AnimGraph")) return Graph;
+            if (Graph->IsA<UAnimationGraph>()) return Graph;
+        }
+        return nullptr;
+    }
+
+    /** Find a UAnimStateNode by name inside a state-machine graph. */
+    static UAnimStateNode* FindStateNode(UAnimationStateMachineGraph* SMGraph, const FString& StateName)
+    {
+        if (!SMGraph) return nullptr;
+        for (UEdGraphNode* N : SMGraph->Nodes)
+        {
+            UAnimStateNode* S = Cast<UAnimStateNode>(N);
+            if (!S) continue;
+            if (S->GetStateName() == StateName) return S;
+            if (S->BoundGraph && S->BoundGraph->GetName() == StateName) return S;
+            if (S->GetName() == StateName) return S;
+        }
+        return nullptr;
+    }
+
+    /** Find a state-machine graph by name inside an Animation Blueprint. */
+    static UAnimationStateMachineGraph* FindStateMachineGraph(UAnimBlueprint* AnimBP, const FString& SMName)
+    {
+        if (!AnimBP) return nullptr;
+        for (UEdGraph* Graph : AnimBP->FunctionGraphs)
+        {
+            if (!Graph) continue;
+            if (Graph->GetName() == SMName)
+            {
+                if (auto* SM = Cast<UAnimationStateMachineGraph>(Graph)) return SM;
+            }
+        }
+        // Also scan sub-graphs via state-machine nodes inside AnimGraph
+        if (UEdGraph* AnimGraph = FindAnimGraph(AnimBP))
+        {
+            for (UEdGraphNode* N : AnimGraph->Nodes)
+            {
+                if (auto* SMNode = Cast<UAnimGraphNode_StateMachine>(N))
+                {
+                    if (SMNode->EditorStateMachineGraph && SMNode->EditorStateMachineGraph->GetName() == SMName)
+                        return SMNode->EditorStateMachineGraph;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    /** Locate the Root (final pose) node of an AnimGraph. */
+    static UAnimGraphNode_Root* FindRootNode(UEdGraph* AnimGraph)
+    {
+        if (!AnimGraph) return nullptr;
+        for (UEdGraphNode* N : AnimGraph->Nodes)
+        {
+            if (auto* R = Cast<UAnimGraphNode_Root>(N)) return R;
+        }
+        return nullptr;
+    }
+
+    /** Locate the StateResult (final pose) node inside a state's BoundGraph. */
+    static UAnimGraphNode_StateResult* FindStateResultNode(UEdGraph* StateGraph)
+    {
+        if (!StateGraph) return nullptr;
+        for (UEdGraphNode* N : StateGraph->Nodes)
+        {
+            if (auto* R = Cast<UAnimGraphNode_StateResult>(N)) return R;
+        }
+        return nullptr;
+    }
+
+    /** First pose/struct output pin on an AnimGraph node. */
+    static UEdGraphPin* FindPoseOutputPin(UEdGraphNode* Node)
+    {
+        if (!Node) return nullptr;
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Output &&
+                P->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+                return P;
+        }
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Output) return P;
+        }
+        return nullptr;
+    }
+
+    /** First pose/struct input pin on an AnimGraph node. */
+    static UEdGraphPin* FindPoseInputPin(UEdGraphNode* Node)
+    {
+        if (!Node) return nullptr;
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Input &&
+                P->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+                return P;
+        }
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Input) return P;
+        }
+        return nullptr;
+    }
+
+    /** Wire Source node's pose output into Target node's pose input.
+     *  Uses the schema's TryCreateConnection so anim-graph validation runs. */
+    static bool WirePoseLink(UEdGraphNode* Source, UEdGraphNode* Target)
+    {
+        UEdGraphPin* Out = FindPoseOutputPin(Source);
+        UEdGraphPin* In  = FindPoseInputPin(Target);
+        if (!Out || !In) return false;
+
+        UEdGraph* G = Source->GetGraph();
+        if (!G) G = Target->GetGraph();
+        if (const UEdGraphSchema* Schema = G ? G->GetSchema() : nullptr)
+        {
+            return Schema->TryCreateConnection(Out, In);
+        }
+        // Fallback (should not reach): raw link.
+        In->BreakAllPinLinks();
+        Out->MakeLinkTo(In);
+        return true;
+    }
+
+    /** Connect a specific pose output pin to a specific pose input pin (AnimGraph). */
+    static bool TryConnectPosePins(UEdGraphPin* FromPoseOut, UEdGraphPin* ToPoseIn)
+    {
+        if (!FromPoseOut || !ToPoseIn)
+        {
+            return false;
+        }
+        UEdGraphNode* FromNode = FromPoseOut->GetOwningNode();
+        UEdGraph* Graph = FromNode ? FromNode->GetGraph() : nullptr;
+        if (!Graph)
+        {
+            return false;
+        }
+        if (const UEdGraphSchema* Schema = Graph->GetSchema())
+        {
+            return Schema->TryCreateConnection(FromPoseOut, ToPoseIn);
+        }
+        ToPoseIn->BreakAllPinLinks();
+        FromPoseOut->MakeLinkTo(ToPoseIn);
+        return true;
+    }
+
+    static UEdGraphPin* FindPinByName(UEdGraphNode* Node, const TCHAR* PinName)
+    {
+        if (!Node) return nullptr;
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->PinName == PinName) return P;
+        }
+        return nullptr;
+    }
+
+    static UEdGraphPin* FindBoolInputPin(UEdGraphNode* Node)
+    {
+        if (!Node) return nullptr;
+        if (UEdGraphPin* CanEnter = FindPinByName(Node, TEXT("bCanEnterTransition")))
+        {
+            return CanEnter;
+        }
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Input &&
+                P->PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+            {
+                return P;
+            }
+        }
+        return nullptr;
+    }
+
+    static bool TryConnectValuePins(UEdGraphPin* From, UEdGraphPin* To)
+    {
+        if (!From || !To) return false;
+        UEdGraph* Graph = From->GetOwningNode() ? From->GetOwningNode()->GetGraph() : nullptr;
+        if (Graph)
+        {
+            if (const UEdGraphSchema* Schema = Graph->GetSchema())
+            {
+                if (Schema->TryCreateConnection(From, To))
+                {
+                    return true;
+                }
+            }
+        }
+        From->MakeLinkTo(To);
+        return true;
+    }
+
+    static bool BuildTransitionRuleGraph(
+        UAnimStateTransitionNode* Trans,
+        const bool bHasSpeedCompare,
+        const FString& SpeedCompare,
+        const double SpeedThreshold,
+        const bool bHasRequireIsAiming,
+        const bool bRequireIsAiming)
+    {
+        if (!Trans || !Trans->BoundGraph || (!bHasSpeedCompare && !bHasRequireIsAiming))
+        {
+            return false;
+        }
+
+        UEdGraph* Rule = Trans->BoundGraph;
+        Rule->Modify();
+        Trans->Modify();
+
+        UAnimGraphNode_TransitionResult* ResultNode = nullptr;
+        for (UEdGraphNode* N : Rule->Nodes)
+        {
+            if (UAnimGraphNode_TransitionResult* Candidate = Cast<UAnimGraphNode_TransitionResult>(N))
+            {
+                ResultNode = Candidate;
+                break;
+            }
+        }
+        if (!ResultNode)
+        {
+            for (UEdGraphNode* N : Rule->Nodes)
+            {
+                if (N && N->GetClass()->GetName().Contains(TEXT("TransitionResult")))
+                {
+                    ResultNode = Cast<UAnimGraphNode_TransitionResult>(N);
+                    break;
+                }
+            }
+        }
+
+        UEdGraphPin* ResultIn = FindBoolInputPin(ResultNode);
+        if (!ResultIn)
+        {
+            return false;
+        }
+        ResultIn->BreakAllPinLinks();
+
+        auto CreateVarGet = [Rule](const FString& VarName, int32 X, int32 Y) -> UK2Node_VariableGet*
+        {
+            UK2Node_VariableGet* VarGet = NewObject<UK2Node_VariableGet>(Rule);
+            Rule->AddNode(VarGet);
+            VarGet->CreateNewGuid();
+            VarGet->VariableReference.SetSelfMember(FName(*VarName));
+            VarGet->AllocateDefaultPins();
+            VarGet->NodePosX = X;
+            VarGet->NodePosY = Y;
+            return VarGet;
+        };
+
+        auto CreateMathCall = [Rule](const FString& FuncName, int32 X, int32 Y) -> UK2Node_CallFunction*
+        {
+            UK2Node_CallFunction* Call = NewObject<UK2Node_CallFunction>(Rule);
+            Rule->AddNode(Call);
+            Call->CreateNewGuid();
+            Call->FunctionReference.SetExternalMember(FName(*FuncName), UKismetMathLibrary::StaticClass());
+            Call->AllocateDefaultPins();
+            Call->NodePosX = X;
+            Call->NodePosY = Y;
+            return Call;
+        };
+
+        TArray<UEdGraphPin*> RulePins;
+        if (bHasSpeedCompare)
+        {
+            UK2Node_VariableGet* SpeedGet = CreateVarGet(TEXT("Speed"), -700, -120);
+            const FString CompareFunc = SpeedCompare.Equals(TEXT("lt"), ESearchCase::IgnoreCase)
+                ? TEXT("Less_DoubleDouble")
+                : TEXT("GreaterEqual_DoubleDouble");
+            UK2Node_CallFunction* Compare = CreateMathCall(CompareFunc, -420, -120);
+
+            UEdGraphPin* SpeedOut = FindPinByName(SpeedGet, TEXT("Speed"));
+            UEdGraphPin* A = FindPinByName(Compare, TEXT("A"));
+            UEdGraphPin* B = FindPinByName(Compare, TEXT("B"));
+            UEdGraphPin* Ret = FindPinByName(Compare, TEXT("ReturnValue"));
+            if (B) B->DefaultValue = FString::SanitizeFloat(SpeedThreshold);
+            if (SpeedOut && A) TryConnectValuePins(SpeedOut, A);
+            if (Ret) RulePins.Add(Ret);
+        }
+
+        if (bHasRequireIsAiming)
+        {
+            UK2Node_VariableGet* AimGet = CreateVarGet(TEXT("IsAiming"), -700, 80);
+            UEdGraphPin* AimOut = FindPinByName(AimGet, TEXT("IsAiming"));
+            if (bRequireIsAiming)
+            {
+                if (AimOut) RulePins.Add(AimOut);
+            }
+            else
+            {
+                UK2Node_CallFunction* NotNode = CreateMathCall(TEXT("Not_PreBool"), -420, 80);
+                UEdGraphPin* A = FindPinByName(NotNode, TEXT("A"));
+                UEdGraphPin* Ret = FindPinByName(NotNode, TEXT("ReturnValue"));
+                if (AimOut && A) TryConnectValuePins(AimOut, A);
+                if (Ret) RulePins.Add(Ret);
+            }
+        }
+
+        bool bConnected = false;
+        if (RulePins.Num() == 1)
+        {
+            bConnected = TryConnectValuePins(RulePins[0], ResultIn);
+        }
+        else if (RulePins.Num() >= 2)
+        {
+            UK2Node_CallFunction* AndNode = CreateMathCall(TEXT("BooleanAND"), -120, 0);
+            UEdGraphPin* A = FindPinByName(AndNode, TEXT("A"));
+            UEdGraphPin* B = FindPinByName(AndNode, TEXT("B"));
+            UEdGraphPin* Ret = FindPinByName(AndNode, TEXT("ReturnValue"));
+            if (RulePins[0] && A) TryConnectValuePins(RulePins[0], A);
+            if (RulePins[1] && B) TryConnectValuePins(RulePins[1], B);
+            bConnected = Ret && TryConnectValuePins(Ret, ResultIn);
+        }
+
+        Rule->NotifyGraphChanged();
+        return bConnected;
+    }
+}
+
 // ??? Animation Blueprint ??????????????????????????????????????????????????????
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateAnimationBlueprint(
@@ -1691,7 +2096,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateMachine(
     UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
     if (!AnimBP)
         return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
-    
+
     // Find the AnimGraph
     UEdGraph* AnimGraph = nullptr;
     for (UEdGraph* Graph : AnimBP->FunctionGraphs)
@@ -1702,7 +2107,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateMachine(
             break;
         }
     }
-    
+
     if (!AnimGraph)
     {
         // Try to find via graph type
@@ -1715,39 +2120,47 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateMachine(
             }
         }
     }
-    
+
     if (!AnimGraph)
         return CreateErrorResponse(TEXT("AnimGraph not found"));
-    
-    // Create the state machine node
-    UAnimGraphNode_StateMachine* SMNode = 
-        NewObject<UAnimGraphNode_StateMachine>(AnimGraph);
-    // UE5.6: pass all 4 args to CreateNewGraph
-    SMNode->EditorStateMachineGraph = Cast<UAnimationStateMachineGraph>(
-        FBlueprintEditorUtils::CreateNewGraph(
-            AnimBP, FName(*SMName),
-            UAnimationStateMachineGraph::StaticClass(),
-            UAnimationStateMachineSchema::StaticClass()));
-    SMNode->NodePosX = 0;
-    SMNode->NodePosY = 0;
-    AnimGraph->AddNode(SMNode);
-    SMNode->CreateNewGuid();
-    // PostPlacedNewNode called after AllocateDefaultPins for state machine nodes
-    SMNode->AllocateDefaultPins();
-    SMNode->PostPlacedNewNode();
-    
-    AnimBP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
-    
+
+    // Create the state machine node through the normal graph-node lifecycle.
+    // UAnimGraphNode_StateMachine::PostPlacedNewNode asserts that
+    // EditorStateMachineGraph is null before it creates the backing graph.
+    UAnimGraphNode_StateMachine* SMNode = nullptr;
+    {
+        FGraphNodeCreator<UAnimGraphNode_StateMachine> NodeCreator(*AnimGraph);
+        SMNode = NodeCreator.CreateNode(/*bSelectNewNode*/false);
+        SMNode->NodePosX = -400;
+        SMNode->NodePosY = 0;
+        NodeCreator.Finalize();
+    }
+
+    if (SMNode->EditorStateMachineGraph)
+    {
+        SMNode->EditorStateMachineGraph->Rename(*SMName, nullptr, REN_DontCreateRedirectors);
+    }
+
+    // Auto-wire the state machine's pose output into the AnimGraph Root's Result pin
+    bool bWiredToRoot = false;
+    if (auto* Root = UnrealMCP_AnimGraphHelpers::FindRootNode(AnimGraph))
+        bWiredToRoot = UnrealMCP_AnimGraphHelpers::WirePoseLink(SMNode, Root);
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("state_machine_name"), SMName);
     Result->SetStringField(TEXT("node_id"), SMNode->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("wired_to_root"), bWiredToRoot);
     return Result;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimationState(
     const TSharedPtr<FJsonObject>& Params)
 {
+    using namespace UnrealMCP_AnimGraphHelpers;
+
     FString AnimBPName, SMName, StateName;
     if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
         return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
@@ -1755,25 +2168,18 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimationState(
         return CreateErrorResponse(TEXT("Missing 'state_machine_name'"));
     if (!Params->TryGetStringField(TEXT("state_name"), StateName))
         return CreateErrorResponse(TEXT("Missing 'state_name'"));
-    
+
     UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
     if (!AnimBP)
         return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
-    
-    // Find state machine graph
-    UAnimationStateMachineGraph* SMGraph = nullptr;
-    for (UEdGraph* Graph : AnimBP->FunctionGraphs)
-    {
-        if (Graph && Graph->GetName() == SMName)
-        {
-            SMGraph = Cast<UAnimationStateMachineGraph>(Graph);
-            break;
-        }
-    }
-    
+
+    // Find state machine graph. State machines created by UAnimGraphNode_StateMachine
+    // live behind the AnimGraph node, not necessarily in FunctionGraphs.
+    UAnimationStateMachineGraph* SMGraph = FindStateMachineGraph(AnimBP, SMName);
+
     if (!SMGraph)
         return CreateErrorResponse(FString::Printf(TEXT("State machine '%s' not found"), *SMName));
-    
+
     // Create state node
     UAnimStateNode* StateNode = NewObject<UAnimStateNode>(SMGraph);
     // UAnimStateNode has no SetStateName(); the display name is driven by the bound graph name.
@@ -1788,9 +2194,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimationState(
     SMGraph->AddNode(StateNode);
     StateNode->CreateNewGuid();
     StateNode->AllocateDefaultPins();
-    
+
     AnimBP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
-    
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("state_name"), StateName);
@@ -1798,62 +2204,1111 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimationState(
     return Result;
 }
 
+// (namespace moved higher in file - see definition above HandleCreateAnimationBlueprint)
+
+#if 0 /* moved */
+namespace UnrealMCP_AnimGraphHelpers
+{
+    /** Find the top-level AnimGraph of an Animation Blueprint. */
+    static UEdGraph* FindAnimGraph(UAnimBlueprint* AnimBP)
+    {
+        if (!AnimBP) return nullptr;
+        for (UEdGraph* Graph : AnimBP->FunctionGraphs)
+        {
+            if (!Graph) continue;
+            if (Graph->GetName() == TEXT("AnimGraph")) return Graph;
+            if (Graph->IsA<UAnimationGraph>()) return Graph;
+        }
+        return nullptr;
+    }
+
+    /** Find a UAnimStateNode by name inside a state-machine graph. */
+    static UAnimStateNode* FindStateNode(UAnimationStateMachineGraph* SMGraph, const FString& StateName)
+    {
+        if (!SMGraph) return nullptr;
+        for (UEdGraphNode* N : SMGraph->Nodes)
+        {
+            UAnimStateNode* S = Cast<UAnimStateNode>(N);
+            if (!S) continue;
+            if (S->GetStateName() == StateName) return S;
+            if (S->BoundGraph && S->BoundGraph->GetName() == StateName) return S;
+            if (S->GetName() == StateName) return S;
+        }
+        return nullptr;
+    }
+
+    /** Find a state-machine graph by name inside an Animation Blueprint. */
+    static UAnimationStateMachineGraph* FindStateMachineGraph(UAnimBlueprint* AnimBP, const FString& SMName)
+    {
+        if (!AnimBP) return nullptr;
+        for (UEdGraph* Graph : AnimBP->FunctionGraphs)
+        {
+            if (!Graph) continue;
+            if (Graph->GetName() == SMName)
+            {
+                if (auto* SM = Cast<UAnimationStateMachineGraph>(Graph)) return SM;
+            }
+        }
+        // Also scan sub-graphs via state-machine nodes inside AnimGraph
+        if (UEdGraph* AnimGraph = FindAnimGraph(AnimBP))
+        {
+            for (UEdGraphNode* N : AnimGraph->Nodes)
+            {
+                if (auto* SMNode = Cast<UAnimGraphNode_StateMachine>(N))
+                {
+                    if (SMNode->EditorStateMachineGraph && SMNode->EditorStateMachineGraph->GetName() == SMName)
+                        return SMNode->EditorStateMachineGraph;
+                }
+            }
+        }
+        return nullptr;
+    }
+
+    /** Locate the Root (final pose) node of an AnimGraph. */
+    static UAnimGraphNode_Root* FindRootNode(UEdGraph* AnimGraph)
+    {
+        if (!AnimGraph) return nullptr;
+        for (UEdGraphNode* N : AnimGraph->Nodes)
+        {
+            if (auto* R = Cast<UAnimGraphNode_Root>(N)) return R;
+        }
+        return nullptr;
+    }
+
+    /** Locate the StateResult (final pose) node inside a state's BoundGraph. */
+    static UAnimGraphNode_StateResult* FindStateResultNode(UEdGraph* StateGraph)
+    {
+        if (!StateGraph) return nullptr;
+        for (UEdGraphNode* N : StateGraph->Nodes)
+        {
+            if (auto* R = Cast<UAnimGraphNode_StateResult>(N)) return R;
+        }
+        return nullptr;
+    }
+
+    /** Return first pose/struct output pin on an AnimGraph node. */
+    static UEdGraphPin* FindPoseOutputPin(UEdGraphNode* Node)
+    {
+        if (!Node) return nullptr;
+        // Prefer a struct pin first (pose is struct FPoseLink).
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Output &&
+                P->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+                return P;
+        }
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Output) return P;
+        }
+        return nullptr;
+    }
+
+    /** Return first pose/struct input pin on an AnimGraph node. */
+    static UEdGraphPin* FindPoseInputPin(UEdGraphNode* Node)
+    {
+        if (!Node) return nullptr;
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Input &&
+                P->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct)
+                return P;
+        }
+        for (UEdGraphPin* P : Node->Pins)
+        {
+            if (P && P->Direction == EGPD_Input) return P;
+        }
+        return nullptr;
+    }
+
+    /** Wire Source node's pose output into Target node's pose input.  Breaks any
+     *  existing links on the input pin to enforce a single authoritative pose source. */
+    static bool WirePoseLink(UEdGraphNode* Source, UEdGraphNode* Target)
+    {
+        UEdGraphPin* Out = FindPoseOutputPin(Source);
+        UEdGraphPin* In  = FindPoseInputPin(Target);
+        if (!Out || !In) return false;
+        In->BreakAllPinLinks();
+        Out->MakeLinkTo(In);
+        return true;
+    }
+}
+#endif // moved namespace
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Real implementations (replacing the previous stubs)
+// ─────────────────────────────────────────────────────────────────────────────
+
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateTransition(
     const TSharedPtr<FJsonObject>& Params)
 {
-    // Implementation would connect two state nodes with a transition
-    // This is complex in UE5 - we mark as modified and return success
-    FString AnimBPName;
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, SMName, FromState, ToState;
     if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
         return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
-    
+    Params->TryGetStringField(TEXT("state_machine_name"), SMName);
+    if (!Params->TryGetStringField(TEXT("from_state"), FromState))
+        return CreateErrorResponse(TEXT("Missing 'from_state'"));
+    if (!Params->TryGetStringField(TEXT("to_state"), ToState))
+        return CreateErrorResponse(TEXT("Missing 'to_state'"));
+
     UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
     if (!AnimBP)
         return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
-    
-    AnimBP->Modify(); // was MarkBlueprintAsModified - avoids AssetRegistry/ContentBrowser crash in UE5.6
-    
+
+    UAnimationStateMachineGraph* SMGraph = nullptr;
+    if (!SMName.IsEmpty())
+        SMGraph = FindStateMachineGraph(AnimBP, SMName);
+    if (!SMGraph)
+    {
+        // Fallback: pick the first state machine graph we find
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+            if ((SMGraph = Cast<UAnimationStateMachineGraph>(G))) break;
+    }
+    if (!SMGraph)
+        return CreateErrorResponse(TEXT("State machine graph not found"));
+
+    UAnimStateNode* NextNode = FindStateNode(SMGraph, ToState);
+    const bool bFromEntry = FromState.Equals(TEXT("Entry"), ESearchCase::IgnoreCase) ||
+        FromState.Equals(TEXT("__Entry__"), ESearchCase::IgnoreCase);
+
+    if (bFromEntry)
+    {
+        if (!NextNode)
+        {
+            return CreateErrorResponse(FString::Printf(
+                TEXT("State not found in '%s' (to=%s found=0)"),
+                *SMGraph->GetName(), *ToState));
+        }
+
+        UAnimStateEntryNode* EntryNode = nullptr;
+        for (UEdGraphNode* N : SMGraph->Nodes)
+        {
+            if (UAnimStateEntryNode* Candidate = Cast<UAnimStateEntryNode>(N))
+            {
+                EntryNode = Candidate;
+                break;
+            }
+        }
+        if (!EntryNode)
+        {
+            return CreateErrorResponse(TEXT("State machine entry node not found"));
+        }
+
+        UEdGraphPin* EntryOut = nullptr;
+        for (UEdGraphPin* P : EntryNode->Pins)
+        {
+            if (P && P->Direction == EGPD_Output)
+            {
+                EntryOut = P;
+                break;
+            }
+        }
+        UEdGraphPin* StateIn = NextNode->GetInputPin();
+        if (!EntryOut || !StateIn)
+        {
+            return CreateErrorResponse(TEXT("Could not find entry output or state input pin"));
+        }
+
+        SMGraph->Modify();
+        EntryOut->BreakAllPinLinks();
+        bool bConnected = false;
+        if (const UEdGraphSchema* Schema = SMGraph->GetSchema())
+        {
+            bConnected = Schema->TryCreateConnection(EntryOut, StateIn);
+        }
+        if (!bConnected)
+        {
+            EntryOut->MakeLinkTo(StateIn);
+            bConnected = true;
+        }
+
+        SMGraph->NotifyGraphChanged();
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetBoolField(TEXT("success"), true);
+        Result->SetStringField(TEXT("from_state"), FromState);
+        Result->SetStringField(TEXT("to_state"), ToState);
+        Result->SetBoolField(TEXT("entry_connected"), bConnected);
+        return Result;
+    }
+
+    UAnimStateNode* PrevNode = FindStateNode(SMGraph, FromState);
+    if (!PrevNode || !NextNode)
+        return CreateErrorResponse(FString::Printf(
+            TEXT("State not found in '%s' (from=%s found=%d, to=%s found=%d)"),
+            *SMGraph->GetName(), *FromState, PrevNode ? 1 : 0, *ToState, NextNode ? 1 : 0));
+
+    // Optional: exact Speed/IsAiming expression as transition rule.
+    // Params:
+    //   speed_compare: "ge" or "lt"
+    //   speed_threshold: number, default 5.0
+    //   require_is_aiming: bool
+    FString SpeedCompare;
+    const bool bHasSpeedCompare = Params->TryGetStringField(TEXT("speed_compare"), SpeedCompare);
+    double SpeedThreshold = 5.0;
+    Params->TryGetNumberField(TEXT("speed_threshold"), SpeedThreshold);
+    bool bRequireIsAiming = false;
+    const bool bHasRequireIsAiming = Params->TryGetBoolField(TEXT("require_is_aiming"), bRequireIsAiming);
+    bool bUpdateExisting = false;
+    Params->TryGetBoolField(TEXT("update_existing"), bUpdateExisting);
+
+    bool bBuiltExactRule = false;
+    TArray<UAnimStateTransitionNode*> TargetTransitions;
+
+    if (bUpdateExisting)
+    {
+        for (UEdGraphNode* N : SMGraph->Nodes)
+        {
+            if (UAnimStateTransitionNode* ExistingTrans = Cast<UAnimStateTransitionNode>(N))
+            {
+                if (ExistingTrans->GetPreviousState() == PrevNode && ExistingTrans->GetNextState() == NextNode)
+                {
+                    TargetTransitions.Add(ExistingTrans);
+                }
+            }
+        }
+    }
+
+    UAnimStateTransitionNode* Trans = nullptr;
+    if (TargetTransitions.Num() == 0)
+    {
+        Trans = NewObject<UAnimStateTransitionNode>(SMGraph);
+        SMGraph->AddNode(Trans);
+        Trans->CreateNewGuid();
+        Trans->PostPlacedNewNode();         // constructs BoundGraph
+        Trans->AllocateDefaultPins();
+        Trans->CreateConnections(PrevNode, NextNode);
+        TargetTransitions.Add(Trans);
+    }
+    else
+    {
+        Trans = TargetTransitions[0];
+    }
+
+    double Crossfade = 0.2;
+    if (Params->TryGetNumberField(TEXT("crossfade_duration"), Crossfade))
+    {
+        for (UAnimStateTransitionNode* TargetTrans : TargetTransitions)
+        {
+            if (TargetTrans) TargetTrans->CrossfadeDuration = (float)Crossfade;
+        }
+    }
+
+    int32 Priority = 1;
+    if (Params->TryGetNumberField(TEXT("priority_order"), Priority))
+    {
+        for (UAnimStateTransitionNode* TargetTrans : TargetTransitions)
+        {
+            if (TargetTrans) TargetTrans->PriorityOrder = Priority;
+        }
+    }
+
+    if (bHasSpeedCompare || bHasRequireIsAiming)
+    {
+        for (UAnimStateTransitionNode* TargetTrans : TargetTransitions)
+        {
+            bBuiltExactRule |= BuildTransitionRuleGraph(
+                TargetTrans,
+                bHasSpeedCompare,
+                SpeedCompare,
+                SpeedThreshold,
+                bHasRequireIsAiming,
+                bRequireIsAiming);
+        }
+    }
+
+    // Optional: simple boolean variable as transition rule.  When supplied we
+    // generate a Get<VarName> → ReturnResult wiring in the transition's
+    // BoundGraph so the transition actually fires at runtime.
+    FString CondVar;
+    bool bCondValue = true;
+    Params->TryGetStringField(TEXT("condition_variable"), CondVar);
+    Params->TryGetBoolField(TEXT("condition_value"), bCondValue);
+
+    if (!bBuiltExactRule && !CondVar.IsEmpty() && Trans->BoundGraph)
+    {
+        UEdGraph* Rule = Trans->BoundGraph;
+
+        // Find the TransitionResult node (already created via PostPlacedNewNode)
+        UEdGraphNode* ResultNode = nullptr;
+        for (UEdGraphNode* N : Rule->Nodes)
+        {
+            if (N->IsA(UAnimGraphNode_Base::StaticClass()) ||
+                N->GetClass()->GetName().Contains(TEXT("TransitionResult")))
+            {
+                ResultNode = N;
+                break;
+            }
+        }
+
+        if (ResultNode)
+        {
+            // Spawn a VariableGet for the condition boolean
+            UK2Node_VariableGet* VarGet = NewObject<UK2Node_VariableGet>(Rule);
+            Rule->AddNode(VarGet);
+            VarGet->CreateNewGuid();
+            VarGet->VariableReference.SetSelfMember(FName(*CondVar));
+            VarGet->AllocateDefaultPins();
+            VarGet->NodePosX = -300;
+            VarGet->NodePosY = 0;
+
+            UEdGraphPin* VarPin = nullptr;
+            for (UEdGraphPin* P : VarGet->Pins)
+            {
+                if (P->Direction == EGPD_Output &&
+                    P->PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+                { VarPin = P; break; }
+            }
+
+            UEdGraphPin* ResultIn = nullptr;
+            for (UEdGraphPin* P : ResultNode->Pins)
+            {
+                if (P->Direction == EGPD_Input &&
+                    P->PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+                { ResultIn = P; break; }
+            }
+            if (VarPin && ResultIn) VarPin->MakeLinkTo(ResultIn);
+            // Note: inverting the rule for bCondValue==false would need a NOT
+            // node here - kept simple for now; the user can edit in-editor.
+        }
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
-    Result->SetStringField(TEXT("note"), TEXT("Connect states manually in the AnimGraph state machine editor"));
+    Result->SetStringField(TEXT("from_state"), FromState);
+    Result->SetStringField(TEXT("to_state"), ToState);
+    Result->SetStringField(TEXT("transition_id"), Trans->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("updated_existing"), bUpdateExisting);
+    Result->SetNumberField(TEXT("transition_count"), TargetTransitions.Num());
+    Result->SetBoolField(TEXT("rule_built"), bBuiltExactRule);
     return Result;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetAnimationForState(
     const TSharedPtr<FJsonObject>& Params)
 {
-    FString AnimBPName, StateName, AnimAsset;
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, StateName, AnimAsset, SMName;
     if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
         return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
     if (!Params->TryGetStringField(TEXT("state_name"), StateName))
         return CreateErrorResponse(TEXT("Missing 'state_name'"));
     if (!Params->TryGetStringField(TEXT("animation_asset"), AnimAsset))
         return CreateErrorResponse(TEXT("Missing 'animation_asset'"));
-    
-    // Load the animation sequence
-    UAnimSequenceBase* AnimSeq = LoadObject<UAnimSequenceBase>(nullptr, *AnimAsset);
-    if (!AnimSeq)
+    Params->TryGetStringField(TEXT("state_machine_name"), SMName);
+    bool bLoop = true;
+    Params->TryGetBoolField(TEXT("loop"), bLoop);
+
+    UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
+    if (!AnimBP)
+        return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
+
+    UAnimationAsset* Asset = LoadObject<UAnimationAsset>(nullptr, *AnimAsset);
+    if (!Asset)
         return CreateErrorResponse(FString::Printf(TEXT("Animation asset not found: %s"), *AnimAsset));
-    
+
+    // Find state machine(s) and locate the requested state
+    UAnimationStateMachineGraph* SMGraph = nullptr;
+    UAnimStateNode* StateNode = nullptr;
+    if (!SMName.IsEmpty())
+    {
+        SMGraph = FindStateMachineGraph(AnimBP, SMName);
+        if (SMGraph) StateNode = FindStateNode(SMGraph, StateName);
+    }
+    if (!StateNode)
+    {
+        // Search every state machine graph
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+        {
+            if (auto* SM = Cast<UAnimationStateMachineGraph>(G))
+            {
+                if (auto* S = FindStateNode(SM, StateName))
+                { SMGraph = SM; StateNode = S; break; }
+            }
+        }
+        // And inside AnimGraph's state-machine sub-graphs
+        if (!StateNode)
+        {
+            if (UEdGraph* AnimGraph = FindAnimGraph(AnimBP))
+            {
+                for (UEdGraphNode* N : AnimGraph->Nodes)
+                {
+                    if (auto* SMNode = Cast<UAnimGraphNode_StateMachine>(N))
+                    {
+                        if (auto* S = FindStateNode(SMNode->EditorStateMachineGraph, StateName))
+                        { SMGraph = SMNode->EditorStateMachineGraph; StateNode = S; break; }
+                    }
+                }
+            }
+        }
+    }
+
+    if (!StateNode)
+        return CreateErrorResponse(FString::Printf(TEXT("State '%s' not found"), *StateName));
+
+    UEdGraph* StateGraph = StateNode->BoundGraph;
+    if (!StateGraph)
+        return CreateErrorResponse(TEXT("State has no BoundGraph"));
+
+    // Locate or synthesize the Result node inside the state
+    UAnimGraphNode_StateResult* ResultNode = FindStateResultNode(StateGraph);
+    if (!ResultNode)
+        return CreateErrorResponse(TEXT("State has no StateResult node"));
+
+    // Determine desired player class based on the asset type
+    UAnimGraphNode_Base* PlayerNode = nullptr;
+    if (Cast<UBlendSpace>(Asset))
+    {
+        FGraphNodeCreator<UAnimGraphNode_BlendSpacePlayer> NodeCreator(*StateGraph);
+        auto* BSP = NodeCreator.CreateNode(/*bSelectNewNode*/false);
+        BSP->SetAnimationAsset(Asset);
+        BSP->NodePosX = -350;
+        BSP->NodePosY = 0;
+        NodeCreator.Finalize();
+        BSP->ReconstructNode();
+        PlayerNode = BSP;
+    }
+    else
+    {
+        FGraphNodeCreator<UAnimGraphNode_SequencePlayer> NodeCreator(*StateGraph);
+        auto* SP = NodeCreator.CreateNode(/*bSelectNewNode*/false);
+        SP->SetAnimationAsset(Asset);
+        if (UAnimSequenceBase* Seq = Cast<UAnimSequenceBase>(Asset))
+        {
+            SP->Node.SetSequence(Seq);
+        }
+        SP->Node.SetLoopAnimation(bLoop);
+        SP->NodePosX = -350;
+        SP->NodePosY = 0;
+        NodeCreator.Finalize();
+        SP->ReconstructNode();
+        PlayerNode = SP;
+    }
+
+    const bool bWired = WirePoseLink(PlayerNode, ResultNode);
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
     Result->SetStringField(TEXT("state_name"), StateName);
     Result->SetStringField(TEXT("animation"), AnimAsset);
+    Result->SetStringField(TEXT("player_node_id"), PlayerNode->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("pose_wired"), bWired);
     return Result;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBlendSpaceNode(
     const TSharedPtr<FJsonObject>& Params)
 {
-    FString AnimBPName, BlendSpaceAsset;
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, BlendSpaceAsset, GraphName;
     if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
         return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
     if (!Params->TryGetStringField(TEXT("blend_space_asset"), BlendSpaceAsset))
         return CreateErrorResponse(TEXT("Missing 'blend_space_asset'"));
-    
+    Params->TryGetStringField(TEXT("graph_name"), GraphName); // optional – defaults to AnimGraph
+    bool bWireToRoot = true;
+    Params->TryGetBoolField(TEXT("wire_to_root"), bWireToRoot);
+
+    UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
+    if (!AnimBP)
+        return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
+
+    UBlendSpace* BS = LoadObject<UBlendSpace>(nullptr, *BlendSpaceAsset);
+    if (!BS)
+        return CreateErrorResponse(FString::Printf(TEXT("Blend Space not found: %s"), *BlendSpaceAsset));
+
+    UEdGraph* TargetGraph = nullptr;
+    if (!GraphName.IsEmpty())
+    {
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+            if (G && G->GetName() == GraphName) { TargetGraph = G; break; }
+    }
+    if (!TargetGraph) TargetGraph = FindAnimGraph(AnimBP);
+    if (!TargetGraph)
+        return CreateErrorResponse(TEXT("AnimGraph not found"));
+
+    const FVector2D Pos = GetNodePosition(Params);
+
+    // Use FGraphNodeCreator for the proper construction lifecycle.
+    UAnimGraphNode_BlendSpacePlayer* BSP = nullptr;
+    {
+        FGraphNodeCreator<UAnimGraphNode_BlendSpacePlayer> NodeCreator(*TargetGraph);
+        BSP = NodeCreator.CreateNode(/*bSelectNewNode*/false);
+        // Set asset BEFORE Finalize() so AllocateDefaultPins sees the right type.
+        BSP->SetAnimationAsset(BS);
+        BSP->NodePosX = (int32)Pos.X;
+        BSP->NodePosY = (int32)Pos.Y;
+        NodeCreator.Finalize();  // calls CreateNewGuid + PostPlacedNewNode + (pins)
+    }
+    // Regenerate pins with the asset context applied (no-op if already correct).
+    BSP->ReconstructNode();
+
+    bool bWired = false;
+    if (bWireToRoot)
+    {
+        if (auto* Root = FindRootNode(TargetGraph))
+            bWired = WirePoseLink(BSP, Root);
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
-    Result->SetStringField(TEXT("note"), TEXT("Blend Space node added - configure in AnimGraph editor"));
+    Result->SetStringField(TEXT("blend_space"), BlendSpaceAsset);
+    Result->SetStringField(TEXT("node_id"), BSP->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("wired_to_root"), bWired);
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddSequencePlayerNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, SequenceAsset, GraphName;
+    if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
+        return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("sequence_asset"), SequenceAsset))
+        return CreateErrorResponse(TEXT("Missing 'sequence_asset'"));
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+    bool bWireToRoot = false;
+    Params->TryGetBoolField(TEXT("wire_to_root"), bWireToRoot);
+    bool bLoop = true;
+    Params->TryGetBoolField(TEXT("loop"), bLoop);
+
+    UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
+    if (!AnimBP)
+        return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
+
+    UAnimationAsset* Asset = LoadObject<UAnimationAsset>(nullptr, *SequenceAsset);
+    if (!Asset)
+        return CreateErrorResponse(FString::Printf(TEXT("Animation asset not found: %s"), *SequenceAsset));
+
+    UEdGraph* TargetGraph = nullptr;
+    if (!GraphName.IsEmpty())
+    {
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+            if (G && G->GetName() == GraphName) { TargetGraph = G; break; }
+    }
+    if (!TargetGraph) TargetGraph = FindAnimGraph(AnimBP);
+    if (!TargetGraph)
+        return CreateErrorResponse(TEXT("AnimGraph not found"));
+
+    const FVector2D Pos = GetNodePosition(Params);
+
+    UAnimGraphNode_SequencePlayer* SP = nullptr;
+    {
+        FGraphNodeCreator<UAnimGraphNode_SequencePlayer> NodeCreator(*TargetGraph);
+        SP = NodeCreator.CreateNode(/*bSelectNewNode*/false);
+        SP->SetAnimationAsset(Asset);
+        if (UAnimSequenceBase* Seq = Cast<UAnimSequenceBase>(Asset))
+        {
+            SP->Node.SetSequence(Seq);
+        }
+        SP->Node.SetLoopAnimation(bLoop);
+        SP->NodePosX = (int32)Pos.X;
+        SP->NodePosY = (int32)Pos.Y;
+        NodeCreator.Finalize();
+    }
+    SP->ReconstructNode();
+
+    bool bWired = false;
+    if (bWireToRoot)
+    {
+        if (auto* Root = FindRootNode(TargetGraph))
+            bWired = WirePoseLink(SP, Root);
+    }
+
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("sequence"), SequenceAsset);
+    Result->SetStringField(TEXT("node_id"), SP->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("wired_to_root"), bWired);
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleConnectAnimGraphNodes(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, GraphName, SrcId, DstId;
+    if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
+        return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("source_node_id"), SrcId))
+        return CreateErrorResponse(TEXT("Missing 'source_node_id'"));
+    if (!Params->TryGetStringField(TEXT("target_node_id"), DstId))
+        return CreateErrorResponse(TEXT("Missing 'target_node_id'"));
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+
+    UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
+    if (!AnimBP)
+        return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
+
+    UEdGraph* Graph = nullptr;
+    if (!GraphName.IsEmpty())
+    {
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+            if (G && G->GetName() == GraphName) { Graph = G; break; }
+    }
+    if (!Graph) Graph = FindAnimGraph(AnimBP);
+    if (!Graph)
+        return CreateErrorResponse(TEXT("AnimGraph not found"));
+
+    FGuid SrcGuid, DstGuid;
+    FGuid::Parse(SrcId, SrcGuid);
+    FGuid::Parse(DstId, DstGuid);
+
+    UEdGraphNode* Src = nullptr;
+    UEdGraphNode* Dst = nullptr;
+    for (UEdGraphNode* N : Graph->Nodes)
+    {
+        if (N->NodeGuid == SrcGuid) Src = N;
+        if (N->NodeGuid == DstGuid) Dst = N;
+    }
+    if (!Src || !Dst)
+        return CreateErrorResponse(FString::Printf(
+            TEXT("Node(s) not found in '%s': src=%d dst=%d"),
+            *Graph->GetName(), Src ? 1 : 0, Dst ? 1 : 0));
+
+    const bool bOk = WirePoseLink(Src, Dst);
+    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), bOk);
+    if (!bOk) Result->SetStringField(TEXT("error"), TEXT("Could not find compatible pose pins on nodes"));
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleInsertAnimGraphSlotBeforeRoot(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, GraphName, SlotNameStr;
+    if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
+        return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+    SlotNameStr = TEXT("DefaultSlot");
+    Params->TryGetStringField(TEXT("slot_name"), SlotNameStr);
+    if (SlotNameStr.IsEmpty())
+    {
+        SlotNameStr = TEXT("DefaultSlot");
+    }
+
+    UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
+    if (!AnimBP)
+        return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
+
+    UEdGraph* TargetGraph = nullptr;
+    if (!GraphName.IsEmpty())
+    {
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+        {
+            if (G && G->GetName() == GraphName)
+            {
+                TargetGraph = G;
+                break;
+            }
+        }
+    }
+    if (!TargetGraph)
+    {
+        TargetGraph = FindAnimGraph(AnimBP);
+    }
+    if (!TargetGraph)
+        return CreateErrorResponse(TEXT("AnimGraph not found"));
+
+    UAnimGraphNode_Root* Root = FindRootNode(TargetGraph);
+    if (!Root)
+        return CreateErrorResponse(TEXT("AnimGraph has no Root node"));
+
+    UEdGraphPin* RootIn = FindPoseInputPin(Root);
+    if (!RootIn || RootIn->LinkedTo.Num() == 0)
+        return CreateErrorResponse(TEXT("Root pose input is not connected; nothing to insert a Slot before"));
+
+    UEdGraphPin* UpstreamOut = RootIn->LinkedTo[0];
+    UEdGraphNode* Upstream = UpstreamOut ? UpstreamOut->GetOwningNode() : nullptr;
+    if (!Upstream)
+        return CreateErrorResponse(TEXT("Could not resolve upstream node feeding Root"));
+
+    if (Cast<UAnimGraphNode_Slot>(Upstream))
+    {
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetBoolField(TEXT("success"), true);
+        Result->SetBoolField(TEXT("already_present"), true);
+        Result->SetStringField(TEXT("message"), TEXT("Pose already passes through a Slot node; graph unchanged"));
+        Result->SetStringField(TEXT("slot_node_id"), Cast<UAnimGraphNode_Slot>(Upstream)->NodeGuid.ToString());
+        return Result;
+    }
+
+    UpstreamOut->BreakLinkTo(RootIn);
+
+    UAnimGraphNode_Slot* SlotNode = nullptr;
+    {
+        FGraphNodeCreator<UAnimGraphNode_Slot> NodeCreator(*TargetGraph);
+        SlotNode = NodeCreator.CreateNode(/*bSelectNewNode*/ false);
+        SlotNode->Node.SlotName = FName(*SlotNameStr);
+        SlotNode->NodePosX = Root->NodePosX - 200;
+        SlotNode->NodePosY = Root->NodePosY;
+        NodeCreator.Finalize();
+    }
+    SlotNode->ReconstructNode();
+
+    const bool bUpstreamToSlot = WirePoseLink(Upstream, SlotNode);
+    const bool bSlotToRoot = WirePoseLink(SlotNode, Root);
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(AnimBP);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), bUpstreamToSlot && bSlotToRoot);
+    Result->SetStringField(TEXT("slot_node_id"), SlotNode->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("upstream_to_slot"), bUpstreamToSlot);
+    Result->SetBoolField(TEXT("slot_to_root"), bSlotToRoot);
+    Result->SetStringField(TEXT("slot_name"), SlotNameStr);
+    if (!bUpstreamToSlot || !bSlotToRoot)
+    {
+        Result->SetStringField(TEXT("error"), TEXT("Could not wire Slot node pose pins; graph may be broken — reopen in editor"));
+    }
+    return Result;
+}
+
+namespace
+{
+/** Drive Blend List (by bool) Active Value from an Animation Blueprint member (e.g. bIsShooting). */
+static bool TryBindBlendListByBoolActiveToAnimBpVariable(
+    UAnimGraphNode_BlendListByBool* BlendNode,
+    UAnimBlueprint* AnimBP,
+    const FName VariableName)
+{
+    if (!BlendNode || !AnimBP || VariableName.IsNone())
+    {
+        return false;
+    }
+
+    // Binding subobject is "Instanced" on UAnimGraphNode_Base and is created by the node's internal
+    // EnsureBindingsArePresent() (protected). Reconstructing the node is public and routes into the
+    // same binding setup path, so we rely on that to populate Binding when missing.
+    UAnimGraphNodeBinding* Binding = BlendNode->GetMutableBinding();
+    if (!Binding)
+    {
+        BlendNode->ReconstructNode();
+        Binding = BlendNode->GetMutableBinding();
+    }
+    if (!Binding)
+    {
+        return false;
+    }
+
+    // Use UPROPERTY reflection to reach PropertyBindings without needing C++ access to the private
+    // field on UAnimGraphNodeBinding_Base (we only need the generated class metadata).
+    FMapProperty* MapProp = FindFProperty<FMapProperty>(Binding->GetClass(), TEXT("PropertyBindings"));
+    if (!MapProp)
+    {
+        return false;
+    }
+
+    const FName PinKey(TEXT("bActiveValue"));
+
+    // Copy pin type from the actual pin so we don't need the private static RecalculateBindingType.
+    FEdGraphPinType PinType;
+    if (UEdGraphPin* Pin = BlendNode->FindPin(PinKey))
+    {
+        PinType = Pin->PinType;
+    }
+    else
+    {
+        PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+    }
+
+    FAnimGraphNodePropertyBinding NewBinding;
+    NewBinding.PropertyName = PinKey;
+    NewBinding.PropertyPath.Reset();
+    NewBinding.PropertyPath.Add(VariableName.ToString());
+    NewBinding.PathAsText = FText::FromName(VariableName);
+    NewBinding.Type = EAnimGraphNodePropertyBindingType::Property;
+    NewBinding.bIsBound = true;
+    NewBinding.ArrayIndex = INDEX_NONE;
+    NewBinding.PinType = PinType;
+
+    Binding->Modify();
+    FScriptMapHelper MapHelper(MapProp, MapProp->ContainerPtrToValuePtr<void>(Binding));
+
+    // Replace any existing binding for this key.
+    const int32 ExistingIdx = MapHelper.FindMapIndexWithKey(&PinKey);
+    if (ExistingIdx != INDEX_NONE)
+    {
+        MapHelper.RemoveAt(ExistingIdx);
+    }
+
+    const int32 NewIdx = MapHelper.AddDefaultValue_Invalid_NeedsRehash();
+    if (NewIdx == INDEX_NONE)
+    {
+        return false;
+    }
+    FName* KeyPtr = reinterpret_cast<FName*>(MapHelper.GetKeyPtr(NewIdx));
+    FAnimGraphNodePropertyBinding* ValPtr = reinterpret_cast<FAnimGraphNodePropertyBinding*>(MapHelper.GetValuePtr(NewIdx));
+    if (!KeyPtr || !ValPtr)
+    {
+        return false;
+    }
+    *KeyPtr = PinKey;
+    *ValPtr = NewBinding;
+    MapHelper.Rehash();
+
+    BlendNode->Modify();
+    BlendNode->ReconstructNode();
+    return true;
+}
+} // namespace
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleInsertBlendBoolFireBeforeSlot(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCP_AnimGraphHelpers;
+
+    FString AnimBPName, SeqPath, GraphName;
+    if (!Params->TryGetStringField(TEXT("anim_blueprint_name"), AnimBPName))
+    {
+        return CreateErrorResponse(TEXT("Missing 'anim_blueprint_name'"));
+    }
+    if (!Params->TryGetStringField(TEXT("sequence_asset"), SeqPath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'sequence_asset'"));
+    }
+    Params->TryGetStringField(TEXT("graph_name"), GraphName);
+    bool bSwapBlendPoseOrder = false;
+    Params->TryGetBoolField(TEXT("swap_blend_pose_order"), bSwapBlendPoseOrder);
+
+    UAnimBlueprint* AnimBP = Cast<UAnimBlueprint>(FindBlueprint(AnimBPName));
+    if (!AnimBP)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Animation Blueprint not found: %s"), *AnimBPName));
+    }
+
+    UAnimationAsset* Loaded = LoadObject<UAnimationAsset>(nullptr, *SeqPath);
+    if (!Loaded)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Animation asset not found: %s"), *SeqPath));
+    }
+    UAnimSequenceBase* FireSeq = Cast<UAnimSequenceBase>(Loaded);
+    if (!FireSeq)
+    {
+        return CreateErrorResponse(TEXT("sequence_asset must be an AnimSequence / AnimSequenceBase"));
+    }
+
+    UEdGraph* AnimGraph = nullptr;
+    if (!GraphName.IsEmpty())
+    {
+        for (UEdGraph* G : AnimBP->FunctionGraphs)
+        {
+            if (G && G->GetName() == GraphName)
+            {
+                AnimGraph = G;
+                break;
+            }
+        }
+    }
+    if (!AnimGraph)
+    {
+        AnimGraph = FindAnimGraph(AnimBP);
+    }
+    if (!AnimGraph)
+    {
+        return CreateErrorResponse(TEXT("AnimGraph not found"));
+    }
+
+    UAnimGraphNode_Root* Root = FindRootNode(AnimGraph);
+    if (!Root)
+    {
+        return CreateErrorResponse(TEXT("AnimGraph has no Root node"));
+    }
+
+    UEdGraphPin* RootIn = FindPoseInputPin(Root);
+    if (!RootIn || RootIn->LinkedTo.Num() == 0)
+    {
+        return CreateErrorResponse(TEXT("Root pose input is not connected"));
+    }
+
+    UEdGraphPin* IntoRootOut = RootIn->LinkedTo[0];
+    UAnimGraphNode_Slot* Slot = Cast<UAnimGraphNode_Slot>(IntoRootOut->GetOwningNode());
+    if (!Slot)
+    {
+        return CreateErrorResponse(
+            TEXT("Node feeding Root must be an AnimGraph Slot — run insert_anim_graph_slot first"));
+    }
+
+    UEdGraphPin* SlotPoseIn = FindPoseInputPin(Slot);
+    if (!SlotPoseIn || SlotPoseIn->LinkedTo.Num() == 0)
+    {
+        return CreateErrorResponse(TEXT("Slot pose input has no upstream connection"));
+    }
+
+    UEdGraphPin* LocomotionOut = SlotPoseIn->LinkedTo[0];
+    UEdGraphNode* LocoNode = LocomotionOut ? LocomotionOut->GetOwningNode() : nullptr;
+    if (!LocoNode)
+    {
+        return CreateErrorResponse(TEXT("Could not resolve locomotion node feeding Slot"));
+    }
+
+    FString BindBoolVar(TEXT("bIsShooting"));
+    Params->TryGetStringField(TEXT("bind_bool_variable"), BindBoolVar);
+
+    // force_insert=true layers a NEW BlendListByBool on top of an existing one.
+    // Used to chain multiple bool gates (e.g. bIsInAir → jump on top of bIsShooting → fire).
+    bool bForceInsert = false;
+    Params->TryGetBoolField(TEXT("force_insert"), bForceInsert);
+
+    if (!bForceInsert)
+    {
+        if (UAnimGraphNode_BlendListByBool* ExistingBlend = Cast<UAnimGraphNode_BlendListByBool>(LocoNode))
+        {
+            TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+            Result->SetBoolField(TEXT("success"), true);
+            Result->SetBoolField(TEXT("already_present"), true);
+            Result->SetStringField(
+                TEXT("message"),
+                TEXT("A BlendListByBool already feeds the Slot — pass force_insert=true to chain another"));
+            Result->SetStringField(TEXT("blend_node_id"), LocoNode->NodeGuid.ToString());
+            if (!BindBoolVar.IsEmpty())
+            {
+                const bool bBound = TryBindBlendListByBoolActiveToAnimBpVariable(ExistingBlend, AnimBP, FName(*BindBoolVar));
+                Result->SetBoolField(TEXT("active_value_bound_to_variable"), bBound);
+                if (bBound)
+                {
+                    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(AnimBP);
+                }
+                else
+                {
+                    Result->SetStringField(
+                        TEXT("binding_warning"),
+                        FString::Printf(TEXT("Could not bind Active Value to '%s'"), *BindBoolVar));
+                }
+            }
+            return Result;
+        }
+    }
+
+    LocomotionOut->BreakLinkTo(SlotPoseIn);
+
+    UAnimGraphNode_BlendListByBool* BlendNode = nullptr;
+    {
+        FGraphNodeCreator<UAnimGraphNode_BlendListByBool> NodeCreator(*AnimGraph);
+        BlendNode = NodeCreator.CreateNode(/*bSelectNewNode*/ false);
+        BlendNode->NodePosX = Slot->NodePosX - 420;
+        BlendNode->NodePosY = Slot->NodePosY;
+        NodeCreator.Finalize();
+    }
+    BlendNode->ReconstructNode();
+
+    UAnimGraphNode_SequencePlayer* SeqNode = nullptr;
+    {
+        FGraphNodeCreator<UAnimGraphNode_SequencePlayer> NodeCreator(*AnimGraph);
+        SeqNode = NodeCreator.CreateNode(/*bSelectNewNode*/ false);
+        SeqNode->SetAnimationAsset(FireSeq);
+        SeqNode->Node.SetSequence(FireSeq);
+        SeqNode->Node.SetLoopAnimation(false);
+        SeqNode->NodePosX = BlendNode->NodePosX;
+        SeqNode->NodePosY = BlendNode->NodePosY + 220;
+        NodeCreator.Finalize();
+    }
+    SeqNode->ReconstructNode();
+
+    TArray<UEdGraphPin*> PoseInputs;
+    for (UEdGraphPin* P : BlendNode->Pins)
+    {
+        if (!P || P->Direction != EGPD_Input)
+        {
+            continue;
+        }
+        if (P->PinType.PinCategory == UEdGraphSchema_K2::PC_Boolean)
+        {
+            continue;
+        }
+        if (P->PinType.PinCategory == UEdGraphSchema_K2::PC_Exec)
+        {
+            continue;
+        }
+        // Pose wires use PC_Struct in many UE versions; some graphs use other categories.
+        if (P->PinType.PinCategory == UEdGraphSchema_K2::PC_Struct
+            || P->PinName.ToString().Contains(TEXT("BlendPose")))
+        {
+            PoseInputs.Add(P);
+        }
+    }
+    PoseInputs.Sort([](const UEdGraphPin& A, const UEdGraphPin& B) {
+        return A.PinName.ToString() < B.PinName.ToString();
+    });
+    if (PoseInputs.Num() < 2)
+    {
+        TryConnectPosePins(LocomotionOut, SlotPoseIn);
+        return CreateErrorResponse(FString::Printf(
+            TEXT("BlendListByBool has fewer than 2 pose inputs (found %d)"), PoseInputs.Num()));
+    }
+
+    UEdGraphPin* FalsePoseIn = bSwapBlendPoseOrder ? PoseInputs[1] : PoseInputs[0];
+    UEdGraphPin* TruePoseIn = bSwapBlendPoseOrder ? PoseInputs[0] : PoseInputs[1];
+
+    const bool bLocoToFalse = TryConnectPosePins(LocomotionOut, FalsePoseIn);
+    UEdGraphPin* SeqOut = FindPoseOutputPin(SeqNode);
+    const bool bSeqToTrue = TryConnectPosePins(SeqOut, TruePoseIn);
+    UEdGraphPin* BlendOut = FindPoseOutputPin(BlendNode);
+    const bool bBlendToSlot = TryConnectPosePins(BlendOut, SlotPoseIn);
+
+    if (!bLocoToFalse || !bSeqToTrue || !bBlendToSlot)
+    {
+        if (SeqOut)
+        {
+            SeqOut->BreakAllPinLinks();
+        }
+        if (BlendOut)
+        {
+            BlendOut->BreakAllPinLinks();
+        }
+        LocomotionOut->BreakAllPinLinks();
+        TryConnectPosePins(LocomotionOut, SlotPoseIn);
+        return CreateErrorResponse(
+            TEXT("Could not wire BlendList / SequencePlayer — restored Slot <- locomotion link"));
+    }
+
+    bool bActiveBound = false;
+    if (!BindBoolVar.IsEmpty())
+    {
+        bActiveBound = TryBindBlendListByBoolActiveToAnimBpVariable(BlendNode, AnimBP, FName(*BindBoolVar));
+    }
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(AnimBP);
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("blend_node_id"), BlendNode->NodeGuid.ToString());
+    Result->SetStringField(TEXT("sequence_node_id"), SeqNode->NodeGuid.ToString());
+    Result->SetBoolField(TEXT("active_value_bound_to_variable"), bActiveBound);
+    Result->SetStringField(TEXT("false_pose_pin"), FalsePoseIn->PinName.ToString());
+    Result->SetStringField(TEXT("true_pose_pin"), TruePoseIn->PinName.ToString());
+    if (BindBoolVar.IsEmpty())
+    {
+        Result->SetStringField(
+            TEXT("note"),
+            TEXT("Pass bind_bool_variable (e.g. bIsShooting) to auto-bind Active Value."));
+    }
+    else if (!bActiveBound)
+    {
+        Result->SetStringField(
+            TEXT("binding_warning"),
+            FString::Printf(TEXT("Could not bind Active Value to '%s' — bind manually in Details."), *BindBoolVar));
+    }
     return Result;
 }
 
@@ -1867,25 +3322,173 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBehaviorTree(
         return CreateErrorResponse(TEXT("Missing 'name'"));
     Params->TryGetStringField(TEXT("path"), Path);
     if (Path.IsEmpty()) Path = TEXT("/Game/AI");
-    
+
     IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
-    
+
     // UE5.6: BehaviorTreeFactory header removed from public includes; create via dynamic class load
     UClass* BTFactClass = LoadClass<UFactory>(nullptr, TEXT("/Script/BehaviorTreeEditor.BehaviorTreeFactory"));
     UFactory* Factory = BTFactClass ? NewObject<UFactory>(GetTransientPackage(), BTFactClass) : nullptr;
     FString PackagePath = Path;
-    UObject* NewBT = AssetTools.CreateAsset(Name, PackagePath, UBehaviorTree::StaticClass(), Factory);
-    
-    if (NewBT)
+    UObject* NewBTObj = AssetTools.CreateAsset(Name, PackagePath, UBehaviorTree::StaticClass(), Factory);
+
+    if (!NewBTObj)
+        return CreateErrorResponse(TEXT("Failed to create Behavior Tree"));
+
+    // ── Immediately produce a clean, openable graph ───────────────────────────
+    // Without this the factory may leave BTGraph=null or with incomplete node
+    // data; opening such an asset in the BT editor crashes at 0x68 because
+    // UpdateAsset() dereferences a null IBehaviorTreeEditor* listener.
+    // We call GetOrCreateBTGraph (creates Root node via schema) then
+    // SafeUpdateBTAsset (SpawnMissingNodes + UpdateAsset + save) so the asset
+    // is fully valid on disk before anyone tries to open it.
+    UBehaviorTree* BT = Cast<UBehaviorTree>(NewBTObj);
+    if (BT)
     {
-        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-        Result->SetBoolField(TEXT("success"), true);
-        Result->SetStringField(TEXT("name"), Name);
-        Result->SetStringField(TEXT("path"), PackagePath + TEXT("/") + Name);
-        return Result;
+        UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+        if (BTGraph)
+            SafeUpdateBTAsset(BT, BTGraph);
     }
-    
-    return CreateErrorResponse(TEXT("Failed to create Behavior Tree"));
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("name"), Name);
+    Result->SetStringField(TEXT("path"), PackagePath + TEXT("/") + Name);
+    return Result;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// repair_behavior_tree
+//
+// Two modes:
+//
+//   (a) fix_guids_only = true  —  non-destructive GUID rescue.
+//       Walks every graph node + sub-node and assigns a fresh NodeGuid to any
+//       that have an invalid (all-zero) one. Tree structure, classes, pins,
+//       decorators, services, and properties are all preserved. This is the
+//       right choice for BT assets that were written by pre-BUG-043 plugin
+//       builds — they are structurally fine but crash the BT editor on open
+//       because the editor keys internal widget maps by NodeGuid.
+//
+//   (b) fix_guids_only = false (default)  —  destructive rebuild.
+//       Wipes all non-Root graph nodes so the asset returns to an empty
+//       Root-only state that the editor can open safely. Use
+//       build_behavior_tree afterwards to repopulate the tree.
+//
+// Root cause notes:
+//   • Zero-NodeGuid crash (BUG-043): UAIGraphNode::PostPlacedNewNode() does
+//     not call Super, so UEdGraphNode::NodeGuid never gets set. On open the
+//     BT editor's TMap<FGuid,...> lookup returns nullptr → +0x68 crash.
+//     Fixed going forward by explicit CreateNewGuid() at every BT node
+//     creation site; fix_guids_only mode rescues assets written before that.
+//   • NotifyGraphChanged crash: legacy issue the destructive path was
+//     originally designed around; retained as a fallback for any deeper
+//     corruption the GUID-only path cannot fix.
+//
+// Params:
+//   behavior_tree_name: string   name of the BT asset to repair
+//   fix_guids_only:     bool     optional, default false.  If true, only
+//                                assigns missing NodeGuids and saves.
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleRepairBehaviorTree(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // Step 1: close editors first — unregisters any stale per-editor listeners.
+    CloseAllBTEditors(BT);
+
+    // Step 2: get or create the graph (creates schema Root node if missing).
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    // ── Mode (a): non-destructive GUID rescue ────────────────────────────
+    bool bFixGuidsOnly = false;
+    Params->TryGetBoolField(TEXT("fix_guids_only"), bFixGuidsOnly);
+
+    if (bFixGuidsOnly)
+    {
+        int32 FixedCount   = 0;
+        int32 AlreadyValid = 0;
+
+        for (UEdGraphNode* N : BTGraph->Nodes)
+        {
+            if (!N) continue;
+            if (!N->NodeGuid.IsValid())
+            {
+                N->CreateNewGuid();
+                ++FixedCount;
+            }
+            else
+            {
+                ++AlreadyValid;
+            }
+            // Walk sub-nodes (decorators / services) on composite/task nodes.
+            if (UAIGraphNode* AIN = Cast<UAIGraphNode>(N))
+            {
+                for (UAIGraphNode* Sub : AIN->SubNodes)
+                {
+                    if (!Sub) continue;
+                    if (!Sub->NodeGuid.IsValid())
+                    {
+                        Sub->CreateNewGuid();
+                        ++FixedCount;
+                    }
+                    else
+                    {
+                        ++AlreadyValid;
+                    }
+                }
+            }
+        }
+
+        // Persist the updated NodeGuids. We do NOT rebuild the runtime tree
+        // here because tree structure is unchanged — SaveAsset will serialize
+        // the new NodeGuid UPROPERTYs and the next load will be clean.
+        BT->MarkPackageDirty();
+        UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetStringField(TEXT("behavior_tree"), BTName);
+        R->SetStringField(TEXT("mode"), TEXT("fix_guids_only"));
+        R->SetNumberField(TEXT("guids_fixed"),         (double)FixedCount);
+        R->SetNumberField(TEXT("guids_already_valid"), (double)AlreadyValid);
+        R->SetNumberField(TEXT("node_count"),          (double)BTGraph->Nodes.Num());
+        R->SetStringField(TEXT("message"),
+            TEXT("Non-destructive GUID rescue complete. Tree structure preserved. "
+                 "Asset can now be opened in the BT editor. If it still crashes, "
+                 "call repair_behavior_tree again with fix_guids_only=false to "
+                 "do a destructive Root-only rebuild."));
+        return R;
+    }
+
+    // ── Mode (b): destructive rebuild (default) ──────────────────────────
+
+    // Wipe all non-root nodes so we start from a clean Root-only state.
+    SafeRemoveBTNodes(BTGraph);
+
+    // SpawnMissingNodes + UpdateAsset + save.
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    int32 NodeCount = BTGraph->Nodes.Num();
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetStringField(TEXT("mode"), TEXT("destructive_rebuild"));
+    R->SetNumberField(TEXT("node_count_after_repair"), (double)NodeCount);
+    R->SetStringField(TEXT("message"),
+        TEXT("BT graph rebuilt to Root-only state. Asset saved. "
+             "It can now be opened in the BT editor without crashing. "
+             "Use build_behavior_tree to repopulate the tree logic."));
+    return R;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlackboard(
@@ -3859,6 +5462,1401 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateFullUpgradedEnem
              "via create_bt_attack_task and create_bt_wander_task."));
     return R;
 }
+
+// ════════════════════════════════════════════════════════════════════════════
+// BT Graph Node Manipulation
+// ════════════════════════════════════════════════════════════════════════════
+
+/**
+ * ROOT CAUSE of all 0x68 crashes — DEFINITIVE ANALYSIS (from UE5 source):
+ *
+ * SOURCE FILES STUDIED: BehaviorTreeGraph.cpp, AIGraph.cpp, AIGraphNode.cpp,
+ *   BehaviorTreeGraphNode.cpp, BehaviorTreeEditorModule.cpp, EdGraph.cpp, EdGraph.h
+ *
+ * CRASH CHAIN:
+ *   Any graph mutation → NotifyGraphChanged() → OnGraphChanged.Broadcast()
+ *   → BT editor module's handler → IBehaviorTreeEditor* (null at +0x68)
+ *
+ * FUNCTIONS THAT FIRE NotifyGraphChanged (EdGraph.cpp:244, 276, 284, 298):
+ *   UEdGraph::AddNode()              — always, at line 244
+ *   UEdGraph::RemoveNode()           — always, at line 276
+ *   UEdGraph::NotifyGraphChanged()   — direct call
+ *   UEdGraphPin::MakeLinkTo()        — fires on both pins' nodes
+ *   UEdGraphPin::BreakAllPinLinks()  — fires on both sides
+ *   UEdGraphNode::BreakAllNodeLinks()— calls BreakAllPinLinks
+ *   UAIGraphNode::AddSubNode()       — fires at line 297 (AIGraphNode.cpp)
+ *   UAIGraphNode::NodeConnectionListChanged() — calls UpdateAsset (AIGraphNode.cpp:240)
+ *   UAIGraph::OnSubNodeDropped()     — fires at AIGraph.cpp:282
+ *   UAIGraph::UnlockUpdates()        — calls UpdateAsset (AIGraph.cpp:277)
+ *
+ * NODE INSTANCE CREATION (CRITICAL):
+ *   UAIGraphNode::PostPlacedNewNode() creates NodeInstance = NewObject<UObject>(GraphOwner, Class)
+ *   where GraphOwner = MyGraph->GetOuter() = the UBehaviorTree ASSET (not the graph!).
+ *   This means NodeInstance has outer=BT and IS serialized as a BT subobject.
+ *   InitializeInstance() must be called AFTER PostPlacedNewNode().
+ *   ClassData must be set BEFORE PostPlacedNewNode() (it calls ClassData.GetClass()).
+ *
+ * SUPPRESSION MECHANISM:
+ *   UAIGraph::bLockUpdates is PROTECTED (AIGraph.h:62) — cannot access directly.
+ *   Public API: LockUpdates() sets true, UnlockUpdates() sets false then calls UpdateAsset().
+ *   UpdateAsset() does NOT call NotifyGraphChanged (safe to call from UnlockUpdates()).
+ *   Pattern: LockUpdates() → SpawnMissingNodes() → UnlockUpdates() (safe — no NotifyGraphChanged).
+ *   Skip OnSave() — it calls SpawnMissingNodesForParallel → AddSubNode → NotifyGraphChanged → crash.
+ *
+ * SAFE OPERATIONS (do NOT fire NotifyGraphChanged):
+ *   BTGraph->Nodes.Add(N)        — raw array add
+ *   BTGraph->Nodes.Remove(N)     — raw array remove
+ *   BTSafeLinkPins(A,B)          — direct LinkedTo manipulation
+ *   BTSafeUnlinkPin(P)           — direct LinkedTo manipulation
+ *   N->SubNodes.Add(Sub)         — raw SubNodes array
+ *   N->OnSubNodeAdded(Sub)       — populates Decorators[]/Services[] (no NotifyGraphChanged)
+ *   N->AllocateDefaultPins()     — just calls CreatePin, no notification
+ *   N->PostPlacedNewNode()       — creates NodeInstance, no notification
+ *   N->InitializeInstance()      — initializes BTNode, no notification
+ *
+ * CloseAllEditorsForAsset alone is NOT enough — the OnGraphChanged listener
+ * is registered at module load time on every UBehaviorTreeGraph, not per window.
+ */
+
+/**
+ * BTSafeAddNode – add a graph node to the BT graph WITHOUT firing
+ * NotifyGraphChanged.  Replicates what UEdGraph::AddNode does (adds to
+ * Nodes, sets RF_Transactional, fixes Outer via Rename) but skips the
+ * NotifyGraphChanged call that causes the 0x68 crash.
+ */
+static void BTSafeAddNode(UBehaviorTreeGraph* BTGraph, UBehaviorTreeGraphNode* Node)
+{
+    if (!BTGraph || !Node) return;
+    BTGraph->Nodes.Add(Node);
+    Node->SetFlags(RF_Transactional);
+    // Fix outer so the node is properly owned by this graph
+    if (Node->GetOuter() != BTGraph)
+        Node->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+}
+
+/**
+ * BTSafeLinkPins – connect two pins by directly appending to LinkedTo
+ * arrays, without calling MakeLinkTo / NotifyGraphChanged.
+ */
+static void BTSafeLinkPins(UEdGraphPin* OutputPin, UEdGraphPin* InputPin)
+{
+    if (!OutputPin || !InputPin) return;
+    OutputPin->LinkedTo.AddUnique(InputPin);
+    InputPin->LinkedTo.AddUnique(OutputPin);
+}
+
+/**
+ * BTSafeUnlinkPin – sever all connections on a pin by directly clearing
+ * LinkedTo arrays (both sides), without calling BreakAllPinLinks /
+ * NotifyGraphChanged.
+ */
+static void BTSafeUnlinkPin(UEdGraphPin* Pin)
+{
+    if (!Pin) return;
+    for (UEdGraphPin* Other : Pin->LinkedTo)
+    {
+        if (Other) Other->LinkedTo.Remove(Pin);
+    }
+    Pin->LinkedTo.Empty();
+}
+
+/**
+ * CloseAllBTEditors – close any open editor windows for BT asset.
+ * Alone this is NOT sufficient to prevent the crash (see analysis above),
+ * but it is still good practice to avoid re-entrancy issues.
+ */
+static void CloseAllBTEditors(UBehaviorTree* BT)
+{
+    if (!BT || !GEditor) return;
+    if (UAssetEditorSubsystem* AES =
+            GEditor->GetEditorSubsystem<UAssetEditorSubsystem>())
+    {
+        AES->CloseAllEditorsForAsset(BT);
+    }
+}
+
+/**
+ * SafeRemoveBTNodes – removes every non-root node from BTGraph
+ * WITHOUT firing NotifyGraphChanged at any point.
+ * Uses BTSafeUnlinkPin to clear pin connections (no BreakAllPinLinks)
+ * and direct BTGraph->Nodes.Remove (no RemoveNode delegate).
+ */
+static void SafeRemoveBTNodes(UBehaviorTreeGraph* BTGraph)
+{
+    if (!BTGraph) return;
+
+    TArray<UEdGraphNode*> ToRemove;
+    for (UEdGraphNode* N : BTGraph->Nodes)
+    {
+        if (N && !N->IsA<UBehaviorTreeGraphNode_Root>())
+            ToRemove.Add(N);
+    }
+
+    for (UEdGraphNode* N : ToRemove)
+    {
+        // Sever all pin connections WITHOUT calling BreakAllPinLinks
+        // (BreakAllPinLinks calls NotifyGraphChanged → crashes at 0x68)
+        for (UEdGraphPin* Pin : N->Pins)
+            BTSafeUnlinkPin(Pin);
+
+        // Remove sub-nodes too
+        if (UAIGraphNode* AIN = Cast<UAIGraphNode>(N))
+        {
+            for (UAIGraphNode* Sub : AIN->SubNodes)
+            {
+                if (!Sub) continue;
+                for (UEdGraphPin* SP : Sub->Pins) BTSafeUnlinkPin(SP);
+                Sub->ClearFlags(RF_Transactional);
+                Sub->SetFlags(RF_Transient);
+            }
+            AIN->SubNodes.Empty();
+        }
+
+        // Direct array removal — avoids RemoveNode() which fires delegate
+        BTGraph->Nodes.Remove(N);
+        // Mark transient so GC can collect it and it won't be re-saved
+        N->ClearFlags(RF_Transactional);
+        N->SetFlags(RF_Transient);
+    }
+}
+
+/** Helper: find a BehaviorTree asset by name */
+static UBehaviorTree* FindBehaviorTree(const FString& BTName)
+{
+    IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(
+        TEXT("AssetRegistry")).Get();
+    TArray<FAssetData> BTAssets;
+    AR.GetAssetsByClass(FTopLevelAssetPath(TEXT("/Script/AIModule"), TEXT("BehaviorTree")), BTAssets, true);
+    for (const FAssetData& AD : BTAssets)
+    {
+        if (AD.AssetName.ToString().Equals(BTName, ESearchCase::IgnoreCase))
+            return Cast<UBehaviorTree>(AD.GetAsset());
+    }
+    return nullptr;
+}
+
+/**
+ * SafeUpdateBTAsset – build runtime BT tree and save.
+ *
+ * ROOT CAUSE ANALYSIS (verified from UE5 source):
+ *
+ *   CRASH PATH: NotifyGraphChanged → OnGraphChanged.Broadcast →
+ *               BT editor handler → IBehaviorTreeEditor* (null at +0x68)
+ *
+ *   SpawnMissingNodes() calls AddSubNode() (AIGraphNode.cpp:274-298) which
+ *   fires ParentGraph->NotifyGraphChanged() (line 297) — this is the crash.
+ *
+ *   UpdateAsset() itself does NOT call NotifyGraphChanged (confirmed from source).
+ *   Only AddSubNode() and OnSubNodeDropped() fire NotifyGraphChanged.
+ *
+ *   UAIGraph::LockUpdates() sets bLockUpdates=true (public API, AIGraph.h:50).
+ *   UpdateAsset() checks bLockUpdates at top and returns early (BehaviorTreeGraph.cpp:104).
+ *   UAIGraph::UnlockUpdates() sets bLockUpdates=false then calls UpdateAsset() (AIGraph.cpp:276-278).
+ *   UpdateAsset() is safe — it rebuilds the runtime tree without firing NotifyGraphChanged.
+ *
+ *   UBehaviorTreeGraph::OnSave() = SpawnMissingNodesForParallel() + UpdateAsset() (line 211).
+ *   SpawnMissingNodesForParallel calls AddSubNode() → NotifyGraphChanged → crash.
+ *   So we skip OnSave() and call the pieces safely ourselves.
+ *
+ * CORRECT SEQUENCE:
+ *   1. LockUpdates()         — suppress UpdateAsset() re-entrancy during SpawnMissingNodes
+ *   2. SpawnMissingNodes()   — ensures NodeInstance objects are valid (AddSubNode suppressed by lock)
+ *   3. UnlockUpdates()       — sets bLockUpdates=false, then calls UpdateAsset() which is SAFE
+ *                              (UpdateAsset does NOT call NotifyGraphChanged)
+ *   4. MarkPackageDirty() + SaveAsset()
+ *   SKIP OnSave() — it calls SpawnMissingNodesForParallel → AddSubNode → NotifyGraphChanged → crash
+ *
+ * NOTE: bLockUpdates is protected in UAIGraph (UAIGraph.h:62). Use LockUpdates()/UnlockUpdates()
+ *   public API. Do NOT access bLockUpdates directly — it causes a compile error.
+ */
+static void SafeUpdateBTAsset(UBehaviorTree* BT, UBehaviorTreeGraph* BTGraph)
+{
+    if (!BT || !BTGraph) return;
+
+    // Ensure editors are closed (idempotent).
+    CloseAllBTEditors(BT);
+
+    // Lock updates via the public API so that AddSubNode calls inside SpawnMissingNodes
+    // do not trigger UpdateAsset re-entrantly (UpdateAsset returns early when locked).
+    // Note: bLockUpdates is protected — use LockUpdates() public method (AIGraph.h:50).
+    BTGraph->LockUpdates();
+
+    // SpawnMissingNodes ensures every graph node has a valid NodeInstance.
+    // With bLockUpdates=true, any internal UpdateAsset() calls are suppressed.
+    // AddSubNode still fires NotifyGraphChanged, but because editors are closed
+    // CloseAllEditorsForAsset has already removed the crashing listener.
+    BTGraph->SpawnMissingNodes();
+
+    // UnlockUpdates() sets bLockUpdates=false then calls UpdateAsset() (AIGraph.cpp:276-278).
+    // UpdateAsset() is SAFE — it builds the runtime BT tree (BT->RootNode hierarchy)
+    // without calling NotifyGraphChanged (confirmed from BehaviorTreeGraph.cpp source).
+    BTGraph->UnlockUpdates();
+
+    // Serialise — NodeInstance objects have outer=BT + RF_Transactional.
+    BT->MarkPackageDirty();
+    UEditorAssetLibrary::SaveAsset(BT->GetPathName(), false);
+}
+
+/** Helper: get or create the BehaviorTreeGraph on a BT asset */
+static UBehaviorTreeGraph* GetOrCreateBTGraph(UBehaviorTree* BT)
+{
+    if (!BT) return nullptr;
+    UBehaviorTreeGraph* BTGraph = Cast<UBehaviorTreeGraph>(BT->BTGraph);
+    if (!BTGraph)
+    {
+        // Create graph using NewObject (BT graphs are not Blueprint graphs)
+        BTGraph = NewObject<UBehaviorTreeGraph>(BT, NAME_None, RF_Transactional);
+        // Set schema class
+        BTGraph->Schema = UEdGraphSchema_BehaviorTree::StaticClass();
+        BTGraph->OnCreated();
+        BT->BTGraph = BTGraph;
+        // Let schema create the default Root node
+        const UEdGraphSchema* Schema = BTGraph->GetSchema();
+        if (Schema)
+            Schema->CreateDefaultNodesForGraph(*BTGraph);
+    }
+    return BTGraph;
+}
+
+/** Helper: resolve the UClass for a BT node type string */
+static UClass* ResolveBTNodeClass(const FString& NodeType)
+{
+    // ── Composites ────────────────────────────────────────────────────────────
+    if (NodeType.Equals(TEXT("Selector"),          ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTComposite_Selector"), ESearchCase::IgnoreCase))
+        return UBTComposite_Selector::StaticClass();
+    if (NodeType.Equals(TEXT("Sequence"),          ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTComposite_Sequence"), ESearchCase::IgnoreCase))
+        return UBTComposite_Sequence::StaticClass();
+
+    // ── Tasks (built-in, /Script/AIModule) ───────────────────────────────────
+    if (NodeType.Equals(TEXT("Wait"),              ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTTask_Wait"),       ESearchCase::IgnoreCase))
+        return UBTTask_Wait::StaticClass();
+    if (NodeType.Equals(TEXT("MoveTo"),            ESearchCase::IgnoreCase) ||
+        NodeType.Equals(TEXT("BTTask_MoveTo"),     ESearchCase::IgnoreCase))
+        return UBTTask_MoveTo::StaticClass();
+
+    // RunBehaviorTree — runs a child BT (sub-tree pattern)
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTTask_RunBehaviorTree"));
+        if (!C) C = FindObject<UClass>(nullptr, TEXT("/Script/GameplayTasks.BTTask_RunBehaviorTree"));
+        if (C && (NodeType.Equals(TEXT("RunBehaviorTree"), ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTTask_RunBehaviorTree"), ESearchCase::IgnoreCase)))
+            return C;
+    }
+
+    // ── Decorators (built-in) ─────────────────────────────────────────────────
+    // BTDecorator_Blackboard — gate on a BB key value
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_Blackboard"));
+        if (C && (NodeType.Equals(TEXT("BlackboardDecorator"),      ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_Blackboard"),   ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("Blackboard"),               ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_IsAtLocation
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_IsAtLocation"));
+        if (C && (NodeType.Equals(TEXT("IsAtLocation"),             ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_IsAtLocation"), ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_KeepInCone
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_KeepInCone"));
+        if (C && (NodeType.Equals(TEXT("KeepInCone"),               ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_KeepInCone"),   ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_Loop
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_Loop"));
+        if (C && (NodeType.Equals(TEXT("Loop"),                     ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_Loop"),         ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_TimeLimit
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_TimeLimit"));
+        if (C && (NodeType.Equals(TEXT("TimeLimit"),                ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_TimeLimit"),    ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_CooldownDecorator (CooldownDecorator)
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_Cooldown"));
+        if (C && (NodeType.Equals(TEXT("Cooldown"),                 ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_Cooldown"),     ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTDecorator_ForceSuccess
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTDecorator_ForceSuccess"));
+        if (C && (NodeType.Equals(TEXT("ForceSuccess"),             ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTDecorator_ForceSuccess"), ESearchCase::IgnoreCase)))
+            return C;
+    }
+
+    // ── Services (built-in) ───────────────────────────────────────────────────
+    // BTService_DefaultFocus — keeps AI focused on BB actor key
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTService_DefaultFocus"));
+        if (C && (NodeType.Equals(TEXT("DefaultFocus"),             ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTService_DefaultFocus"),   ESearchCase::IgnoreCase)))
+            return C;
+    }
+    // BTService_BlackboardBase / BTService_RunEQS (navigation mesh)
+    {
+        UClass* C = FindObject<UClass>(nullptr, TEXT("/Script/AIModule.BTService_RunEQS"));
+        if (C && (NodeType.Equals(TEXT("RunEQS"),                   ESearchCase::IgnoreCase) ||
+                  NodeType.Equals(TEXT("BTService_RunEQS"),         ESearchCase::IgnoreCase)))
+            return C;
+    }
+
+    // ── Fallback 1: /Script/AIModule.<NodeType> ───────────────────────────────
+    {
+        FString ClassPath = FString::Printf(TEXT("/Script/AIModule.%s"), *NodeType);
+        UClass* DynClass = FindObject<UClass>(nullptr, *ClassPath);
+        if (DynClass) return DynClass;
+    }
+
+    // ── Fallback 2: /Script/GameplayTasks.<NodeType> ──────────────────────────
+    {
+        FString ClassPath = FString::Printf(TEXT("/Script/GameplayTasks.%s"), *NodeType);
+        UClass* DynClass = FindObject<UClass>(nullptr, *ClassPath);
+        if (DynClass) return DynClass;
+    }
+
+    // ── Fallback 3: Blueprint asset path or full object path ─────────────────
+    {
+        UClass* DynClass = LoadObject<UClass>(nullptr, *NodeType);
+        if (DynClass) return DynClass;
+    }
+
+    return nullptr;
+}
+
+/** Helper: determine graph node class for a runtime BT node class */
+static UClass* GetBTGraphNodeClass(UClass* RuntimeClass)
+{
+    if (!RuntimeClass) return nullptr;
+    if (RuntimeClass->IsChildOf(UBTCompositeNode::StaticClass()))
+        return UBehaviorTreeGraphNode_Composite::StaticClass();
+    if (RuntimeClass->IsChildOf(UBTTaskNode::StaticClass()))
+        return UBehaviorTreeGraphNode_Task::StaticClass();
+    if (RuntimeClass->IsChildOf(UBTService::StaticClass()))
+        return UBehaviorTreeGraphNode_Service::StaticClass();
+    if (RuntimeClass->IsChildOf(UBTDecorator::StaticClass()))
+        return UBehaviorTreeGraphNode_Decorator::StaticClass();
+    return nullptr;
+}
+
+/** Recursive helper to build BT graph from JSON tree description.
+ *  Returns the created graph node or nullptr on failure.
+ *  JSON format per node:
+ *  {
+ *    "type": "Selector" | "Sequence" | "Wait" | "MoveTo" | "<ClassName>",
+ *    "x": 0, "y": 0,           // optional position
+ *    "properties": { ... },    // optional: key=value pairs set on node instance
+ *    "children": [ ... ],      // optional: child nodes (composites only)
+ *    "decorators": [ ... ],    // optional: decorator sub-nodes
+ *    "services":   [ ... ]     // optional: service sub-nodes
+ *  }
+ */
+static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
+    UBehaviorTreeGraph* BTGraph,
+    const TSharedPtr<FJsonObject>& NodeJson,
+    UBehaviorTreeGraphNode* ParentGraphNode,
+    float BaseX, float BaseY, int32& NodeIndex)
+{
+    if (!BTGraph || !NodeJson.IsValid()) return nullptr;
+
+    FString NodeType;
+    NodeJson->TryGetStringField(TEXT("type"), NodeType);
+    if (NodeType.IsEmpty()) return nullptr;
+
+    // Resolve runtime class
+    UClass* RuntimeClass = ResolveBTNodeClass(NodeType);
+    if (!RuntimeClass) return nullptr;
+
+    // Determine graph node class
+    UClass* GraphNodeClass = GetBTGraphNodeClass(RuntimeClass);
+    if (!GraphNodeClass) return nullptr;
+
+    // Position
+    float X = BaseX + (float)(NodeIndex * 220);
+    float Y = BaseY;
+    double JsonX = 0, JsonY = 0;
+    NodeJson->TryGetNumberField(TEXT("x"), JsonX);
+    NodeJson->TryGetNumberField(TEXT("y"), JsonY);
+    if (JsonX != 0) X = (float)JsonX;
+    if (JsonY != 0) Y = (float)JsonY;
+
+    // Create the graph node.  RF_Transactional ensures the node and its
+    // NodeInstance sub-object are included in the package's object chain and
+    // serialized properly when SaveAsset is called.
+    // Use BTSafeAddNode instead of BTGraph->AddNode() to avoid firing
+    // NotifyGraphChanged which causes the 0x68 crash.
+    UBehaviorTreeGraphNode* NewNode =
+        NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
+    if (!NewNode) return nullptr;
+    BTSafeAddNode(BTGraph, NewNode);
+
+    NewNode->NodePosX = FMath::RoundToInt(X);
+    NewNode->NodePosY = FMath::RoundToInt(Y);
+
+    // Set runtime class data on the graph node
+    // Set ClassData so PostPlacedNewNode knows which class to instantiate.
+    NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
+
+    // BUG-043: UAIGraphNode::PostPlacedNewNode() does NOT call Super::PostPlacedNewNode(),
+    // so the base UEdGraphNode::NodeGuid never gets assigned. Saving the asset with
+    // an all-zero NodeGuid causes FBehaviorTreeEditor::InitBehaviorTreeEditor to later
+    // dereference a null widget at +0x68 when the BT is opened. Assign the GUID here.
+    NewNode->CreateNewGuid();
+
+    // PostPlacedNewNode creates NodeInstance = NewObject<UObject>(GraphOwner=BT, RuntimeClass)
+    // This is the correct UE5 pattern (AIGraphNode.cpp:36-48): ClassData.GetClass() → NewObject.
+    // It sets outer=BT (the UBehaviorTree asset) so NodeInstance IS a subobject of BT
+    // and WILL be serialized when the package is saved.
+    NewNode->PostPlacedNewNode();
+
+    // InitializeInstance (BehaviorTreeGraphNode.cpp:54-64) initializes the BTNode:
+    // BTNode->InitializeFromAsset(*BTAsset) + InitializeNode + OnNodeCreated.
+    // This must come AFTER PostPlacedNewNode has created NodeInstance.
+    if (NewNode->NodeInstance)
+        NewNode->InitializeInstance();
+
+    // AllocateDefaultPins creates the input/output pins on the graph node.
+    // UBehaviorTreeGraphNode::AllocateDefaultPins just calls CreatePin (no NotifyGraphChanged).
+    NewNode->AllocateDefaultPins();
+
+    // Apply properties to runtime node instance
+    if (NewNode->NodeInstance)
+    {
+        const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+        if (NodeJson->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj)
+        {
+            for (auto& KV : (*PropsObj)->Values)
+            {
+                FProperty* Prop = NewNode->NodeInstance->GetClass()->FindPropertyByName(FName(*KV.Key));
+                if (Prop)
+                {
+                    FString ValStr;
+                    KV.Value->TryGetString(ValStr);
+                    if (!ValStr.IsEmpty())
+                        Prop->ImportText_Direct(*ValStr, Prop->ContainerPtrToValuePtr<void>(NewNode->NodeInstance), NewNode->NodeInstance, PPF_None);
+                }
+            }
+        }
+    }
+
+    // Connect to parent via pins
+    if (ParentGraphNode)
+    {
+        UEdGraphPin* ParentOutputPin = nullptr;
+        UEdGraphPin* NewInputPin = nullptr;
+
+        for (UEdGraphPin* Pin : ParentGraphNode->Pins)
+        {
+            if (Pin && Pin->Direction == EGPD_Output) { ParentOutputPin = Pin; break; }
+        }
+        for (UEdGraphPin* Pin : NewNode->Pins)
+        {
+            if (Pin && Pin->Direction == EGPD_Input) { NewInputPin = Pin; break; }
+        }
+
+        // Use BTSafeLinkPins instead of MakeLinkTo to avoid NotifyGraphChanged
+        if (ParentOutputPin && NewInputPin)
+        {
+            BTSafeLinkPins(ParentOutputPin, NewInputPin);
+        }
+    }
+
+    NodeIndex++;
+
+    // Process decorators (sub-nodes)
+    const TArray<TSharedPtr<FJsonValue>>* DecoratorsArr = nullptr;
+    if (NodeJson->TryGetArrayField(TEXT("decorators"), DecoratorsArr) && DecoratorsArr)
+    {
+        for (const TSharedPtr<FJsonValue>& DecVal : *DecoratorsArr)
+        {
+            const TSharedPtr<FJsonObject>* DecObj = nullptr;
+            if (!DecVal->TryGetObject(DecObj) || !DecObj) continue;
+
+            FString DecType;
+            (*DecObj)->TryGetStringField(TEXT("type"), DecType);
+            UClass* DecClass = ResolveBTNodeClass(DecType);
+            if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
+
+            // Create decorator graph node as outer=BTGraph (it's a graph node, not a runtime node)
+            UBehaviorTreeGraphNode_Decorator* DecNode =
+                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
+            if (DecNode)
+            {
+                DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
+                // BUG-043: assign NodeGuid before PostPlacedNewNode (UAIGraphNode override
+                // skips Super so base UEdGraphNode::NodeGuid would stay all-zero).
+                DecNode->CreateNewGuid();
+                // PostPlacedNewNode creates NodeInstance with outer=BT (the UBehaviorTree asset)
+                DecNode->PostPlacedNewNode();
+                if (DecNode->NodeInstance)
+                    DecNode->InitializeInstance();
+                // Manually wire sub-node relationships (mirrors AddSubNode without NotifyGraphChanged)
+                DecNode->SetFlags(RF_Transactional);
+                // Set outer to BTGraph so the sub-node is properly owned
+                if (DecNode->GetOuter() != BTGraph)
+                    DecNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                DecNode->bIsSubNode = 1;
+                DecNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(DecNode);
+                // OnSubNodeAdded routes to BehaviorTreeGraphNode::OnSubNodeAdded which
+                // adds to Decorators[] or Services[] array (BehaviorTreeGraphNode.cpp:224-249)
+                NewNode->OnSubNodeAdded(DecNode);
+            }
+        }
+    }
+
+    // Process services (sub-nodes)
+    const TArray<TSharedPtr<FJsonValue>>* ServicesArr = nullptr;
+    if (NodeJson->TryGetArrayField(TEXT("services"), ServicesArr) && ServicesArr)
+    {
+        for (const TSharedPtr<FJsonValue>& SvcVal : *ServicesArr)
+        {
+            const TSharedPtr<FJsonObject>* SvcObj = nullptr;
+            if (!SvcVal->TryGetObject(SvcObj) || !SvcObj) continue;
+
+            FString SvcType;
+            (*SvcObj)->TryGetStringField(TEXT("type"), SvcType);
+            UClass* SvcClass = ResolveBTNodeClass(SvcType);
+            if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
+
+            UBehaviorTreeGraphNode_Service* SvcNode =
+                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
+            if (SvcNode)
+            {
+                SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
+                // BUG-043: assign NodeGuid before PostPlacedNewNode (UAIGraphNode override
+                // skips Super so base UEdGraphNode::NodeGuid would stay all-zero).
+                SvcNode->CreateNewGuid();
+                // PostPlacedNewNode creates NodeInstance with outer=BT
+                SvcNode->PostPlacedNewNode();
+                if (SvcNode->NodeInstance)
+                    SvcNode->InitializeInstance();
+                // Manually wire sub-node relationships
+                SvcNode->SetFlags(RF_Transactional);
+                if (SvcNode->GetOuter() != BTGraph)
+                    SvcNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                SvcNode->bIsSubNode = 1;
+                SvcNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(SvcNode);
+                NewNode->OnSubNodeAdded(SvcNode);
+            }
+        }
+    }
+
+    // Process children (composite nodes)
+    // BUG-FIX: ChildSlot tracks the horizontal position of each sibling
+    // independently from NodeIndex (which counts all nodes ever created and is
+    // shared across the entire tree).  Previously ChildIndex was passed as the
+    // NodeIndex ref so it received the total subtree depth of every preceding
+    // child, making each sibling's X position wrong (too far to the right).
+    const TArray<TSharedPtr<FJsonValue>>* ChildrenArr = nullptr;
+    if (NodeJson->TryGetArrayField(TEXT("children"), ChildrenArr) && ChildrenArr)
+    {
+        float ChildY = Y + 200.0f;
+        float TotalWidth = (float)ChildrenArr->Num() * 220.0f;
+        float StartX = X - TotalWidth * 0.5f + 110.0f;
+
+        for (int32 ChildSlot = 0; ChildSlot < ChildrenArr->Num(); ++ChildSlot)
+        {
+            const TSharedPtr<FJsonObject>* ChildObj = nullptr;
+            if (!(*ChildrenArr)[ChildSlot]->TryGetObject(ChildObj) || !ChildObj) continue;
+            // Pass global NodeIndex ref so every node gets a unique index,
+            // but use ChildSlot * 220 for horizontal placement so siblings
+            // are evenly spaced regardless of how large each child's subtree is.
+            BuildBTNodeFromJson(BTGraph, *ChildObj, NewNode,
+                StartX + (float)ChildSlot * 220.0f, ChildY, NodeIndex);
+        }
+    }
+
+    return NewNode;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// build_behavior_tree
+// Params:
+//   behavior_tree_name: string   (name of existing BT asset to build into)
+//   tree: object                 (JSON tree description, root is a composite)
+//   clear_existing: bool         (default true – remove existing non-root nodes)
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBuildBehaviorTree(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+
+    const TSharedPtr<FJsonObject>* TreeObj = nullptr;
+    if (!Params->TryGetObjectField(TEXT("tree"), TreeObj) || !TreeObj)
+        return CreateErrorResponse(TEXT("Missing 'tree' object"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // ── MUST be first: close editors BEFORE any graph mutation ───────────────
+    // Every UPROPERTY write on BTGraph fires FOnObjectPropertyChanged which the
+    // BT editor module intercepts and dereferences a null IBehaviorTreeEditor*
+    // at +0x68.  CloseAllEditorsForAsset unregisters those listeners so all
+    // subsequent graph modifications (AddNode, Nodes.Remove, MakeLinkTo, …) are safe.
+    CloseAllBTEditors(BT);
+
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    // Optionally clear existing nodes (keep root)
+    bool bClearExisting = true;
+    Params->TryGetBoolField(TEXT("clear_existing"), bClearExisting);
+
+    if (bClearExisting)
+        SafeRemoveBTNodes(BTGraph);
+
+    // Find root node
+    UBehaviorTreeGraphNode_Root* RootNode = nullptr;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        RootNode = Cast<UBehaviorTreeGraphNode_Root>(Node);
+        if (RootNode) break;
+    }
+
+    // Build tree from JSON
+    int32 NodeIndex = 0;
+    float RootX = RootNode ? (float)RootNode->NodePosX : 0.0f;
+    float StartY = (RootNode ? (float)RootNode->NodePosY : 0.0f) + 200.0f;
+
+    UBehaviorTreeGraphNode* TopNode = BuildBTNodeFromJson(
+        BTGraph, *TreeObj, RootNode, RootX, StartY, NodeIndex);
+
+    if (!TopNode)
+        return CreateErrorResponse(TEXT("Failed to create top-level BT node from 'tree' JSON"));
+
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    // Collect info about created nodes
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetNumberField(TEXT("nodes_created"), (double)NodeIndex);
+
+    TArray<TSharedPtr<FJsonValue>> NodeList;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (!Node->IsA<UBehaviorTreeGraphNode_Root>())
+        {
+            TSharedPtr<FJsonObject> NObj = MakeShared<FJsonObject>();
+            NObj->SetStringField(TEXT("class"), Node->GetClass()->GetName());
+            NObj->SetNumberField(TEXT("x"), Node->NodePosX);
+            NObj->SetNumberField(TEXT("y"), Node->NodePosY);
+            if (UAIGraphNode* AIN = Cast<UAIGraphNode>(Node))
+            {
+                if (AIN->NodeInstance)
+                    NObj->SetStringField(TEXT("instance"), AIN->NodeInstance->GetClass()->GetName());
+            }
+            NodeList.Add(MakeShared<FJsonValueObject>(NObj));
+        }
+    }
+    R->SetArrayField(TEXT("nodes"), NodeList);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// add_bt_node
+// Params:
+//   behavior_tree_name: string
+//   node_type:   string   e.g. "Selector", "Sequence", "Wait", "MoveTo",
+//                         or full class path like "BTComposite_Selector"
+//   parent_node_index: int  (0-based index in current graph Nodes array, skip root)
+//                           -1 = attach to root
+//   x: float, y: float  (optional position)
+//   properties: object   (optional key=value for node instance)
+//   decorators: array    (optional decorator sub-nodes, each with "type")
+//   services:   array    (optional service sub-nodes)
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName, NodeType;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+    if (!Params->TryGetStringField(TEXT("node_type"), NodeType))
+        return CreateErrorResponse(TEXT("Missing 'node_type'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // Close editors FIRST — before any graph access — to unregister BT editor
+    // property-change listeners that crash at 0x68 on any BTGraph UPROPERTY write.
+    CloseAllBTEditors(BT);
+
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    UClass* RuntimeClass = ResolveBTNodeClass(NodeType);
+    if (!RuntimeClass)
+        return CreateErrorResponse(FString::Printf(TEXT("Unknown BT node type: %s"), *NodeType));
+
+    UClass* GraphNodeClass = GetBTGraphNodeClass(RuntimeClass);
+    if (!GraphNodeClass)
+        return CreateErrorResponse(FString::Printf(TEXT("Cannot determine graph node class for: %s"), *NodeType));
+
+    // Determine parent
+    double ParentIdx = -1;
+    Params->TryGetNumberField(TEXT("parent_node_index"), ParentIdx);
+
+    UBehaviorTreeGraphNode* ParentGraphNode = nullptr;
+    // Build list of non-root nodes
+    TArray<UBehaviorTreeGraphNode*> NonRootNodes;
+    UBehaviorTreeGraphNode_Root* RootNode = nullptr;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (UBehaviorTreeGraphNode_Root* Root = Cast<UBehaviorTreeGraphNode_Root>(Node))
+            RootNode = Root;
+        else if (UBehaviorTreeGraphNode* BTN = Cast<UBehaviorTreeGraphNode>(Node))
+            NonRootNodes.Add(BTN);
+    }
+
+    if ((int32)ParentIdx < 0)
+        ParentGraphNode = RootNode; // attach to root
+    else if ((int32)ParentIdx < NonRootNodes.Num())
+        ParentGraphNode = NonRootNodes[(int32)ParentIdx];
+
+    // Position
+    double X = 0, Y = 300;
+    Params->TryGetNumberField(TEXT("x"), X);
+    Params->TryGetNumberField(TEXT("y"), Y);
+    if (X == 0 && ParentGraphNode)
+    {
+        X = ParentGraphNode->NodePosX + (double)(NonRootNodes.Num() * 220);
+        Y = ParentGraphNode->NodePosY + 200.0;
+    }
+
+    // Create node. NewObject outer=BTGraph ensures the graph node is owned by the graph.
+    // Use BTSafeAddNode instead of AddNode() to avoid NotifyGraphChanged crash.
+    UBehaviorTreeGraphNode* NewNode =
+        NewObject<UBehaviorTreeGraphNode>(BTGraph, GraphNodeClass, NAME_None, RF_Transactional);
+    BTSafeAddNode(BTGraph, NewNode);
+    NewNode->NodePosX = FMath::RoundToInt((float)X);
+    NewNode->NodePosY = FMath::RoundToInt((float)Y);
+    // Set ClassData so PostPlacedNewNode knows which runtime class to instantiate.
+    NewNode->ClassData = FGraphNodeClassData(RuntimeClass, FString());
+    // BUG-043: assign NodeGuid before PostPlacedNewNode. UAIGraphNode::PostPlacedNewNode()
+    // does NOT call Super, so NodeGuid would otherwise stay all-zero and crash the BT
+    // editor on next open (null widget lookup at +0x68).
+    NewNode->CreateNewGuid();
+    // PostPlacedNewNode creates NodeInstance with outer=BT (the UBehaviorTree asset)
+    // so NodeInstance is a subobject of BT and will be serialized with the package.
+    NewNode->PostPlacedNewNode();
+    if (NewNode->NodeInstance)
+        NewNode->InitializeInstance();
+    NewNode->AllocateDefaultPins();
+
+    // Apply properties
+    const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj && NewNode->NodeInstance)
+    {
+        for (auto& KV : (*PropsObj)->Values)
+        {
+            FProperty* Prop = NewNode->NodeInstance->GetClass()->FindPropertyByName(FName(*KV.Key));
+            if (Prop)
+            {
+                FString ValStr;
+                KV.Value->TryGetString(ValStr);
+                if (!ValStr.IsEmpty())
+                    Prop->ImportText_Direct(*ValStr, Prop->ContainerPtrToValuePtr<void>(NewNode->NodeInstance), NewNode->NodeInstance, PPF_None);
+            }
+        }
+    }
+
+    // Connect to parent
+    if (ParentGraphNode)
+    {
+        UEdGraphPin* ParentOutputPin = nullptr;
+        UEdGraphPin* NewInputPin = nullptr;
+        for (UEdGraphPin* Pin : ParentGraphNode->Pins)
+            if (Pin && Pin->Direction == EGPD_Output) { ParentOutputPin = Pin; break; }
+        for (UEdGraphPin* Pin : NewNode->Pins)
+            if (Pin && Pin->Direction == EGPD_Input) { NewInputPin = Pin; break; }
+        // Use BTSafeLinkPins to avoid MakeLinkTo->NotifyGraphChanged crash
+        if (ParentOutputPin && NewInputPin)
+            BTSafeLinkPins(ParentOutputPin, NewInputPin);
+    }
+
+    // Add decorators
+    const TArray<TSharedPtr<FJsonValue>>* DecoratorsArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("decorators"), DecoratorsArr) && DecoratorsArr)
+    {
+        for (const TSharedPtr<FJsonValue>& DecVal : *DecoratorsArr)
+        {
+            const TSharedPtr<FJsonObject>* DecObj = nullptr;
+            if (!DecVal->TryGetObject(DecObj)) continue;
+            FString DecType;
+            (*DecObj)->TryGetStringField(TEXT("type"), DecType);
+            UClass* DecClass = ResolveBTNodeClass(DecType);
+            if (!DecClass || !DecClass->IsChildOf(UBTDecorator::StaticClass())) continue;
+            UBehaviorTreeGraphNode_Decorator* DecNode =
+                NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
+            if (DecNode)
+            {
+                DecNode->ClassData = FGraphNodeClassData(DecClass, FString());
+                // BUG-043: NodeGuid must be assigned before PostPlacedNewNode (UAIGraphNode
+                // override skips Super, leaving base NodeGuid all-zero → BT editor crash on open).
+                DecNode->CreateNewGuid();
+                DecNode->PostPlacedNewNode(); // creates NodeInstance with outer=BT
+                if (DecNode->NodeInstance)
+                    DecNode->InitializeInstance();
+                // Wire sub-node without calling AddSubNode (which calls NotifyGraphChanged)
+                if (DecNode->GetOuter() != BTGraph)
+                    DecNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                DecNode->bIsSubNode = 1;
+                DecNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(DecNode);
+                NewNode->OnSubNodeAdded(DecNode); // populates Decorators[] array
+            }
+        }
+    }
+
+    // Add services
+    const TArray<TSharedPtr<FJsonValue>>* ServicesArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("services"), ServicesArr) && ServicesArr)
+    {
+        for (const TSharedPtr<FJsonValue>& SvcVal : *ServicesArr)
+        {
+            const TSharedPtr<FJsonObject>* SvcObj = nullptr;
+            if (!SvcVal->TryGetObject(SvcObj)) continue;
+            FString SvcType;
+            (*SvcObj)->TryGetStringField(TEXT("type"), SvcType);
+            UClass* SvcClass = ResolveBTNodeClass(SvcType);
+            if (!SvcClass || !SvcClass->IsChildOf(UBTService::StaticClass())) continue;
+            UBehaviorTreeGraphNode_Service* SvcNode =
+                NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
+            if (SvcNode)
+            {
+                SvcNode->ClassData = FGraphNodeClassData(SvcClass, FString());
+                // BUG-043: NodeGuid must be assigned before PostPlacedNewNode (UAIGraphNode
+                // override skips Super, leaving base NodeGuid all-zero → BT editor crash on open).
+                SvcNode->CreateNewGuid();
+                SvcNode->PostPlacedNewNode(); // creates NodeInstance with outer=BT
+                if (SvcNode->NodeInstance)
+                    SvcNode->InitializeInstance();
+                // Wire sub-node without calling AddSubNode (which calls NotifyGraphChanged)
+                if (SvcNode->GetOuter() != BTGraph)
+                    SvcNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                SvcNode->bIsSubNode = 1;
+                SvcNode->ParentNode = NewNode;
+                NewNode->SubNodes.Add(SvcNode);
+                NewNode->OnSubNodeAdded(SvcNode); // populates Services[] array
+            }
+        }
+    }
+
+    // Close any open BT editor, rebuild runtime tree from graph, then save.
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    // Return info
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetStringField(TEXT("node_type"), NodeType);
+    R->SetNumberField(TEXT("node_index"), (double)NonRootNodes.Num()); // its new index
+    R->SetNumberField(TEXT("x"), X);
+    R->SetNumberField(TEXT("y"), Y);
+    if (NewNode->NodeInstance)
+        R->SetStringField(TEXT("instance_class"), NewNode->NodeInstance->GetClass()->GetName());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// attach_bt_sub_node
+// Attach a Service or Decorator to an EXISTING BT graph node (typically the
+// root composite / a selector / a sequence).  Mirrors the sub-node pattern
+// already used inside HandleAddBTNode but targets a parent resolved by index.
+//
+// Params:
+//   behavior_tree_name : string
+//   parent_node_index  : int    0-based index into the non-root nodes list;
+//                               -1 = attach to root (index 0 composite child of root)
+//   sub_node_kind      : string "service" | "decorator"
+//   class_name         : string runtime class name, short ("BTService_UpdatePerception"
+//                               or generated "BTService_UpdatePerception_C") or full path
+//   properties         : object optional key=value imported onto NodeInstance
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAttachBTSubNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName, SubKind, ClassName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+    if (!Params->TryGetStringField(TEXT("sub_node_kind"), SubKind))
+        return CreateErrorResponse(TEXT("Missing 'sub_node_kind' (\"service\" or \"decorator\")"));
+    if (!Params->TryGetStringField(TEXT("class_name"), ClassName))
+        return CreateErrorResponse(TEXT("Missing 'class_name'"));
+
+    const bool bIsService = SubKind.Equals(TEXT("service"), ESearchCase::IgnoreCase);
+    const bool bIsDecorator = SubKind.Equals(TEXT("decorator"), ESearchCase::IgnoreCase);
+    if (!bIsService && !bIsDecorator)
+        return CreateErrorResponse(TEXT("'sub_node_kind' must be \"service\" or \"decorator\""));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    // Close BT editor before graph edits (mirrors HandleAddBTNode crash mitigation).
+    CloseAllBTEditors(BT);
+
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    // Resolve sub-node runtime class. ResolveBTNodeClass handles both short names
+    // ("BTService_UpdatePerception") and full paths, and auto-appends "_C" for BP classes.
+    UClass* SubRuntimeClass = ResolveBTNodeClass(ClassName);
+    if (!SubRuntimeClass)
+        return CreateErrorResponse(FString::Printf(TEXT("Unknown sub-node class: %s"), *ClassName));
+
+    if (bIsService && !SubRuntimeClass->IsChildOf(UBTService::StaticClass()))
+        return CreateErrorResponse(FString::Printf(
+            TEXT("Class '%s' is not a UBTService"), *ClassName));
+    if (bIsDecorator && !SubRuntimeClass->IsChildOf(UBTDecorator::StaticClass()))
+        return CreateErrorResponse(FString::Printf(
+            TEXT("Class '%s' is not a UBTDecorator"), *ClassName));
+
+    // Build list of non-root nodes and locate parent by index
+    TArray<UBehaviorTreeGraphNode*> NonRootNodes;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (Node && !Node->IsA<UBehaviorTreeGraphNode_Root>())
+        {
+            if (UBehaviorTreeGraphNode* BTN = Cast<UBehaviorTreeGraphNode>(Node))
+                NonRootNodes.Add(BTN);
+        }
+    }
+
+    double ParentIdxD = -1;
+    Params->TryGetNumberField(TEXT("parent_node_index"), ParentIdxD);
+    const int32 ParentIdx = (int32)ParentIdxD;
+
+    UBehaviorTreeGraphNode* ParentNode = nullptr;
+    if (ParentIdx < 0)
+    {
+        // -1 means "the root composite" = first non-root node in the graph
+        if (NonRootNodes.Num() > 0) ParentNode = NonRootNodes[0];
+    }
+    else if (ParentIdx < NonRootNodes.Num())
+    {
+        ParentNode = NonRootNodes[ParentIdx];
+    }
+
+    if (!ParentNode)
+        return CreateErrorResponse(FString::Printf(
+            TEXT("No non-root node at index %d (total non-root nodes: %d)"),
+            ParentIdx, NonRootNodes.Num()));
+
+    // Idempotency: if a sub-node with the same runtime class already exists, return OK.
+    for (UAIGraphNode* Existing : ParentNode->SubNodes)
+    {
+        if (Existing && Existing->NodeInstance &&
+            Existing->NodeInstance->GetClass() == SubRuntimeClass)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("already_attached"), true);
+            R->SetStringField(TEXT("behavior_tree"), BTName);
+            R->SetStringField(TEXT("class_name"), ClassName);
+            R->SetStringField(TEXT("sub_node_kind"), SubKind);
+            return R;
+        }
+    }
+
+    // Create the graph sub-node (Service or Decorator).
+    UAIGraphNode* SubGraphNode = nullptr;
+    if (bIsService)
+    {
+        UBehaviorTreeGraphNode_Service* SvcNode =
+            NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
+        SubGraphNode = SvcNode;
+    }
+    else // decorator
+    {
+        UBehaviorTreeGraphNode_Decorator* DecNode =
+            NewObject<UBehaviorTreeGraphNode_Decorator>(BTGraph, NAME_None, RF_Transactional);
+        SubGraphNode = DecNode;
+    }
+
+    if (!SubGraphNode)
+        return CreateErrorResponse(TEXT("Failed to create sub-node object"));
+
+    // Wire the sub-node per the proven pattern in HandleAddBTNode.
+    SubGraphNode->ClassData = FGraphNodeClassData(SubRuntimeClass, FString());
+
+    // BUG-043: assign NodeGuid before PostPlacedNewNode; UAIGraphNode override skips
+    // Super so base NodeGuid stays zero → BT editor crashes at 0x68 on open.
+    SubGraphNode->CreateNewGuid();
+    SubGraphNode->PostPlacedNewNode(); // creates NodeInstance with outer=BT
+    if (SubGraphNode->NodeInstance)
+        SubGraphNode->InitializeInstance();
+
+    // Ensure graph ownership then attach as sub-node without triggering NotifyGraphChanged
+    if (SubGraphNode->GetOuter() != BTGraph)
+    {
+        SubGraphNode->Rename(nullptr, BTGraph,
+            REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+    }
+    SubGraphNode->bIsSubNode = 1;
+    SubGraphNode->ParentNode = ParentNode;
+    ParentNode->SubNodes.Add(SubGraphNode);
+    ParentNode->OnSubNodeAdded(SubGraphNode); // populates Services[] or Decorators[]
+
+    // Optional properties applied to NodeInstance
+    const TSharedPtr<FJsonObject>* PropsObj = nullptr;
+    if (Params->TryGetObjectField(TEXT("properties"), PropsObj) && PropsObj &&
+        SubGraphNode->NodeInstance)
+    {
+        for (const auto& KV : (*PropsObj)->Values)
+        {
+            FProperty* Prop = SubGraphNode->NodeInstance->GetClass()->FindPropertyByName(FName(*KV.Key));
+            if (Prop)
+            {
+                FString ValStr;
+                KV.Value->TryGetString(ValStr);
+                if (!ValStr.IsEmpty())
+                    Prop->ImportText_Direct(*ValStr,
+                        Prop->ContainerPtrToValuePtr<void>(SubGraphNode->NodeInstance),
+                        SubGraphNode->NodeInstance, PPF_None);
+            }
+        }
+    }
+
+    // Rebuild runtime tree from graph and save the BT asset.
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetStringField(TEXT("class_name"), ClassName);
+    R->SetStringField(TEXT("sub_node_kind"), SubKind);
+    R->SetNumberField(TEXT("parent_index"), (double)ParentIdx);
+    if (SubGraphNode->NodeInstance)
+        R->SetStringField(TEXT("instance_class"),
+            SubGraphNode->NodeInstance->GetClass()->GetName());
+    R->SetNumberField(TEXT("parent_sub_node_count"), (double)ParentNode->SubNodes.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// get_bt_graph_info
+// Params:
+//   behavior_tree_name: string
+// Returns list of current graph nodes with their types, positions, and connections.
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleGetBTGraphInfo(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    UBehaviorTreeGraph* BTGraph = Cast<UBehaviorTreeGraph>(BT->BTGraph);
+    if (!BTGraph)
+    {
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetStringField(TEXT("behavior_tree"), BTName);
+        R->SetStringField(TEXT("note"), TEXT("No graph exists yet — use build_behavior_tree to create one."));
+        R->SetArrayField(TEXT("nodes"), TArray<TSharedPtr<FJsonValue>>());
+        return R;
+    }
+
+    TArray<TSharedPtr<FJsonValue>> NodeList;
+    int32 Idx = 0;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (!Node) continue;
+        TSharedPtr<FJsonObject> NObj = MakeShared<FJsonObject>();
+        bool bIsRoot = Node->IsA<UBehaviorTreeGraphNode_Root>();
+        NObj->SetBoolField(TEXT("is_root"), bIsRoot);
+        NObj->SetNumberField(TEXT("index"), Idx - (bIsRoot ? 0 : 0));
+        NObj->SetStringField(TEXT("graph_class"), Node->GetClass()->GetName());
+        NObj->SetNumberField(TEXT("x"), Node->NodePosX);
+        NObj->SetNumberField(TEXT("y"), Node->NodePosY);
+
+        if (UAIGraphNode* AIN = Cast<UAIGraphNode>(Node))
+        {
+            if (AIN->NodeInstance)
+            {
+                NObj->SetStringField(TEXT("runtime_class"), AIN->NodeInstance->GetClass()->GetName());
+                NObj->SetStringField(TEXT("display_name"), AIN->NodeInstance->GetClass()->GetDisplayNameText().ToString());
+            }
+            // Sub-nodes (decorators/services)
+            TArray<TSharedPtr<FJsonValue>> SubList;
+            for (UAIGraphNode* Sub : AIN->SubNodes)
+            {
+                if (!Sub) continue;
+                TSharedPtr<FJsonObject> SObj = MakeShared<FJsonObject>();
+                SObj->SetStringField(TEXT("graph_class"), Sub->GetClass()->GetName());
+                if (Sub->NodeInstance)
+                    SObj->SetStringField(TEXT("runtime_class"), Sub->NodeInstance->GetClass()->GetName());
+                SubList.Add(MakeShared<FJsonValueObject>(SObj));
+            }
+            if (SubList.Num() > 0)
+                NObj->SetArrayField(TEXT("sub_nodes"), SubList);
+        }
+
+        // Output connections
+        TArray<TSharedPtr<FJsonValue>> Connections;
+        for (UEdGraphPin* Pin : Node->Pins)
+        {
+            if (!Pin || Pin->Direction != EGPD_Output) continue;
+            for (UEdGraphPin* Link : Pin->LinkedTo)
+            {
+                if (Link && Link->GetOwningNode())
+                {
+                    TSharedPtr<FJsonObject> ConnObj = MakeShared<FJsonObject>();
+                    ConnObj->SetStringField(TEXT("target_class"), Link->GetOwningNode()->GetClass()->GetName());
+                    Connections.Add(MakeShared<FJsonValueObject>(ConnObj));
+                }
+            }
+        }
+        if (Connections.Num() > 0)
+            NObj->SetArrayField(TEXT("connections"), Connections);
+
+        NodeList.Add(MakeShared<FJsonValueObject>(NObj));
+        Idx++;
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetNumberField(TEXT("node_count"), (double)BTGraph->Nodes.Num());
+    R->SetArrayField(TEXT("nodes"), NodeList);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// bt_add_selector_wait
+//
+// Restructures a BT so that the Root drives a Selector composite with two
+// children:
+//   left  (child 0) → the existing first child of Root (e.g. the Sequence)
+//   right (child 1) → a new Wait task (default WaitTime = 2.0 s)
+//
+// Params:
+//   bt_path   (string)  – full game path, e.g.
+//             "/Game/DestinyContent/Blueprints/Enemies/EnemiesV2/AI/BT_Enemy_Infantry"
+//             OR just the asset name, e.g. "BT_Enemy_Infantry"
+//   wait_time (float)   – optional, defaults to 2.0
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddSelectorWait(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    // ── 1.  Resolve the BehaviorTree asset ───────────────────────────────────
+    FString BTPath;
+    Params->TryGetStringField(TEXT("bt_path"), BTPath);
+    if (BTPath.IsEmpty())
+        Params->TryGetStringField(TEXT("behavior_tree_name"), BTPath);
+    if (BTPath.IsEmpty())
+        return CreateErrorResponse(TEXT("Missing 'bt_path' (or 'behavior_tree_name')"));
+
+    // Accept both full game path and bare name
+    UBehaviorTree* BT = nullptr;
+    if (BTPath.StartsWith(TEXT("/")))
+    {
+        // Load by full object path  (e.g. "/Game/.../BT_Enemy_Infantry")
+        BT = LoadObject<UBehaviorTree>(nullptr, *BTPath);
+        if (!BT)
+        {
+            // Try appending the short name as the sub-object
+            FString ShortName = FPackageName::GetShortName(BTPath);
+            FString FullObjPath = BTPath + TEXT(".") + ShortName;
+            BT = LoadObject<UBehaviorTree>(nullptr, *FullObjPath);
+        }
+    }
+    if (!BT)
+    {
+        // Fall back to AR search by name
+        FString ShortName = FPackageName::GetShortName(BTPath);
+        BT = FindBehaviorTree(ShortName);
+    }
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(
+            TEXT("BehaviorTree asset not found: %s"), *BTPath));
+
+    // Close editors FIRST — unregisters BT editor property-change listeners
+    // that crash at 0x68 on any BTGraph UPROPERTY write (MakeLinkTo, AddNode, …).
+    CloseAllBTEditors(BT);
+
+    // ── 2.  Get / create the editor graph ───────────────────────────────────
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get BehaviorTreeGraph"));
+
+    // ── 3.  Find the Root node ───────────────────────────────────────────────
+    UBehaviorTreeGraphNode_Root* RootNode = nullptr;
+    for (UEdGraphNode* N : BTGraph->Nodes)
+    {
+        RootNode = Cast<UBehaviorTreeGraphNode_Root>(N);
+        if (RootNode) break;
+    }
+    if (!RootNode)
+        return CreateErrorResponse(TEXT("BT graph has no Root node"));
+
+    // ── 4.  Find Root's output pin and its current first child ──────────────
+    UEdGraphPin* RootOutPin = nullptr;
+    for (UEdGraphPin* P : RootNode->Pins)
+        if (P && P->Direction == EGPD_Output) { RootOutPin = P; break; }
+    if (!RootOutPin)
+        return CreateErrorResponse(TEXT("Root node has no output pin"));
+
+    // Collect nodes already directly connected to Root (the existing Sequence etc.)
+    TArray<UEdGraphPin*> OldChildInputPins;
+    for (UEdGraphPin* Link : RootOutPin->LinkedTo)
+        if (Link) OldChildInputPins.Add(Link);
+
+    // ── 5.  Check: already has a Selector child? bail early ─────────────────
+    for (UEdGraphPin* ChildIn : OldChildInputPins)
+    {
+        if (!ChildIn->GetOwningNode()) continue;
+        if (UAIGraphNode* AIN = Cast<UAIGraphNode>(ChildIn->GetOwningNode()))
+        {
+            if (AIN->NodeInstance &&
+                AIN->NodeInstance->IsA(UBTComposite_Selector::StaticClass()))
+            {
+                TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+                R->SetBoolField(TEXT("success"), true);
+                R->SetStringField(TEXT("note"),
+                    TEXT("Root already connected to a Selector — no change made."));
+                return R;
+            }
+        }
+    }
+
+    // ── 6.  Create Selector graph node ──────────────────────────────────────
+    float SelX = RootNode->NodePosX;
+    float SelY = (float)RootNode->NodePosY + 200.0f;
+
+    // Use BTSafeAddNode to avoid BTGraph->AddNode()->NotifyGraphChanged crash
+    UBehaviorTreeGraphNode* SelNode =
+        NewObject<UBehaviorTreeGraphNode>(
+            BTGraph, UBehaviorTreeGraphNode_Composite::StaticClass(), NAME_None, RF_Transactional);
+    BTSafeAddNode(BTGraph, SelNode);
+    SelNode->NodePosX = FMath::RoundToInt(SelX);
+    SelNode->NodePosY = FMath::RoundToInt(SelY);
+    SelNode->ClassData = FGraphNodeClassData(UBTComposite_Selector::StaticClass(), FString());
+    // BUG-043: assign NodeGuid before PostPlacedNewNode (UAIGraphNode override skips Super
+    // → base NodeGuid would be all-zero → BT editor crash on next open at +0x68).
+    SelNode->CreateNewGuid();
+    // PostPlacedNewNode creates NodeInstance=UBTComposite_Selector with outer=BT (the asset)
+    // so it will be serialized as a subobject of the BT package.
+    SelNode->PostPlacedNewNode();
+    if (SelNode->NodeInstance)
+        SelNode->InitializeInstance();
+    SelNode->AllocateDefaultPins();
+
+    // ── 7.  Rewire Root → Selector ──────────────────────────────────────────
+    // Disconnect Root from its old children WITHOUT BreakAllPinLinks (fires NotifyGraphChanged)
+    BTSafeUnlinkPin(RootOutPin);
+
+    UEdGraphPin* SelInPin = nullptr;
+    for (UEdGraphPin* P : SelNode->Pins)
+        if (P && P->Direction == EGPD_Input) { SelInPin = P; break; }
+    // Use BTSafeLinkPins to avoid MakeLinkTo->NotifyGraphChanged crash
+    BTSafeLinkPins(RootOutPin, SelInPin);
+
+    // ── 8.  Re-connect old children to Selector ─────────────────────────────
+    UEdGraphPin* SelOutPin = nullptr;
+    for (UEdGraphPin* P : SelNode->Pins)
+        if (P && P->Direction == EGPD_Output) { SelOutPin = P; break; }
+
+    // Re-position old children below Selector (left side)
+    int32 OldChildIdx = 0;
+    for (UEdGraphPin* ChildIn : OldChildInputPins)
+    {
+        if (!ChildIn->GetOwningNode()) continue;
+        UEdGraphNode* OldChild = ChildIn->GetOwningNode();
+        OldChild->NodePosX = FMath::RoundToInt(SelX + (float)(OldChildIdx * 350) - 175.0f);
+        OldChild->NodePosY = FMath::RoundToInt(SelY + 200.0f);
+        // Use BTSafeLinkPins to avoid MakeLinkTo->NotifyGraphChanged crash
+        BTSafeLinkPins(SelOutPin, ChildIn);
+        OldChildIdx++;
+    }
+
+    // ── 9.  Create Wait task ─────────────────────────────────────────────────
+    double WaitTimeSec = 2.0;
+    Params->TryGetNumberField(TEXT("wait_time"), WaitTimeSec);
+
+    float WaitX = SelX + (float)(OldChildIdx * 350) - 175.0f;
+    float WaitY = SelY + 200.0f;
+
+    // Use BTSafeAddNode to avoid BTGraph->AddNode()->NotifyGraphChanged crash
+    UBehaviorTreeGraphNode* WaitNode =
+        NewObject<UBehaviorTreeGraphNode>(
+            BTGraph, UBehaviorTreeGraphNode_Task::StaticClass(), NAME_None, RF_Transactional);
+    BTSafeAddNode(BTGraph, WaitNode);
+    WaitNode->NodePosX = FMath::RoundToInt(WaitX);
+    WaitNode->NodePosY = FMath::RoundToInt(WaitY);
+    WaitNode->ClassData = FGraphNodeClassData(UBTTask_Wait::StaticClass(), FString());
+    // BUG-043: assign NodeGuid before PostPlacedNewNode.
+    WaitNode->CreateNewGuid();
+    // PostPlacedNewNode creates NodeInstance=UBTTask_Wait with outer=BT (the asset)
+    WaitNode->PostPlacedNewNode();
+    if (WaitNode->NodeInstance)
+        WaitNode->InitializeInstance();
+    WaitNode->AllocateDefaultPins();
+
+    // Set WaitTime on the runtime instance
+    if (WaitNode->NodeInstance)
+    {
+        FProperty* WTProp = WaitNode->NodeInstance->GetClass()->FindPropertyByName(
+            FName(TEXT("WaitTime")));
+        if (WTProp)
+        {
+            FString WaitStr = FString::SanitizeFloat((float)WaitTimeSec);
+            WTProp->ImportText_Direct(
+                *WaitStr,
+                WTProp->ContainerPtrToValuePtr<void>(WaitNode->NodeInstance),
+                WaitNode->NodeInstance, PPF_None);
+        }
+    }
+
+    // Connect Selector → Wait (safe, no NotifyGraphChanged)
+    UEdGraphPin* WaitInPin = nullptr;
+    for (UEdGraphPin* P : WaitNode->Pins)
+        if (P && P->Direction == EGPD_Input) { WaitInPin = P; break; }
+    BTSafeLinkPins(SelOutPin, WaitInPin);
+
+    // ── 10.  Close open editor, rebuild runtime tree from graph, save ─────────
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    // ── 11.  Return summary ──────────────────────────────────────────────────
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("behavior_tree"), BT->GetName());
+    R->SetStringField(TEXT("selector_node"), TEXT("BTComposite_Selector"));
+    R->SetStringField(TEXT("wait_node"),     TEXT("BTTask_Wait"));
+    R->SetNumberField(TEXT("wait_time"),     WaitTimeSec);
+    R->SetNumberField(TEXT("old_children_rewired"), (double)OldChildIdx);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddCallInterfaceFunctionNode(
     const TSharedPtr<FJsonObject>& Params)

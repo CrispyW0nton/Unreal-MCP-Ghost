@@ -86,12 +86,52 @@ private:
     TSharedPtr<FJsonObject> HandleAddStateTransition(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetAnimationForState(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlendSpaceNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddSequencePlayerNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleConnectAnimGraphNodes(const TSharedPtr<FJsonObject>& Params);
+    /** Insert UAnimGraphNode_Slot between the current pose source and AnimGraph Root (for montage layering). */
+    TSharedPtr<FJsonObject> HandleInsertAnimGraphSlotBeforeRoot(const TSharedPtr<FJsonObject>& Params);
+    /**
+     * Insert Blend List (By Bool) + SequencePlayer between the pose feeding an AnimGraph Slot and the Slot.
+     * Requires Root <- Slot <- (locomotion…). Locomotion goes to the "false" branch; sequence_asset plays on "true".
+     * Optional JSON:
+     *   bind_bool_variable (default "bIsShooting") — wires Active Value to that AnimBP bool via property bindings.
+     *   force_insert (default false) — when true, layer a NEW BlendListByBool above an existing one
+     *     (chain multiple gates, e.g. bIsInAir → jump above bIsShooting → fire).
+     */
+    TSharedPtr<FJsonObject> HandleInsertBlendBoolFireBeforeSlot(const TSharedPtr<FJsonObject>& Params);
 
     // ?? AI / Behavior Tree ????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> HandleCreateBehaviorTree(const TSharedPtr<FJsonObject>& Params);
+    /** repair_behavior_tree: rebuild graph from scratch so it can be opened in the BT editor */
+    TSharedPtr<FJsonObject> HandleRepairBehaviorTree(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetBehaviorTreeBlackboard(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetBlueprintParentClass(const TSharedPtr<FJsonObject>& Params);
+
+    // ?? BT Graph Node Manipulation ???????????????????????????????????????????
+    /** build_behavior_tree: populate a BT asset's graph from a JSON tree description */
+    TSharedPtr<FJsonObject> HandleBuildBehaviorTree(const TSharedPtr<FJsonObject>& Params);
+    /** add_bt_node: add a single BT node to an existing BT graph */
+    TSharedPtr<FJsonObject> HandleAddBTNode(const TSharedPtr<FJsonObject>& Params);
+    /** get_bt_graph_info: inspect current BT graph nodes and connections */
+    TSharedPtr<FJsonObject> HandleGetBTGraphInfo(const TSharedPtr<FJsonObject>& Params);
+    /**
+     * attach_bt_sub_node: attach a Service or Decorator to an EXISTING BT node.
+     * Params: behavior_tree_name (string)
+     *         parent_node_index  (int, 0-based among non-root nodes;  -1 = root)
+     *         sub_node_kind      (string) "service" | "decorator"
+     *         class_name         (string) runtime class name, e.g. "BTService_UpdatePerception"
+     *                                                        or  "/Game/.../BTService_X"
+     *         properties         (object, optional) key=value applied to NodeInstance
+     */
+    TSharedPtr<FJsonObject> HandleAttachBTSubNode(const TSharedPtr<FJsonObject>& Params);
+    /**
+     * bt_add_selector_wait: restructure BT_Enemy_Infantry so the Root drives a
+     * Selector with the existing Sequence as left child and a Wait(2s) as right child.
+     * Params: bt_path (string, e.g. "/Game/.../BT_Enemy_Infantry")
+     *         wait_time (float, default 2.0)
+     */
+    TSharedPtr<FJsonObject> HandleBTAddSelectorWait(const TSharedPtr<FJsonObject>& Params);
 
     // ?? Level / World ?????????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> HandleSetGameModeForLevel(const TSharedPtr<FJsonObject>& Params);

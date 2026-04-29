@@ -13,6 +13,21 @@ preview_*
 *.patch
 
 # -------------------------------------------------------
+# Local scratch / one-off probes (regenerate at will)
+# -------------------------------------------------------
+# Local-only: absolute paths to licensed PDFs for agent retrieval (copy from docs/knowledge-base/local-book-paths.example.json)
+local-book-paths.json
+
+/_*.txt
+.cursor/mcp.json
+bug_*.py
+bug2_*.py
+bug3_*.py
+abp_*.py
+_probe*.py
+_tmp*.py
+
+# -------------------------------------------------------
 # Project-specific one-off scripts (never commit these)
 # -------------------------------------------------------
 fix_*.py

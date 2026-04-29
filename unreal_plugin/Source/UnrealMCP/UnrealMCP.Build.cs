@@ -16,7 +16,12 @@ public class UnrealMCP : ModuleRules
         );
 
         PrivateIncludePaths.AddRange(
-            new string[] { }
+            new string[]
+            {
+                // AnimGraphNodeBinding_Base.h (Private) includes AnimGraphNodeBinding.h (UE 5.6+: Internal/).
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/AnimGraph/Private"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/AnimGraph/Internal"),
+            }
         );
 
         // ?? Public dependencies (available to dependent modules) ?????????????
@@ -68,6 +73,7 @@ public class UnrealMCP : ModuleRules
                 "AIModule",
                 "NavigationSystem",
                 "BehaviorTreeEditor",
+                "AIGraph",           // UAIGraph, UAIGraphNode, FGraphNodeClassData
                 "GameplayTasks",
 
                 // Animation Blueprint (extended ? Chapter 17)

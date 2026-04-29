@@ -44,15 +44,12 @@ public:
     static void InvalidateBlueprintMissCache(const FString& BlueprintName);
 
     /**
-     * Safe wrapper around FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified.
+     * Mark a Blueprint dirty without firing structural editor notifications.
      *
-     * MarkBlueprintAsStructurallyModified() dereferences Blueprint->GeneratedClass to
-     * invalidate the class property chain.  On the FIRST call of a fresh editor session
-     * (or for newly-created Blueprints that haven't been compiled yet), GeneratedClass
-     * may be null — causing EXCEPTION_ACCESS_VIOLATION → EdGraphNode.h:586 assertion.
-     *
-     * This wrapper guards GeneratedClass and falls back to Blueprint->Modify() which
-     * marks the UObject dirty for Undo/save without touching GeneratedClass.
+     * In this project, MarkBlueprintAsStructurallyModified can enter UnrealEd /
+     * CoreUObject notification chains while MassEntityEditor has stale observers,
+     * causing EXCEPTION_ACCESS_VIOLATION during MCP edits or on the next save.
+     * This wrapper intentionally uses Modify + MarkPackageDirty only.
      */
     static void SafeMarkBlueprintModified(UBlueprint* Blueprint);
 

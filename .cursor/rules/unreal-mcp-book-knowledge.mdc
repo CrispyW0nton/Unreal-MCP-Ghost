@@ -1,0 +1,27 @@
+---
+description: Before Unreal MCP plugin or UE bridge work — consult the three-book knowledge base first.
+alwaysApply: true
+---
+
+# Unreal MCP + UE5 — book knowledge base (mandatory first step)
+
+**Relaunching Unreal does not load PDFs into Cursor.** This rule ensures the agent still aligns with your Packt references by reading repo docs **before** any plugin/MCP-related action.
+
+## When this applies
+
+Before **any** of: editing `unreal_plugin/`; editing `unreal_mcp_server/` tools or transports; changing `es_mcp_native.py` / `es_mcp.py`; sending commands to the UE bridge (`send(...)` / MCP tools that hit port 55557); or advising on compile/save/AnimGraph/BT flows for this project.
+
+## Step 1 — Read these files first (in order)
+
+1. `docs/knowledge-base/README.md` — index, RAG note, licensing.
+2. `docs/knowledge-base/unreal-cpp-li-2023.md` — Li (C++ / gameplay / anim / replication).
+3. `docs/knowledge-base/elevating-game-experiences-ue5-2e.md` — Marques et al. (editor + Blueprint quality).
+4. `docs/knowledge-base/game-ai-unreal-sapio-2019.md` — Sapio (BT / nav / EQS framing).
+
+## Step 2 — Full book detail (optional, local only)
+
+If `local-book-paths.json` exists at the repo root (gitignored), read it for absolute paths to **licensed** PDFs. Use those paths only for **short retrieval** (open relevant chapter, quote minimally, paraphrase for the repo). Do not paste large excerpts into tracked files.
+
+## Step 3 — Then act
+
+Only after Step 1 (and Step 2 if paths exist): run MCP commands, edit the plugin, or change server tooling.

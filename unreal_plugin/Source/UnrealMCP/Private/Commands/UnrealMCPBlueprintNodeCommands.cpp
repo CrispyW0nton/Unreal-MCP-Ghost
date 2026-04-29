@@ -66,6 +66,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleCommand(
     if (CommandType == TEXT("disconnect_blueprint_nodes"))  return HandleDisconnectBlueprintNodes(Params);
     if (CommandType == TEXT("delete_blueprint_node"))       return HandleDeleteBlueprintNode(Params);
     if (CommandType == TEXT("set_node_pin_value"))          return HandleSetNodePinValue(Params);
+    if (CommandType == TEXT("reconstruct_blueprint_node"))  return HandleReconstructBlueprintNode(Params);
     if (CommandType == TEXT("set_spawn_actor_class"))        return HandleSetSpawnActorClass(Params);
 
     // --- node creation ---
@@ -105,7 +106,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleCommand(
     if (CommandType == TEXT("get_blueprint_functions"))                     return HandleGetBlueprintFunctions(Params);
     if (CommandType == TEXT("add_blueprint_function_with_pins"))            return HandleAddBlueprintFunctionWithPins(Params);
     // BUG-030: per-component ComponentBoundEvent
-    if (CommandType == TEXT("add_component_overlap_event"))                 return HandleAddComponentOverlapEvent(Params);
+    if (CommandType == TEXT("add_component_overlap_event") ||
+        CommandType == TEXT("add_component_event_node"))                    return HandleAddComponentOverlapEvent(Params);
     // BUG-035: SCS node inspector
     if (CommandType == TEXT("get_scs_nodes"))                               return HandleGetSCSNodes(Params);
 
@@ -186,7 +188,28 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::SerializePin(UEdGraphPi
     PObj->SetStringField(TEXT("pin_name"),  Pin->PinName.ToString());
     PObj->SetStringField(TEXT("direction"), Pin->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
     PObj->SetStringField(TEXT("type"),      Pin->PinType.PinCategory.ToString());
+    // Emit container type ("none" | "array" | "set" | "map") so callers can
+    // distinguish scalar object pins from array/set/map pins (important for
+    // diagnosing wildcard propagation issues on Array_Get / Array_Length).
+    {
+        const EPinContainerType CT = Pin->PinType.ContainerType;
+        const TCHAR* CTStr = TEXT("none");
+        switch (CT)
+        {
+            case EPinContainerType::Array: CTStr = TEXT("array"); break;
+            case EPinContainerType::Set:   CTStr = TEXT("set");   break;
+            case EPinContainerType::Map:   CTStr = TEXT("map");   break;
+            default: break;
+        }
+        PObj->SetStringField(TEXT("container_type"), CTStr);
+    }
     PObj->SetStringField(TEXT("default_value"), Pin->DefaultValue);
+    // Emit default_object path for object/class-type pins (e.g. Class pin on SpawnActorFromClass).
+    if (Pin->DefaultObject)
+        PObj->SetStringField(TEXT("default_object"), Pin->DefaultObject->GetPathName());
+    // Surface subcategory object class so callers can see the expected type (e.g. Actor Class).
+    if (Pin->PinType.PinSubCategoryObject.IsValid())
+        PObj->SetStringField(TEXT("sub_object"), Pin->PinType.PinSubCategoryObject->GetPathName());
     PObj->SetBoolField(TEXT("is_hidden"),   Pin->bHidden);
 
     // Linked-to list (GUIDs of connected pins)
@@ -232,6 +255,17 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::SerializeNode(UEdGraphN
         NObj->SetStringField(TEXT("variable_name"), VG->VariableReference.GetMemberName().ToString());
     if (UK2Node_VariableSet* VS = Cast<UK2Node_VariableSet>(Node))
         NObj->SetStringField(TEXT("variable_name"), VS->VariableReference.GetMemberName().ToString());
+
+    // For macro instances, expose the referenced macro graph name + owning blueprint
+    if (UK2Node_MacroInstance* MI = Cast<UK2Node_MacroInstance>(Node))
+    {
+        if (UEdGraph* Macro = MI->GetMacroGraph())
+        {
+            NObj->SetStringField(TEXT("macro_name"), Macro->GetName());
+            if (UObject* MacroOuter = Macro->GetOuter())
+                NObj->SetStringField(TEXT("macro_owner"), MacroOuter->GetPathName());
+        }
+    }
 
     // Pins
     TArray<TSharedPtr<FJsonValue>> Pins;
@@ -538,6 +572,17 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintNodes
                     NObj->SetStringField(TEXT("variable_name"), VG->VariableReference.GetMemberName().ToString());
                 if (UK2Node_VariableSet* VS = Cast<UK2Node_VariableSet>(Node))
                     NObj->SetStringField(TEXT("variable_name"), VS->VariableReference.GetMemberName().ToString());
+                if (UK2Node_MacroInstance* MI = Cast<UK2Node_MacroInstance>(Node))
+                {
+                    if (UEdGraph* MacroG = MI->GetMacroGraph())
+                    {
+                        NObj->SetStringField(TEXT("macro_name"), MacroG->GetName());
+                        if (UObject* MOuter = MacroG->GetOuter())
+                            NObj->SetStringField(TEXT("macro_owner"), MOuter->GetPathName());
+                    }
+                    if (UBlueprint* SrcBP = MI->GetSourceBlueprint())
+                        NObj->SetStringField(TEXT("macro_source_bp"), SrcBP->GetPathName());
+                }
                 TArray<TSharedPtr<FJsonValue>> PinsArray;
                 for (UEdGraphPin* P : Node->Pins)
                 {
@@ -592,6 +637,17 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleGetBlueprintNodes
             NObj->SetStringField(TEXT("variable_name"), VG->VariableReference.GetMemberName().ToString());
         if (UK2Node_VariableSet* VS = Cast<UK2Node_VariableSet>(Node))
             NObj->SetStringField(TEXT("variable_name"), VS->VariableReference.GetMemberName().ToString());
+        if (UK2Node_MacroInstance* MI = Cast<UK2Node_MacroInstance>(Node))
+        {
+            if (UEdGraph* MacroG = MI->GetMacroGraph())
+            {
+                NObj->SetStringField(TEXT("macro_name"), MacroG->GetName());
+                if (UObject* MOuter = MacroG->GetOuter())
+                    NObj->SetStringField(TEXT("macro_owner"), MOuter->GetPathName());
+            }
+            if (UBlueprint* SrcBP = MI->GetSourceBlueprint())
+                NObj->SetStringField(TEXT("macro_source_bp"), SrcBP->GetPathName());
+        }
 
         // Pins
         TArray<TSharedPtr<FJsonValue>> PinsArray;
@@ -860,7 +916,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDisconnectBluepri
 
 // ============================================================
 // delete_blueprint_node
-// Params: blueprint_name, [graph_name], node_id (GUID or name)
+// Params: blueprint_name, [graph_name], node_id (GUID or name), [force_unsafe_delete]
 // ============================================================
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDeleteBlueprintNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -880,6 +936,22 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDeleteBlueprintNo
     FString DeletedId = Node->NodeGuid.ToString();
     FString DeletedName = Node->GetName();
 
+    bool bForceUnsafeDelete = false;
+    Params->TryGetBoolField(TEXT("force_unsafe_delete"), bForceUnsafeDelete);
+    if (!bForceUnsafeDelete)
+    {
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetStringField(TEXT("node_id"), Node->NodeGuid.ToString());
+        R->SetStringField(TEXT("node_name"), Node->GetName());
+        R->SetBoolField(TEXT("success"), true);
+        R->SetBoolField(TEXT("deleted"), false);
+        R->SetBoolField(TEXT("skipped"), true);
+        R->SetBoolField(TEXT("manual_cleanup_recommended"), true);
+        R->SetStringField(TEXT("reason"),
+            TEXT("Graph node deletion is disabled by default because RemoveNode can crash Unreal through MCP in this project. Move or disconnect nodes, or pass force_unsafe_delete=true for manual recovery."));
+        return R;
+    }
+
     // Break all connections first
     const UEdGraphSchema_K2* Schema = Cast<const UEdGraphSchema_K2>(Graph->GetSchema());
     if (Schema) Schema->BreakNodeLinks(*Node);
@@ -892,6 +964,49 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleDeleteBlueprintNo
     TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
     R->SetStringField(TEXT("deleted_node_id"),   DeletedId);
     R->SetStringField(TEXT("deleted_node_name"), DeletedName);
+    return R;
+}
+
+// ============================================================
+// reconstruct_blueprint_node
+// Params: blueprint_name, [graph_name], node_id (GUID or name)
+// Forces UE to call ReconstructNode() on the node, which re-runs
+// pin type propagation (needed for wildcard Array_Get/Array_Length etc.)
+// ============================================================
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleReconstructBlueprintNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString Err;
+    UEdGraph* Graph = ResolveGraph(Params, Err);
+    if (!Graph) return FUnrealMCPCommonUtils::CreateErrorResponse(Err);
+
+    FString NodeId;
+    if (!Params->TryGetStringField(TEXT("node_id"), NodeId))
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'node_id'"));
+
+    UEdGraphNode* Node = FindNodeByIdOrName(Graph, NodeId);
+    if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(
+        FString::Printf(TEXT("Node not found: %s"), *NodeId));
+
+    UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
+    FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(BP);
+
+    // Fire pin-type propagation for all pins first (wildcard->concrete).
+    for (UEdGraphPin* Pin : Node->Pins)
+    {
+        if (Pin && Node)
+        {
+            Node->PinConnectionListChanged(Pin);
+        }
+    }
+    // Then ReconstructNode to regenerate pin list with resolved types.
+    Node->ReconstructNode();
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetStringField(TEXT("reconstructed_node_id"),   Node->NodeGuid.ToString());
+    R->SetStringField(TEXT("reconstructed_node_name"), Node->GetName());
     return R;
 }
 
@@ -1030,6 +1145,107 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleSetSpawnActorClas
 // Creates a UK2Node_CustomEvent (user-defined event) with the given name.
 // Safe: uses NewObject + AddNode + AllocateDefaultPins, no CompileBlueprint.
 // ============================================================
+// Local helper: map a type string (optionally with sub_type) to FEdGraphPinType.
+// Mirrors the MakePinType lambda used by HandleAddBlueprintFunctionWithPins.
+static FEdGraphPinType MakeCustomEventPinType(const FString& TypeStr, const FString& SubTypeStr)
+{
+    FEdGraphPinType PinType;
+    const FString T = TypeStr.ToLower();
+    if (T == TEXT("boolean") || T == TEXT("bool"))         { PinType.PinCategory = UEdGraphSchema_K2::PC_Boolean; }
+    else if (T == TEXT("integer") || T == TEXT("int"))     { PinType.PinCategory = UEdGraphSchema_K2::PC_Int; }
+    else if (T == TEXT("integer64") || T == TEXT("int64")) { PinType.PinCategory = UEdGraphSchema_K2::PC_Int64; }
+    else if (T == TEXT("float"))
+    {
+        PinType.PinCategory    = UEdGraphSchema_K2::PC_Real;
+        PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+    }
+    else if (T == TEXT("double"))
+    {
+        PinType.PinCategory    = UEdGraphSchema_K2::PC_Real;
+        PinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
+    }
+    else if (T == TEXT("string")) { PinType.PinCategory = UEdGraphSchema_K2::PC_String; }
+    else if (T == TEXT("name"))   { PinType.PinCategory = UEdGraphSchema_K2::PC_Name; }
+    else if (T == TEXT("text"))   { PinType.PinCategory = UEdGraphSchema_K2::PC_Text; }
+    else if (T == TEXT("vector"))
+    {
+        PinType.PinCategory          = UEdGraphSchema_K2::PC_Struct;
+        PinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
+    }
+    else if (T == TEXT("rotator"))
+    {
+        PinType.PinCategory          = UEdGraphSchema_K2::PC_Struct;
+        PinType.PinSubCategoryObject = TBaseStructure<FRotator>::Get();
+    }
+    else if (T == TEXT("transform"))
+    {
+        PinType.PinCategory          = UEdGraphSchema_K2::PC_Struct;
+        PinType.PinSubCategoryObject = TBaseStructure<FTransform>::Get();
+    }
+    else if (!SubTypeStr.IsEmpty())
+    {
+        UClass* ObjClass = FindFirstObject<UClass>(*SubTypeStr, EFindFirstObjectOptions::None);
+        if (!ObjClass) ObjClass = FindObject<UClass>(nullptr, *SubTypeStr);
+        if (ObjClass)
+        {
+            PinType.PinCategory          = UEdGraphSchema_K2::PC_Object;
+            PinType.PinSubCategoryObject = ObjClass;
+        }
+        else
+        {
+            PinType.PinCategory    = UEdGraphSchema_K2::PC_Real;
+            PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+        }
+    }
+    else
+    {
+        PinType.PinCategory    = UEdGraphSchema_K2::PC_Real;
+        PinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+    }
+    return PinType;
+}
+
+// Adds typed user-defined pins (from an 'inputs' JSON array) to a custom-event
+// node. Custom-event params use EGPD_Output direction (value flows OUT of the
+// event). Skips any pin that already exists with the same name.
+// Returns number of pins actually added.
+static int32 AddInputsToCustomEvent(UK2Node_CustomEvent* EventNode,
+                                    const TArray<TSharedPtr<FJsonValue>>& InputsArray)
+{
+    if (!EventNode) return 0;
+    int32 AddedCount = 0;
+    for (const TSharedPtr<FJsonValue>& PinVal : InputsArray)
+    {
+        const TSharedPtr<FJsonObject>* PinObj = nullptr;
+        if (!PinVal.IsValid() || !PinVal->TryGetObject(PinObj) || !PinObj) continue;
+        FString PinName, PinTypeStr, PinSubType;
+        (*PinObj)->TryGetStringField(TEXT("name"), PinName);
+        (*PinObj)->TryGetStringField(TEXT("type"), PinTypeStr);
+        (*PinObj)->TryGetStringField(TEXT("sub_type"), PinSubType);
+        if (PinName.IsEmpty() || PinTypeStr.IsEmpty()) continue;
+
+        // Skip if a pin with this name already exists on the node.
+        bool bExists = false;
+        for (UEdGraphPin* Existing : EventNode->Pins)
+        {
+            if (Existing && Existing->PinName == FName(*PinName)) { bExists = true; break; }
+        }
+        if (bExists) continue;
+
+        const FEdGraphPinType EPinType = MakeCustomEventPinType(PinTypeStr, PinSubType);
+        // CreateUserDefinedPin is the correct API for editable-pin-base nodes:
+        // it appends to UserDefinedPins *and* spawns the actual UEdGraphPin so
+        // it survives ReconstructNode() and is serialized with the BP.
+        EventNode->CreateUserDefinedPin(FName(*PinName), EPinType, EGPD_Output, /*bUseUniqueName*/ true);
+        ++AddedCount;
+    }
+    if (AddedCount > 0)
+    {
+        EventNode->ReconstructNode();
+    }
+    return AddedCount;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCustomEventNode(
     const TSharedPtr<FJsonObject>& Params)
 {
@@ -1045,17 +1261,32 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCusto
     if (Params->HasField(TEXT("node_position")))
         Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
 
+    // Optional typed input pins: [{name, type, [sub_type]}]
+    const TArray<TSharedPtr<FJsonValue>>* InputsArray = nullptr;
+    Params->TryGetArrayField(TEXT("inputs"), InputsArray);
+
     // Check if a custom event with this name already exists
     for (UEdGraphNode* Node : Graph->Nodes)
     {
         UK2Node_CustomEvent* Existing = Cast<UK2Node_CustomEvent>(Node);
         if (Existing && Existing->CustomFunctionName == FName(*EventName))
         {
+            int32 AddedPins = 0;
+            if (InputsArray)
+                AddedPins = AddInputsToCustomEvent(Existing, *InputsArray);
+
+            if (AddedPins > 0)
+            {
+                UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
+                FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+            }
+
             TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
             R->SetStringField(TEXT("node_id"),   Existing->NodeGuid.ToString());
             R->SetStringField(TEXT("node_name"), Existing->GetName());
             R->SetStringField(TEXT("event_name"), EventName);
             R->SetBoolField(TEXT("already_existed"), true);
+            R->SetNumberField(TEXT("pins_added"), (double)AddedPins);
             TArray<TSharedPtr<FJsonValue>> PinsArr;
             for (UEdGraphPin* P : Existing->Pins)
                 if (P && !P->bHidden) PinsArr.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
@@ -1079,6 +1310,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCusto
     CustomEventNode->PostPlacedNewNode();
     CustomEventNode->AllocateDefaultPins();
 
+    int32 AddedPins = 0;
+    if (InputsArray)
+        AddedPins = AddInputsToCustomEvent(CustomEventNode, *InputsArray);
+
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
 
@@ -1087,6 +1322,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintCusto
     R->SetStringField(TEXT("node_name"), CustomEventNode->GetName());
     R->SetStringField(TEXT("event_name"), EventName);
     R->SetBoolField(TEXT("already_existed"), false);
+    R->SetNumberField(TEXT("pins_added"), (double)AddedPins);
     TArray<TSharedPtr<FJsonValue>> PinsArr;
     for (UEdGraphPin* P : CustomEventNode->Pins)
         if (P && !P->bHidden) PinsArr.Add(MakeShared<FJsonValueObject>(SerializePin(P)));
@@ -1379,7 +1615,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
 
 // ============================================================
 // add_blueprint_variable_get_node
-// Params: blueprint_name, [graph_name], variable_name, [node_position]
+// Params: blueprint_name, [graph_name], variable_name, [node_position],
+//         [target_class]  — optional: variable is read from another class
+//         (e.g. pawn BP); resolves like add_blueprint_variable_set_node.
 // ============================================================
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVariableGetNode(
     const TSharedPtr<FJsonObject>& Params)
@@ -1397,7 +1635,57 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
     if (Params->HasField(TEXT("node_position")))
         Pos = FUnrealMCPCommonUtils::GetVector2DFromJson(Params, TEXT("node_position"));
 
-    UK2Node_VariableGet* Node = FUnrealMCPCommonUtils::CreateVariableGetNode(Graph, BP, VarName, Pos);
+    FString TargetClassName;
+    Params->TryGetStringField(TEXT("target_class"), TargetClassName);
+
+    UK2Node_VariableGet* Node = nullptr;
+
+    if (!TargetClassName.IsEmpty())
+    {
+        UClass* OwnerClass = FindFirstObject<UClass>(*TargetClassName, EFindFirstObjectOptions::None);
+        if (!OwnerClass)
+        {
+            for (TObjectIterator<UClass> It; It; ++It)
+            {
+                if (It->GetName().Equals(TargetClassName, ESearchCase::IgnoreCase))
+                {
+                    OwnerClass = *It;
+                    break;
+                }
+            }
+        }
+        if (!OwnerClass)
+        {
+            if (UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByName(TargetClassName))
+            {
+                if (TargetBP->GeneratedClass)
+                {
+                    OwnerClass = TargetBP->GeneratedClass;
+                }
+            }
+        }
+        if (!OwnerClass)
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("target_class not found: %s"), *TargetClassName));
+
+        FProperty* Prop = FindFProperty<FProperty>(OwnerClass, FName(*VarName));
+        if (!Prop)
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("Variable '%s' not found on class '%s'"), *VarName, *TargetClassName));
+
+        Node = NewObject<UK2Node_VariableGet>(Graph);
+        Node->VariableReference.SetExternalMember(FName(*VarName), OwnerClass);
+        Node->NodePosX = (int32)Pos.X;
+        Node->NodePosY = (int32)Pos.Y;
+        Node->CreateNewGuid();
+        Graph->AddNode(Node, /*bFromUI=*/false, /*bSelectNewNode=*/false);
+        Node->AllocateDefaultPins();
+    }
+    else
+    {
+        Node = FUnrealMCPCommonUtils::CreateVariableGetNode(Graph, BP, VarName, Pos);
+    }
+
     if (!Node) return FUnrealMCPCommonUtils::CreateErrorResponse(
         FString::Printf(TEXT("Failed to create VariableGet node for '%s'"), *VarName));
 
@@ -1448,6 +1736,16 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintVaria
             {
                 if (It->GetName().Equals(TargetClassName, ESearchCase::IgnoreCase))
                 { OwnerClass = *It; break; }
+            }
+        }
+        if (!OwnerClass)
+        {
+            if (UBlueprint* TargetBP = FUnrealMCPCommonUtils::FindBlueprintByName(TargetClassName))
+            {
+                if (TargetBP->GeneratedClass)
+                {
+                    OwnerClass = TargetBP->GeneratedClass;
+                }
             }
         }
         if (!OwnerClass)
