@@ -57,4 +57,26 @@ Remaining follow-up: apply the same disconnected-error normalization to other li
 
 ## Project Recovery Step
 
-For Lab4D specifically, enable the plugin in `Lab4D.uproject`, restart the editor, and verify port `55557` before rerunning the audit.
+For Lab4D specifically, `UnrealMCP` was enabled in `Lab4D.uproject`, the editor was launched, and port `55557` was verified open. The Phase 2 live audit then completed.
+
+## Phase 2 Tool Results
+
+Worked well:
+
+- `exec_python` successfully gathered a full level/asset/actor snapshot.
+- `get_blueprint_graphs` worked for all 8 Blueprint assets.
+- `get_blueprint_nodes` worked after passing the exact `graph_name` string from `get_blueprint_graphs`.
+- `get_blueprint_components`, `get_blueprint_variables`, and `get_blueprint_functions` worked for Blueprint-level introspection.
+
+Limitations:
+
+- The running MCP server still returned `[]` for disconnected `get_actors_in_level` until restarted with the newer server wrapper code; use `exec_python` or restart the server to pick up the fixed behavior.
+- UE Python returned Enhanced Input `Key` structs without readable key names through the simple `str(key)` path.
+- `InputSettings.get_action_mappings()` was unavailable in this UE 5.6 Python object; config file reading remains the reliable fallback for legacy mappings.
+- `get_blueprint_graphs` returns graph objects with `graph_name`; automation must extract that field, not stringify the graph object.
+
+Useful follow-up improvements:
+
+- Add a first-class `audit_project_snapshot` tool to return levels, assets, actors, framework settings, and inputs in one structured result.
+- Add readable Enhanced Input mapping extraction.
+- Add a Blueprint graph summarizer that returns events/functions/variables/casts without requiring agents to post-process raw node dumps.

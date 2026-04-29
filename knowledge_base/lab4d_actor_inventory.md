@@ -1,56 +1,64 @@
 # Lab4D Actor Inventory
 > Audit date: 2026-04-29
-> Status: Live actor inventory blocked because the Unreal editor bridge is not connected.
+> Source: live MCP `exec_python` snapshot of `/Game/Lab-0X.Lab-0X`
 
-## Live Query Attempts
+## Summary
 
-- MCP SSE server: reachable at `http://127.0.0.1:8000/sse`
-- Direct UE bridge: `127.0.0.1:55557` refused connection
-- `exec_python`: returned `Not connected to Unreal Engine`
-- `project_find_assets`: returned `ERR_UNREAL_NOT_CONNECTED`
-- `get_actors_in_level`: returned `[]`, but this is not trusted because the stronger bridge checks failed
+- Total actors: `30`
+- Gameplay Blueprint actors: `18`
+- Environment/editor actors: `12`
+- Current level: `/Game/Lab-0X.Lab-0X`
 
-## Current Level Evidence
+## Gameplay Actors
 
-Config and log evidence indicate:
+| Actor label | Class | Location | Notable components |
+| --- | --- | --- | --- |
+| `ThePlayerCharacter` | `ThePlayerCharacter_C` | `(-29.124, 794.195, 90)` | Capsule `Custom`, CharacterMovement, SkeletalMesh `CharacterMesh`, SpringArm, Camera |
+| `BP_PacifistDrone` | `BP_PacifistDrone_C` | `(-680, 200, 90)` | `DroneMesh` `BlockAllDynamic` |
+| `BP_WarDrone` | `BP_WarDrone_C` | `(-690, 110, 80)` | `DroneMesh` `BlockAllDynamic` |
+| `BP_DroneFactory` | `BP_DroneFactory_C` | `(-630, 510, 30)` | `FactoryMesh` `BlockAllDynamic`, `InteractRadius` `OverlapAllDynamic` |
+| `BP_LaserTurret` | `BP_LaserTurret_C` | `(-640, -100, 30)` | `TurretMesh`, `TurretMesh1` `BlockAllDynamic`, `HackZone` `OverlapAllDynamic` |
 
-- Editor startup map: `/Game/Lab-0X.Lab-0X`
-- Game default map: `/Game/Lab-0X.Lab-0X`
-- Editor loaded map file: `Content/Lab-0X.umap`
-- Loaded world name: `Lab-0X`
-- World Partition: enabled
-- Map check: `0 Error(s), 0 Warning(s)`
+## Defense Lasers
 
-## Actor Inventory
+All nine defense lasers are `BP_DefenseLaser_C`, scale `(0.5, 0.5, 0.5)`, with `SourcePointA` and `SourcePointB` static mesh components using `BlockAllDynamic`.
 
-Not available until the editor bridge is restored. The following data must be collected with `get_actors_in_level` and per-actor property reads:
+| Actor label | Location |
+| --- | --- |
+| `BP_DefenseLaser` | `(-140, 680, 10)` |
+| `BP_DefenseLaser2` | `(-710, 670, 10)` |
+| `BP_DefenseLaser3` | `(330, 680, 10)` |
+| `BP_DefenseLaser4` | `(330, 370, 10)` |
+| `BP_DefenseLaser5` | `(-140, 370, 10)` |
+| `BP_DefenseLaser6` | `(-710, 370, 10)` |
+| `BP_DefenseLaser7` | `(-710, 70, 10)` |
+| `BP_DefenseLaser8` | `(-140, 70, 10)` |
+| `BP_DefenseLaser9` | `(330, 70, 10)` |
 
-- Actor label/name
-- Class
-- Location, rotation, scale
-- Component summary
-- Collision profile and overlap settings
-- Notable Blueprint variables/defaults
-- References to gameplay systems such as player, drones, turrets, bullets, lasers, factory actors, nav volumes, and UI spawners
+## Lab Geometry
 
-## Known Blueprint Classes From Saved MCP Data
+| Actor label | Class | Location | Collision |
+| --- | --- | --- | --- |
+| `LabFloor` | `StaticMeshActor` | `(-43.675, 416.765, 0)` | StaticMeshComponent `BlockAll` |
+| `LabWall1` | `LabWall_C` | `(793.999, 337.065, 0.004)` | visual mesh `NoCollision`, `Box` `BlockAll` |
+| `LabWall2` | `LabWall_C` | `(-883.168, 334.743, 0.004)` | visual mesh `NoCollision`, `Box` `BlockAll` |
+| `LabWall3` | `LabWall_C` | `(-63.066, -427.198, 0)` | visual mesh `NoCollision`, `Box` `BlockAll` |
+| `LabWall4` | `LabWall_C` | `(-50, 1220, 0)` | visual mesh `NoCollision`, `Box` `BlockAll` |
+| `SM_SkySphere` | `StaticMeshActor` | `(-15580, 0, 0)` | `NoCollision` |
 
-These names likely correspond to placed actors or spawnable classes, but placement is unverified:
+## Lighting / Atmosphere / Editor Actors
 
-- `ThePlayerCharacter`
-- `BP_DefenseLaser`
-- `BP_PacifistDrone`
-- `BP_WarDrone`
-- `BP_DroneFactory`
-- `BP_LaserTurret`
-- `BP_Bullet`
+- `DirectionalLight`, `DirectionalLight2`, `DirectionalLight3`
+- `SkyLight`
+- `SkyAtmosphere`
+- `VolumetricCloud`
+- `ExponentialHeightFog`
+- `PostProcessVolume`
+- `WorldDataLayers`
+- `WorldPartitionMiniMap0`
 
-## Required Re-Audit Command Set
+## Notes
 
-After enabling `UnrealMCP` and restarting the editor:
-
-1. Run `get_actors_in_level`.
-2. For every returned actor, run `get_actor_properties`.
-3. For every Blueprint class in actor results, run `get_blueprint_components`, `get_blueprint_variables`, and `get_blueprint_graphs`.
-4. For every graph with logic, run `get_blueprint_nodes`.
-5. Update this file with verified actor rows.
+- No `NavMeshBoundsVolume` actor was found.
+- No actor components audited were simulating physics.
+- The level is small and gameplay-focused: one player, one factory, one turret, two drones, nine hazard lasers, four walls, one floor, and environmental lighting/post-process actors.
