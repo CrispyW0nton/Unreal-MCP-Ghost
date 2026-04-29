@@ -15,24 +15,34 @@ def register_editor_tools(mcp: FastMCP):
     def get_actors_in_level(ctx: Context) -> str:
         """Get a list of all actors in the current UE5 level.
 
-        Returns a compact single-line JSON array of actor objects.
+        Returns a compact single-line JSON array of actor objects when the
+        editor is connected. When Unreal is unavailable, returns a structured
+        JSON error object instead of an empty array so audits do not mistake a
+        disconnected bridge for an empty level.
         Example: [{"name": "BP_MyActor", "type": "StaticMeshActor"}, ...]
 
         Bug #3 fix:
         - Returns a JSON *string* so FastMCP sends it verbatim as a single
           TextContent block (no pydantic_core indent=2 pretty-printing).
-        - Returns a top-level JSON array so json.loads(result) is a list,
-          satisfying test runners that check isinstance(result, list).
+        - Connected success responses keep the historical top-level JSON array.
         """
         import json as _json
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
             if not unreal:
-                return _json.dumps([])
+                return _json.dumps({
+                    "success": False,
+                    "error_code": "ERR_UNREAL_NOT_CONNECTED",
+                    "message": "Not connected to Unreal Engine"
+                })
             response = unreal.send_command("get_actors_in_level", {})
             if not response:
-                return _json.dumps([])
+                return _json.dumps({
+                    "success": False,
+                    "error_code": "ERR_UNREAL_NO_RESPONSE",
+                    "message": "No response from Unreal Engine"
+                })
             if "result" in response and "actors" in response["result"]:
                 actors = response["result"]["actors"]
             elif "actors" in response:
@@ -43,7 +53,11 @@ def register_editor_tools(mcp: FastMCP):
             return _json.dumps(actors)
         except Exception as e:
             logger.error(f"Error getting actors: {e}")
-            return _json.dumps([])
+            return _json.dumps({
+                "success": False,
+                "error_code": "ERR_GET_ACTORS_FAILED",
+                "message": str(e)
+            })
 
     @mcp.tool()
     def find_actors_by_name(ctx: Context, pattern: str) -> List[str]:
