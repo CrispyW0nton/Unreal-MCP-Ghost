@@ -8,6 +8,7 @@
 #include "Json.h"
 #include "Interfaces/IPv4/IPv4Address.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
+#include "Containers/Ticker.h"
 #include "Commands/UnrealMCPEditorCommands.h"
 #include "Commands/UnrealMCPBlueprintCommands.h"
 #include "Commands/UnrealMCPBlueprintNodeCommands.h"
@@ -17,7 +18,31 @@
 #include "Engine/TimerHandle.h"
 #include "UnrealMCPBridge.generated.h"
 
+class AActor;
 class FMCPServerRunnable;
+
+struct FSithTrooperCombatState
+{
+	TWeakObjectPtr<AActor> Target;
+	FVector SpawnLocation = FVector::ZeroVector;
+	float LastSeenTime = -1000.0f;
+	float NextMoveTime = 0.0f;
+	float NextShotTime = 0.0f;
+	float BurstEndTime = 0.0f;
+	float ArrivalSettleUntil = 0.0f;
+	int32 ShotsRemaining = 0;
+	int32 BurstsBeforeMove = 0;
+	bool bWasInCombat = false;
+	bool bPlayedRaise = false;
+	bool bMoveInProgress = false;
+	bool bClearedBlueprintMoveTimer = false;
+	bool bAppliedRuntimeOptimizations = false;
+	bool bDeathMontageStarted = false;
+	bool bDeathRagdollActivated = false;
+	float DeathRagdollTime = 0.0f;
+	float SmoothedAnimSpeed = 0.0f;
+	float SmoothedAnimDirection = 0.0f;
+};
 
 /**
  * Editor subsystem for MCP Bridge
@@ -63,6 +88,10 @@ private:
 
 	// Watchdog timer handle
 	FTimerHandle WatchdogTimerHandle;
+	FTSTicker::FDelegateHandle SithCombatTickerHandle;
+	TMap<TWeakObjectPtr<AActor>, FSithTrooperCombatState> SithCombatStates;
+
+	bool SithCombatDirectorTick(float DeltaTime);
 
 	// Command handler instances
 	TSharedPtr<FUnrealMCPEditorCommands> EditorCommands;

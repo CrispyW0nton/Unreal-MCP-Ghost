@@ -292,149 +292,47 @@ def register_editor_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
-    def save_blueprint(ctx: Context, blueprint_name: str) -> Dict[str, Any]:
+    def save_blueprint(
+        ctx: Context,
+        blueprint_name: str,
+        only_if_dirty: bool = False,
+    ) -> Dict[str, Any]:
         """
-        Fully compile AND save a Blueprint asset so changes persist on disk.
+        Persist a Blueprint package to disk using the UnrealMCP C++ bridge.
 
-        BACKGROUND — why this tool exists:
-          compile_blueprint only calls Blueprint->Modify() (marks the asset dirty)
-          due to a UE5.6 crash (EXCEPTION_ACCESS_VIOLATION in MassEntityEditor
-          observer) when FKismetEditorUtilities::CompileBlueprint is called from
-          inside the C++ AsyncTask GameThread lambda.
-          The UE5 Python plugin runs on a different call stack that does NOT
-          trigger the crashing observer chain, so compiling via exec_python is safe.
+        This invokes the native `save_blueprint` MCP command, which writes the
+        package via `UEditorLoadingAndSavingUtils::SavePackages` (UnrealEd). It
+        does **not** call Python `unreal.EditorAssetLibrary.save_asset` /
+        `save_loaded_asset`, which has crashed with EXCEPTION_ACCESS_VIOLATION in
+        EditorScriptingUtilities on some UE 5.6 sessions.
 
-        This tool does the real work:
-          1. Finds the Blueprint asset by name
-          2. Calls unreal.KismetEditorUtilities.compile_blueprint() — true bytecode compile
-          3. Calls unreal.EditorAssetLibrary.save_asset() — writes .uasset to disk
-          4. Returns compilation errors if any
+        Typical flow after editing a BP via MCP:
+          1. `compile_blueprint(blueprint_name=...)` — marks modified (plugin safe path)
+          2. `save_blueprint(blueprint_name=...)` — writes `.uasset`
 
-        USAGE PATTERN — always call save_blueprint after compile_blueprint:
-          compile_blueprint(blueprint_name="BP_MyActor")   # marks dirty (fast)
-          save_blueprint(blueprint_name="BP_MyActor")      # real compile + disk save
+        Optional: `only_if_dirty=True` maps to the engine's "only save dirty
+        packages" behavior; default False saves the listed package regardless.
 
         Args:
-            blueprint_name: Name of the Blueprint to compile and save (e.g. "BP_MyActor")
-
-        Returns:
-            dict with 'success', 'compiled', 'saved', 'had_errors', and 'errors' list.
+            blueprint_name: Blueprint asset name (e.g. "BP_Cabal")
+            only_if_dirty: If True, only persist if the package is dirty
         """
         from unreal_mcp_server import get_unreal_connection
-        code = f"""
-import unreal
-
-bp_name = "{blueprint_name}"
-bp_asset = None
-
-# Method 1: asset registry search (UE5.5+ safe — use get_asset() not object_path string)
-try:
-    ar = unreal.AssetRegistryHelpers.get_asset_registry()
-    assets = ar.get_assets_by_class(unreal.TopLevelAssetPath("/Script/Engine", "Blueprint"))
-    for a in assets:
-        if str(a.asset_name) == bp_name:
-            bp_asset = a.get_asset()   # UE5.5+: get_asset() replaces object_path string load
-            break
-except Exception as _e:
-    pass
-
-# Method 2: try common content paths
-if bp_asset is None:
-    for path in [
-        f"/Game/Blueprints/{{bp_name}}",
-        f"/Game/{{bp_name}}",
-        f"/Game/Blueprints/Core/{{bp_name}}",
-        f"/Game/Blueprints/Player/{{bp_name}}",
-        f"/Game/Blueprints/AI/{{bp_name}}",
-        f"/Game/Blueprints/Enemies/{{bp_name}}",
-    ]:
-        try:
-            obj = unreal.EditorAssetLibrary.load_asset(path)
-            if obj:
-                bp_asset = obj
-                break
-        except Exception:
-            pass
-
-if bp_asset is None:
-    print(f"ERROR: Blueprint not found: {{bp_name}}")
-else:
-    # Step 1: Compile (always attempt, even on clean/unmodified Blueprints).
-    # UE5.4+: KismetEditorUtilities.compile_blueprint was moved to
-    #          BlueprintEditorLibrary.compile_blueprint.
-    # Try the new API first; fall back to the old name for older UE5 builds.
-    try:
-        if hasattr(unreal, 'BlueprintEditorLibrary'):
-            unreal.BlueprintEditorLibrary.compile_blueprint(bp_asset)
-        elif hasattr(unreal, 'KismetEditorUtilities'):
-            unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
-        else:
-            raise AttributeError("Neither BlueprintEditorLibrary nor KismetEditorUtilities found in unreal module")
-        print(f"COMPILED: {{bp_name}}")
-    except Exception as e:
-        print(f"COMPILE_ERROR: {{e}}")
-
-    # Step 2: Force-mark the package dirty so save never skips a clean package
-    try:
-        pkg = bp_asset.get_outer()
-        if pkg:
-            pkg.mark_package_dirty()
-    except Exception:
-        pass
-
-    # Step 3: Save — save_asset returns True on success, False on skip (not an exception).
-    save_ok = False
-    try:
-        asset_path = bp_asset.get_path_name()
-        result = unreal.EditorAssetLibrary.save_asset(asset_path, only_if_is_dirty=False)
-        # In UE5.5+ save_asset returns bool; in older versions it returns None (assume success).
-        save_ok = (result is None) or bool(result)
-    except Exception as e:
-        print(f"SAVE_ERROR_PRIMARY: {{e}}")
-
-    if not save_ok:
-        # Fallback: save_packages_with_dialog (suppresses dialog in -unattended mode)
-        try:
-            pkg = bp_asset.get_outer()
-            unreal.EditorLoadingAndSavingUtils.save_packages_with_dialog([pkg], only_dirty=False)
-            save_ok = True
-        except Exception as e2:
-            print(f"SAVE_ERROR_FALLBACK: {{e2}}")
-
-    if save_ok:
-        print(f"SAVED: {{bp_name}}")
-    else:
-        print(f"SAVE_ERROR: all save methods failed for {{bp_name}}")
-"""
         try:
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected to Unreal Engine"}
-            response = unreal.send_command("exec_python", {"code": code}) or {}
-            output = response.get("output", response.get("result", ""))
-            if not isinstance(output, str):
-                output = str(output)
-
-            not_found      = "ERROR: Blueprint not found" in output
-            compile_error  = "COMPILE_ERROR" in output
-            save_error     = "SAVE_ERROR:" in output
-            had_errors     = compile_error or save_error or not_found
-
-            # compiled=True when "COMPILED:" present OR no compile error & not missing
-            compiled = "COMPILED:" in output or (not compile_error and not not_found)
-            # saved=True when "SAVED:" present OR (no save error and no not-found)
-            # The physical write can succeed even when save_asset returns False on UE5.6
-            # for an already-clean package — treat absence of SAVE_ERROR as success.
-            saved = "SAVED:" in output or (not save_error and not not_found and compiled)
-
-            errors = [ln for ln in output.splitlines() if "ERROR" in ln.upper()]
+            raw = unreal.send_command(
+                "save_blueprint",
+                {"blueprint_name": blueprint_name, "only_if_dirty": only_if_dirty},
+            ) or {}
+            saved = bool(raw.get("saved", raw.get("success")))
             return {
-                "success": compiled and saved and not had_errors,
-                "compiled": compiled,
+                "success": saved,
                 "saved": saved,
-                "had_errors": had_errors,
-                "errors": errors,
-                "output": output,
+                "blueprint": raw.get("blueprint", blueprint_name),
+                "package": raw.get("package"),
+                "raw": raw,
             }
         except Exception as e:
             logger.error(f"save_blueprint error: {e}")

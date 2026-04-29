@@ -19,9 +19,13 @@
 #include "Components/StaticMeshComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/SkeletalMeshSocket.h"
+#include "Animation/Skeleton.h"
 #include "Materials/MaterialInterface.h"
 #include "Components/BoxComponent.h"
 #include "Components/SphereComponent.h"
+#include "Components/WidgetComponent.h"
+#include "Blueprint/UserWidget.h"
 #include "Kismet2/BlueprintEditorUtils.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "Engine/SimpleConstructionScript.h"
@@ -29,10 +33,16 @@
 #include "UObject/Field.h"
 #include "UObject/FieldPath.h"
 #include "EditorAssetLibrary.h"
+#include "FileHelpers.h"
+#include "Misc/PackageName.h"
+#include "UObject/SavePackage.h"
+#include "UObject/Package.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "GameFramework/Actor.h"
 #include "GameFramework/Pawn.h"
+#include "GameFramework/Character.h"
 #include "AIController.h"
+#include "Components/SceneComponent.h"
 
 FUnrealMCPBlueprintCommands::FUnrealMCPBlueprintCommands()
 {
@@ -60,6 +70,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     {
         return HandleCompileBlueprint(Params);
     }
+    else if (CommandType == TEXT("save_blueprint"))
+    {
+        return HandleSaveBlueprint(Params);
+    }
     else if (CommandType == TEXT("spawn_blueprint_actor"))
     {
         return HandleSpawnBlueprintActor(Params);
@@ -80,6 +94,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     {
         return HandleSetComponentParentSocket(Params);
     }
+    else if (CommandType == TEXT("add_skeleton_socket"))
+    {
+        return HandleAddSkeletonSocket(Params);
+    }
     else if (CommandType == TEXT("set_pawn_properties"))
     {
         return HandleSetPawnProperties(Params);
@@ -88,7 +106,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     {
         return HandleSetBlueprintAIController(Params);
     }
-    
+
     return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));
 }
 
@@ -273,6 +291,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
             { TEXT("capsule"),             TEXT("/Script/Engine.CapsuleComponent") },
             { TEXT("arrow"),               TEXT("/Script/Engine.ArrowComponent") },
             { TEXT("billboard"),           TEXT("/Script/Engine.BillboardComponent") },
+            { TEXT("textrender"),          TEXT("/Script/Engine.TextRenderComponent") },
             { TEXT("audio"),               TEXT("/Script/Engine.AudioComponent") },
             { TEXT("springarm"),           TEXT("/Script/Engine.SpringArmComponent") },
             { TEXT("skeletalmesh"),        TEXT("/Script/Engine.SkeletalMeshComponent") },
@@ -374,6 +393,54 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
             {
                 SceneComponent->SetRelativeScale3D(FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("scale")));
             }
+        }
+
+        // ── WidgetComponent: set WidgetClass at creation time ────────────────
+        // MUST be done BEFORE AddNode() / compilation.  Setting WidgetClass via
+        // set_component_property AFTER compilation crashes UMG serialization
+        // (address 0xffffffffffffffff) because PostEditChangeProperty is never
+        // called and the widget-tree CDO stays uninitialized.
+        // Calling PostEditChangeProperty on a freshly-created, not-yet-registered
+        // template is safe — it just initialises the internal widget-tree template.
+        if (UWidgetComponent* WComp = Cast<UWidgetComponent>(NewNode->ComponentTemplate))
+        {
+            FString WidgetClassPath;
+            if (Params->TryGetStringField(TEXT("widget_class"), WidgetClassPath) && !WidgetClassPath.IsEmpty())
+            {
+                UClass* WClass = FindObject<UClass>(nullptr, *WidgetClassPath);
+                if (!WClass) WClass = LoadObject<UClass>(nullptr, *WidgetClassPath);
+                if (WClass && WClass->IsChildOf(UUserWidget::StaticClass()))
+                {
+                    WComp->Modify();
+                    FProperty* WCProp = WComp->GetClass()->FindPropertyByName(TEXT("WidgetClass"));
+                    if (FObjectProperty* ObjProp = CastField<FObjectProperty>(WCProp))
+                    {
+                        void* PropAddr = ObjProp->ContainerPtrToValuePtr<void>(WComp);
+                        ObjProp->SetObjectPropertyValue(PropAddr, WClass);
+                        // PostEditChangeProperty on a fresh (unregistered) template is safe:
+                        // it triggers UWidgetComponent to initialize its widget-tree CDO,
+                        // which prevents the 0xffffffffffffffff serialization crash.
+                        FPropertyChangedEvent ChgEvt(WCProp, EPropertyChangeType::ValueSet);
+                        WComp->PostEditChangeProperty(ChgEvt);
+                        UE_LOG(LogMCP, Display,
+                            TEXT("[MCP] AddComponent - set WidgetClass='%s' on '%s'"),
+                            *WidgetClassPath, *ComponentName);
+                    }
+                }
+                else
+                {
+                    UE_LOG(LogMCP, Warning,
+                        TEXT("[MCP] AddComponent - WidgetClass '%s' not found or not a UUserWidget subclass"),
+                        *WidgetClassPath);
+                }
+            }
+
+            // Always set Space=World for HPBar widgets unless caller overrides
+            FString SpaceStr;
+            EWidgetSpace DesiredSpace = EWidgetSpace::World;
+            if (Params->TryGetStringField(TEXT("widget_space"), SpaceStr) && SpaceStr.Equals(TEXT("Screen"), ESearchCase::IgnoreCase))
+                DesiredSpace = EWidgetSpace::Screen;
+            WComp->SetWidgetSpace(DesiredSpace);
         }
 
         // Add to root if no parent specified
@@ -1065,6 +1132,128 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
     return ResultObj;
 }
 
+// ---------------------------------------------------------------------------
+// save_blueprint — persist an already-loaded Blueprint package to disk.
+//
+// IMPORTANT — two editor-level save paths both crash under UnrealMCP in UE5.6:
+//   1. UEditorAssetLibrary::SaveAsset  (Python / EditorScriptingUtilities)
+//      → EXCEPTION_ACCESS_VIOLATION in CoreUObject with MassEntityEditor in the
+//        dispatch chain.
+//   2. UEditorLoadingAndSavingUtils::SavePackages (C++ wrapper in FileHelpers.h)
+//      → same EXCEPTION_ACCESS_VIOLATION (see HandleSaveBlueprint:1111 crash
+//        from Cabal session: address 0x00007ffe3f8000e9).
+//
+// Both fire the full editor pre-save delegate chain (OnPreSave / OnPreSaveWorld)
+// which in turn hits the MassEntityEditor observer, whose subject is stale/null
+// in our AsyncTask GameThread context.
+//
+// SAFETY UPDATE:
+// UPackage::SavePackage also enters the CoreUObject save dispatch chain in this
+// project and can still crash with MassEntityEditor observers on the stack. By
+// default this command now refuses to save and tells the caller to save in the
+// editor UI. The old low-level path remains available only behind the explicit
+// force_unsafe_save=true parameter for one-off recovery/debugging.
+// ---------------------------------------------------------------------------
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSaveBlueprint(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BlueprintName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
+    }
+
+    UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint || !IsValid(Blueprint))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+    }
+
+    UPackage* Package = Blueprint->GetOutermost();
+    if (!Package || !IsValid(Package))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint has no valid outer package"));
+    }
+
+    // Optional flag — currently only used for logging; low-level SavePackage
+    // does not support "only-if-dirty" natively, so we honour it manually.
+    bool bOnlyDirty = false;
+    Params->TryGetBoolField(TEXT("only_if_dirty"), bOnlyDirty);
+    if (bOnlyDirty && !Package->IsDirty())
+    {
+        UE_LOG(LogMCP, Display, TEXT("[MCP] save_blueprint — '%s' skipped (not dirty)"), *BlueprintName);
+        TSharedPtr<FJsonObject> Skip = MakeShared<FJsonObject>();
+        Skip->SetStringField(TEXT("blueprint"), BlueprintName);
+        Skip->SetStringField(TEXT("package"), Package->GetName());
+        Skip->SetBoolField(TEXT("success"), true);
+        Skip->SetBoolField(TEXT("saved"), false);
+        Skip->SetBoolField(TEXT("skipped"), true);
+        Skip->SetStringField(TEXT("reason"), TEXT("package not dirty"));
+        return Skip;
+    }
+
+    const FString PackageName = Package->GetName();
+    const FString FileName = FPackageName::LongPackageNameToFilename(
+        PackageName, FPackageName::GetAssetPackageExtension());
+
+    bool bForceUnsafeSave = false;
+    Params->TryGetBoolField(TEXT("force_unsafe_save"), bForceUnsafeSave);
+    if (!bForceUnsafeSave)
+    {
+        UE_LOG(LogMCP, Warning,
+               TEXT("[MCP] save_blueprint — skipped unsafe SavePackage for '%s'; save manually in the editor UI."),
+               *BlueprintName);
+
+        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+        ResultObj->SetStringField(TEXT("blueprint"), BlueprintName);
+        ResultObj->SetStringField(TEXT("package"),   PackageName);
+        ResultObj->SetStringField(TEXT("file"),      FileName);
+        ResultObj->SetBoolField(TEXT("success"),     true);
+        ResultObj->SetBoolField(TEXT("saved"),       false);
+        ResultObj->SetBoolField(TEXT("skipped"),     true);
+        ResultObj->SetBoolField(TEXT("manual_save_required"), true);
+        ResultObj->SetStringField(TEXT("reason"),
+            TEXT("MCP package saves are disabled by default because SavePackage crashes with MassEntityEditor in this project. Save the asset manually in Unreal, or pass force_unsafe_save=true to use the old path."));
+        return ResultObj;
+    }
+
+    UE_LOG(LogMCP, Display,
+           TEXT("[MCP] save_blueprint — '%s' package '%s' -> '%s' (UPackage::SavePackage low-level path)"),
+           *BlueprintName, *PackageName, *FileName);
+
+    // Low-level save args — mimic what FEditorFileUtils uses internally for
+    // asset packages, but skip the pre-save delegate broadcast that triggers
+    // the MassEntityEditor observer crash.
+    FSavePackageArgs SaveArgs;
+    SaveArgs.TopLevelFlags      = RF_Public | RF_Standalone;
+    SaveArgs.SaveFlags          = SAVE_NoError | SAVE_KeepDirty;
+    SaveArgs.bForceByteSwapping = false;
+    SaveArgs.bWarnOfLongFilename= true;
+    SaveArgs.bSlowTask          = false;
+    SaveArgs.Error              = GError;
+
+    const bool bSaved = UPackage::SavePackage(Package, Blueprint, *FileName, SaveArgs);
+
+    if (bSaved)
+    {
+        // SAVE_KeepDirty kept the dirty bit so UI reflects save state; clear manually.
+        Package->SetDirtyFlag(false);
+        UE_LOG(LogMCP, Display, TEXT("[MCP] save_blueprint — wrote '%s' OK"), *FileName);
+    }
+    else
+    {
+        UE_LOG(LogMCP, Error, TEXT("[MCP] save_blueprint — failed to write '%s'"), *FileName);
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("blueprint"), BlueprintName);
+    ResultObj->SetStringField(TEXT("package"),   PackageName);
+    ResultObj->SetStringField(TEXT("file"),      FileName);
+    ResultObj->SetBoolField(TEXT("success"),     bSaved);
+    ResultObj->SetBoolField(TEXT("saved"),       bSaved);
+    return ResultObj;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params)
 {
     // Get required parameters
@@ -1465,29 +1654,114 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentParentSoc
             }
         }
         if (!NewParentNode)
-            return FUnrealMCPCommonUtils::CreateErrorResponse(
-                FString::Printf(TEXT("Parent component not found: %s"), *NewParentName));
-
-        // Find current parent using the SCS API (GetParent() does not exist on USCS_Node).
-        USCS_Node* OldParent = SCS->FindParentNode(ChildNode);
-        if (OldParent)
         {
-            // Detach from old parent node without destroying children.
-            OldParent->RemoveChildNode(ChildNode, /*bRemoveFromAllNodes=*/false);
+            // Not an SCS-added parent — allow inherited native components (e.g. Mesh on ACharacter).
+            const FName NativeParentName(*NewParentName);
+            UObject* NativeCompObj = nullptr;
+
+            TArray<UClass*, TInlineAllocator<2>> TryClasses;
+            if (Blueprint->GeneratedClass)
+            {
+                TryClasses.Add(Blueprint->GeneratedClass);
+            }
+            if (Blueprint->SkeletonGeneratedClass && Blueprint->SkeletonGeneratedClass != Blueprint->GeneratedClass)
+            {
+                TryClasses.Add(Blueprint->SkeletonGeneratedClass);
+            }
+
+            for (UClass* GenClass : TryClasses)
+            {
+                UObject* GenCDO = GenClass ? GenClass->GetDefaultObject() : nullptr;
+                if (!GenCDO)
+                {
+                    continue;
+                }
+
+                // Reliable for Character-based BPs (property name is not always discoverable the same way on generated classes).
+                if (NativeParentName == FName(TEXT("Mesh")))
+                {
+                    if (ACharacter* Ch = Cast<ACharacter>(GenCDO))
+                    {
+                        NativeCompObj = Ch->GetMesh();
+                    }
+                }
+
+                if (!NativeCompObj)
+                {
+                    for (TFieldIterator<FObjectProperty> It(GenCDO->GetClass(), EFieldIteratorFlags::IncludeSuper);
+                         It; ++It)
+                    {
+                        if (It->GetFName() != NativeParentName)
+                        {
+                            continue;
+                        }
+                        UObject* Obj = It->GetObjectPropertyValue_InContainer(GenCDO);
+                        if (Obj && Obj->IsA<USceneComponent>())
+                        {
+                            NativeCompObj = Obj;
+                            break;
+                        }
+                    }
+                }
+
+                if (NativeCompObj)
+                {
+                    break;
+                }
+            }
+
+            if (!NativeCompObj || !NativeCompObj->IsA<USceneComponent>())
+            {
+                return FUnrealMCPCommonUtils::CreateErrorResponse(
+                    FString::Printf(TEXT("Parent component not found: %s"), *NewParentName));
+            }
+
+            USCS_Node* OldParent = SCS->FindParentNode(ChildNode);
+            if (OldParent)
+            {
+                OldParent->RemoveChildNode(ChildNode, /*bRemoveFromAllNodes=*/false);
+            }
+            else
+            {
+                SCS->Modify();
+            }
+
+            const TArray<USCS_Node*>& Roots = SCS->GetRootNodes();
+            USCS_Node* RootOut = Roots.Num() > 0 ? Roots[0] : nullptr;
+            if (!RootOut)
+            {
+                return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("SCS has no root node for native parent attach"));
+            }
+
+            ChildNode->Modify();
+            ChildNode->bIsParentComponentNative = true;
+            ChildNode->ParentComponentOrVariableName = NativeParentName;
+            RootOut->AddChildNode(ChildNode, /*bAddToAllNodes=*/true);
+            ChildNode->SetParent(RootOut);
         }
         else
         {
-            // Node was a root — remove from the SCS root list only.
-            // We do NOT call SCS->RemoveNode() which would destroy its subtree.
-            SCS->Modify();
+            // Find current parent using the SCS API (GetParent() does not exist on USCS_Node).
+            USCS_Node* OldParent = SCS->FindParentNode(ChildNode);
+            if (OldParent)
+            {
+                // Detach from old parent node without destroying children.
+                OldParent->RemoveChildNode(ChildNode, /*bRemoveFromAllNodes=*/false);
+            }
+            else
+            {
+                // Node was a root — remove from the SCS root list only.
+                // We do NOT call SCS->RemoveNode() which would destroy its subtree.
+                SCS->Modify();
+            }
+
+            // Re-attach to new parent.  AddChildNode adds to AllNodes if needed.
+            NewParentNode->AddChildNode(ChildNode, /*bAddToAllNodes=*/true);
+
+            // Update the USCS_Node's parent reference fields so the Blueprint
+            // compiler knows the new parent at cook/play time.
+            ChildNode->SetParent(NewParentNode);
         }
-
-        // Re-attach to new parent.  AddChildNode adds to AllNodes if needed.
-        NewParentNode->AddChildNode(ChildNode, /*bAddToAllNodes=*/true);
-
-        // Update the USCS_Node's parent reference fields so the Blueprint
-        // compiler knows the new parent at cook/play time.
-        ChildNode->SetParent(NewParentNode);
     }
 
     // Set the attach socket name (bone name on the parent SkeletalMeshComponent).
@@ -1505,6 +1779,161 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentParentSoc
     Result->SetStringField(TEXT("component"), ComponentName);
     Result->SetStringField(TEXT("parent_socket"), ParentSocketName);
     Result->SetBoolField(TEXT("success"), true);
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddSkeletonSocket(const TSharedPtr<FJsonObject>& Params)
+{
+    FString MeshPath;
+    if (!Params->TryGetStringField(TEXT("skeletal_mesh_path"), MeshPath))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'skeletal_mesh_path'"));
+    }
+
+    FString SocketNameStr(TEXT("GunBarrel"));
+    Params->TryGetStringField(TEXT("socket_name"), SocketNameStr);
+    if (SocketNameStr.IsEmpty())
+    {
+        SocketNameStr = TEXT("GunBarrel");
+    }
+
+    FString BoneNameStr(TEXT("ik_hand_gun"));
+    Params->TryGetStringField(TEXT("bone_name"), BoneNameStr);
+    if (BoneNameStr.IsEmpty())
+    {
+        BoneNameStr = TEXT("ik_hand_gun");
+    }
+
+    USkeletalMesh* Mesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
+    if (!Mesh || !IsValid(Mesh))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Skeletal mesh not found: %s"), *MeshPath));
+    }
+
+    USkeleton* Skel = Mesh->GetSkeleton();
+    if (!Skel || !IsValid(Skel))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Mesh has no skeleton"));
+    }
+
+    const FName BoneFName(*BoneNameStr);
+    if (Skel->GetReferenceSkeleton().FindBoneIndex(BoneFName) == INDEX_NONE)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Bone not found on skeleton: %s"), *BoneNameStr));
+    }
+
+    FVector RelLoc(22.f, 0.f, 0.f);
+    FRotator RelRot(0.f, 0.f, 0.f);
+    FVector RelScale(1.f, 1.f, 1.f);
+
+    const TArray<TSharedPtr<FJsonValue>>* LocArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("relative_location"), LocArr) && LocArr && LocArr->Num() >= 3)
+    {
+        RelLoc.X = (float)(*LocArr)[0]->AsNumber();
+        RelLoc.Y = (float)(*LocArr)[1]->AsNumber();
+        RelLoc.Z = (float)(*LocArr)[2]->AsNumber();
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* RotArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("relative_rotation"), RotArr) && RotArr && RotArr->Num() >= 3)
+    {
+        // Degrees: [pitch, yaw, roll] → FRotator(Pitch, Yaw, Roll)
+        RelRot.Pitch = (float)(*RotArr)[0]->AsNumber();
+        RelRot.Yaw = (float)(*RotArr)[1]->AsNumber();
+        RelRot.Roll = (float)(*RotArr)[2]->AsNumber();
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* ScaleArr = nullptr;
+    if (Params->TryGetArrayField(TEXT("relative_scale"), ScaleArr) && ScaleArr && ScaleArr->Num() >= 3)
+    {
+        RelScale.X = (float)(*ScaleArr)[0]->AsNumber();
+        RelScale.Y = (float)(*ScaleArr)[1]->AsNumber();
+        RelScale.Z = (float)(*ScaleArr)[2]->AsNumber();
+    }
+
+    bool bSave = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    bool bForceUnsafeSave = false;
+    Params->TryGetBoolField(TEXT("force_unsafe_save"), bForceUnsafeSave);
+
+    const FName SocketFName(*SocketNameStr);
+
+    Skel->Modify();
+    Mesh->Modify();
+
+    for (int32 i = Skel->Sockets.Num() - 1; i >= 0; --i)
+    {
+        USkeletalMeshSocket* Existing = Skel->Sockets[i].Get();
+        if (Existing && Existing->SocketName == SocketFName)
+        {
+            Skel->Sockets.RemoveAt(i);
+        }
+    }
+
+    USkeletalMeshSocket* NewSock = NewObject<USkeletalMeshSocket>(
+        Skel, NAME_None, RF_Public | RF_Standalone | RF_Transactional);
+    if (!NewSock)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to allocate USkeletalMeshSocket"));
+    }
+
+    NewSock->SocketName = SocketFName;
+    NewSock->BoneName = BoneFName;
+    NewSock->RelativeLocation = RelLoc;
+    NewSock->RelativeRotation = RelRot;
+    NewSock->RelativeScale = RelScale;
+    Skel->Sockets.Add(NewSock);
+
+    Skel->PostEditChange();
+    Mesh->PostEditChange();
+
+    bool bSaved = false;
+    FString SaveFile;
+    if (bSave && bForceUnsafeSave)
+    {
+        UPackage* Pkg = Skel->GetOutermost();
+        if (Pkg && IsValid(Pkg))
+        {
+            const FString PackageName = Pkg->GetName();
+            SaveFile = FPackageName::LongPackageNameToFilename(
+                PackageName, FPackageName::GetAssetPackageExtension());
+
+            FSavePackageArgs SaveArgs;
+            SaveArgs.TopLevelFlags = RF_Public | RF_Standalone;
+            SaveArgs.SaveFlags = SAVE_NoError | SAVE_KeepDirty;
+            SaveArgs.Error = GError;
+
+            bSaved = UPackage::SavePackage(Pkg, Skel, *SaveFile, SaveArgs);
+            if (bSaved)
+            {
+                Pkg->SetDirtyFlag(false);
+            }
+        }
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    const bool bOverallOk = !bSave || !bForceUnsafeSave || bSaved;
+    Result->SetBoolField(TEXT("success"), bOverallOk);
+    Result->SetStringField(TEXT("skeletal_mesh"), MeshPath);
+    Result->SetStringField(TEXT("skeleton"), Skel->GetPathName());
+    Result->SetStringField(TEXT("socket_name"), SocketNameStr);
+    Result->SetStringField(TEXT("bone_name"), BoneNameStr);
+    Result->SetBoolField(TEXT("saved_skeleton_package"), bSaved);
+    if (bSave && !bForceUnsafeSave)
+    {
+        Result->SetBoolField(TEXT("manual_save_required"), true);
+        Result->SetStringField(TEXT("warning"), TEXT("Skeleton package save skipped because SavePackage is unsafe in this project. Save manually in Unreal, or pass force_unsafe_save=true."));
+    }
+    if (!SaveFile.IsEmpty())
+    {
+        Result->SetStringField(TEXT("skeleton_file"), SaveFile);
+    }
+    if (bSave && !bSaved)
+    {
+        Result->SetStringField(TEXT("error"), TEXT("Socket was added in memory but SavePackage failed; save the skeleton manually in the editor"));
+    }
     return Result;
 }
 

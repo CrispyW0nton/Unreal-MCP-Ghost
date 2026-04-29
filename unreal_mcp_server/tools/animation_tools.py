@@ -459,6 +459,62 @@ def register_animation_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def insert_anim_graph_slot(
+        ctx: Context,
+        anim_blueprint_name: str,
+        slot_name: str = "DefaultSlot",
+        graph_name: str = ""
+    ) -> Dict[str, Any]:
+        """
+        Insert a Slot node on the main AnimGraph between the current pose chain and Root.
+
+        Use this so `PlaySlotAnimationAsDynamicMontage` / montages targeting the same
+        slot name layer aim and fire animations over locomotion from the state machine.
+
+        Args:
+            anim_blueprint_name: AnimBP asset path or name (e.g. ABP_SithSoldier or full /Game/... path)
+            slot_name: Anim slot name (default DefaultSlot — must match montage slot / blueprint calls)
+            graph_name: Optional graph name; defaults to AnimGraph
+        """
+        params: Dict[str, Any] = {
+            "anim_blueprint_name": anim_blueprint_name,
+            "slot_name": slot_name,
+        }
+        if graph_name:
+            params["graph_name"] = graph_name
+        return _send("insert_anim_graph_slot", params)
+
+    @mcp.tool()
+    def insert_blend_bool_fire_before_slot(
+        ctx: Context,
+        anim_blueprint_name: str,
+        sequence_asset: str,
+        graph_name: str = "",
+        swap_blend_pose_order: bool = False,
+        bind_bool_variable: str = "bIsShooting",
+        force_insert: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Insert **Blend List By Bool** + **Sequence Player** between locomotion and the AnimGraph **Slot**
+        (requires ``insert_anim_graph_slot`` first: Root ← Slot ← …).
+
+        Locomotion feeds the **false** branch; ``sequence_asset`` (e.g. fire rifle) feeds the **true** branch.
+        ``bind_bool_variable`` (default ``bIsShooting``) auto-binds Active Value when the editor plugin supports it.
+        ``force_insert=True`` layers a NEW BlendListByBool above an existing one (chain multiple gates,
+        e.g. bIsInAir → jump on top of bIsShooting → fire).  Default rebinds the existing node instead.
+        """
+        params: Dict[str, Any] = {
+            "anim_blueprint_name": anim_blueprint_name,
+            "sequence_asset": sequence_asset,
+            "swap_blend_pose_order": swap_blend_pose_order,
+            "bind_bool_variable": bind_bool_variable,
+            "force_insert": force_insert,
+        }
+        if graph_name:
+            params["graph_name"] = graph_name
+        return _send("insert_blend_bool_fire_before_slot", params)
+
+    @mcp.tool()
     def create_character_animation_setup(
         ctx: Context,
         anim_blueprint_name: str,

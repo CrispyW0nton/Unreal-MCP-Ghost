@@ -1058,32 +1058,41 @@ def register_ai_tools(mcp: FastMCP):
     @mcp.tool()
     def repair_behavior_tree(
         ctx: Context,
-        behavior_tree_name: str
+        behavior_tree_name: str,
+        fix_guids_only: bool = False,
     ) -> Dict[str, Any]:
         """
         Repair a corrupted Behavior Tree asset so it can be opened in the UE5 BT editor.
 
-        BT assets created before the NotifyGraphChanged crash fix was applied may be
-        saved with incomplete node data. Opening them in the editor crashes at 0x68
-        because UpdateAsset() dereferences a null IBehaviorTreeEditor* listener.
+        Two modes:
 
-        This command:
-          1. Closes any open editor windows for the asset
-          2. Wipes all non-Root graph nodes (safe, no NotifyGraphChanged)
-          3. Recreates the Root node via schema if missing
-          4. Calls SpawnMissingNodes + UpdateAsset + saves to disk
+        • fix_guids_only=True  — non-destructive GUID rescue (try this FIRST).
+          Walks every graph node and sub-node, assigning a fresh NodeGuid to any
+          with an invalid (all-zero) one. Tree structure, classes, pins,
+          decorators, services, and runtime properties are all preserved.
+          This is the right choice for BT assets written by pre-BUG-043 plugin
+          builds (their graph nodes have all-zero NodeGuids, which cause the BT
+          editor to crash at 0x68 on open because its internal widget lookups
+          key on NodeGuid).
 
-        After repair the asset is in a Root-only (empty) state that the editor
-        can open safely. Use build_behavior_tree to repopulate the tree logic.
+        • fix_guids_only=False (default) — destructive rebuild.
+          Wipes all non-Root graph nodes and saves an empty Root-only BT.
+          Use this ONLY if fix_guids_only=True did not resolve the crash —
+          you will then need build_behavior_tree to repopulate the tree.
 
         Args:
-            behavior_tree_name: Name of the BT asset to repair (e.g. "BT_EnemyInfantry")
+            behavior_tree_name: Name of the BT asset to repair (e.g. "BT_Enemy_Infantry")
+            fix_guids_only:     If True, only fill in missing NodeGuids
+                                (non-destructive). Default False (destructive).
 
         Returns:
-            Dict with 'success', 'behavior_tree', 'node_count_after_repair', 'message'
+            Dict with 'success', 'behavior_tree', 'mode', plus
+              • fix_guids_only: 'guids_fixed', 'guids_already_valid', 'node_count'
+              • destructive:    'node_count_after_repair'
         """
         return _send("repair_behavior_tree", {
             "behavior_tree_name": behavior_tree_name,
+            "fix_guids_only": fix_guids_only,
         })
 
     @mcp.tool()

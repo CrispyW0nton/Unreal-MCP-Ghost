@@ -190,24 +190,17 @@ void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
 {
     if (!Blueprint || !IsValid(Blueprint)) return;
 
-    // FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified dereferences
-    // Blueprint->GeneratedClass to invalidate the property chain. For
-    // newly-created or first-session-access Blueprints, GeneratedClass may be
-    // null → EXCEPTION_ACCESS_VIOLATION (manifests as EdGraphNode.h:586
-    // assertion or WinError 10053 on Python side).
-    if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
-    {
-        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(Blueprint);
-    }
-    else
-    {
-        // Safe fallback: mark the UObject dirty for Undo/save without touching
-        // GeneratedClass. The editor compiles and regenerates the class on next save.
-        Blueprint->Modify();
-        UE_LOG(LogTemp, Warning,
-            TEXT("[MCP] SafeMarkBlueprintModified: GeneratedClass null for '%s' — using Modify() fallback"),
-            *Blueprint->GetName());
-    }
+    // CRASH GUARD (UE 5.6 / this project):
+    // Never call MarkBlueprintAsStructurallyModified from MCP. It can enter
+    // UnrealEd/CoreUObject editor notification chains while MassEntityEditor has
+    // stale observers registered, causing EXCEPTION_ACCESS_VIOLATION during the
+    // command itself or on the next manual save. Modify + MarkPackageDirty keeps
+    // the asset editable/saveable without forcing those structural delegates.
+    Blueprint->Modify();
+    Blueprint->MarkPackageDirty();
+    UE_LOG(LogTemp, Display,
+        TEXT("[MCP] SafeMarkBlueprintModified: marked '%s' dirty without structural notifications"),
+        *Blueprint->GetName());
 }
 
 bool FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(UBlueprint* Blueprint)
@@ -264,8 +257,18 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
     }
 
     // ── 1. Try the two common path conventions first (O(1) FindObject) ──
+    //
+    // IMPORTANT: never concatenate a raw "/Game/..." package path to another
+    // "/Game/..." prefix. CoreUObject fatals on double-slash package names
+    // ("Attempted to create a package with name containing double slashes").
+    // The sanitiser below skips any candidate that contains "//".
     auto TryCachedPath = [&](const FString& Path) -> UBlueprint*
     {
+        // Reject malformed paths (double slashes anywhere after the leading '/').
+        if (Path.IsEmpty() || Path.Contains(TEXT("//")))
+        {
+            return nullptr;
+        }
         // FindObject skips I/O; LoadObject falls back to disk only if needed.
         UBlueprint* BP = FindObject<UBlueprint>(nullptr, *Path);
         if (!BP) BP = LoadObject<UBlueprint>(nullptr, *Path);
@@ -278,8 +281,31 @@ UBlueprint* FUnrealMCPCommonUtils::FindBlueprintByName(const FString& BlueprintN
         return nullptr;
     };
 
-    if (UBlueprint* BP = TryCachedPath(TEXT("/Game/Blueprints/") + BlueprintName)) return BP;
-    if (UBlueprint* BP = TryCachedPath(TEXT("/Game/") + BlueprintName))           return BP;
+    // If the caller already handed us a full package path ("/Game/..." or
+    // "/Engine/..." etc.), use it as-is. Otherwise try the two legacy
+    // convenience prefixes that expect a bare asset name.
+    const bool bIsFullPath = BlueprintName.StartsWith(TEXT("/"));
+    if (bIsFullPath)
+    {
+        if (UBlueprint* BP = TryCachedPath(BlueprintName)) return BP;
+        // Also try with a trailing ".<name>" object path, in case caller
+        // passed only the package path (UE accepts both but FindObject prefers
+        // the full object path for cached lookup).
+        int32 LastSlash = INDEX_NONE;
+        if (BlueprintName.FindLastChar(TEXT('/'), LastSlash))
+        {
+            const FString Leaf = BlueprintName.Mid(LastSlash + 1);
+            if (!Leaf.IsEmpty())
+            {
+                if (UBlueprint* BP = TryCachedPath(BlueprintName + TEXT(".") + Leaf)) return BP;
+            }
+        }
+    }
+    else
+    {
+        if (UBlueprint* BP = TryCachedPath(TEXT("/Game/Blueprints/") + BlueprintName)) return BP;
+        if (UBlueprint* BP = TryCachedPath(TEXT("/Game/") + BlueprintName))           return BP;
+    }
 
     // ── 2. Use the Asset Registry class index (fast O(k) where k = # Blueprints) ──
     //

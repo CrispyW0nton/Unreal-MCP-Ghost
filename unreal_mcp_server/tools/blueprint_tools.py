@@ -327,6 +327,57 @@ def register_blueprint_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def add_skeleton_socket(
+        ctx: Context,
+        skeletal_mesh_path: str,
+        socket_name: str = "GunBarrel",
+        bone_name: str = "ik_hand_gun",
+        relative_location: List[float] = None,
+        relative_rotation: List[float] = None,
+        relative_scale: List[float] = None,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or replace a socket on the USkeleton used by a skeletal mesh (e.g. GunBarrel).
+
+        Infantry uses the ``GunBarrel`` socket name with ``GetSocketTransform`` on the mesh.
+        Sockets are stored on the skeleton asset; Python ``mesh.add_socket`` is unreliable in UE5.6.
+
+        Defaults parent the socket to ``ik_hand_gun`` (Mannequin weapon IK bone) with a 22 cm
+        offset along local +X (typical muzzle direction). Override ``relative_rotation`` as
+        ``[pitch, yaw, roll]`` in degrees if traces fire along the wrong axis.
+
+        Args:
+            skeletal_mesh_path: Content path to the USkeletalMesh (e.g. ``/Game/.../SithSoldier``).
+            socket_name: Socket name (default ``GunBarrel``).
+            bone_name: Parent bone (default ``ik_hand_gun``; use ``hand_r`` if your rig has no IK gun bone).
+            relative_location: Optional ``[x, y, z]`` in cm relative to the bone.
+            relative_rotation: Optional ``[pitch, yaw, roll]`` in degrees.
+            relative_scale: Optional ``[x, y, z]`` scale (default 1,1,1).
+            save: If True, persist the skeleton package via low-level SavePackage.
+        """
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            params: Dict[str, Any] = {
+                "skeletal_mesh_path": skeletal_mesh_path,
+                "socket_name": socket_name,
+                "bone_name": bone_name,
+                "save": save,
+            }
+            if relative_location is not None:
+                params["relative_location"] = relative_location
+            if relative_rotation is not None:
+                params["relative_rotation"] = relative_rotation
+            if relative_scale is not None:
+                params["relative_scale"] = relative_scale
+            return unreal.send_command("add_skeleton_socket", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
     def set_blueprint_ai_controller(
         ctx: Context,
         blueprint_name: str,

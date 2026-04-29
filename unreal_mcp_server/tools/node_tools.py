@@ -486,6 +486,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         variable_name: str,
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
+        target_class: str = "",
     ) -> Dict[str, Any]:
         """
         Add a 'Get Variable' node for a Blueprint variable.
@@ -495,6 +496,9 @@ def register_blueprint_node_tools(mcp: FastMCP):
             variable_name:  Name of the variable to get.
             graph_name:     Graph to add node to. Default 'EventGraph'.
             node_position:  Optional [X, Y] canvas position.
+            target_class:   Optional owning class (e.g. 'BP_SithSoldier' or
+                            'BP_SithSoldier_C') when reading a variable from a
+                            cast pawn instead of the AnimBP self.
 
         Returns:
             Dict with 'node_id', 'node_name', 'pins'.
@@ -506,12 +510,15 @@ def register_blueprint_node_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_blueprint_variable_get_node", {
+            p = {
                 "blueprint_name": blueprint_name,
                 "variable_name":  variable_name,
                 "graph_name":     graph_name,
                 "node_position":  node_position,
-            }) or {}
+            }
+            if target_class:
+                p["target_class"] = target_class
+            return unreal.send_command("add_blueprint_variable_get_node", p) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -522,6 +529,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         variable_name: str,
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
+        target_class: str = "",
     ) -> Dict[str, Any]:
         """
         Add a 'Set Variable' node for a Blueprint variable.
@@ -531,6 +539,8 @@ def register_blueprint_node_tools(mcp: FastMCP):
             variable_name:  Name of the variable to set.
             graph_name:     Graph to add node to. Default 'EventGraph'.
             node_position:  Optional [X, Y] canvas position.
+            target_class:   Optional owning class when setting an external
+                            member (same resolution as native bridge).
 
         Returns:
             Dict with 'node_id', 'node_name', 'pins'.
@@ -542,12 +552,15 @@ def register_blueprint_node_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_blueprint_variable_set_node", {
+            p = {
                 "blueprint_name": blueprint_name,
                 "variable_name":  variable_name,
                 "graph_name":     graph_name,
                 "node_position":  node_position,
-            }) or {}
+            }
+            if target_class:
+                p["target_class"] = target_class
+            return unreal.send_command("add_blueprint_variable_set_node", p) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
 

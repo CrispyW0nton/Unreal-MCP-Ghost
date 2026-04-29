@@ -1,0 +1,24 @@
+{
+  "_comment": "Copy to repo root as local-book-paths.json (gitignored). Use only licensed PDFs. Paths are Windows examples — adjust for your machine.",
+  "pdfs": [
+    {
+      "id": "elevating-game-experiences-ue5-2e",
+      "title": "Elevating Game Experiences with Unreal Engine 5, 2nd ed. (Packt, 2022)",
+      "isbn": "978-1-80323-986-6",
+      "path": "C:/Users/NewAdmin/Documents/Academy of Art University/Books/Gonçalo Marques, Deviereira & Fozi, Hammad/Elevating Game Experiegine 5, Second Edition/Elevating Game Experiences with Unreal Enginees, Devin Sherry, David Pereira & Hammad Fozi.pdf"
+    },
+    {
+      "id": "li-unreal-cpp-scripting-2023",
+      "title": "Unreal Engine 5 Game Development with C++ Scripting — Zhenyu George Li (Packt, 2023)",
+      "isbn": "978-1-80461-393-1",
+      "path": "C:/Users/NewAdmin/Documents/Academy of Art University/Books/Li, Zhenyu George/Unreal Engine 5 Game Development with C__ Scripting/Unreal Engine 5 Game Development with C__ Scripting - Zhenyu George Li.pdf"
+    },
+    {
+      "id": "sapio-hands-on-ai-unreal-2019",
+      "title": "Hands-On Artificial Intelligence with Unreal Engine — Francesco Sapio (Packt, 2019)",
+      "isbn": "978-1-78883-565-7",
+      "path": "C:/Users/NewAdmin/Documents/Academy of Art University/Books/Gonçalo Marques, Deviereira & Fozi, Hammad/_OceanofPDF.com_Hands-On_Artificial_Intelligence_with_Unreal_Engine_-_Francesco_Sapio.pdf",
+      "_path_note": "Prefer a licensed Packt copy; replace path if you purchased the official eBook."
+    }
+  ]
+}

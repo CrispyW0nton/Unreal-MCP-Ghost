@@ -70,6 +70,7 @@ private:
     TSharedPtr<FJsonObject> HandleDisconnectBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleDeleteBlueprintNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetNodePinValue(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleReconstructBlueprintNode(const TSharedPtr<FJsonObject>& Params);
 
     // ---------- node creation ----------
     TSharedPtr<FJsonObject> HandleAddBlueprintEvent(const TSharedPtr<FJsonObject>& Params);
