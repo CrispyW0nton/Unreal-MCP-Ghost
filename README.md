@@ -2,7 +2,6 @@
 
 Control Unreal Engine 5 programmatically from any AI agent. Write Blueprint logic, create assets, wire nodes, spawn actors, set up AI, animation, UI, and VFX — all without touching the UE5 editor manually. Every AI agent — local or remote — uses the **406 MCP tools** via the Model Context Protocol.
 
-> **Forked from:** [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp)  
 > **Active branch:** `genspark_ai_developer` — all new features and bug fixes live here  
 > **MCP tools:** 406 Python tools (local stdio) + 119 C++ plugin commands (all accessible via MCP)  
 > **Knowledge base:** Tool/pattern docs plus [curated book study guides](docs/knowledge-base/README.md) (original notes; keep licensed PDFs outside the repo)
