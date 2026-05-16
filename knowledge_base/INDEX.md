@@ -1,6 +1,6 @@
 # KNOWLEDGE BASE — MASTER INDEX
 > Unreal-MCP-Ghost Plugin | UE 5.6
-> Version: 2026-04-16 (V4)
+> Version: 2026-05-16
 > **START HERE** if you need to find anything quickly.
 
 ---
@@ -10,7 +10,7 @@
 This is the complete documentation library for the **Unreal-MCP-Ghost** project — an AI agent toolchain for controlling Unreal Engine 5. It contains:
 - Full reference for every MCP command the plugin supports
 - UE5 system knowledge extracted from 4 professional books
-- V4 roadmap, architecture specs, and research reports
+- Current roadmap, architecture specs, and research reports
 - Step-by-step implementation recipes for all game systems
 
 ---
@@ -20,7 +20,7 @@ This is the complete documentation library for the **Unreal-MCP-Ghost** project 
 ```
 What do you need?
 │
-├─ "Where do I start? What's the V4 plan?"  → Read v4/NEXT_DEVELOPER_PROMPT_V4.md
+├─ "Where do I start? What's the current plan?" → Read 13_TOOL_EXPANSION_ROADMAP.md
 ├─ "I need to use an MCP command"           → Read 12_MCP_TOOL_USAGE_GUIDE.md
 ├─ "I need to build AI / NavMesh"           → Read 04_AI_SYSTEMS.md
 ├─ "I need to build a Blueprint graph"      → Read 01_BLUEPRINT_FUNDAMENTALS.md + graph_tools.py (bp_* tools)
@@ -31,10 +31,11 @@ What do you need?
 ├─ "I need to understand GameMode/Controller" → Read 03_GAMEPLAY_FRAMEWORK.md
 ├─ "I need to set up player input"          → Read 15_INPUT_SYSTEM_AND_UMG.md
 ├─ "I need to add materials/shaders"        → Read 08_MATERIALS_AND_RENDERING.md
-├─ "I need to add VFX particles"            → Read 09_NIAGARA_VFX.md
+├─ "I need to add VFX particles"            → Read 09_NIAGARA_VFX.md + use niagara_* tools
 ├─ "I need to build the level/world"        → Read 10_WORLD_BUILDING.md
 ├─ "I need to work with data (arrays/structs)" → Read 07_DATA_STRUCTURES.md
 ├─ "I need to add new MCP commands"         → Read 13_TOOL_EXPANSION_ROADMAP.md + v4/GRAPH_SCRIPTING_SPEC_V4.md
+├─ "I need current tool counts/categories"  → Run scripts/tool_inventory.py
 ├─ "I need to edit a Blueprint graph (V4)" → Use bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile
 ├─ "I need to remove a node / break a pin" → Use bp_remove_node, bp_disconnect_pin
 ├─ "I need a new function in a Blueprint"   → Use bp_add_function, then bp_add_node with graph_name=<fn>
@@ -44,6 +45,16 @@ What do you need?
 ├─ "I need UE Python API references"        → Read v4/API_REFERENCE_CHEATSHEET.md
 └─ "I need everything"                      → Read 00_AGENT_KNOWLEDGE_BASE.md
 ```
+
+---
+
+## CURRENT ROADMAP
+
+| File | Purpose |
+|------|---------|
+| `13_TOOL_EXPANSION_ROADMAP.md` | Current 360-degree roadmap: registry hygiene, Niagara, AI/EQS, networking, technical art, animation closure, autonomous verification |
+| `../scripts/tool_inventory.py` | Canonical offline inventory command for tool counts, modules, roadmap categories, and status |
+| `../unreal_mcp_server/tool_inventory_categories.json` | Machine-readable module-to-category map used by the inventory script |
 
 ---
 
@@ -105,7 +116,7 @@ What do you need?
 
 | # | File | Key Topics |
 |---|------|------------|
-| 13 | `13_TOOL_EXPANSION_ROADMAP.md` | 20 new MCP commands to build, priority, C++ implementation hints, workarounds |
+| 13 | `13_TOOL_EXPANSION_ROADMAP.md` | Current roadmap for the MCP platform: phases, gaps, implementation order, validation criteria |
 | 15 | `15_INPUT_SYSTEM_AND_UMG.md` | Enhanced Input deep-dive, Input Modifiers, Widget hierarchy |
 | 16 | `16_ANIMATION_DEEP_DIVE.md` | Root Motion, advanced IK, montage callbacks, performance tips |
 | 17 | `17_GAME_SYSTEMS_COOKBOOK.md` | 11 step-by-step recipes (health, interaction, dialogue, AI, save/load, etc.) |
@@ -182,12 +193,12 @@ What do you need?
 | Property | Value |
 |----------|-------|
 | Engine | UE 5.6 |
-| MCP Tools | 378 (362 + 16 V4 graph/mat tools) |
-| Modules | 25 (added graph_tools.py) |
-| C++ Commands | 119 |
+| MCP Tools | 454 |
+| Tool Modules | 37 categorized modules/skills |
+| C++ Commands | 136 |
 | Transports | stdio, SSE, streamable-HTTP |
 | Plugin Port | 55557 |
-| Tests | 103 (48 import + 55 graph-core) |
+| Inventory Command | `python scripts/tool_inventory.py --markdown` |
 | GitHub | https://github.com/CrispyW0nton/Unreal-MCP-Ghost |
 
 ---
@@ -203,4 +214,18 @@ What do you need?
 
 ---
 
-*Updated: 2026-04-16 (V4) | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
+*Updated: 2026-05-16 | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
+
+---
+
+## PROJECT-SPECIFIC KNOWLEDGE BASES
+
+| Project | Location | Description |
+|---------|----------|-------------|
+| Endar Spire | `Projects/EndarSpire/INDEX.md` | Star Wars KotOR-inspired FPS: Sith troopers, Republic soldiers, force powers, Dark Jedi boss |
+
+### BP_SithTrooperFramework (moved)
+The `BP_SithTrooperFramework/` folder that was previously at the repo root has been relocated to `knowledge_base/Projects/EndarSpire/Blueprints/`. See:
+- `Projects/EndarSpire/Blueprints/BP_SithTrooper_FrameworkLog.md`
+- `Projects/EndarSpire/Blueprints/BP_SithHeavyTrooper_FrameworkLog.md`
+- `Projects/EndarSpire/Blueprints/BP_RepublicSoldier_FrameworkLog.md`

@@ -207,6 +207,404 @@ def register_ai_tools(mcp: FastMCP):
         return result
 
     @mcp.tool()
+    def eqs_create_query(
+        ctx: Context,
+        query_name: str,
+        folder_path: str = "/Game/AI",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Create an Environment Query System (EQS) query asset.
+
+        Use follow-up `eqs_add_generator` and `eqs_add_test` calls to define
+        what locations or actors the query considers and how it scores them.
+        """
+        return _send("eqs_create_query", {
+            "query_name": query_name,
+            "folder_path": folder_path,
+            "overwrite": overwrite,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def eqs_describe_query(
+        ctx: Context,
+        query_path: str,
+    ) -> Dict[str, Any]:
+        """
+        Describe an EQS query's options, generator classes, and tests.
+
+        `query_path` may be a content path such as `/Game/AI/EQS_FindCover` or
+        a query asset name when it is unique in the project.
+        """
+        return _send("eqs_describe_query", {
+            "query_path": query_path,
+        })
+
+    @mcp.tool()
+    def eqs_add_generator(
+        ctx: Context,
+        query_path: str,
+        generator_type: str = "simple_grid",
+        option_index: int = -1,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or replace an EQS option generator.
+
+        Supported generator_type values: `simple_grid`, `circle`, `donut`,
+        `current_location`, and `actors_of_class`. Passing `option_index=-1`
+        creates a new option.
+        """
+        return _send("eqs_add_generator", {
+            "query_path": query_path,
+            "generator_type": generator_type,
+            "option_index": option_index,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def eqs_add_test(
+        ctx: Context,
+        query_path: str,
+        test_type: str = "distance",
+        option_index: int = 0,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add an EQS test to an existing option.
+
+        Supported test_type values: `distance`, `pathfinding`, `dot`, and
+        `trace`. Create or choose an option with `eqs_add_generator` first.
+        """
+        return _send("eqs_add_test", {
+            "query_path": query_path,
+            "test_type": test_type,
+            "option_index": option_index,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def bt_add_run_eqs_service(
+        ctx: Context,
+        behavior_tree_name: str,
+        query_path: str,
+        result_key: str,
+        parent_node_index: int = -1,
+        run_mode: str = "single_result",
+        update_bb_on_fail: bool = False,
+        interval: float = 0.5,
+        update_existing: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Attach or update a built-in Run EQS service on a Behavior Tree node.
+
+        The service runs an EQS query while its parent branch is active and
+        writes the selected result into a Blackboard key.
+
+        Args:
+            behavior_tree_name: Existing Behavior Tree asset name
+            query_path: EQS query path or unique asset name
+            result_key: Blackboard key that receives the query result
+            parent_node_index: 0-based non-root BT node index; -1 targets first non-root node
+            run_mode: single_result, random_best_5_pct, random_best_25_pct, or all_matching
+            update_bb_on_fail: Whether failed queries also update the Blackboard
+            interval: Service tick interval in seconds
+            update_existing: Update an existing Run EQS service on the parent if present
+        """
+        return _send("bt_add_run_eqs_service", {
+            "behavior_tree_name": behavior_tree_name,
+            "query_path": query_path,
+            "result_key": result_key,
+            "parent_node_index": parent_node_index,
+            "run_mode": run_mode,
+            "update_bb_on_fail": update_bb_on_fail,
+            "interval": interval,
+            "update_existing": update_existing,
+        })
+
+    @mcp.tool()
+    def perception_add_component(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str = "AIPerception",
+        save: bool = True,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or find an AIPerceptionComponent on a Blueprint.
+
+        This is usually placed on an AIController Blueprint so the controller
+        can sense actors and feed Blackboard/Behavior Tree state.
+        """
+        return _send("perception_add_component", {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def perception_configure_sight(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str = "AIPerception",
+        sight_radius: float = 3000.0,
+        lose_sight_radius: float = 3500.0,
+        peripheral_vision_angle_degrees: float = 70.0,
+        detect_enemies: bool = True,
+        detect_neutrals: bool = True,
+        detect_friendlies: bool = False,
+        dominant: bool = True,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or update the Sight sense config on an AIPerceptionComponent.
+        """
+        return _send("perception_configure_sight", {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "sight_radius": sight_radius,
+            "lose_sight_radius": lose_sight_radius,
+            "peripheral_vision_angle_degrees": peripheral_vision_angle_degrees,
+            "detect_enemies": detect_enemies,
+            "detect_neutrals": detect_neutrals,
+            "detect_friendlies": detect_friendlies,
+            "dominant": dominant,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def perception_configure_hearing(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str = "AIPerception",
+        hearing_range: float = 2500.0,
+        detect_enemies: bool = True,
+        detect_neutrals: bool = True,
+        detect_friendlies: bool = False,
+        dominant: bool = False,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or update the Hearing sense config on an AIPerceptionComponent.
+        """
+        return _send("perception_configure_hearing", {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "hearing_range": hearing_range,
+            "detect_enemies": detect_enemies,
+            "detect_neutrals": detect_neutrals,
+            "detect_friendlies": detect_friendlies,
+            "dominant": dominant,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def perception_create_stimulus_source(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str = "PerceptionStimuliSource",
+        senses: List[str] = None,
+        auto_register: bool = True,
+        save: bool = True,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add or configure an AIPerceptionStimuliSourceComponent on a Blueprint.
+
+        Typical senses are `sight` and `hearing`.
+        """
+        return _send("perception_create_stimulus_source", {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "senses": senses or ["sight"],
+            "auto_register": auto_register,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def perception_bind_updated_event(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str = "AIPerception",
+        event_name: str = "OnTargetPerceptionUpdated",
+        node_position: List[float] = None,
+    ) -> Dict[str, Any]:
+        """
+        Add a component-bound AI Perception update event node to a Blueprint.
+
+        Common event_name values are `OnTargetPerceptionUpdated`,
+        `OnPerceptionUpdated`, and `OnTargetPerceptionForgotten`.
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_component_event_node", {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "event_name": event_name,
+            "node_position": node_position,
+        })
+
+    @mcp.tool()
+    def perception_describe_blueprint(
+        ctx: Context,
+        blueprint_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Describe AI Perception and stimuli source components on a Blueprint.
+        """
+        return _send("perception_describe_blueprint", {
+            "blueprint_name": blueprint_name,
+        })
+
+    @mcp.tool()
+    def nav_create_link_proxy(
+        ctx: Context,
+        actor_name: str = "MCP_NavLinkProxy",
+        left: List[float] = None,
+        right: List[float] = None,
+        location: List[float] = None,
+        endpoints_are_world: bool = False,
+        direction: str = "both",
+        area_class: str = "default",
+        smart_link_enabled: bool = False,
+        rebuild: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Spawn a NavLinkProxy and configure its point link endpoints.
+
+        Args:
+            actor_name: Actor label/name for the proxy
+            left: Local or world-space left endpoint
+            right: Local or world-space right endpoint
+            location: Actor location when endpoints are local
+            endpoints_are_world: Treat left/right as world positions and center the actor between them
+            direction: both, left_to_right, or right_to_left
+            area_class: Nav area class name/path, e.g. default, NavArea_Null, NavArea_Obstacle
+            smart_link_enabled: Enable the proxy smart link component
+            rebuild: Rebuild navigation after spawning
+        """
+        return _send("nav_create_link_proxy", {
+            "actor_name": actor_name,
+            "left": left or [-150.0, 0.0, 0.0],
+            "right": right or [150.0, 0.0, 0.0],
+            "location": location or [0.0, 0.0, 80.0],
+            "endpoints_are_world": endpoints_are_world,
+            "direction": direction,
+            "area_class": area_class,
+            "smart_link_enabled": smart_link_enabled,
+            "rebuild": rebuild,
+        })
+
+    @mcp.tool()
+    def nav_add_modifier_volume(
+        ctx: Context,
+        actor_name: str = "MCP_NavModifierVolume",
+        location: List[float] = None,
+        extent: List[float] = None,
+        area_class: str = "NavArea_Null",
+        rebuild: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Spawn a NavModifierVolume with the requested nav area class.
+
+        Use `NavArea_Null` to block navigation, `NavArea_Obstacle` for high
+        traversal cost, or a custom UNavArea path/name from the project.
+        """
+        return _send("nav_add_modifier_volume", {
+            "actor_name": actor_name,
+            "location": location or [0.0, 0.0, 100.0],
+            "extent": extent or [300.0, 300.0, 150.0],
+            "area_class": area_class,
+            "rebuild": rebuild,
+        })
+
+    @mcp.tool()
+    def nav_describe_agent_settings(ctx: Context) -> Dict[str, Any]:
+        """
+        Describe supported navigation agents, nav data actors, and nav helper counts.
+        """
+        return _send("nav_describe_agent_settings", {})
+
+    @mcp.tool()
+    def crowd_configure_rvo(
+        ctx: Context,
+        blueprint_name: str,
+        enabled: bool = True,
+        consideration_radius: float = 500.0,
+        avoidance_weight: float = 0.5,
+        avoidance_group: int = 1,
+        groups_to_avoid: int = 0xFFFFFFFF,
+        groups_to_ignore: int = 0,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Configure CharacterMovement RVO avoidance defaults on a Character Blueprint.
+        """
+        return _send("crowd_configure_rvo", {
+            "blueprint_name": blueprint_name,
+            "enabled": enabled,
+            "consideration_radius": consideration_radius,
+            "avoidance_weight": avoidance_weight,
+            "avoidance_group": avoidance_group,
+            "groups_to_avoid": groups_to_avoid,
+            "groups_to_ignore": groups_to_ignore,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def crowd_configure_detour(
+        ctx: Context,
+        blueprint_name: str = "",
+        obstacle_avoidance: bool = True,
+        separation: bool = True,
+        anticipate_turns: bool = True,
+        optimize_visibility: bool = True,
+        optimize_topology: bool = True,
+        separation_weight: float = 2.0,
+        collision_query_range: float = 600.0,
+        path_optimization_range: float = 600.0,
+        avoidance_range_multiplier: float = 1.0,
+        avoidance_quality: str = "good",
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Configure Detour crowd options when an AIController already uses UCrowdFollowingComponent.
+
+        If the Blueprint still uses the default PathFollowingComponent, the
+        native command returns structured guidance because that inherited
+        subobject must be selected in a native AIController constructor.
+        """
+        return _send("crowd_configure_detour", {
+            "blueprint_name": blueprint_name,
+            "obstacle_avoidance": obstacle_avoidance,
+            "separation": separation,
+            "anticipate_turns": anticipate_turns,
+            "optimize_visibility": optimize_visibility,
+            "optimize_topology": optimize_topology,
+            "separation_weight": separation_weight,
+            "collision_query_range": collision_query_range,
+            "path_optimization_range": path_optimization_range,
+            "avoidance_range_multiplier": avoidance_range_multiplier,
+            "avoidance_quality": avoidance_quality,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def gameplay_debugger_capture_ai(ctx: Context) -> Dict[str, Any]:
+        """
+        Capture an AI/navigation debug snapshot from the current editor world.
+        """
+        return _send("gameplay_debugger_capture_ai", {})
+
+    @mcp.tool()
     def add_move_to_node(
         ctx: Context,
         blueprint_name: str,

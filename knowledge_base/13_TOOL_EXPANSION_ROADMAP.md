@@ -1,430 +1,351 @@
-# Tool Expansion Roadmap — New MCP Commands to Implement
-> Based on learnings from all 4 books. Prioritized by impact on Dantooine project.
-> For each new command: why it's needed + exact implementation spec.
+# Unreal-MCP-Ghost Roadmap
 
----
+Last updated: 2026-05-16
 
-## PRIORITY 1 — Critical Missing Commands
+This roadmap is the working plan for turning Unreal-MCP-Ghost into a production-grade AI game development platform for Unreal Engine 5. It replaces older command-by-command expansion notes that were useful during the 300-400 tool era, but are now too stale to guide the next phase.
 
-### 1. `add_blueprint_variable` ✅ IMPLEMENTED
-**Status:** Live in plugin. See Section 8 of 12_MCP_TOOL_USAGE_GUIDE.md for full docs.
+## North Star
 
-Supported `variable_type` values: `Boolean`, `Integer`, `Integer64`, `Float`, `Double`, `String`, `Name`, `Text`, `Vector`, `Rotator`, `Transform`, `Object/<ClassPath>`
+Unreal-MCP-Ghost should let an AI agent build, inspect, repair, and verify full UE5 gameplay systems while preserving editor stability and project integrity.
 
-Params: `blueprint_name` ✅, `variable_name` ✅, `variable_type` ✅, `is_exposed` ❌, `default_value` ❌
+The target is not simply "more tools." The target is reliable end-to-end workflows:
 
----
+1. Discover project state before mutation.
+2. Make small, structured editor changes through engine APIs.
+3. Compile, save, inspect, and verify after each meaningful change.
+4. Return evidence: graph summaries, diagnostics, screenshots, logs, or asset diffs.
+5. Keep risky operations auditable and reversible.
 
-### 2. `add_blueprint_function_with_pins` ✅ IMPLEMENTED
-**Status:** Live as `add_blueprint_function_with_pins`. Supports typed inputs/outputs in one call.
+## Current Baseline
 
-Returns `entry_node_id` and `result_node_id` so you can immediately add nodes inside the function graph.
+Static registry audit currently finds 454 MCP tools: 451 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
-See Section 12 of 12_MCP_TOOL_USAGE_GUIDE.md.
+Strong areas:
 
----
+- Blueprint creation, graph editing, variables, functions, nodes, comments, diagnostics, and repair.
+- Behavior Tree and Blackboard authoring, including full-tree JSON construction.
+- Animation Blueprint basics, state machines, AnimGraph slot insertion, IK Rig, IK Retargeter, skeleton inspection, and batch retargeting.
+- Import pipelines for textures, meshes, skeletal meshes, audio, batch folders, and GhostRigger assets.
+- UMG/widget, gameplay, data, save-game, procedural, physics, VR, variant, reflection, project intelligence, C++ bridge, source control, and editor chat surfaces.
+- Dual MCP transport support: stdio, SSE, and streamable HTTP.
+- C++ plugin bridge with editor GameThread command execution and an optional MCP Chat dock tab.
 
-### 3. `implement_blueprint_interface` ✅ IMPLEMENTED (name differs from roadmap)
-**Status:** Live in plugin as `implement_blueprint_interface` (NOT `add_blueprint_interface_implementation`).
+Partially live areas:
 
-⚠️ **CRITICAL**: Parameter is `interface_name` (asset name only), NOT `interface_path`.
+- Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
+- AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
+- Technical art covers basic materials and material instance parameters, but lacks master material pipelines, material function tooling, vertex paint automation, ORM generation, shader complexity, and overdraw analysis.
+- Autonomous verification exists in pieces through diagnostics, screenshots, source control status, and chat, but needs a formal execution journal, risk evaluation, PIE automation, and screenshot analysis loop.
 
-```bash
-python3 sandbox_ue5cli.py implement_blueprint_interface '{
-  "blueprint_name": "BP_LightsaberWorkbench",
-  "interface_name": "BPI_Interactable"
-}'
-```
+Missing or thin areas:
 
----
+- Multiplayer/networking tools: RPC creation, replicated property workflows, RepNotify, ownership, relevancy, roles, session flows, and replication diagnostics.
+- Niagara native authoring: systems from recipes, emitters, modules, renderers, parameters, events, ribbons, GPU/CPU collision, fluid/flipbook workflows, and profiling.
+- Production distribution/performance: command registry generated from metadata, startup profiling, and optional high-performance server packaging.
 
-### 4. `set_blueprint_parent_class` ✅ IMPLEMENTED
-**Status:** Live. Accepts Blueprint asset name OR C++ class name as `new_parent_class`.
+## Engineering Principles
 
-```bash
-python3 sandbox_ue5cli.py set_blueprint_parent_class '{
-  "blueprint_name":  "BP_RoamingNPC_StudentA",
-  "new_parent_class": "BP_RoamingNPC_Base"
-}'
-```
+These come from the repo knowledge-base guides and current plugin lessons:
 
----
+- Prefer narrow C++ bridge commands for editor operations that Python cannot do safely or completely.
+- Prefer structured JSON results over silent no-ops or string-only errors.
+- Avoid editor-crash paths already documented in the plugin, especially direct graph notifications in fragile asset editors.
+- Keep Blueprint/BT/AnimGraph mutations transaction-sized and immediately inspectable.
+- Use vertical-slice tests: create or inspect a tiny realistic asset, then verify the resulting state.
+- Add high-level skill workflows only after the underlying low-level tools are trustworthy.
+- Keep docs, tests, and reported tool counts synchronized.
 
-### 5. `add_input_action_node`
-**Why needed:** Enhanced Input action bindings need special nodes, different from legacy `add_blueprint_input_action_node`.
-**Impact:** Player input system (IA_Attack, IA_Block, IA_Interact all need binding)
+## Phase 0 - Roadmap And Registry Hygiene
 
-**Proposed spec:**
-```bash
-python3 sandbox_ue5cli.py add_input_action_node '{
-  "blueprint_name": "BP_PlayerJediCharacter",
-  "graph_name": "EventGraph",
-  "input_action_path": "/Game/Dantooine/Data/Input/IA_Attack",
-  "trigger_event": "Started",
-  "node_position": {"x": 0, "y": 400}
-}'
-```
-Trigger events: `Started`, `Triggered`, `Completed`, `Canceled`, `Ongoing`
+Goal: make the current surface measurable and keep planning artifacts honest.
 
----
+Status: complete.
 
-## PRIORITY 2 — Important Missing Commands
+Tasks:
 
-### 6. `add_blackboard_key` ✅ IMPLEMENTED (via `create_blackboard` keys[] param)
-**Status:** No standalone `add_blackboard_key` command exists, but `create_blackboard` accepts a `keys` array.
+- Replace stale 362/406/419-era roadmap notes with this current roadmap. Done.
+- Reconcile documented tool count to the current static count. Done.
+- Add an offline test that checks `README.md` and `tests/last_tool_count.txt` against the static tool registry count. Done.
+- Create or document a single canonical tool inventory command. Done: `python scripts/tool_inventory.py --markdown`.
+- Add a machine-readable category map for tools and skills. Done: `unreal_mcp_server/tool_inventory_categories.json`.
+- Mark implemented, partial, and missing areas in the knowledge base index. Done.
 
-```bash
-python3 sandbox_ue5cli.py create_blackboard '{
-  "name": "BB_RoamingNPC",
-  "path": "/Game/Dantooine/AI/Blackboard",
-  "keys": [
-    {"name": "PatrolLocation", "type": "Vector"},
-    {"name": "IsTalking",      "type": "Bool"}
-  ]
-}'
-```
-> ⚠️ Keys can ONLY be set at creation time. To add more keys to an existing blackboard, recreate it.
+Definition of done:
 
----
+- `python -m unittest unreal_mcp_server.tests.test_tool_count` passes.
+- README and `last_tool_count.txt` agree with the static registry count.
+- Roadmap has clear first implementation slices.
 
-### 7. `set_behavior_tree_blackboard` ✅ IMPLEMENTED
-**Status:** Live. Uses asset names (not paths).
+## Phase 1 - Niagara Native Authoring
 
-```bash
-python3 sandbox_ue5cli.py set_behavior_tree_blackboard '{
-  "behavior_tree_name": "BT_RoamingNPC",
-  "blackboard_name":    "BB_RoamingNPC"
-}'
-```
+Goal: make VFX creation a first-class MCP workflow instead of a recipe-only workflow.
 
----
+Status: Slice 1 native bridge foundation is implemented and live-tested in Lab5E. Slice 2 native renderer tools and spawn-rate module editing are implemented and live-tested.
 
-### 8. `add_niagara_component` ✅ IMPLEMENTED
-**Status:** Live. Requires Niagara plugin enabled in project.
-
-```bash
-python3 sandbox_ue5cli.py add_niagara_component '{
-  "blueprint_name":      "BP_LightsaberWorkbench",
-  "component_name":      "SparksEffect",
-  "niagara_system_path": "/Game/Dantooine/Art/FX/NS_WorkbenchSparks"
-}'
-```
-
----
-
-### 9. `create_data_table` ✅ IMPLEMENTED
-**Status:** Live in plugin. See Section 9 of 12_MCP_TOOL_USAGE_GUIDE.md.
+Why first:
 
-```bash
-python3 sandbox_ue5cli.py create_data_table '{
-  "name": "DT_DialogueLines",
-  "path": "/Game/Dantooine/Data/DataTables",
-  "row_struct": "/Game/Dantooine/Data/Structs/ST_DialogueLine"
-}'
-```
-> ⚠️ **PARAM FIX**: Parameter is `row_struct`, NOT `row_struct_path`.
-
----
-
-### 10. `add_anim_notify` ✅ IMPLEMENTED
-**Status:** Live. Supports both `notify` and `notify_state` types.
-
-```bash
-python3 sandbox_ue5cli.py add_anim_notify '{
-  "animation_path": "/Game/Dantooine/Animation/Montages/AM_LightsaberAttack",
-  "notify_name":    "HitDetection",
-  "time":           0.45
-}'
-```
-
----
-
-## PRIORITY 3 — Quality of Life Commands
-
-### 11. `get_blueprint_variables` ✅ IMPLEMENTED
-**Status:** Live. Returns full metadata including type, sub_type, default, category, exposure/replication flags.
-
-```bash
-python3 sandbox_ue5cli.py get_blueprint_variables '{"blueprint_name": "BP_PlayerJediCharacter"}'
-```
-
----
-
-### 12. `get_blueprint_functions` ✅ IMPLEMENTED
-**Status:** Live. Returns function and macro graphs with input/output pin info.
-
-```bash
-python3 sandbox_ue5cli.py get_blueprint_functions '{"blueprint_name": "BP_PlayerJediCharacter"}'
-```
-
----
-
-### 13. `add_blueprint_call_interface_function`
-**Why needed:** Cannot add Interface function call nodes via MCP.
-
-**Proposed spec:**
-```bash
-python3 sandbox_ue5cli.py add_blueprint_call_interface_function '{
-  "blueprint_name": "BP_PlayerJediCharacter",
-  "graph_name": "EventGraph",
-  "interface_path": "/Game/Dantooine/Interfaces/BPI_Interactable",
-  "function_name": "Interact",
-  "node_position": {"x": 400, "y": 0}
-}'
-```
+- It is the largest confirmed gap.
+- The plugin already has Niagara module dependencies.
+- Existing Python tools already establish naming, result shape, and tests.
 
----
+Slice 1:
 
-### 14. `add_blueprint_for_loop_with_break_node`
-**Why needed:** For Loop with Break not yet exposed.
-
-```bash
-python3 sandbox_ue5cli.py add_blueprint_for_loop_with_break_node '{
-  "blueprint_name": "BP_X",
-  "graph_name": "EventGraph",
-  "node_position": {"x": 200, "y": 0}
-}'
-```
-
----
-
-### 15. `set_sequencer_track` ✅ IMPLEMENTED
-**Status:** Live. Supports Transform track with location/rotation/scale keyframes.
-
-```bash
-python3 sandbox_ue5cli.py set_sequencer_track '{
-  "sequence_path": "/Game/Dantooine/Sequences/LightsaberBuild/LS_LightsaberBuild",
-  "actor_name":    "BP_LightsaberWorkbench_0",
-  "track_type":    "Transform",
-  "keyframes": [
-    {"time": 0.0, "location": {"x":0,"y":0,"z":0}},
-    {"time": 2.0, "location": {"x":0,"y":0,"z":100}, "rotation": {"pitch":0,"yaw":180,"roll":0}}
-  ]
-}'
-```
-
----
-
-### 16. `copy_blueprint_component`
-**Why needed:** Can't duplicate components from one BP to another.
-
----
-
-### 17. `set_material_instance_parameter` ✅ IMPLEMENTED
-**Status:** Live. Supports scalar, vector (RGBA), and texture parameters.
-
-```bash
-python3 sandbox_ue5cli.py set_material_instance_parameter '{
-  "material_instance_path": "/Game/Dantooine/Art/Materials/MI_LightsaberBlade",
-  "parameter_name":         "EmissiveIntensity",
-  "parameter_type":         "scalar",
-  "value":                  "5.0"
-}'
-```
-
----
-
-### 18. `add_spawn_niagara_at_location_node` ✅ IMPLEMENTED
-**Status:** Live. Adds a `SpawnSystemAtLocation` call node to a Blueprint graph.
-
-```bash
-python3 sandbox_ue5cli.py add_spawn_niagara_at_location_node '{
-  "blueprint_name":      "BP_LightsaberWorkbench",
-  "graph_name":          "EventGraph",
-  "niagara_system_path": "/Game/Dantooine/Art/FX/NS_WorkbenchSparks",
-  "node_position":       {"x": 600, "y": 0}
-}'
-```
-
----
-
-### 19. `import_sound_asset` ✅ IMPLEMENTED
-
-**Why needed:** Import WAV/OGG/MP3 files from the UE5 host machine directly into the Content Browser as SoundWave assets, with optional SoundCue auto-creation.
-
-**Implemented in:** `audio_tools.py` (registered in `unreal_mcp_server.py`)
-
-**Actual usage:**
-```python
-# Via MCP tool call:
-import_sound_asset(
-    file_path="C:/Sounds/SFX_SaberSwing.wav",
-    destination_path="/Game/Dantooine/Art/Audio/SFX/",
-    auto_create_cue=True
-)
-# Returns: {"success": true, "asset_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing",
-#            "asset_type": "SoundWave", "cue_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing_Cue"}
-```
-
-**For sandbox-side files** (from `audio_generation` / `DownloadFileWrapper`), use `import_sound_asset_from_sandbox` instead.
-
-See `12_MCP_TOOL_USAGE_GUIDE.md` § AUDIO IMPORT TOOLS for full documentation.
-
----
-
-### 20. `add_widget_binding`
-**Why needed:** Widget bindings for health/score display require Python-level automation.
-
----
-
-## Implementation Priority Summary
-
-| Priority | Command | Status | Impact |
-|---|---|---|---|
-| 1 | `add_blueprint_variable` | ✅ DONE | Essential for every BP |
-| 1 | `add_blueprint_function_with_pins` | ✅ DONE | Typed function creation |
-| 1 | `implement_blueprint_interface` | ✅ DONE | Required for BPI_ pattern |
-| 1 | `set_blueprint_parent_class` | ✅ DONE | Required for inheritance |
-| 1 | `add_blueprint_enhanced_input_action_node` | ✅ DONE | Required for Enhanced Input |
-| 2 | `add_blackboard_key` | ✅ via create_blackboard keys[] | Required for AI setup |
-| 2 | `set_behavior_tree_blackboard` | ✅ DONE | Required for AI setup |
-| 2 | `add_niagara_component` | ✅ DONE | VFX components in BPs |
-| 2 | `create_data_table` | ✅ DONE | Required for dialogue system |
-| 2 | `add_anim_notify` | ✅ DONE | Required for combat system |
-| 3 | `get_blueprint_variables` | ✅ DONE | Inspection/debugging |
-| 3 | `get_blueprint_functions` | ✅ DONE | Inspection/debugging |
-| 3 | `add_blueprint_call_interface_function` | `add_interface_function_node` ✅ | Interface calling |
-| 3 | `set_material_instance_parameter` | ✅ DONE | Visual customization |
-| 3 | `add_spawn_niagara_at_location_node` | ✅ DONE | Runtime VFX |
-| 3 | `set_sequencer_track` | ✅ DONE | Sequencer keyframes |
-
----
-
-## Current Workarounds (via exec_python)
-
-Use exec_python for commands not yet implemented as dedicated MCP commands:
-
-### ✅ `add_blueprint_variable` — USE THE DIRECT COMMAND (no workaround needed)
-```bash
-python3 sandbox_ue5cli.py add_blueprint_variable '{"blueprint_name":"BP_PlayerJediCharacter","variable_name":"Health","variable_type":"Float","default_value":"100.0"}'
-```
-
-### ✅ `implement_blueprint_interface` — USE THE DIRECT COMMAND (no workaround needed)
-```bash
-python3 sandbox_ue5cli.py implement_blueprint_interface '{"blueprint_name":"BP_LightsaberWorkbench","interface_name":"BPI_Interactable"}'
-```
-
-### ❌ `set_blueprint_parent_class` — WORKAROUND via exec_python
-```python
-# NOTE: Reparenting via Python is unreliable. Best approach:
-# 1. Create the BP with the correct parent from the start (BlueprintFactory.parent_class)
-# 2. Or reparent manually in UE editor: right-click BP → Reparent Blueprint
-import unreal
-# Verify parent of a blueprint:
-bp = unreal.load_object(None, "/Game/Dantooine/Blueprints/NPC/BP_RoamingNPC_StudentA")
-if bp:
-    print(bp.parent_class.get_name())
-```
-
-### ❌ `set_behavior_tree_blackboard` — WORKAROUND via exec_python
-```python
-import unreal
-bt = unreal.load_object(None, "/Game/Dantooine/AI/BehaviorTrees/BT_RoamingNPC")
-bb = unreal.load_object(None, "/Game/Dantooine/AI/Blackboard/BB_RoamingNPC")
-if bt and bb:
-    bt.set_editor_property("blackboard_asset", bb)
-    unreal.EditorAssetLibrary.save_asset(bt.get_path_name())
-    print("BB assigned to BT")
-```
-
-### ❌ `get_blueprint_variables` — WORKAROUND via exec_python
-```python
-import unreal
-bp = unreal.load_object(None, "/Game/Dantooine/Blueprints/Player/BP_PlayerJediCharacter")
-for v in bp.new_variables:
-    print(v.var_name, v.var_type.pc_object.get_name() if v.var_type.pc_object else v.var_type.pin_category)
-```
-
----
-
----
-
-## ASSET IMPORT PIPELINE — STATUS ✅ FULLY IMPLEMENTED (2026-04-16)
-
-### Category C — Single-Asset Import (asset_import_tools.py) ✅
-- `import_texture` ✅ — PNG/JPG/TGA/EXR/HDR/BMP → Texture2D with auto compression detection
-- `import_static_mesh` ✅ — FBX/OBJ/glTF/GLB → StaticMesh with full FBX options
-- `import_skeletal_mesh` ✅ — FBX → SkeletalMesh with skeleton reuse + morph targets
-
-### Category B — Folder/Batch Import (folder_import_tools.py) ✅
-- `scan_export_folder` ✅ — local scan, categorised manifest, no UE5 connection needed
-- `batch_import_folder` ✅ — batch import all assets, preserves subfolder structure
-- `import_folder_as_character` ✅ — full character import (mesh + textures + animations)
-
-### Category A — GhostRigger IPC Bridge (ghostrigger_tools.py) ✅
-- `ghostrigger_health` ✅ — GET /api/health
-- `ghostrigger_ping` ✅ — POST /api/ping
-- `ghostrigger_open_model` ✅ — POST /api/open_mdl
-- `ghostrigger_open_creature` ✅ — POST /api/open_utc
-- `ghostrigger_list_mcp_tools` ✅ — GET /mcp/tools/list (68 KotorMCP tools)
-- `ghostrigger_call_mcp_tool` ✅ — POST /mcp/tools/call
-- `ghostrigger_list_resources` ✅ — GET /mcp/resources/list
-- `ghostrigger_read_resource` ✅ — POST /mcp/resources/read
-- `ghostrigger_export_model` ✅ — MDL → FBX via GhostRigger tool call
-- `ghostrigger_import_to_ue5` ✅ — full KotOR→FBX→UE5 pipeline
-
-**Total new tools: 16 (3 Category C + 3 Category B + 10 Category A)**
-**New total: 362 MCP tools**
-
----
-
-## SCRIPTING SUPREMACY SPRINT — STATUS ✅ PHASE 0+1+2 COMPLETE (2026-04-16)
-
-### Phase 0 — PR #15 Stabilization ✅
-- Scope verified: Categories A/B/C all confirmed present
-- Test suite: 48 tests, all passing (tests/test_import_tools.py)
-- Shared result schema: `{success, stage, message, inputs, outputs, warnings, errors, log_tail}`
-- Tool/module count reconciled: **362 tools / 24 modules**
-
-### Phase 1 — Safe Execution Substrate ✅ (exec_substrate.py)
-New tools (3):
-- `ue_exec_safe` — structured try/except wrapper for any Python snippet
-- `ue_exec_transact` — ScopedEditorTransaction wrapper (one undo step)
-- `ue_exec_progress` — ScopedSlowTask wrapper (progress dialog + cancel button)
-
-Internal helpers (not MCP tools):
-- `exec_python_transactional(user_code, transaction_name)` — callable by other modules
-- `exec_python_with_progress(user_code, task_name, total_work)` — callable by other modules
-- `exec_python_structured(user_code, stage_name)` — called by asset_import_tools + folder_import_tools
-- `make_result(...)` — builds a normalized StructuredResult dict
-
-**Integration:** `asset_import_tools.py` and `folder_import_tools.py` now use
-`exec_python_structured` instead of raw `exec_python` + `_parse_ue_json`.
-All UE5 code snippets in these modules now populate `_result`, `_warnings`,
-`_errors` and are wrapped in try/except by the substrate.
-
-### Phase 2 — Reflection & Diagnostics ✅ (reflection_tools.py)
-New tools (8):
-- `ue_reflect_class(class_name)` — parent chain, flags, module
-- `ue_list_uclass_properties(class_name, include_inherited)` — editor properties
-- `ue_list_uclass_methods(class_name, filter_prefix)` — callable methods
-- `ue_describe_asset(asset_path)` — full asset metadata
-- `ue_find_assets_by_class(class_name, search_path, limit)` — content browser search
-- `ue_list_editor_selection()` — current viewport selection
-- `get_recent_output_log(lines, filter_category)` — Output Log tail
-- `ue_summarize_operation_effects(search_path)` — asset count by class (snapshot)
-
-New MCP Resources (5):
-- `unreal://knowledge/python-best-practices`
-- `unreal://knowledge/import-recipes`
-- `unreal://knowledge/blueprint-recipes`
-- `unreal://knowledge/material-recipes`
-- `unreal://project/context`
-
-### Phase 2b — Skills Library ✅ (skills/)
-New skill files (7):
-- `SKILL_import_texture.md`
-- `SKILL_import_static_mesh.md`
-- `SKILL_import_skeletal_mesh.md`
-- `SKILL_batch_import_folder.md`
-- `SKILL_import_folder_as_character.md`
-- `SKILL_diagnose_failed_import.md`
-- `SKILL_compile_validate_blueprint.md`
-
-**New total: 362 MCP tools (351 + 11 new) / 24 modules**
-
-### Next: Phase 3 — Graph-aware Blueprint/Material diagnostics
-- `compile_blueprint_and_report` — compile + structured error list
-- `compile_material_and_report` — material compile + warnings
-- `validate_import_result` — post-import asset health check
-- `get_changed_assets_since(timestamp)` — diff Content Browser
+- `niagara_validate_authoring_support` - implemented as a read-only Python/editor API probe.
+- `niagara_create_system` - implemented as a native C++ bridge command with Python fallback for older installed plugins.
+- `niagara_describe_system` - upgraded to use native C++ bridge inspection when available, including emitter handles and user parameters.
+- `niagara_add_empty_emitter` - implemented as a native C++ bridge command for adding an empty emitter handle to a system.
+- `niagara_set_system_user_parameter` - implemented as a native C++ bridge command for exposed float, bool, vector3, and color parameters.
+- `niagara_set_fixed_bounds` - implemented as a focused fixed-bounds setter.
+- `niagara_profile_system` - implemented as a lightweight asset-level profile/inspection tool.
+
+Slice 2:
+
+- `niagara_add_sprite_renderer` - implemented as a native C++ bridge command for adding a sprite renderer to an emitter handle.
+- `niagara_add_mesh_renderer` - implemented as a native C++ bridge command for adding a mesh renderer backed by a Static Mesh asset.
+- `niagara_set_spawn_rate` - implemented as a native C++ bridge command for adding/updating the emitter `SpawnRate` module's particles-per-second value.
+- `niagara_add_force_module`
+- `niagara_add_collision_module`
+- `niagara_add_event_handler`
+
+Slice 3:
+
+- `niagara_create_system_from_recipe`
+- `niagara_add_ribbon_renderer`
+- `niagara_configure_subuv_animation`
+- `niagara_bake_flipbook`
+- `niagara_create_fluid_simulation_preset` where engine APIs permit.
+
+Validation:
+
+- Offline wrapper tests for tool registration and schema.
+- UE live smoke test that creates a minimal system, adds one emitter, sets bounds/user params, saves, describes, and profiles.
+- Screenshot or viewport capture for a placed NiagaraComponent when feasible.
+
+Lab5E smoke result, 2026-05-16:
+
+- Live Coding loaded the updated Lab5E project plugin.
+- Created `/Game/MCP_Test/VFX/NS_MCP_Phase1_NativeSmoke`.
+- Added emitter handle `MCP_TestEmitter`.
+- Added one sprite renderer to `MCP_TestEmitter`.
+- Added exposed float parameter `MCP_Intensity`.
+- Native describe reported 1 emitter, 1 renderer, and 1 user parameter.
+- Created `/Game/MCP_Test/VFX/NS_MCP_Phase1_MeshSmoke`.
+- Added emitter handle `MCP_MeshEmitter`.
+- Added one mesh renderer backed by `/Engine/BasicShapes/Cube.Cube`.
+- Native describe reported renderer class and static mesh path.
+- Created `/Game/MCP_Test/VFX/NS_MCP_Phase1_SpawnRateSmoke`.
+- Added emitter handle `MCP_SpawnEmitter`.
+- Set the native `SpawnRate` module to `42`, creating the module.
+- Set the native `SpawnRate` module to `84`, updating the existing module without duplicating it.
+
+## Phase 2 - Modern AI Systems
+
+Goal: move from BT/Blackboard-only AI to full encounter authoring and debugging.
+
+Status: Slice 1 EQS data-asset authoring and Behavior Tree Run EQS service wiring are implemented and live-tested in Lab5E. Slice 2 AI Perception listener/source authoring is implemented and live-tested in Lab5E. Slice 3 navigation/crowd/debug tooling is implemented and live-tested in Lab5E.
+
+Slice 1:
+
+- `eqs_create_query` - implemented as a native C++ bridge command with a Python MCP wrapper.
+- `eqs_add_generator` - implemented for Simple Grid, Circle, Donut, Current Location, and Actors of Class generator classes.
+- `eqs_add_test` - implemented for Distance, Pathfinding, Dot, and Trace test classes.
+- `eqs_describe_query` - implemented as readback inspection for query options, generators, and tests.
+- `bt_add_run_eqs_service` - implemented as a native C++ bridge command that attaches or updates `BTService_RunEQS`, sets the EQS query, result Blackboard key, run mode, interval, and update-on-fail behavior.
+
+Slice 2:
+
+- `perception_add_component` - implemented as a native C++ bridge command for adding/finding `AIPerceptionComponent` on Blueprint SCS.
+- `perception_configure_sight` - implemented for Sight radius, lose-sight radius, peripheral vision angle, affiliation filters, and dominant sense.
+- `perception_configure_hearing` - implemented for Hearing range, affiliation filters, and optional dominant sense.
+- `perception_create_stimulus_source` - implemented as a native C++ bridge command for `AIPerceptionStimuliSourceComponent` with sight/hearing source registration.
+- `perception_bind_updated_event` - implemented as a Python wrapper around the existing component-bound event node command for Perception delegates.
+- `perception_describe_blueprint` - implemented as readback inspection for perception listeners and configured sense assets.
+
+Slice 3:
+
+- `nav_create_link_proxy` - implemented as a native C++ bridge command that spawns and configures point-link `ANavLinkProxy` actors.
+- `nav_add_modifier_volume` - implemented as a native C++ bridge command that spawns `ANavModifierVolume` actors with a chosen `UNavArea`.
+- `nav_describe_agent_settings` - implemented as readback inspection for supported agents, nav data, navmesh bounds, links, and modifier counts.
+- `crowd_configure_rvo` - implemented for Character Blueprint `CharacterMovement` RVO avoidance defaults and masks.
+- `crowd_configure_detour` - implemented for existing native `UCrowdFollowingComponent` controllers, with structured guidance when a Blueprint cannot retrofit the required default subobject.
+- `gameplay_debugger_capture_ai` - implemented as a lightweight AI/navigation world snapshot.
+
+Validation:
+
+- Tiny AI vertical slice: Character + AIController + Blackboard + BT + EQS query + perception component.
+- Verify navmesh, controller possession, blackboard keys, and BT graph info.
+
+Lab5E smoke result, 2026-05-16:
+
+- Live Coding loaded the updated Lab5E project plugin.
+- Created `/Game/MCP_Test/AI/EQS_MCP_Phase2_FindPoint`.
+- Added one `EnvQueryGenerator_SimpleGrid` option.
+- Added one `EnvQueryTest_Distance` test.
+- Native describe reported 1 option, the Simple Grid generator, and 1 Distance test.
+- Created `/Game/MCP_Test/AI/BB_MCP_Phase2_EQSService` with vector key `EQSResult`.
+- Created `/Game/MCP_Test/AI/BT_MCP_Phase2_EQSService`, assigned the Blackboard, and built a Selector/Wait smoke tree.
+- Attached `BTService_RunEQS` to the Selector, targeting `/Game/MCP_Test/AI/EQS_MCP_Phase2_FindPoint` and Blackboard key `EQSResult`.
+- Re-ran the tool with a different run mode and interval; it updated the existing service without duplicating the sub-node.
+- Created `BP_MCP_Phase2_PerceptionController`, added `AIPerception`, configured Sight at 4200/5000 radius with 85-degree peripheral vision, and configured Hearing at 2800 range.
+- Native describe reported `AISense_Sight` as dominant with Sight and Hearing configs.
+- Created `BP_MCP_Phase2_StimulusSource` and added `PerceptionStimuliSource` registered for Sight and Hearing.
+- Added an `OnTargetPerceptionUpdated` component-bound event node on the perception controller Blueprint.
+- Spawned `MCP_Phase2_NavLink` with a point link using `NavArea_Default`; native readback reported 1 nav link proxy.
+- Spawned `MCP_Phase2_NavBlocker` as a `NavArea_Null` modifier volume; native readback reported 1 nav modifier volume.
+- Captured an AI debug snapshot for world `Lab-0X`; it reported nav link/modifier counts and no active AI controllers in the current level.
+- Created/reparented `BP_MCP_Phase2_RVOCharacter` to `Character` and configured RVO defaults: enabled, 650 radius, 0.7 weight, group mask 1, avoid-all mask.
+- Ran `crowd_configure_detour` against `BP_MCP_Phase2_PerceptionController`; it correctly returned `configured:false` with native `UCrowdFollowingComponent` constructor guidance.
+
+## Phase 3 - Multiplayer And Networking
+
+Goal: support networked gameplay authoring without relying on generic property setters.
+
+Slice 1:
+
+- `net_describe_blueprint_replication`
+- `net_set_actor_replicates`
+- `net_set_component_replicates`
+- `net_configure_replicated_property`
+- `net_add_repnotify_variable`
+
+Slice 2:
+
+- `net_create_rpc_event`
+- `net_configure_rpc`
+- `net_add_authority_gate`
+- `net_add_role_switch`
+- `net_set_owner_reference`
+
+Slice 3:
+
+- `session_create_blueprint_flow`
+- `session_find_blueprint_flow`
+- `network_debug_replication`
+- `net_validate_common_mistakes`
+
+Validation:
+
+- Two-player PIE smoke plan if available.
+- Static graph inspection for RPC flags, replicated variables, RepNotify handlers, and authority guards.
+
+## Phase 4 - Technical Art Pipeline
+
+Goal: make materials, textures, and performance views as automatable as Blueprints.
+
+Slice 1:
+
+- `material_create_master`
+- `material_create_function`
+- `material_wire_texture_set`
+- `material_create_instance_from_master`
+- `material_set_instance_parameters_bulk`
+
+Slice 2:
+
+- `texture_generate_orm`
+- `texture_audit_memory`
+- `vertex_paint_actor`
+- `mesh_audit_uv_channels`
+
+Slice 3:
+
+- `shader_analyze_complexity`
+- `shader_visualize_overdraw`
+- `renderer_capture_viewmode`
+- `performance_audit_gpu`
+
+Validation:
+
+- Build one PBR master material from a texture set.
+- Verify material compile diagnostics, parameter names, texture compression, and asset references.
+
+## Phase 5 - Animation Closure
+
+Goal: close the remaining animation gaps rather than rebuilding what already works.
+
+Already strong:
+
+- Animation Blueprints.
+- State machines, states, transitions, and sequence assignment.
+- Blend-space nodes.
+- AnimGraph slot insertion.
+- IK Rig and IK Retargeter setup.
+- Batch retargeting.
+- Anim notify native handler exists in the plugin.
+
+Slices:
+
+- Add Python wrapper coverage for native `add_anim_notify` if missing from registered tools.
+- `anim_create_montage`
+- `anim_add_montage_slot`
+- `anim_set_montage_section`
+- `anim_add_branching_point`
+- `control_rig_create`
+- `control_rig_add_control`
+- `control_rig_add_constraint`
+- `control_rig_bake_to_sequence`
+
+Validation:
+
+- Locomotion AnimBP with state machine and slot.
+- Montage with notify.
+- Optional Control Rig asset creation and basic inspection.
+
+## Phase 6 - Autonomous Verification Loop
+
+Goal: give agents a repeatable plan-execute-verify loop.
+
+Slices:
+
+- `execution_journal_start`
+- `execution_journal_log`
+- `execution_journal_finish`
+- `risk_evaluate_action`
+- `pie_launch_session`
+- `pie_stop_session`
+- `pie_capture_log`
+- `pie_simulate_input`
+- `viewport_capture_screenshot`
+- `viewport_compare_screenshot`
+
+Later:
+
+- Vision-language screenshot analysis integration.
+- Automatic rollback/checkpoint suggestions for high-risk failures.
+
+Validation:
+
+- Agent builds a small gameplay slice, launches PIE, captures log/screenshot, and returns a journal.
+
+## Phase 7 - Performance And Distribution
+
+Goal: make the platform easier to run in production and CI.
+
+Slices:
+
+- Profile startup and most-used tool latency.
+- Add command metadata registry to reduce routing drift between Python and C++.
+- Investigate T3D or bulk Blueprint graph injection for large graph creation.
+- Add headless build and smoke-test documentation.
+- Evaluate optional single-binary or Go/Rust sidecar only after command metadata and test coverage are solid.
+
+Validation:
+
+- Startup time baseline.
+- Repeatable CI smoke commands.
+- Large Blueprint creation benchmark before and after bulk injection.
+
+## Immediate Execution Queue
+
+1. Phase 0: reconcile tool-count docs and add drift guard test.
+2. Phase 1: add Niagara authoring support probe and schema wrappers.
+3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
+4. Phase 3: start with read-only networking inspection, then add safe replication toggles before RPC mutation tools.
+5. Phase 3: add read-only replication description before any mutation tools.
+
+## Backlog Notes
+
+- Keep historical command-level notes in git history rather than preserving stale workaround sections in this roadmap.
+- When adding a tool, update tests first or in the same change.
+- When adding a C++ bridge command, update Python wrapper, README tool category summary, and knowledge-base usage notes.
+- Use `local-book-paths.json` only for short local retrieval from licensed PDFs; do not commit book text.

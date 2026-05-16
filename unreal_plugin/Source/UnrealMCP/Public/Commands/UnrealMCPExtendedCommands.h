@@ -73,6 +73,7 @@ private:
     TSharedPtr<FJsonObject> HandleCreateBlueprintInterface(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleImplementBlueprintInterface(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddInterfaceFunctionNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddInterfaceEventNode(const TSharedPtr<FJsonObject>& Params);
 
     // ?? Data Assets ???????????????????????????????????????????????????????????
     TSharedPtr<FJsonObject> HandleCreateStruct(const TSharedPtr<FJsonObject>& Params);
@@ -107,6 +108,21 @@ private:
     TSharedPtr<FJsonObject> HandleCreateBlackboard(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetBehaviorTreeBlackboard(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetBlueprintParentClass(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleEQSCreateQuery(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleEQSDescribeQuery(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleEQSAddGenerator(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleEQSAddTest(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandlePerceptionAddComponent(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandlePerceptionConfigureSight(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandlePerceptionConfigureHearing(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandlePerceptionCreateStimulusSource(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandlePerceptionDescribeBlueprint(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNavCreateLinkProxy(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNavAddModifierVolume(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNavDescribeAgentSettings(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCrowdConfigureRVO(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCrowdConfigureDetour(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleGameplayDebuggerCaptureAI(const TSharedPtr<FJsonObject>& Params);
 
     // ?? BT Graph Node Manipulation ???????????????????????????????????????????
     /** build_behavior_tree: populate a BT asset's graph from a JSON tree description */
@@ -125,6 +141,7 @@ private:
      *         properties         (object, optional) key=value applied to NodeInstance
      */
     TSharedPtr<FJsonObject> HandleAttachBTSubNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleBTAddRunEQSService(const TSharedPtr<FJsonObject>& Params);
     /**
      * bt_add_selector_wait: restructure BT_Enemy_Infantry so the Root drives a
      * Selector with the existing Sequence as left child and a Wait(2s) as right child.
@@ -137,6 +154,13 @@ private:
     TSharedPtr<FJsonObject> HandleSetGameModeForLevel(const TSharedPtr<FJsonObject>& Params);
 
     // ?? Niagara / VFX ?????????????????????????????????????????????????????????
+    TSharedPtr<FJsonObject> HandleCreateNiagaraSystem(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleDescribeNiagaraSystem(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddEmptyNiagaraEmitter(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetNiagaraUserParameter(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSetNiagaraSpawnRate(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddNiagaraSpriteRenderer(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddNiagaraMeshRenderer(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddNiagaraComponent(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddSpawnNiagaraAtLocationNode(const TSharedPtr<FJsonObject>& Params);
 

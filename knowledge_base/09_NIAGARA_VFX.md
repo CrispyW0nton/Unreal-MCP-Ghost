@@ -1,8 +1,100 @@
 # Niagara VFX System — Complete Reference
-> Source: Mastering Technical Art in Unreal Engine (Greg Penninck), Game Development with UE5 Vol.1 (Tiow Wee Tan)
-> Last Updated: 2026-04-10 | UE 5.6
+> Source: project notes, Epic UE 5.6 Niagara/Python API docs, licensed VFX references
+> Last Updated: 2026-05-16 | UE 5.6
 
 ---
+
+## 0. MCP Niagara-First Policy
+
+Complex particle effects must be authored as Niagara systems, not as Blueprint
+actors spawned on timers. Actor-spawn workarounds can compile unpredictably,
+stress the editor during validation, and produce runtime object churn. Use
+Blueprints only to spawn or attach a finished Niagara system/component.
+
+Safe automation order:
+
+1. Inspect assets with `niagara_find_systems` and `niagara_describe_system`.
+2. Create systems with `niagara_create_system` when a new asset is needed.
+3. Add a native emitter handle with `niagara_add_empty_emitter`.
+4. Set continuous emission with `niagara_set_spawn_rate` when the emitter needs a `SpawnRate` module.
+5. Add renderers with `niagara_add_sprite_renderer` or `niagara_add_mesh_renderer` when particles should be visible.
+6. Expose tuning inputs with `niagara_set_system_user_parameter`.
+7. Generate or review an effect recipe with `niagara_get_effect_recipe`.
+8. Apply safe asset-level settings with `niagara_apply_system_settings`.
+9. Use Blueprint graph tools only to spawn/attach the Niagara system.
+10. If deeper module stack authoring is required, add native C++ MCP bridge
+   commands rather than faking particles with Blueprint actors.
+
+Current Python limitation: UE 5.6 exposes useful Niagara asset classes such as
+`NiagaraSystem`, `NiagaraPythonEmitter`, and `NiagaraPythonScriptModuleInput`,
+but stack-level emitter/module editing is limited through Python alone in this
+project. Treat Python as inspection and safe-settings support. Native C++ bridge
+support currently covers system creation, system inspection, empty emitter
+handles, spawn-rate module editing, sprite/mesh renderers, and exposed user
+parameters; use additional C++ bridge extensions for ribbon renderers and
+broader module input editing.
+
+---
+
+## 0.1 Recipe — Black Hole Orb Inflow
+
+Goal: a looping field of small circular particles spawned on a sphere and pulled
+aggressively into the center.
+
+Recommended Niagara stack:
+
+```
+System: NS_BlackHoleOrbInflow
+Simulation: GPU preferred, CPU acceptable while debugging
+Fixed Bounds: min (-900,-900,-900), max (900,900,900)
+
+Emitter: OrbInflow
+Emitter Update:
+  Emitter State: Infinite loop
+  Spawn Rate: 120-160 particles/sec
+
+Particle Spawn:
+  Initialize Particle:
+    Lifetime: 0.45-0.90 sec
+    Sprite Size: 8-18
+    Color: purple/blue additive glow
+  Shape Location:
+    Shape: Sphere
+    Radius: ~650
+    Surface Only: true
+
+Particle Update:
+  Point Attraction Force:
+    Position: (0,0,0)
+    Strength: ~9500
+    Radius: ~900
+  Vortex Force:
+    Amount: ~1800
+    Origin Pull Strength: ~2500
+  Drag: 0.05-0.10
+  Scale Color:
+    Alpha fades in quickly, holds, then fades out before center
+  Scale Sprite Size:
+    Shrinks over normalized age so particles look swallowed
+
+Renderer:
+  Sprite Renderer with unlit additive circle/orb material
+  Facing: Camera-facing
+```
+
+Runtime Blueprint usage:
+
+```
+BP_BlackHoleFX BeginPlay
+  -> GetActorLocation
+  -> SpawnSystemAtLocation(NS_BlackHoleOrbInflow)
+     AutoActivate = true
+     AutoDestroy = false
+     Scale = 4,4,4
+```
+
+Do not spawn individual `StaticMeshActor` or Blueprint orb particles for this
+effect. The only actor should be the FX host or the black hole itself.
 
 ## 1. Niagara Hierarchy
 

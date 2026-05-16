@@ -25,6 +25,7 @@
 #include "EdGraph/EdGraphPin.h"
 #include "K2Node_Event.h"
 #include "K2Node_CallFunction.h"
+#include "K2Node_Message.h"
 #include "K2Node_VariableGet.h"
 #include "K2Node_VariableSet.h"
 #include "K2Node_Self.h"
@@ -95,6 +96,23 @@
 #include "BehaviorTree/Blackboard/BlackboardKeyType_String.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Vector.h"
 #include "BehaviorTree/Blackboard/BlackboardKeyType_Object.h"
+#include "BehaviorTree/BlackboardComponent.h"
+#include "BehaviorTree/BehaviorTreeComponent.h"
+#include "BehaviorTree/BTNode.h"
+#include "EnvironmentQuery/EnvQuery.h"
+#include "EnvironmentQuery/EnvQueryOption.h"
+#include "EnvironmentQuery/EnvQueryGenerator.h"
+#include "EnvironmentQuery/EnvQueryTest.h"
+#include "EnvironmentQuery/EnvQueryTypes.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_ActorsOfClass.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_CurrentLocation.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_Donut.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_OnCircle.h"
+#include "EnvironmentQuery/Generators/EnvQueryGenerator_SimpleGrid.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Distance.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Dot.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Pathfinding.h"
+#include "EnvironmentQuery/Tests/EnvQueryTest_Trace.h"
 // BehaviorTreeFactory.h / BlackboardDataFactory.h removed from public API in UE 5.6
 // #include "Factories/BehaviorTreeFactory.h"   // REMOVED
 // #include "Factories/BlackboardDataFactory.h" // REMOVED
@@ -118,6 +136,30 @@
 #include "BehaviorTree/BTTaskNode.h"
 #include "BehaviorTree/BTService.h"
 #include "BehaviorTree/BTDecorator.h"
+#include "BehaviorTree/Services/BTService_RunEQS.h"
+#include "Perception/AIPerceptionComponent.h"
+#include "Perception/AIPerceptionStimuliSourceComponent.h"
+#include "Perception/AISense.h"
+#include "Perception/AISense_Hearing.h"
+#include "Perception/AISense_Sight.h"
+#include "Perception/AISenseConfig_Hearing.h"
+#include "Perception/AISenseConfig_Sight.h"
+#include "AIController.h"
+#include "BrainComponent.h"
+#include "GameFramework/Character.h"
+#include "GameFramework/CharacterMovementComponent.h"
+#include "Kismet/GameplayStatics.h"
+#include "Navigation/CrowdFollowingComponent.h"
+#include "Navigation/PathFollowingComponent.h"
+#include "NavigationSystem.h"
+#include "Navigation/NavLinkProxy.h"
+#include "NavModifierVolume.h"
+#include "NavMesh/NavMeshBoundsVolume.h"
+#include "NavMesh/RecastNavMesh.h"
+#include "NavigationData.h"
+#include "NavAreas/NavArea_Default.h"
+#include "NavAreas/NavArea_Null.h"
+#include "NavAreas/NavArea_Obstacle.h"
 // Concrete BT node classes
 #include "BehaviorTree/Composites/BTComposite_Selector.h"
 #include "BehaviorTree/Composites/BTComposite_Sequence.h"
@@ -160,9 +202,25 @@
 
 // Niagara
 #include "NiagaraComponent.h"
+#include "NiagaraCommon.h"
 #include "NiagaraSystem.h"
+#include "NiagaraEmitter.h"
+#include "NiagaraEmitterFactoryNew.h"
+#include "NiagaraEmitterHandle.h"
 #include "NiagaraFunctionLibrary.h"
+#include "NiagaraGraph.h"
+#include "NiagaraNodeFunctionCall.h"
+#include "NiagaraNodeOutput.h"
+#include "NiagaraScript.h"
+#include "NiagaraScriptSource.h"
+#include "NiagaraTypes.h"
+#include "NiagaraSystemFactoryNew.h"
+#include "NiagaraSpriteRendererProperties.h"
+#include "NiagaraMeshRendererProperties.h"
+#include "ViewModels/Stack/NiagaraParameterHandle.h"
+#include "ViewModels/Stack/NiagaraStackGraphUtilities.h"
 #include "K2Node_CallFunction.h"
+#include "Engine/StaticMesh.h"
 
 // Animation Notifies
 #include "Animation/AnimSequenceBase.h"
@@ -253,6 +311,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("create_blueprint_interface")) return HandleCreateBlueprintInterface(Params);
     if (CommandType == TEXT("implement_blueprint_interface")) return HandleImplementBlueprintInterface(Params);
     if (CommandType == TEXT("add_interface_function_node")) return HandleAddInterfaceFunctionNode(Params);
+    if (CommandType == TEXT("add_interface_event_node")) return HandleAddInterfaceEventNode(Params);
 
     // Data Assets
     if (CommandType == TEXT("create_struct"))              return HandleCreateStruct(Params);
@@ -278,6 +337,21 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("create_blackboard"))               return HandleCreateBlackboard(Params);
     if (CommandType == TEXT("set_behavior_tree_blackboard"))    return HandleSetBehaviorTreeBlackboard(Params);
     if (CommandType == TEXT("set_blueprint_parent_class"))      return HandleSetBlueprintParentClass(Params);
+    if (CommandType == TEXT("eqs_create_query"))                return HandleEQSCreateQuery(Params);
+    if (CommandType == TEXT("eqs_describe_query"))              return HandleEQSDescribeQuery(Params);
+    if (CommandType == TEXT("eqs_add_generator"))               return HandleEQSAddGenerator(Params);
+    if (CommandType == TEXT("eqs_add_test"))                    return HandleEQSAddTest(Params);
+    if (CommandType == TEXT("perception_add_component"))        return HandlePerceptionAddComponent(Params);
+    if (CommandType == TEXT("perception_configure_sight"))      return HandlePerceptionConfigureSight(Params);
+    if (CommandType == TEXT("perception_configure_hearing"))    return HandlePerceptionConfigureHearing(Params);
+    if (CommandType == TEXT("perception_create_stimulus_source")) return HandlePerceptionCreateStimulusSource(Params);
+    if (CommandType == TEXT("perception_describe_blueprint"))   return HandlePerceptionDescribeBlueprint(Params);
+    if (CommandType == TEXT("nav_create_link_proxy"))           return HandleNavCreateLinkProxy(Params);
+    if (CommandType == TEXT("nav_add_modifier_volume"))         return HandleNavAddModifierVolume(Params);
+    if (CommandType == TEXT("nav_describe_agent_settings"))     return HandleNavDescribeAgentSettings(Params);
+    if (CommandType == TEXT("crowd_configure_rvo"))             return HandleCrowdConfigureRVO(Params);
+    if (CommandType == TEXT("crowd_configure_detour"))          return HandleCrowdConfigureDetour(Params);
+    if (CommandType == TEXT("gameplay_debugger_capture_ai"))    return HandleGameplayDebuggerCaptureAI(Params);
 
     // BT Graph Node Manipulation
     if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
@@ -286,11 +360,19 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("bt_add_selector_wait"))            return HandleBTAddSelectorWait(Params);
     if (CommandType == TEXT("bt_get_info"))                     return HandleGetBTGraphInfo(Params); // alias
     if (CommandType == TEXT("attach_bt_sub_node"))              return HandleAttachBTSubNode(Params);
+    if (CommandType == TEXT("bt_add_run_eqs_service"))          return HandleBTAddRunEQSService(Params);
 
     // Level/World
     if (CommandType == TEXT("set_game_mode_for_level"))         return HandleSetGameModeForLevel(Params);
 
     // Niagara / VFX
+    if (CommandType == TEXT("niagara_create_system"))              return HandleCreateNiagaraSystem(Params);
+    if (CommandType == TEXT("niagara_describe_system"))            return HandleDescribeNiagaraSystem(Params);
+    if (CommandType == TEXT("niagara_add_empty_emitter"))          return HandleAddEmptyNiagaraEmitter(Params);
+    if (CommandType == TEXT("niagara_set_system_user_parameter"))  return HandleSetNiagaraUserParameter(Params);
+    if (CommandType == TEXT("niagara_set_spawn_rate"))             return HandleSetNiagaraSpawnRate(Params);
+    if (CommandType == TEXT("niagara_add_sprite_renderer"))        return HandleAddNiagaraSpriteRenderer(Params);
+    if (CommandType == TEXT("niagara_add_mesh_renderer"))          return HandleAddNiagaraMeshRenderer(Params);
     if (CommandType == TEXT("add_niagara_component"))              return HandleAddNiagaraComponent(Params);
     if (CommandType == TEXT("add_spawn_niagara_at_location_node")) return HandleAddSpawnNiagaraAtLocationNode(Params);
 
@@ -1374,11 +1456,23 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateBlueprintInterfa
     Params->TryGetStringField(TEXT("path"), Path);
     if (Path.IsEmpty()) Path = TEXT("/Game/Blueprints");
     
+    FString PackagePath = Path + TEXT("/");
+    const FString AssetObjectPath = PackagePath + Name + TEXT(".") + Name;
+    if (UBlueprint* ExistingBP = LoadObject<UBlueprint>(nullptr, *AssetObjectPath))
+    {
+        TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+        Result->SetBoolField(TEXT("success"), true);
+        Result->SetBoolField(TEXT("existing"), true);
+        Result->SetStringField(TEXT("interface_name"), Name);
+        Result->SetStringField(TEXT("path"), PackagePath + Name);
+        Result->SetStringField(TEXT("message"), TEXT("Blueprint Interface already exists; returning existing asset instead of creating a duplicate."));
+        return Result;
+    }
+
     UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
     Factory->BlueprintType = BPTYPE_Interface;
     Factory->ParentClass = UInterface::StaticClass();
     
-    FString PackagePath = Path + TEXT("/");
     UPackage* Package = CreatePackage(*(PackagePath + Name));
     UBlueprint* InterfaceBP = Cast<UBlueprint>(
         Factory->FactoryCreateNew(UBlueprint::StaticClass(), Package, *Name,
@@ -1445,16 +1539,54 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleImplementBlueprintInte
         return CreateErrorResponse(FString::Printf(TEXT("Interface not found: %s"), *InterfaceName));
     
     UClass* InterfaceClass = InterfaceBP->GeneratedClass;
+    if (!InterfaceClass && InterfaceBP->SkeletonGeneratedClass)
+    {
+        InterfaceClass = InterfaceBP->SkeletonGeneratedClass;
+    }
     if (!InterfaceClass)
         return CreateErrorResponse(TEXT("Interface has no generated class"));
     
-    FBlueprintEditorUtils::ImplementNewInterface(BP, FTopLevelAssetPath(InterfaceClass->GetPackage()->GetFName(), InterfaceClass->GetFName()));
+    bool bAlreadyListed = false;
+    for (const FBPInterfaceDescription& ExistingInterface : BP->ImplementedInterfaces)
+    {
+        if (ExistingInterface.Interface == InterfaceClass)
+        {
+            bAlreadyListed = true;
+            break;
+        }
+    }
+
+    if (!bAlreadyListed)
+    {
+        FBlueprintEditorUtils::ImplementNewInterface(BP, FTopLevelAssetPath(InterfaceClass->GetPackage()->GetFName(), InterfaceClass->GetFName()));
+        FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(BP);
+    }
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+
+    bool bListedAfterAttempt = false;
+    for (const FBPInterfaceDescription& ExistingInterface : BP->ImplementedInterfaces)
+    {
+        if (ExistingInterface.Interface == InterfaceClass)
+        {
+            bListedAfterAttempt = true;
+            break;
+        }
+    }
+
+    const bool bVerified = BP->GeneratedClass && BP->GeneratedClass->ImplementsInterface(InterfaceClass);
     
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
-    Result->SetBoolField(TEXT("success"), true);
+    Result->SetBoolField(TEXT("success"), bListedAfterAttempt || bVerified);
     Result->SetStringField(TEXT("blueprint"), BPName);
     Result->SetStringField(TEXT("interface"), InterfaceName);
+    Result->SetBoolField(TEXT("verified"), bVerified);
+    Result->SetBoolField(TEXT("already_listed"), bAlreadyListed);
+    Result->SetBoolField(TEXT("listed"), bListedAfterAttempt);
+    Result->SetBoolField(TEXT("compile_deferred"), true);
+    if (!bVerified)
+    {
+        Result->SetStringField(TEXT("message"), TEXT("Interface add was attempted/listed, but compile is deferred to avoid KismetCompiler crashes during live MCP calls"));
+    }
     return Result;
 }
 
@@ -1484,15 +1616,32 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInterfaceFunctionNo
         return CreateErrorResponse(FString::Printf(TEXT("Interface not found: %s"), *InterfaceName));
     
     UClass* InterfaceClass = InterfaceBP->GeneratedClass;
-    if (!InterfaceClass)
+    UClass* SignatureClass = InterfaceClass;
+    if (InterfaceBP->SkeletonGeneratedClass)
+    {
+        UFunction* SkeletonFunc = InterfaceBP->SkeletonGeneratedClass->FindFunctionByName(FName(*FuncName));
+        if (SkeletonFunc)
+        {
+            SignatureClass = InterfaceBP->SkeletonGeneratedClass;
+        }
+    }
+    if (!SignatureClass)
         return CreateErrorResponse(TEXT("Interface class not found"));
     
-    UFunction* Func = InterfaceClass->FindFunctionByName(FName(*FuncName));
+    UFunction* Func = SignatureClass->FindFunctionByName(FName(*FuncName));
+    if (!Func && InterfaceClass && InterfaceClass != SignatureClass)
+    {
+        Func = InterfaceClass->FindFunctionByName(FName(*FuncName));
+        if (Func)
+        {
+            SignatureClass = InterfaceClass;
+        }
+    }
     if (!Func)
         return CreateErrorResponse(FString::Printf(TEXT("Function '%s' not in interface"), *FuncName));
     
-    UK2Node_CallFunction* MsgNode = NewObject<UK2Node_CallFunction>(Graph);
-    MsgNode->FunctionReference.SetExternalMember(FName(*FuncName), InterfaceClass);
+    UK2Node_Message* MsgNode = NewObject<UK2Node_Message>(Graph);
+    MsgNode->FunctionReference.SetExternalMember(FName(*FuncName), SignatureClass);
     MsgNode->NodePosX = Pos.X;
     MsgNode->NodePosY = Pos.Y;
     Graph->AddNode(MsgNode);
@@ -1502,6 +1651,107 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInterfaceFunctionNo
     
     FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
     return CreateSuccessResponse(MsgNode->NodeGuid.ToString());
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddInterfaceEventNode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, InterfaceName, FuncName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("interface_name"), InterfaceName))
+        return CreateErrorResponse(TEXT("Missing 'interface_name'"));
+    if (!Params->TryGetStringField(TEXT("function_name"), FuncName))
+        return CreateErrorResponse(TEXT("Missing 'function_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP)
+        return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UBlueprint* InterfaceBP = FindBlueprint(InterfaceName);
+    if (!InterfaceBP)
+        return CreateErrorResponse(FString::Printf(TEXT("Interface not found: %s"), *InterfaceName));
+
+    UClass* InterfaceClass = InterfaceBP->GeneratedClass ? InterfaceBP->GeneratedClass : InterfaceBP->SkeletonGeneratedClass;
+    UClass* SignatureClass = InterfaceClass;
+    if (InterfaceBP->SkeletonGeneratedClass &&
+        InterfaceBP->SkeletonGeneratedClass->FindFunctionByName(FName(*FuncName)))
+    {
+        SignatureClass = InterfaceBP->SkeletonGeneratedClass;
+    }
+    if (!SignatureClass)
+        return CreateErrorResponse(TEXT("Interface class not found"));
+
+    UFunction* Func = SignatureClass->FindFunctionByName(FName(*FuncName));
+    if (!Func && InterfaceClass && InterfaceClass != SignatureClass)
+    {
+        Func = InterfaceClass->FindFunctionByName(FName(*FuncName));
+        if (Func)
+        {
+            SignatureClass = InterfaceClass;
+        }
+    }
+    if (!Func)
+        return CreateErrorResponse(FString::Printf(TEXT("Function '%s' not in interface"), *FuncName));
+
+    UEdGraph* Graph = FindOrCreateEventGraph(BP);
+    if (!Graph)
+        return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    FName FuncFName(*FuncName);
+    for (UEdGraphNode* Node : Graph->Nodes)
+    {
+        UK2Node_Event* Existing = Cast<UK2Node_Event>(Node);
+        if (Existing &&
+            Existing->EventReference.GetMemberName() == FuncFName &&
+            Existing->EventReference.GetMemberParentClass() == SignatureClass)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("was_existing"), true);
+            R->SetStringField(TEXT("node_id"), Existing->NodeGuid.ToString());
+            R->SetStringField(TEXT("node_name"), Existing->GetName());
+            return R;
+        }
+    }
+
+    FVector2D Pos = GetNodePosition(Params);
+
+    UK2Node_Event* EventNode = NewObject<UK2Node_Event>(Graph);
+    if (!EventNode)
+        return CreateErrorResponse(TEXT("Failed to create interface event node"));
+
+    EventNode->EventReference.SetExternalMember(FuncFName, SignatureClass);
+    EventNode->bOverrideFunction = true;
+    EventNode->NodePosX = Pos.X;
+    EventNode->NodePosY = Pos.Y;
+    EventNode->CreateNewGuid();
+    Graph->AddNode(EventNode, true);
+    EventNode->PostPlacedNewNode();
+    EventNode->AllocateDefaultPins();
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("was_existing"), false);
+    R->SetStringField(TEXT("node_id"), EventNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("node_name"), EventNode->GetName());
+    TArray<TSharedPtr<FJsonValue>> PinsArr;
+    for (UEdGraphPin* P : EventNode->Pins)
+    {
+        if (P && !P->bHidden)
+        {
+            TSharedPtr<FJsonObject> PinObj = MakeShared<FJsonObject>();
+            PinObj->SetStringField(TEXT("pin_name"), P->PinName.ToString());
+            PinObj->SetStringField(TEXT("direction"), P->Direction == EGPD_Input ? TEXT("input") : TEXT("output"));
+            PinObj->SetStringField(TEXT("type"), P->PinType.PinCategory.ToString());
+            PinObj->SetStringField(TEXT("default_value"), P->DefaultValue);
+            PinsArr.Add(MakeShared<FJsonValueObject>(PinObj));
+        }
+    }
+    R->SetArrayField(TEXT("pins"), PinsArr);
+    return R;
 }
 
 // ??? Data Assets ?????????????????????????????????????????????????????????????
@@ -4018,6 +4268,1171 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetBehaviorTreeBlackbo
 }
 
 // ════════════════════════════════════════════════════════════════════════════
+// EQS helpers
+// ════════════════════════════════════════════════════════════════════════════
+static void ResolveEQSObjectPaths(const FString& InPath, FString& OutPackagePath, FString& OutObjectPath)
+{
+    OutPackagePath = InPath;
+    OutObjectPath = InPath;
+    if (!OutObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(InPath);
+        OutObjectPath = InPath + TEXT(".") + AssetName;
+    }
+    if (OutPackagePath.Contains(TEXT(".")))
+    {
+        OutPackagePath.Split(TEXT("."), &OutPackagePath, nullptr);
+    }
+}
+
+static UEnvQuery* LoadEQSQueryByPathOrName(const FString& QueryPathOrName, FString& OutPackagePath)
+{
+    if (QueryPathOrName.StartsWith(TEXT("/")))
+    {
+        FString ObjectPath;
+        ResolveEQSObjectPaths(QueryPathOrName, OutPackagePath, ObjectPath);
+        return LoadObject<UEnvQuery>(nullptr, *ObjectPath);
+    }
+
+    IAssetRegistry& AR = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+    TArray<FAssetData> Assets;
+    AR.GetAssetsByClass(FTopLevelAssetPath(TEXT("/Script/AIModule"), TEXT("EnvQuery")), Assets, true);
+    for (const FAssetData& AD : Assets)
+    {
+        if (AD.AssetName.ToString().Equals(QueryPathOrName, ESearchCase::IgnoreCase))
+        {
+            OutPackagePath = AD.PackageName.ToString();
+            return Cast<UEnvQuery>(AD.GetAsset());
+        }
+    }
+    return nullptr;
+}
+
+static UClass* ResolveEQSGeneratorClass(const FString& GeneratorType)
+{
+    const FString Key = GeneratorType.Replace(TEXT("_"), TEXT("")).Replace(TEXT(" "), TEXT("")).ToLower();
+    if (Key == TEXT("simplegrid") || Key == TEXT("grid"))
+        return UEnvQueryGenerator_SimpleGrid::StaticClass();
+    if (Key == TEXT("circle") || Key == TEXT("oncircle"))
+        return UEnvQueryGenerator_OnCircle::StaticClass();
+    if (Key == TEXT("donut"))
+        return UEnvQueryGenerator_Donut::StaticClass();
+    if (Key == TEXT("currentlocation") || Key == TEXT("self"))
+        return UEnvQueryGenerator_CurrentLocation::StaticClass();
+    if (Key == TEXT("actorsofclass") || Key == TEXT("actors"))
+        return UEnvQueryGenerator_ActorsOfClass::StaticClass();
+    return nullptr;
+}
+
+static UClass* ResolveEQSTestClass(const FString& TestType)
+{
+    const FString Key = TestType.Replace(TEXT("_"), TEXT("")).Replace(TEXT(" "), TEXT("")).ToLower();
+    if (Key == TEXT("distance"))
+        return UEnvQueryTest_Distance::StaticClass();
+    if (Key == TEXT("pathfinding") || Key == TEXT("path"))
+        return UEnvQueryTest_Pathfinding::StaticClass();
+    if (Key == TEXT("dot"))
+        return UEnvQueryTest_Dot::StaticClass();
+    if (Key == TEXT("trace"))
+        return UEnvQueryTest_Trace::StaticClass();
+    return nullptr;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// eqs_create_query
+// Params: query_name, [folder_path], [overwrite], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleEQSCreateQuery(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString QueryName, FolderPath;
+    if (!Params->TryGetStringField(TEXT("query_name"), QueryName))
+        return CreateErrorResponse(TEXT("Missing 'query_name'"));
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    if (FolderPath.IsEmpty()) FolderPath = TEXT("/Game/AI");
+    FolderPath.RemoveFromEnd(TEXT("/"));
+
+    bool bOverwrite = false;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    const FString PackagePath = FolderPath / QueryName;
+    const FString ObjectPath = PackagePath + TEXT(".") + QueryName;
+
+    if (UEditorAssetLibrary::DoesAssetExist(PackagePath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("created"), false);
+            R->SetStringField(TEXT("message"), TEXT("EQS query already exists"));
+            R->SetStringField(TEXT("asset_path"), PackagePath);
+            R->SetStringField(TEXT("object_path"), ObjectPath);
+            return R;
+        }
+        if (!UEditorAssetLibrary::DeleteAsset(PackagePath))
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Could not delete existing EQS query before overwrite: %s"), *PackagePath));
+        }
+    }
+
+    if (!UEditorAssetLibrary::DoesDirectoryExist(FolderPath))
+    {
+        UEditorAssetLibrary::MakeDirectory(FolderPath);
+    }
+
+    UPackage* Package = CreatePackage(*PackagePath);
+    if (!Package)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Could not create package: %s"), *PackagePath));
+    }
+
+    UEnvQuery* Query = NewObject<UEnvQuery>(Package, UEnvQuery::StaticClass(), FName(*QueryName), RF_Public | RF_Standalone | RF_Transactional);
+    if (!Query)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate EnvQuery asset"));
+    }
+
+    FAssetRegistryModule::AssetCreated(Query);
+    Query->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), Query->GetPathName());
+    R->SetStringField(TEXT("class"), Query->GetClass()->GetName());
+    R->SetNumberField(TEXT("option_count"), Query->GetOptions().Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// eqs_describe_query
+// Params: query_path
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleEQSDescribeQuery(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString QueryPath;
+    if (!Params->TryGetStringField(TEXT("query_path"), QueryPath))
+        return CreateErrorResponse(TEXT("Missing 'query_path'"));
+
+    FString PackagePath;
+    UEnvQuery* Query = LoadEQSQueryByPathOrName(QueryPath, PackagePath);
+    if (!Query)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("EQS query not found: %s"), *QueryPath));
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), Query->GetPathName());
+    R->SetStringField(TEXT("class"), Query->GetClass()->GetName());
+
+    TArray<TSharedPtr<FJsonValue>> OptionsJson;
+    const TArray<UEnvQueryOption*>& Options = Query->GetOptions();
+    for (int32 Index = 0; Index < Options.Num(); ++Index)
+    {
+        const UEnvQueryOption* Option = Options[Index];
+        TSharedPtr<FJsonObject> OptionJson = MakeShared<FJsonObject>();
+        OptionJson->SetNumberField(TEXT("index"), Index);
+        OptionJson->SetStringField(TEXT("generator_class"), Option && Option->Generator ? Option->Generator->GetClass()->GetName() : TEXT(""));
+        OptionJson->SetStringField(TEXT("description"), Option ? Option->GetDescriptionTitle().ToString() : TEXT(""));
+
+        TArray<TSharedPtr<FJsonValue>> TestsJson;
+        if (Option)
+        {
+            for (int32 TestIndex = 0; TestIndex < Option->Tests.Num(); ++TestIndex)
+            {
+                const UEnvQueryTest* Test = Option->Tests[TestIndex];
+                TSharedPtr<FJsonObject> TestJson = MakeShared<FJsonObject>();
+                TestJson->SetNumberField(TEXT("index"), TestIndex);
+                TestJson->SetStringField(TEXT("class"), Test ? Test->GetClass()->GetName() : TEXT(""));
+                TestJson->SetStringField(TEXT("comment"), Test ? Test->TestComment : TEXT(""));
+                TestsJson.Add(MakeShared<FJsonValueObject>(TestJson));
+            }
+        }
+        OptionJson->SetNumberField(TEXT("test_count"), TestsJson.Num());
+        OptionJson->SetArrayField(TEXT("tests"), TestsJson);
+        OptionsJson.Add(MakeShared<FJsonValueObject>(OptionJson));
+    }
+
+    R->SetNumberField(TEXT("option_count"), OptionsJson.Num());
+    R->SetArrayField(TEXT("options"), OptionsJson);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// eqs_add_generator
+// Params: query_path, generator_type, [option_index], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleEQSAddGenerator(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString QueryPath, GeneratorType;
+    if (!Params->TryGetStringField(TEXT("query_path"), QueryPath))
+        return CreateErrorResponse(TEXT("Missing 'query_path'"));
+    if (!Params->TryGetStringField(TEXT("generator_type"), GeneratorType))
+        return CreateErrorResponse(TEXT("Missing 'generator_type'"));
+
+    double OptionIndexNumber = -1.0;
+    Params->TryGetNumberField(TEXT("option_index"), OptionIndexNumber);
+    const int32 OptionIndex = static_cast<int32>(OptionIndexNumber);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    UClass* GeneratorClass = ResolveEQSGeneratorClass(GeneratorType);
+    if (!GeneratorClass)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Unsupported EQS generator type: %s"), *GeneratorType));
+    }
+
+    FString PackagePath;
+    UEnvQuery* Query = LoadEQSQueryByPathOrName(QueryPath, PackagePath);
+    if (!Query)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("EQS query not found: %s"), *QueryPath));
+    }
+
+    Query->Modify();
+    TArray<TObjectPtr<UEnvQueryOption>>& Options = Query->GetOptionsMutable();
+    UEnvQueryOption* Option = nullptr;
+    int32 ResolvedOptionIndex = OptionIndex;
+    if (Options.IsValidIndex(OptionIndex))
+    {
+        Option = Options[OptionIndex];
+    }
+    if (!Option)
+    {
+        Option = NewObject<UEnvQueryOption>(Query, NAME_None, RF_Transactional);
+        Options.Add(Option);
+        ResolvedOptionIndex = Options.Num() - 1;
+    }
+
+    Option->Modify();
+    UEnvQueryGenerator* Generator = NewObject<UEnvQueryGenerator>(Option, GeneratorClass, NAME_None, RF_Transactional);
+    if (!Generator)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate EQS generator"));
+    }
+    Option->Generator = Generator;
+
+    Query->MarkPackageDirty();
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("query_path"), PackagePath);
+    R->SetNumberField(TEXT("option_index"), ResolvedOptionIndex);
+    R->SetStringField(TEXT("generator_class"), Generator->GetClass()->GetName());
+    R->SetNumberField(TEXT("option_count"), Options.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// eqs_add_test
+// Params: query_path, test_type, [option_index], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleEQSAddTest(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString QueryPath, TestType;
+    if (!Params->TryGetStringField(TEXT("query_path"), QueryPath))
+        return CreateErrorResponse(TEXT("Missing 'query_path'"));
+    if (!Params->TryGetStringField(TEXT("test_type"), TestType))
+        return CreateErrorResponse(TEXT("Missing 'test_type'"));
+
+    double OptionIndexNumber = 0.0;
+    Params->TryGetNumberField(TEXT("option_index"), OptionIndexNumber);
+    const int32 OptionIndex = static_cast<int32>(OptionIndexNumber);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    UClass* TestClass = ResolveEQSTestClass(TestType);
+    if (!TestClass)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Unsupported EQS test type: %s"), *TestType));
+    }
+
+    FString PackagePath;
+    UEnvQuery* Query = LoadEQSQueryByPathOrName(QueryPath, PackagePath);
+    if (!Query)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("EQS query not found: %s"), *QueryPath));
+    }
+
+    TArray<TObjectPtr<UEnvQueryOption>>& Options = Query->GetOptionsMutable();
+    if (!Options.IsValidIndex(OptionIndex) || !Options[OptionIndex])
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("EQS option index not found: %d"), OptionIndex));
+    }
+
+    Query->Modify();
+    UEnvQueryOption* Option = Options[OptionIndex];
+    Option->Modify();
+    UEnvQueryTest* Test = NewObject<UEnvQueryTest>(Option, TestClass, NAME_None, RF_Transactional);
+    if (!Test)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate EQS test"));
+    }
+
+    Test->TestOrder = Option->Tests.Num();
+    Option->Tests.Add(Test);
+
+    Query->MarkPackageDirty();
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("query_path"), PackagePath);
+    R->SetNumberField(TEXT("option_index"), OptionIndex);
+    R->SetNumberField(TEXT("test_index"), Option->Tests.Num() - 1);
+    R->SetStringField(TEXT("test_class"), Test->GetClass()->GetName());
+    R->SetNumberField(TEXT("test_count"), Option->Tests.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_create_system
+// Params: system_name, [folder_path], [overwrite], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateNiagaraSystem(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemName, FolderPath;
+    if (!Params->TryGetStringField(TEXT("system_name"), SystemName))
+        return CreateErrorResponse(TEXT("Missing 'system_name'"));
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    if (FolderPath.IsEmpty()) FolderPath = TEXT("/Game/VFX");
+    FolderPath.RemoveFromEnd(TEXT("/"));
+
+    bool bOverwrite = false;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    const FString PackagePath = FolderPath / SystemName;
+    const FString ObjectPath = PackagePath + TEXT(".") + SystemName;
+
+    if (UEditorAssetLibrary::DoesAssetExist(PackagePath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("created"), false);
+            R->SetStringField(TEXT("message"), TEXT("Asset already exists"));
+            R->SetStringField(TEXT("asset_path"), PackagePath);
+            R->SetStringField(TEXT("object_path"), ObjectPath);
+            return R;
+        }
+
+        if (!UEditorAssetLibrary::DeleteAsset(PackagePath))
+        {
+            return CreateErrorResponse(
+                FString::Printf(TEXT("Could not delete existing Niagara System before overwrite: %s"), *PackagePath));
+        }
+    }
+
+    if (!UEditorAssetLibrary::DoesDirectoryExist(FolderPath))
+    {
+        UEditorAssetLibrary::MakeDirectory(FolderPath);
+    }
+
+    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+    UNiagaraSystemFactoryNew* Factory = NewObject<UNiagaraSystemFactoryNew>(GetTransientPackage());
+    if (!Factory)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate NiagaraSystemFactoryNew"));
+    }
+
+    UObject* NewAsset = AssetTools.CreateAsset(SystemName, FolderPath, UNiagaraSystem::StaticClass(), Factory);
+    UNiagaraSystem* NiagaraSystem = Cast<UNiagaraSystem>(NewAsset);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(TEXT("AssetTools failed to create a Niagara System"));
+    }
+
+    NiagaraSystem->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), NiagaraSystem->GetPathName());
+    R->SetStringField(TEXT("class"), NiagaraSystem->GetClass()->GetName());
+    R->SetStringField(TEXT("note"), TEXT("Created empty Niagara System; use follow-up emitter/module/renderer tools to author the stack."));
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_describe_system
+// Params: system_path
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleDescribeNiagaraSystem(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemPath;
+    if (!Params->TryGetStringField(TEXT("system_path"), SystemPath))
+        return CreateErrorResponse(TEXT("Missing 'system_path'"));
+
+    FString PackagePath = SystemPath;
+    FString ObjectPath = SystemPath;
+    if (!ObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(SystemPath);
+        ObjectPath = SystemPath + TEXT(".") + AssetName;
+    }
+    if (PackagePath.Contains(TEXT(".")))
+    {
+        PackagePath.Split(TEXT("."), &PackagePath, nullptr);
+    }
+
+    UNiagaraSystem* NiagaraSystem = LoadObject<UNiagaraSystem>(nullptr, *ObjectPath);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Niagara System not found: %s"), *ObjectPath));
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), NiagaraSystem->GetPathName());
+    R->SetStringField(TEXT("class"), NiagaraSystem->GetClass()->GetName());
+
+    TArray<TSharedPtr<FJsonValue>> EmittersJson;
+    for (const FNiagaraEmitterHandle& Handle : NiagaraSystem->GetEmitterHandles())
+    {
+        TSharedPtr<FJsonObject> EmitterJson = MakeShared<FJsonObject>();
+        EmitterJson->SetStringField(TEXT("name"), Handle.GetName().ToString());
+        EmitterJson->SetStringField(TEXT("id"), Handle.GetId().ToString(EGuidFormats::DigitsWithHyphens));
+        EmitterJson->SetBoolField(TEXT("enabled"), Handle.GetIsEnabled());
+        EmitterJson->SetStringField(TEXT("mode"), Handle.GetEmitterMode() == ENiagaraEmitterMode::Stateless ? TEXT("Stateless") : TEXT("Standard"));
+        if (const FVersionedNiagaraEmitterData* EmitterData = Handle.GetEmitterData())
+        {
+            EmitterJson->SetStringField(TEXT("unique_instance_name"), Handle.GetUniqueInstanceName());
+            EmitterJson->SetBoolField(TEXT("needs_recompile"), Handle.NeedsRecompile());
+            EmitterJson->SetStringField(TEXT("version"), EmitterData->Version.VersionGuid.ToString(EGuidFormats::DigitsWithHyphens));
+            EmitterJson->SetNumberField(TEXT("renderer_count"), EmitterData->GetRenderers().Num());
+
+            TArray<TSharedPtr<FJsonValue>> RenderersJson;
+            for (const UNiagaraRendererProperties* Renderer : EmitterData->GetRenderers())
+            {
+                if (!Renderer)
+                {
+                    continue;
+                }
+
+                TSharedPtr<FJsonObject> RendererJson = MakeShared<FJsonObject>();
+                RendererJson->SetStringField(TEXT("class"), Renderer->GetClass()->GetName());
+
+                if (const UNiagaraSpriteRendererProperties* SpriteRenderer = Cast<UNiagaraSpriteRendererProperties>(Renderer))
+                {
+                    RendererJson->SetStringField(TEXT("material"), SpriteRenderer->Material ? SpriteRenderer->Material->GetPathName() : TEXT(""));
+                }
+                else if (const UNiagaraMeshRendererProperties* MeshRenderer = Cast<UNiagaraMeshRendererProperties>(Renderer))
+                {
+                    TArray<TSharedPtr<FJsonValue>> MeshesJson;
+                    for (const FNiagaraMeshRendererMeshProperties& MeshProps : MeshRenderer->Meshes)
+                    {
+                        TSharedPtr<FJsonObject> MeshJson = MakeShared<FJsonObject>();
+                        MeshJson->SetStringField(TEXT("static_mesh"), MeshProps.Mesh ? MeshProps.Mesh->GetPathName() : TEXT(""));
+                        MeshJson->SetStringField(TEXT("scale"), MeshProps.Scale.ToString());
+                        MeshesJson.Add(MakeShared<FJsonValueObject>(MeshJson));
+                    }
+                    RendererJson->SetArrayField(TEXT("meshes"), MeshesJson);
+                    RendererJson->SetBoolField(TEXT("material_override"), MeshRenderer->bOverrideMaterials != 0);
+                }
+
+                RenderersJson.Add(MakeShared<FJsonValueObject>(RendererJson));
+            }
+            EmitterJson->SetArrayField(TEXT("renderers"), RenderersJson);
+        }
+        EmittersJson.Add(MakeShared<FJsonValueObject>(EmitterJson));
+    }
+    R->SetNumberField(TEXT("emitter_count"), EmittersJson.Num());
+    R->SetArrayField(TEXT("emitters"), EmittersJson);
+
+    TArray<FNiagaraVariable> UserParameters;
+    NiagaraSystem->GetExposedParameters().GetUserParameters(UserParameters);
+    TArray<TSharedPtr<FJsonValue>> ParametersJson;
+    for (const FNiagaraVariable& Variable : UserParameters)
+    {
+        TSharedPtr<FJsonObject> ParamJson = MakeShared<FJsonObject>();
+        ParamJson->SetStringField(TEXT("name"), Variable.GetName().ToString());
+        ParamJson->SetStringField(TEXT("type"), Variable.GetType().GetNameText().ToString());
+        ParametersJson.Add(MakeShared<FJsonValueObject>(ParamJson));
+    }
+    R->SetNumberField(TEXT("user_parameter_count"), ParametersJson.Num());
+    R->SetArrayField(TEXT("user_parameters"), ParametersJson);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_add_empty_emitter
+// Params: system_path, [emitter_name], [add_default_modules], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddEmptyNiagaraEmitter(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemPath;
+    if (!Params->TryGetStringField(TEXT("system_path"), SystemPath))
+        return CreateErrorResponse(TEXT("Missing 'system_path'"));
+
+    FString EmitterName;
+    Params->TryGetStringField(TEXT("emitter_name"), EmitterName);
+    if (EmitterName.IsEmpty()) EmitterName = TEXT("MCP_Emitter");
+
+    bool bAddDefaultModules = false;
+    Params->TryGetBoolField(TEXT("add_default_modules"), bAddDefaultModules);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    FString PackagePath = SystemPath;
+    FString ObjectPath = SystemPath;
+    if (!ObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(SystemPath);
+        ObjectPath = SystemPath + TEXT(".") + AssetName;
+    }
+    if (PackagePath.Contains(TEXT(".")))
+    {
+        PackagePath.Split(TEXT("."), &PackagePath, nullptr);
+    }
+
+    UNiagaraSystem* NiagaraSystem = LoadObject<UNiagaraSystem>(nullptr, *ObjectPath);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Niagara System not found: %s"), *ObjectPath));
+    }
+
+    NiagaraSystem->Modify();
+
+    UNiagaraEmitter* EmptyEmitter = NewObject<UNiagaraEmitter>(GetTransientPackage(), NAME_None, RF_Transactional);
+    if (!EmptyEmitter)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate Niagara emitter"));
+    }
+
+    UNiagaraEmitterFactoryNew::InitializeEmitter(EmptyEmitter, bAddDefaultModules);
+    EmptyEmitter->SetUniqueEmitterName(EmitterName);
+    EmptyEmitter->bIsInheritable = false;
+
+    FNiagaraEmitterHandle EmitterHandle = NiagaraSystem->AddEmitterHandle(*EmptyEmitter, FName(*EmitterName), FGuid());
+    if (!EmitterHandle.IsValid())
+    {
+        return CreateErrorResponse(TEXT("Failed to add empty emitter handle to Niagara System"));
+    }
+
+    NiagaraSystem->RequestCompile(false);
+    NiagaraSystem->MarkPackageDirty();
+    NiagaraSystem->PostEditChange();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("system_path"), PackagePath);
+    R->SetStringField(TEXT("emitter_name"), EmitterHandle.GetName().ToString());
+    R->SetStringField(TEXT("emitter_id"), EmitterHandle.GetId().ToString(EGuidFormats::DigitsWithHyphens));
+    R->SetBoolField(TEXT("default_modules_added"), bAddDefaultModules);
+    R->SetNumberField(TEXT("emitter_count"), NiagaraSystem->GetEmitterHandles().Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_set_system_user_parameter
+// Params: system_path, parameter_name, parameter_type, [value], [save]
+// parameter_type: float | bool | vector3 | color
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetNiagaraUserParameter(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemPath, ParameterName, ParameterType;
+    if (!Params->TryGetStringField(TEXT("system_path"), SystemPath))
+        return CreateErrorResponse(TEXT("Missing 'system_path'"));
+    if (!Params->TryGetStringField(TEXT("parameter_name"), ParameterName))
+        return CreateErrorResponse(TEXT("Missing 'parameter_name'"));
+    if (!Params->TryGetStringField(TEXT("parameter_type"), ParameterType))
+        return CreateErrorResponse(TEXT("Missing 'parameter_type'"));
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    FString PackagePath = SystemPath;
+    FString ObjectPath = SystemPath;
+    if (!ObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(SystemPath);
+        ObjectPath = SystemPath + TEXT(".") + AssetName;
+    }
+    if (PackagePath.Contains(TEXT(".")))
+    {
+        PackagePath.Split(TEXT("."), &PackagePath, nullptr);
+    }
+
+    UNiagaraSystem* NiagaraSystem = LoadObject<UNiagaraSystem>(nullptr, *ObjectPath);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Niagara System not found: %s"), *ObjectPath));
+    }
+
+    if (!ParameterName.StartsWith(TEXT("User.")))
+    {
+        ParameterName = TEXT("User.") + ParameterName;
+    }
+
+    FNiagaraTypeDefinition TypeDef;
+    ParameterType = ParameterType.ToLower();
+    if (ParameterType == TEXT("float") || ParameterType == TEXT("scalar"))
+    {
+        TypeDef = FNiagaraTypeDefinition::GetFloatDef();
+    }
+    else if (ParameterType == TEXT("bool") || ParameterType == TEXT("boolean"))
+    {
+        TypeDef = FNiagaraTypeDefinition::GetBoolDef();
+    }
+    else if (ParameterType == TEXT("vector") || ParameterType == TEXT("vector3") || ParameterType == TEXT("vec3"))
+    {
+        TypeDef = FNiagaraTypeDefinition::GetVec3Def();
+    }
+    else if (ParameterType == TEXT("color") || ParameterType == TEXT("linear_color"))
+    {
+        TypeDef = FNiagaraTypeDefinition::GetColorDef();
+    }
+    else
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Unsupported Niagara user parameter type: %s"), *ParameterType));
+    }
+
+    NiagaraSystem->Modify();
+    FNiagaraVariable Variable(TypeDef, FName(*ParameterName));
+    FNiagaraUserRedirectionParameterStore& Store = NiagaraSystem->GetExposedParameters();
+    const bool bAdded = Store.AddParameter(Variable, true, true);
+
+    if (TypeDef == FNiagaraTypeDefinition::GetFloatDef())
+    {
+        double NumberValue = 0.0;
+        Params->TryGetNumberField(TEXT("value"), NumberValue);
+        const float FloatValue = static_cast<float>(NumberValue);
+        Store.SetParameterData(reinterpret_cast<const uint8*>(&FloatValue), Variable, true);
+    }
+    else if (TypeDef == FNiagaraTypeDefinition::GetBoolDef())
+    {
+        bool bValue = false;
+        Params->TryGetBoolField(TEXT("value"), bValue);
+        const FNiagaraBool NiagaraBool(bValue);
+        Store.SetParameterData(reinterpret_cast<const uint8*>(&NiagaraBool), Variable, true);
+    }
+    else
+    {
+        const TArray<TSharedPtr<FJsonValue>>* ValueArray = nullptr;
+        Params->TryGetArrayField(TEXT("value"), ValueArray);
+        const double V0 = (ValueArray && ValueArray->Num() > 0) ? (*ValueArray)[0]->AsNumber() : 0.0;
+        const double V1 = (ValueArray && ValueArray->Num() > 1) ? (*ValueArray)[1]->AsNumber() : 0.0;
+        const double V2 = (ValueArray && ValueArray->Num() > 2) ? (*ValueArray)[2]->AsNumber() : 0.0;
+        const double V3 = (ValueArray && ValueArray->Num() > 3) ? (*ValueArray)[3]->AsNumber() : 1.0;
+        if (TypeDef == FNiagaraTypeDefinition::GetVec3Def())
+        {
+            const FVector3f VecValue(static_cast<float>(V0), static_cast<float>(V1), static_cast<float>(V2));
+            Store.SetParameterData(reinterpret_cast<const uint8*>(&VecValue), Variable, true);
+        }
+        else
+        {
+            const FLinearColor ColorValue(static_cast<float>(V0), static_cast<float>(V1), static_cast<float>(V2), static_cast<float>(V3));
+            Store.SetParameterData(reinterpret_cast<const uint8*>(&ColorValue), Variable, true);
+        }
+    }
+
+    Store.PostGenericEditChange();
+    NiagaraSystem->RequestCompile(false);
+    NiagaraSystem->MarkPackageDirty();
+    NiagaraSystem->PostEditChange();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TArray<FNiagaraVariable> UserParameters;
+    Store.GetUserParameters(UserParameters);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("added"), bAdded);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("system_path"), PackagePath);
+    R->SetStringField(TEXT("parameter_name"), ParameterName);
+    R->SetStringField(TEXT("parameter_type"), ParameterType);
+    R->SetNumberField(TEXT("user_parameter_count"), UserParameters.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_set_spawn_rate
+// Params: system_path, emitter_name|emitter_id, spawn_rate, [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetNiagaraSpawnRate(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemPath;
+    if (!Params->TryGetStringField(TEXT("system_path"), SystemPath))
+        return CreateErrorResponse(TEXT("Missing 'system_path'"));
+
+    double SpawnRateNumber = 0.0;
+    if (!Params->TryGetNumberField(TEXT("spawn_rate"), SpawnRateNumber))
+        return CreateErrorResponse(TEXT("Missing 'spawn_rate'"));
+    const float SpawnRate = FMath::Max(0.0f, static_cast<float>(SpawnRateNumber));
+
+    FString EmitterName, EmitterId;
+    Params->TryGetStringField(TEXT("emitter_name"), EmitterName);
+    Params->TryGetStringField(TEXT("emitter_id"), EmitterId);
+    if (EmitterName.IsEmpty() && EmitterId.IsEmpty())
+        return CreateErrorResponse(TEXT("Missing 'emitter_name' or 'emitter_id'"));
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    FString PackagePath = SystemPath;
+    FString ObjectPath = SystemPath;
+    if (!ObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(SystemPath);
+        ObjectPath = SystemPath + TEXT(".") + AssetName;
+    }
+    if (PackagePath.Contains(TEXT(".")))
+    {
+        PackagePath.Split(TEXT("."), &PackagePath, nullptr);
+    }
+
+    UNiagaraSystem* NiagaraSystem = LoadObject<UNiagaraSystem>(nullptr, *ObjectPath);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Niagara System not found: %s"), *ObjectPath));
+    }
+
+    FGuid RequestedGuid;
+    const bool bHasGuid = !EmitterId.IsEmpty() && FGuid::Parse(EmitterId, RequestedGuid);
+
+    FNiagaraEmitterHandle* TargetHandle = nullptr;
+    for (FNiagaraEmitterHandle& Handle : NiagaraSystem->GetEmitterHandles())
+    {
+        if ((!EmitterName.IsEmpty() && Handle.GetName().ToString() == EmitterName) ||
+            (bHasGuid && Handle.GetId() == RequestedGuid))
+        {
+            TargetHandle = &Handle;
+            break;
+        }
+    }
+    if (!TargetHandle)
+    {
+        return CreateErrorResponse(TEXT("Niagara emitter handle not found"));
+    }
+
+    FVersionedNiagaraEmitter& VersionedEmitter = TargetHandle->GetInstance();
+    if (!VersionedEmitter.Emitter)
+    {
+        return CreateErrorResponse(TEXT("Emitter handle has no backing emitter instance"));
+    }
+
+    FVersionedNiagaraEmitterData* EmitterData = VersionedEmitter.GetEmitterData();
+    if (!EmitterData || !EmitterData->EmitterUpdateScriptProps.Script)
+    {
+        return CreateErrorResponse(TEXT("Emitter has no editable update script data"));
+    }
+
+    UNiagaraScriptSource* Source = Cast<UNiagaraScriptSource>(EmitterData->GraphSource);
+    UNiagaraGraph* Graph = Source ? Source->NodeGraph : nullptr;
+    if (!Graph)
+    {
+        return CreateErrorResponse(TEXT("Emitter graph source is unavailable"));
+    }
+
+    UNiagaraNodeOutput* EmitterUpdateOutputNode = nullptr;
+    TArray<UNiagaraNodeOutput*> OutputNodes;
+    Graph->GetNodesOfClass(OutputNodes);
+    for (UNiagaraNodeOutput* OutputNode : OutputNodes)
+    {
+        if (OutputNode &&
+            OutputNode->GetUsage() == ENiagaraScriptUsage::EmitterUpdateScript &&
+            OutputNode->GetUsageId() == EmitterData->EmitterUpdateScriptProps.Script->GetUsageId())
+        {
+            EmitterUpdateOutputNode = OutputNode;
+            break;
+        }
+    }
+    if (!EmitterUpdateOutputNode)
+    {
+        return CreateErrorResponse(TEXT("Emitter update output node not found"));
+    }
+
+    FSoftObjectPath SpawnRateAssetPath(TEXT("/Niagara/Modules/Emitter/SpawnRate.SpawnRate"));
+    UNiagaraScript* SpawnRateScript = Cast<UNiagaraScript>(SpawnRateAssetPath.TryLoad());
+    if (!SpawnRateScript)
+    {
+        return CreateErrorResponse(TEXT("Could not load Niagara SpawnRate module script"));
+    }
+
+    UNiagaraNodeFunctionCall* SpawnRateNode = nullptr;
+    const FName SpawnRateSoftObjectName(*SpawnRateAssetPath.ToString());
+
+    TArray<UNiagaraNodeFunctionCall*> FunctionNodes;
+    Graph->GetNodesOfClass(FunctionNodes);
+    for (UNiagaraNodeFunctionCall* FunctionNode : FunctionNodes)
+    {
+        if (!FunctionNode)
+        {
+            continue;
+        }
+
+        const bool bMatchesLoadedScript = FunctionNode->FunctionScript == SpawnRateScript;
+        const bool bMatchesAssetPath = FunctionNode->FunctionScriptAssetObjectPath == SpawnRateSoftObjectName;
+        const bool bMatchesFunctionName = FunctionNode->GetFunctionName().Equals(TEXT("SpawnRate"), ESearchCase::IgnoreCase);
+        if (bMatchesLoadedScript || bMatchesAssetPath || bMatchesFunctionName)
+        {
+            SpawnRateNode = FunctionNode;
+            break;
+        }
+    }
+
+    NiagaraSystem->Modify();
+    VersionedEmitter.Emitter->Modify();
+    Graph->Modify();
+    EmitterData->EmitterUpdateScriptProps.Script->Modify();
+
+    const bool bCreatedModule = SpawnRateNode == nullptr;
+    if (!SpawnRateNode)
+    {
+        SpawnRateNode = FNiagaraStackGraphUtilities::AddScriptModuleToStack(
+            SpawnRateScript,
+            *EmitterUpdateOutputNode,
+            INDEX_NONE,
+            TEXT("SpawnRate"));
+    }
+    if (!SpawnRateNode)
+    {
+        return CreateErrorResponse(TEXT("Failed to add SpawnRate module to emitter update stack"));
+    }
+
+    FNiagaraParameterHandle InputHandle = FNiagaraParameterHandle::CreateModuleParameterHandle(TEXT("SpawnRate"));
+    FNiagaraParameterHandle AliasedInputHandle = FNiagaraParameterHandle::CreateAliasedModuleParameterHandle(InputHandle, SpawnRateNode);
+    FNiagaraVariable InputVariable(FNiagaraTypeDefinition::GetFloatDef(), AliasedInputHandle.GetParameterHandleString());
+    FNiagaraVariable RapidIterationParameter = FNiagaraUtilities::ConvertVariableToRapidIterationConstantName(
+        InputVariable,
+        *VersionedEmitter.Emitter->GetUniqueEmitterName(),
+        EmitterData->EmitterUpdateScriptProps.Script->GetUsage());
+
+    RapidIterationParameter.SetValue(SpawnRate);
+    EmitterData->EmitterUpdateScriptProps.Script->RapidIterationParameters.SetParameterData(
+        RapidIterationParameter.GetData(),
+        RapidIterationParameter,
+        true);
+
+    NiagaraSystem->RequestCompile(false);
+    NiagaraSystem->MarkPackageDirty();
+    NiagaraSystem->PostEditChange();
+    VersionedEmitter.Emitter->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetBoolField(TEXT("module_created"), bCreatedModule);
+    R->SetStringField(TEXT("system_path"), PackagePath);
+    R->SetStringField(TEXT("emitter_name"), TargetHandle->GetName().ToString());
+    R->SetStringField(TEXT("emitter_id"), TargetHandle->GetId().ToString(EGuidFormats::DigitsWithHyphens));
+    R->SetStringField(TEXT("module_name"), SpawnRateNode->GetFunctionName());
+    R->SetStringField(TEXT("rapid_iteration_parameter"), RapidIterationParameter.GetName().ToString());
+    R->SetNumberField(TEXT("spawn_rate"), SpawnRate);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_add_sprite_renderer
+// Params: system_path, emitter_name|emitter_id, [material_path], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNiagaraSpriteRenderer(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemPath;
+    if (!Params->TryGetStringField(TEXT("system_path"), SystemPath))
+        return CreateErrorResponse(TEXT("Missing 'system_path'"));
+
+    FString EmitterName, EmitterId, MaterialPath;
+    Params->TryGetStringField(TEXT("emitter_name"), EmitterName);
+    Params->TryGetStringField(TEXT("emitter_id"), EmitterId);
+    Params->TryGetStringField(TEXT("material_path"), MaterialPath);
+    if (EmitterName.IsEmpty() && EmitterId.IsEmpty())
+        return CreateErrorResponse(TEXT("Missing 'emitter_name' or 'emitter_id'"));
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    FString PackagePath = SystemPath;
+    FString ObjectPath = SystemPath;
+    if (!ObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(SystemPath);
+        ObjectPath = SystemPath + TEXT(".") + AssetName;
+    }
+    if (PackagePath.Contains(TEXT(".")))
+    {
+        PackagePath.Split(TEXT("."), &PackagePath, nullptr);
+    }
+
+    UNiagaraSystem* NiagaraSystem = LoadObject<UNiagaraSystem>(nullptr, *ObjectPath);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Niagara System not found: %s"), *ObjectPath));
+    }
+
+    FGuid RequestedGuid;
+    const bool bHasGuid = !EmitterId.IsEmpty() && FGuid::Parse(EmitterId, RequestedGuid);
+
+    FNiagaraEmitterHandle* TargetHandle = nullptr;
+    for (FNiagaraEmitterHandle& Handle : NiagaraSystem->GetEmitterHandles())
+    {
+        if ((!EmitterName.IsEmpty() && Handle.GetName().ToString() == EmitterName) ||
+            (bHasGuid && Handle.GetId() == RequestedGuid))
+        {
+            TargetHandle = &Handle;
+            break;
+        }
+    }
+    if (!TargetHandle)
+    {
+        return CreateErrorResponse(TEXT("Niagara emitter handle not found"));
+    }
+
+    FVersionedNiagaraEmitter& VersionedEmitter = TargetHandle->GetInstance();
+    if (!VersionedEmitter.Emitter)
+    {
+        return CreateErrorResponse(TEXT("Emitter handle has no backing emitter instance"));
+    }
+
+    NiagaraSystem->Modify();
+    VersionedEmitter.Emitter->Modify();
+
+    UNiagaraSpriteRendererProperties* Renderer =
+        NewObject<UNiagaraSpriteRendererProperties>(VersionedEmitter.Emitter, NAME_None, RF_Transactional);
+    if (!Renderer)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate Niagara sprite renderer"));
+    }
+
+    if (!MaterialPath.IsEmpty())
+    {
+        UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
+        if (!Material && !MaterialPath.Contains(TEXT(".")))
+        {
+            const FString MaterialName = FPackageName::GetLongPackageAssetName(MaterialPath);
+            Material = LoadObject<UMaterialInterface>(nullptr, *(MaterialPath + TEXT(".") + MaterialName));
+        }
+        if (!Material)
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Material not found: %s"), *MaterialPath));
+        }
+        Renderer->Material = Material;
+    }
+
+    VersionedEmitter.Emitter->AddRenderer(Renderer, VersionedEmitter.Version);
+    NiagaraSystem->RequestCompile(false);
+    NiagaraSystem->MarkPackageDirty();
+    NiagaraSystem->PostEditChange();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    const FVersionedNiagaraEmitterData* EmitterData = TargetHandle->GetEmitterData();
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("system_path"), PackagePath);
+    R->SetStringField(TEXT("emitter_name"), TargetHandle->GetName().ToString());
+    R->SetStringField(TEXT("emitter_id"), TargetHandle->GetId().ToString(EGuidFormats::DigitsWithHyphens));
+    R->SetStringField(TEXT("renderer_class"), Renderer->GetClass()->GetName());
+    R->SetNumberField(TEXT("renderer_count"), EmitterData ? EmitterData->GetRenderers().Num() : 0);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// niagara_add_mesh_renderer
+// Params: system_path, emitter_name|emitter_id, static_mesh_path, [material_path], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNiagaraMeshRenderer(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString SystemPath, StaticMeshPath;
+    if (!Params->TryGetStringField(TEXT("system_path"), SystemPath))
+        return CreateErrorResponse(TEXT("Missing 'system_path'"));
+    if (!Params->TryGetStringField(TEXT("static_mesh_path"), StaticMeshPath))
+        return CreateErrorResponse(TEXT("Missing 'static_mesh_path'"));
+
+    FString EmitterName, EmitterId, MaterialPath;
+    Params->TryGetStringField(TEXT("emitter_name"), EmitterName);
+    Params->TryGetStringField(TEXT("emitter_id"), EmitterId);
+    Params->TryGetStringField(TEXT("material_path"), MaterialPath);
+    if (EmitterName.IsEmpty() && EmitterId.IsEmpty())
+        return CreateErrorResponse(TEXT("Missing 'emitter_name' or 'emitter_id'"));
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    FString PackagePath = SystemPath;
+    FString ObjectPath = SystemPath;
+    if (!ObjectPath.Contains(TEXT(".")))
+    {
+        const FString AssetName = FPackageName::GetLongPackageAssetName(SystemPath);
+        ObjectPath = SystemPath + TEXT(".") + AssetName;
+    }
+    if (PackagePath.Contains(TEXT(".")))
+    {
+        PackagePath.Split(TEXT("."), &PackagePath, nullptr);
+    }
+
+    UNiagaraSystem* NiagaraSystem = LoadObject<UNiagaraSystem>(nullptr, *ObjectPath);
+    if (!NiagaraSystem)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Niagara System not found: %s"), *ObjectPath));
+    }
+
+    UStaticMesh* StaticMesh = LoadObject<UStaticMesh>(nullptr, *StaticMeshPath);
+    if (!StaticMesh && !StaticMeshPath.Contains(TEXT(".")))
+    {
+        const FString MeshName = FPackageName::GetLongPackageAssetName(StaticMeshPath);
+        StaticMesh = LoadObject<UStaticMesh>(nullptr, *(StaticMeshPath + TEXT(".") + MeshName));
+    }
+    if (!StaticMesh)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Static mesh not found: %s"), *StaticMeshPath));
+    }
+
+    FGuid RequestedGuid;
+    const bool bHasGuid = !EmitterId.IsEmpty() && FGuid::Parse(EmitterId, RequestedGuid);
+
+    FNiagaraEmitterHandle* TargetHandle = nullptr;
+    for (FNiagaraEmitterHandle& Handle : NiagaraSystem->GetEmitterHandles())
+    {
+        if ((!EmitterName.IsEmpty() && Handle.GetName().ToString() == EmitterName) ||
+            (bHasGuid && Handle.GetId() == RequestedGuid))
+        {
+            TargetHandle = &Handle;
+            break;
+        }
+    }
+    if (!TargetHandle)
+    {
+        return CreateErrorResponse(TEXT("Niagara emitter handle not found"));
+    }
+
+    FVersionedNiagaraEmitter& VersionedEmitter = TargetHandle->GetInstance();
+    if (!VersionedEmitter.Emitter)
+    {
+        return CreateErrorResponse(TEXT("Emitter handle has no backing emitter instance"));
+    }
+
+    NiagaraSystem->Modify();
+    VersionedEmitter.Emitter->Modify();
+
+    UNiagaraMeshRendererProperties* Renderer =
+        NewObject<UNiagaraMeshRendererProperties>(VersionedEmitter.Emitter, NAME_None, RF_Transactional);
+    if (!Renderer)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate Niagara mesh renderer"));
+    }
+
+    FNiagaraMeshRendererMeshProperties MeshProperties;
+    MeshProperties.Mesh = StaticMesh;
+    Renderer->Meshes.Empty();
+    Renderer->Meshes.Add(MeshProperties);
+
+    if (!MaterialPath.IsEmpty())
+    {
+        UMaterialInterface* Material = LoadObject<UMaterialInterface>(nullptr, *MaterialPath);
+        if (!Material && !MaterialPath.Contains(TEXT(".")))
+        {
+            const FString MaterialName = FPackageName::GetLongPackageAssetName(MaterialPath);
+            Material = LoadObject<UMaterialInterface>(nullptr, *(MaterialPath + TEXT(".") + MaterialName));
+        }
+        if (!Material)
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Material not found: %s"), *MaterialPath));
+        }
+
+        FNiagaraMeshMaterialOverride MaterialOverride;
+        MaterialOverride.ExplicitMat = Material;
+        Renderer->bOverrideMaterials = true;
+        Renderer->OverrideMaterials.Empty();
+        Renderer->OverrideMaterials.Add(MaterialOverride);
+    }
+
+    VersionedEmitter.Emitter->AddRenderer(Renderer, VersionedEmitter.Version);
+    NiagaraSystem->RequestCompile(false);
+    NiagaraSystem->MarkPackageDirty();
+    NiagaraSystem->PostEditChange();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    const FVersionedNiagaraEmitterData* EmitterData = TargetHandle->GetEmitterData();
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("system_path"), PackagePath);
+    R->SetStringField(TEXT("emitter_name"), TargetHandle->GetName().ToString());
+    R->SetStringField(TEXT("emitter_id"), TargetHandle->GetId().ToString(EGuidFormats::DigitsWithHyphens));
+    R->SetStringField(TEXT("renderer_class"), Renderer->GetClass()->GetName());
+    R->SetStringField(TEXT("static_mesh_path"), StaticMesh->GetPathName());
+    R->SetBoolField(TEXT("material_override"), !MaterialPath.IsEmpty());
+    R->SetNumberField(TEXT("renderer_count"), EmitterData ? EmitterData->GetRenderers().Num() : 0);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
 // add_niagara_component
 // Params: blueprint_name, component_name, [niagara_system_path]
 // ════════════════════════════════════════════════════════════════════════════
@@ -5338,6 +6753,1020 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddRerouteNode(
 
 // ── AI (Ch. 10) ──────────────────────────────────────────────────────────────
 
+static USCS_Node* FindSCSNodeByComponentName(UBlueprint* BP, const FString& ComponentName)
+{
+    if (!BP || !BP->SimpleConstructionScript) return nullptr;
+    for (USCS_Node* Node : BP->SimpleConstructionScript->GetAllNodes())
+    {
+        if (Node && Node->GetVariableName().ToString().Equals(ComponentName, ESearchCase::IgnoreCase))
+        {
+            return Node;
+        }
+    }
+    return nullptr;
+}
+
+static UActorComponent* FindSCSComponentTemplate(
+    UBlueprint* BP,
+    const FString& ComponentName,
+    UClass* RequiredClass,
+    USCS_Node** OutNode = nullptr)
+{
+    if (OutNode) *OutNode = nullptr;
+    if (!BP || !BP->SimpleConstructionScript) return nullptr;
+
+    for (USCS_Node* Node : BP->SimpleConstructionScript->GetAllNodes())
+    {
+        if (!Node || !Node->ComponentTemplate) continue;
+        const bool bNameMatches = ComponentName.IsEmpty() ||
+            Node->GetVariableName().ToString().Equals(ComponentName, ESearchCase::IgnoreCase);
+        const bool bClassMatches = !RequiredClass || Node->ComponentTemplate->IsA(RequiredClass);
+        if (bNameMatches && bClassMatches)
+        {
+            if (OutNode) *OutNode = Node;
+            return Node->ComponentTemplate;
+        }
+    }
+    return nullptr;
+}
+
+static USCS_Node* AddSCSComponentNode(
+    UBlueprint* BP,
+    UClass* ComponentClass,
+    const FString& ComponentName,
+    bool& bAlreadyExisted,
+    FString& OutError)
+{
+    bAlreadyExisted = false;
+    OutError.Empty();
+
+    if (!BP) { OutError = TEXT("Blueprint is null"); return nullptr; }
+    if (!BP->SimpleConstructionScript) { OutError = TEXT("Blueprint has no SimpleConstructionScript"); return nullptr; }
+    if (!ComponentClass || !ComponentClass->IsChildOf(UActorComponent::StaticClass()))
+    {
+        OutError = TEXT("Invalid component class");
+        return nullptr;
+    }
+
+    if (USCS_Node* Existing = FindSCSNodeByComponentName(BP, ComponentName))
+    {
+        if (Existing->ComponentTemplate && Existing->ComponentTemplate->IsA(ComponentClass))
+        {
+            bAlreadyExisted = true;
+            return Existing;
+        }
+        OutError = FString::Printf(TEXT("Component '%s' already exists with class '%s'"),
+            *ComponentName,
+            Existing->ComponentTemplate ? *Existing->ComponentTemplate->GetClass()->GetName() : TEXT("<none>"));
+        return nullptr;
+    }
+
+    BP->Modify();
+    BP->SimpleConstructionScript->Modify();
+    USCS_Node* NewNode = BP->SimpleConstructionScript->CreateNode(ComponentClass, *ComponentName);
+    if (!NewNode)
+    {
+        OutError = TEXT("Failed to create SCS node");
+        return nullptr;
+    }
+
+    bool bAddCrash = false;
+    const bool bAdded = FUnrealMCPCommonUtils::SCSAddNodeGuarded(
+        BP->SimpleConstructionScript,
+        NewNode,
+        bAddCrash);
+    if (bAddCrash || !bAdded)
+    {
+        OutError = FString::Printf(TEXT("SCS AddNode failed for '%s' (seh=%d, added=%d)"),
+            *ComponentName,
+            bAddCrash ? 1 : 0,
+            bAdded ? 1 : 0);
+        return nullptr;
+    }
+
+    if (NewNode->ComponentTemplate)
+    {
+        NewNode->ComponentTemplate->SetFlags(RF_Transactional);
+    }
+    return NewNode;
+}
+
+static bool TrySaveAndCompileBlueprint(UBlueprint* BP, bool bCompile, bool bSave)
+{
+    if (!BP) return false;
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+    if (bCompile)
+    {
+        FKismetEditorUtilities::CompileBlueprint(BP);
+    }
+    return bSave ? UEditorAssetLibrary::SaveAsset(BP->GetPathName(), false) : false;
+}
+
+static UClass* ResolveAISenseClass(const FString& SenseName)
+{
+    if (SenseName.Equals(TEXT("sight"), ESearchCase::IgnoreCase) ||
+        SenseName.Equals(TEXT("AISense_Sight"), ESearchCase::IgnoreCase))
+    {
+        return UAISense_Sight::StaticClass();
+    }
+    if (SenseName.Equals(TEXT("hearing"), ESearchCase::IgnoreCase) ||
+        SenseName.Equals(TEXT("AISense_Hearing"), ESearchCase::IgnoreCase))
+    {
+        return UAISense_Hearing::StaticClass();
+    }
+
+    UClass* SenseClass = LoadClass<UAISense>(nullptr, *SenseName);
+    if (!SenseClass && !SenseName.StartsWith(TEXT("/Script/")) && !SenseName.StartsWith(TEXT("/Game/")))
+    {
+        SenseClass = LoadClass<UAISense>(nullptr, *FString::Printf(TEXT("/Script/AIModule.%s"), *SenseName));
+    }
+    return SenseClass && SenseClass->IsChildOf(UAISense::StaticClass()) ? SenseClass : nullptr;
+}
+
+static void AddSenseClassToStimuliSource(UAIPerceptionStimuliSourceComponent* Source, UClass* SenseClass)
+{
+    if (!Source || !SenseClass) return;
+    FArrayProperty* SensesProp =
+        FindFProperty<FArrayProperty>(Source->GetClass(), TEXT("RegisterAsSourceForSenses"));
+    if (!SensesProp) return;
+
+    void* ArrayAddr = SensesProp->ContainerPtrToValuePtr<void>(Source);
+    FScriptArrayHelper Helper(SensesProp, ArrayAddr);
+    FClassProperty* ClassInner = CastField<FClassProperty>(SensesProp->Inner);
+    if (!ClassInner) return;
+
+    for (int32 Index = 0; Index < Helper.Num(); ++Index)
+    {
+        if (ClassInner->GetPropertyValue(Helper.GetRawPtr(Index)) == SenseClass)
+        {
+            return;
+        }
+    }
+
+    const int32 NewIndex = Helper.AddValue();
+    ClassInner->SetPropertyValue(Helper.GetRawPtr(NewIndex), SenseClass);
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandlePerceptionAddComponent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, ComponentName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("component_name"), ComponentName);
+    if (ComponentName.IsEmpty()) ComponentName = TEXT("AIPerception");
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    bool bSave = true, bCompile = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+
+    bool bAlreadyExisted = false;
+    FString Error;
+    USCS_Node* Node = AddSCSComponentNode(
+        BP,
+        UAIPerceptionComponent::StaticClass(),
+        ComponentName,
+        bAlreadyExisted,
+        Error);
+    if (!Node)
+    {
+        return CreateErrorResponse(Error.IsEmpty() ? TEXT("Failed to add AIPerception component") : Error);
+    }
+
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), !bAlreadyExisted);
+    R->SetBoolField(TEXT("already_existed"), bAlreadyExisted);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("component_name"), ComponentName);
+    R->SetStringField(TEXT("component_class"), UAIPerceptionComponent::StaticClass()->GetName());
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandlePerceptionConfigureSight(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, ComponentName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("component_name"), ComponentName);
+    if (ComponentName.IsEmpty()) ComponentName = TEXT("AIPerception");
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    bool bCreateIfMissing = true;
+    Params->TryGetBoolField(TEXT("create_if_missing"), bCreateIfMissing);
+    if (bCreateIfMissing && !FindSCSComponentTemplate(BP, ComponentName, UAIPerceptionComponent::StaticClass()))
+    {
+        bool bAlreadyExisted = false;
+        FString Error;
+        if (!AddSCSComponentNode(BP, UAIPerceptionComponent::StaticClass(), ComponentName, bAlreadyExisted, Error))
+        {
+            return CreateErrorResponse(Error.IsEmpty() ? TEXT("Failed to add AIPerception component") : Error);
+        }
+    }
+
+    UAIPerceptionComponent* Perception = Cast<UAIPerceptionComponent>(
+        FindSCSComponentTemplate(BP, ComponentName, UAIPerceptionComponent::StaticClass()));
+    if (!Perception)
+        return CreateErrorResponse(FString::Printf(TEXT("AIPerception component not found: %s"), *ComponentName));
+
+    Perception->Modify();
+    UAISenseConfig_Sight* Sight = Perception->GetSenseConfig<UAISenseConfig_Sight>();
+    const bool bCreatedConfig = Sight == nullptr;
+    if (!Sight)
+    {
+        Sight = NewObject<UAISenseConfig_Sight>(Perception, NAME_None, RF_Transactional);
+    }
+    if (!Sight) return CreateErrorResponse(TEXT("Failed to create Sight sense config"));
+    Sight->Modify();
+
+    double SightRadius = Sight->SightRadius > 0.0f ? Sight->SightRadius : 3000.0;
+    double LoseSightRadius = Sight->LoseSightRadius > 0.0f ? Sight->LoseSightRadius : 3500.0;
+    double Peripheral = Sight->PeripheralVisionAngleDegrees > 0.0f ? Sight->PeripheralVisionAngleDegrees : 70.0;
+    double AutoSuccess = Sight->AutoSuccessRangeFromLastSeenLocation;
+    double BackOffset = Sight->PointOfViewBackwardOffset;
+    double NearClip = Sight->NearClippingRadius;
+    Params->TryGetNumberField(TEXT("sight_radius"), SightRadius);
+    Params->TryGetNumberField(TEXT("lose_sight_radius"), LoseSightRadius);
+    Params->TryGetNumberField(TEXT("peripheral_vision_angle_degrees"), Peripheral);
+    Params->TryGetNumberField(TEXT("auto_success_range"), AutoSuccess);
+    Params->TryGetNumberField(TEXT("point_of_view_backward_offset"), BackOffset);
+    Params->TryGetNumberField(TEXT("near_clipping_radius"), NearClip);
+
+    bool bEnemies = true, bNeutrals = true, bFriendlies = false, bDominant = true;
+    Params->TryGetBoolField(TEXT("detect_enemies"), bEnemies);
+    Params->TryGetBoolField(TEXT("detect_neutrals"), bNeutrals);
+    Params->TryGetBoolField(TEXT("detect_friendlies"), bFriendlies);
+    Params->TryGetBoolField(TEXT("dominant"), bDominant);
+
+    Sight->Implementation = UAISense_Sight::StaticClass();
+    Sight->SightRadius = (float)SightRadius;
+    Sight->LoseSightRadius = (float)LoseSightRadius;
+    Sight->PeripheralVisionAngleDegrees = (float)Peripheral;
+    Sight->AutoSuccessRangeFromLastSeenLocation = (float)AutoSuccess;
+    Sight->PointOfViewBackwardOffset = (float)BackOffset;
+    Sight->NearClippingRadius = (float)NearClip;
+    Sight->DetectionByAffiliation.bDetectEnemies = bEnemies;
+    Sight->DetectionByAffiliation.bDetectNeutrals = bNeutrals;
+    Sight->DetectionByAffiliation.bDetectFriendlies = bFriendlies;
+    Perception->ConfigureSense(*Sight);
+    if (bDominant)
+    {
+        Perception->SetDominantSense(UAISense_Sight::StaticClass());
+    }
+    Perception->RequestStimuliListenerUpdate();
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created_config"), bCreatedConfig);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("component_name"), ComponentName);
+    R->SetStringField(TEXT("sense"), TEXT("Sight"));
+    R->SetNumberField(TEXT("sight_radius"), Sight->SightRadius);
+    R->SetNumberField(TEXT("lose_sight_radius"), Sight->LoseSightRadius);
+    R->SetNumberField(TEXT("peripheral_vision_angle_degrees"), Sight->PeripheralVisionAngleDegrees);
+    R->SetBoolField(TEXT("dominant"), bDominant);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandlePerceptionConfigureHearing(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, ComponentName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("component_name"), ComponentName);
+    if (ComponentName.IsEmpty()) ComponentName = TEXT("AIPerception");
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    bool bCreateIfMissing = true;
+    Params->TryGetBoolField(TEXT("create_if_missing"), bCreateIfMissing);
+    if (bCreateIfMissing && !FindSCSComponentTemplate(BP, ComponentName, UAIPerceptionComponent::StaticClass()))
+    {
+        bool bAlreadyExisted = false;
+        FString Error;
+        if (!AddSCSComponentNode(BP, UAIPerceptionComponent::StaticClass(), ComponentName, bAlreadyExisted, Error))
+        {
+            return CreateErrorResponse(Error.IsEmpty() ? TEXT("Failed to add AIPerception component") : Error);
+        }
+    }
+
+    UAIPerceptionComponent* Perception = Cast<UAIPerceptionComponent>(
+        FindSCSComponentTemplate(BP, ComponentName, UAIPerceptionComponent::StaticClass()));
+    if (!Perception)
+        return CreateErrorResponse(FString::Printf(TEXT("AIPerception component not found: %s"), *ComponentName));
+
+    Perception->Modify();
+    UAISenseConfig_Hearing* Hearing = Perception->GetSenseConfig<UAISenseConfig_Hearing>();
+    const bool bCreatedConfig = Hearing == nullptr;
+    if (!Hearing)
+    {
+        Hearing = NewObject<UAISenseConfig_Hearing>(Perception, NAME_None, RF_Transactional);
+    }
+    if (!Hearing) return CreateErrorResponse(TEXT("Failed to create Hearing sense config"));
+    Hearing->Modify();
+
+    double HearingRange = Hearing->HearingRange > 0.0f ? Hearing->HearingRange : 2500.0;
+    Params->TryGetNumberField(TEXT("hearing_range"), HearingRange);
+
+    bool bEnemies = true, bNeutrals = true, bFriendlies = false, bDominant = false;
+    Params->TryGetBoolField(TEXT("detect_enemies"), bEnemies);
+    Params->TryGetBoolField(TEXT("detect_neutrals"), bNeutrals);
+    Params->TryGetBoolField(TEXT("detect_friendlies"), bFriendlies);
+    Params->TryGetBoolField(TEXT("dominant"), bDominant);
+
+    Hearing->Implementation = UAISense_Hearing::StaticClass();
+    Hearing->HearingRange = (float)HearingRange;
+    Hearing->DetectionByAffiliation.bDetectEnemies = bEnemies;
+    Hearing->DetectionByAffiliation.bDetectNeutrals = bNeutrals;
+    Hearing->DetectionByAffiliation.bDetectFriendlies = bFriendlies;
+    Perception->ConfigureSense(*Hearing);
+    if (bDominant)
+    {
+        Perception->SetDominantSense(UAISense_Hearing::StaticClass());
+    }
+    Perception->RequestStimuliListenerUpdate();
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created_config"), bCreatedConfig);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("component_name"), ComponentName);
+    R->SetStringField(TEXT("sense"), TEXT("Hearing"));
+    R->SetNumberField(TEXT("hearing_range"), Hearing->HearingRange);
+    R->SetBoolField(TEXT("dominant"), bDominant);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandlePerceptionCreateStimulusSource(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, ComponentName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    Params->TryGetStringField(TEXT("component_name"), ComponentName);
+    if (ComponentName.IsEmpty()) ComponentName = TEXT("PerceptionStimuliSource");
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    bool bAlreadyExisted = false;
+    FString Error;
+    USCS_Node* Node = AddSCSComponentNode(
+        BP,
+        UAIPerceptionStimuliSourceComponent::StaticClass(),
+        ComponentName,
+        bAlreadyExisted,
+        Error);
+    if (!Node)
+    {
+        return CreateErrorResponse(Error.IsEmpty() ? TEXT("Failed to add stimuli source component") : Error);
+    }
+
+    UAIPerceptionStimuliSourceComponent* Source =
+        Cast<UAIPerceptionStimuliSourceComponent>(Node->ComponentTemplate);
+    if (!Source) return CreateErrorResponse(TEXT("Stimuli source component template was not created"));
+    Source->Modify();
+
+    bool bAutoRegister = true;
+    Params->TryGetBoolField(TEXT("auto_register"), bAutoRegister);
+    if (FBoolProperty* AutoProp =
+            FindFProperty<FBoolProperty>(Source->GetClass(), TEXT("bAutoRegisterAsSource")))
+    {
+        AutoProp->SetPropertyValue_InContainer(Source, bAutoRegister);
+    }
+
+    TArray<FString> SenseNames;
+    const TArray<TSharedPtr<FJsonValue>>* SensesArray = nullptr;
+    if (Params->TryGetArrayField(TEXT("senses"), SensesArray) && SensesArray)
+    {
+        for (const TSharedPtr<FJsonValue>& SenseVal : *SensesArray)
+        {
+            FString SenseName;
+            if (SenseVal->TryGetString(SenseName) && !SenseName.IsEmpty())
+            {
+                SenseNames.Add(SenseName);
+            }
+        }
+    }
+    if (SenseNames.Num() == 0)
+    {
+        SenseNames.Add(TEXT("sight"));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> SenseResults;
+    for (const FString& SenseName : SenseNames)
+    {
+        UClass* SenseClass = ResolveAISenseClass(SenseName);
+        if (SenseClass)
+        {
+            AddSenseClassToStimuliSource(Source, SenseClass);
+            SenseResults.Add(MakeShared<FJsonValueString>(SenseClass->GetName()));
+        }
+    }
+
+    bool bSave = true, bCompile = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), !bAlreadyExisted);
+    R->SetBoolField(TEXT("already_existed"), bAlreadyExisted);
+    R->SetBoolField(TEXT("auto_register"), bAutoRegister);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("component_name"), ComponentName);
+    R->SetArrayField(TEXT("senses"), SenseResults);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandlePerceptionDescribeBlueprint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    TArray<TSharedPtr<FJsonValue>> Components;
+    if (BP->SimpleConstructionScript)
+    {
+        for (USCS_Node* Node : BP->SimpleConstructionScript->GetAllNodes())
+        {
+            if (!Node || !Node->ComponentTemplate) continue;
+
+            if (UAIPerceptionComponent* Perception = Cast<UAIPerceptionComponent>(Node->ComponentTemplate))
+            {
+                TSharedPtr<FJsonObject> CObj = MakeShared<FJsonObject>();
+                CObj->SetStringField(TEXT("component_name"), Node->GetVariableName().ToString());
+                CObj->SetStringField(TEXT("component_class"), Perception->GetClass()->GetName());
+                CObj->SetStringField(TEXT("dominant_sense"),
+                    Perception->GetDominantSense() ? Perception->GetDominantSense()->GetName() : TEXT(""));
+
+                TArray<TSharedPtr<FJsonValue>> SenseConfigs;
+                for (auto It = Perception->GetSensesConfigIterator(); It; ++It)
+                {
+                    const UAISenseConfig* Config = *It;
+                    if (!Config) continue;
+                    TSharedPtr<FJsonObject> SObj = MakeShared<FJsonObject>();
+                    SObj->SetStringField(TEXT("config_class"), Config->GetClass()->GetName());
+                    if (const UAISenseConfig_Sight* Sight = Cast<UAISenseConfig_Sight>(Config))
+                    {
+                        SObj->SetStringField(TEXT("sense"), TEXT("Sight"));
+                        SObj->SetNumberField(TEXT("sight_radius"), Sight->SightRadius);
+                        SObj->SetNumberField(TEXT("lose_sight_radius"), Sight->LoseSightRadius);
+                        SObj->SetNumberField(TEXT("peripheral_vision_angle_degrees"), Sight->PeripheralVisionAngleDegrees);
+                    }
+                    else if (const UAISenseConfig_Hearing* Hearing = Cast<UAISenseConfig_Hearing>(Config))
+                    {
+                        SObj->SetStringField(TEXT("sense"), TEXT("Hearing"));
+                        SObj->SetNumberField(TEXT("hearing_range"), Hearing->HearingRange);
+                    }
+                    SenseConfigs.Add(MakeShared<FJsonValueObject>(SObj));
+                }
+                CObj->SetArrayField(TEXT("sense_configs"), SenseConfigs);
+                Components.Add(MakeShared<FJsonValueObject>(CObj));
+            }
+            else if (UAIPerceptionStimuliSourceComponent* Source =
+                         Cast<UAIPerceptionStimuliSourceComponent>(Node->ComponentTemplate))
+            {
+                TSharedPtr<FJsonObject> CObj = MakeShared<FJsonObject>();
+                CObj->SetStringField(TEXT("component_name"), Node->GetVariableName().ToString());
+                CObj->SetStringField(TEXT("component_class"), Source->GetClass()->GetName());
+                Components.Add(MakeShared<FJsonValueObject>(CObj));
+            }
+        }
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetNumberField(TEXT("perception_component_count"), (double)Components.Num());
+    R->SetArrayField(TEXT("components"), Components);
+    return R;
+}
+
+static UClass* ResolveNavAreaClass(const FString& AreaClassName)
+{
+    if (AreaClassName.IsEmpty() ||
+        AreaClassName.Equals(TEXT("default"), ESearchCase::IgnoreCase) ||
+        AreaClassName.Equals(TEXT("NavArea_Default"), ESearchCase::IgnoreCase))
+    {
+        return UNavArea_Default::StaticClass();
+    }
+    if (AreaClassName.Equals(TEXT("null"), ESearchCase::IgnoreCase) ||
+        AreaClassName.Equals(TEXT("blocked"), ESearchCase::IgnoreCase) ||
+        AreaClassName.Equals(TEXT("NavArea_Null"), ESearchCase::IgnoreCase))
+    {
+        return UNavArea_Null::StaticClass();
+    }
+    if (AreaClassName.Equals(TEXT("obstacle"), ESearchCase::IgnoreCase) ||
+        AreaClassName.Equals(TEXT("NavArea_Obstacle"), ESearchCase::IgnoreCase))
+    {
+        return UNavArea_Obstacle::StaticClass();
+    }
+
+    UClass* AreaClass = LoadClass<UNavArea>(nullptr, *AreaClassName);
+    if (!AreaClass && !AreaClassName.StartsWith(TEXT("/Script/")) && !AreaClassName.StartsWith(TEXT("/Game/")))
+    {
+        AreaClass = LoadClass<UNavArea>(nullptr, *FString::Printf(TEXT("/Script/NavigationSystem.%s"), *AreaClassName));
+    }
+    return AreaClass && AreaClass->IsChildOf(UNavArea::StaticClass()) ? AreaClass : nullptr;
+}
+
+static ENavLinkDirection::Type ResolveNavLinkDirection(const FString& DirectionName)
+{
+    if (DirectionName.Equals(TEXT("left_to_right"), ESearchCase::IgnoreCase) ||
+        DirectionName.Equals(TEXT("lefttoright"), ESearchCase::IgnoreCase))
+    {
+        return ENavLinkDirection::LeftToRight;
+    }
+    if (DirectionName.Equals(TEXT("right_to_left"), ESearchCase::IgnoreCase) ||
+        DirectionName.Equals(TEXT("righttoleft"), ESearchCase::IgnoreCase))
+    {
+        return ENavLinkDirection::RightToLeft;
+    }
+    return ENavLinkDirection::BothWays;
+}
+
+static ECrowdAvoidanceQuality::Type ResolveCrowdQuality(const FString& QualityName)
+{
+    if (QualityName.Equals(TEXT("low"), ESearchCase::IgnoreCase)) return ECrowdAvoidanceQuality::Low;
+    if (QualityName.Equals(TEXT("medium"), ESearchCase::IgnoreCase)) return ECrowdAvoidanceQuality::Medium;
+    if (QualityName.Equals(TEXT("high"), ESearchCase::IgnoreCase)) return ECrowdAvoidanceQuality::High;
+    return ECrowdAvoidanceQuality::Good;
+}
+
+static FString CrowdQualityToString(ECrowdAvoidanceQuality::Type Quality)
+{
+    switch (Quality)
+    {
+    case ECrowdAvoidanceQuality::Low: return TEXT("low");
+    case ECrowdAvoidanceQuality::Medium: return TEXT("medium");
+    case ECrowdAvoidanceQuality::High: return TEXT("high");
+    default: return TEXT("good");
+    }
+}
+
+static FString RuntimeGenerationToString(ERuntimeGenerationType Mode)
+{
+    switch (Mode)
+    {
+    case ERuntimeGenerationType::Static: return TEXT("static");
+    case ERuntimeGenerationType::DynamicModifiersOnly: return TEXT("dynamic_modifiers_only");
+    case ERuntimeGenerationType::Dynamic: return TEXT("dynamic");
+    case ERuntimeGenerationType::LegacyGeneration: return TEXT("legacy_generation");
+    default: return TEXT("unknown");
+    }
+}
+
+static FString PathFollowingStatusToString(EPathFollowingStatus::Type Status)
+{
+    switch (Status)
+    {
+    case EPathFollowingStatus::Idle: return TEXT("idle");
+    case EPathFollowingStatus::Waiting: return TEXT("waiting");
+    case EPathFollowingStatus::Paused: return TEXT("paused");
+    case EPathFollowingStatus::Moving: return TEXT("moving");
+    default: return TEXT("unknown");
+    }
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNavCreateLinkProxy(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return CreateErrorResponse(TEXT("No editor world available"));
+
+    FString ActorName;
+    Params->TryGetStringField(TEXT("actor_name"), ActorName);
+    if (ActorName.IsEmpty()) ActorName = TEXT("MCP_NavLinkProxy");
+
+    FVector Left(-150.0f, 0.0f, 0.0f);
+    FVector Right(150.0f, 0.0f, 0.0f);
+    FVector Location(0.0f, 0.0f, 80.0f);
+    if (Params->HasField(TEXT("left"))) Left = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("left"));
+    if (Params->HasField(TEXT("right"))) Right = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("right"));
+    if (Params->HasField(TEXT("location"))) Location = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("location"));
+
+    bool bTreatEndpointsAsWorld = false;
+    Params->TryGetBoolField(TEXT("endpoints_are_world"), bTreatEndpointsAsWorld);
+    if (bTreatEndpointsAsWorld)
+    {
+        Location = (Left + Right) * 0.5f;
+        Left -= Location;
+        Right -= Location;
+    }
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = MakeUniqueObjectName(World, ANavLinkProxy::StaticClass(), FName(*ActorName));
+    ANavLinkProxy* Proxy = World->SpawnActor<ANavLinkProxy>(
+        ANavLinkProxy::StaticClass(),
+        FTransform(Location),
+        SpawnParams);
+    if (!Proxy) return CreateErrorResponse(TEXT("Failed to spawn NavLinkProxy"));
+
+#if WITH_EDITOR
+    Proxy->SetActorLabel(ActorName);
+#endif
+
+    FString DirectionName;
+    Params->TryGetStringField(TEXT("direction"), DirectionName);
+    FString AreaName;
+    Params->TryGetStringField(TEXT("area_class"), AreaName);
+    UClass* AreaClass = ResolveNavAreaClass(AreaName);
+
+    FNavigationLink Link(Left, Right);
+    Link.Direction = ResolveNavLinkDirection(DirectionName);
+    if (AreaClass) Link.SetAreaClass(AreaClass);
+    Proxy->PointLinks.Empty();
+    Proxy->PointLinks.Add(Link);
+
+    bool bSmartLinkEnabled = false;
+    Params->TryGetBoolField(TEXT("smart_link_enabled"), bSmartLinkEnabled);
+    Proxy->bSmartLinkIsRelevant = bSmartLinkEnabled;
+    Proxy->SetSmartLinkEnabled(bSmartLinkEnabled);
+    Proxy->MarkPackageDirty();
+    World->MarkPackageDirty();
+
+    bool bRebuild = true;
+    Params->TryGetBoolField(TEXT("rebuild"), bRebuild);
+    if (bRebuild)
+    {
+        if (UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
+        {
+            NavSys->Build();
+        }
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("actor_name"), Proxy->GetActorLabel());
+    R->SetStringField(TEXT("actor_path"), Proxy->GetPathName());
+    R->SetStringField(TEXT("area_class"), AreaClass ? AreaClass->GetName() : TEXT(""));
+    R->SetStringField(TEXT("direction"), DirectionName.IsEmpty() ? TEXT("both") : DirectionName);
+    R->SetBoolField(TEXT("smart_link_enabled"), bSmartLinkEnabled);
+    R->SetBoolField(TEXT("rebuilt"), bRebuild);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNavAddModifierVolume(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return CreateErrorResponse(TEXT("No editor world available"));
+
+    FString ActorName, AreaName;
+    Params->TryGetStringField(TEXT("actor_name"), ActorName);
+    Params->TryGetStringField(TEXT("area_class"), AreaName);
+    if (ActorName.IsEmpty()) ActorName = TEXT("MCP_NavModifierVolume");
+    if (AreaName.IsEmpty()) AreaName = TEXT("NavArea_Null");
+
+    UClass* AreaClass = ResolveNavAreaClass(AreaName);
+    if (!AreaClass) return CreateErrorResponse(FString::Printf(TEXT("Unknown nav area class: %s"), *AreaName));
+
+    FVector Location(0.0f, 0.0f, 100.0f);
+    FVector Extent(300.0f, 300.0f, 150.0f);
+    if (Params->HasField(TEXT("location"))) Location = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("location"));
+    if (Params->HasField(TEXT("extent"))) Extent = FUnrealMCPCommonUtils::GetVectorFromJson(Params, TEXT("extent"));
+
+    FActorSpawnParameters SpawnParams;
+    SpawnParams.Name = MakeUniqueObjectName(World, ANavModifierVolume::StaticClass(), FName(*ActorName));
+    ANavModifierVolume* Volume = World->SpawnActor<ANavModifierVolume>(
+        ANavModifierVolume::StaticClass(),
+        FTransform(Location),
+        SpawnParams);
+    if (!Volume) return CreateErrorResponse(TEXT("Failed to spawn NavModifierVolume"));
+
+#if WITH_EDITOR
+    Volume->SetActorLabel(ActorName);
+#endif
+    Volume->SetActorScale3D(Extent / 100.0f);
+    Volume->SetAreaClass(AreaClass);
+    Volume->MarkPackageDirty();
+    World->MarkPackageDirty();
+
+    bool bRebuild = true;
+    Params->TryGetBoolField(TEXT("rebuild"), bRebuild);
+    if (bRebuild)
+    {
+        if (UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World))
+        {
+            NavSys->Build();
+        }
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("actor_name"), Volume->GetActorLabel());
+    R->SetStringField(TEXT("actor_path"), Volume->GetPathName());
+    R->SetStringField(TEXT("area_class"), AreaClass->GetName());
+    R->SetBoolField(TEXT("rebuilt"), bRebuild);
+    R->SetNumberField(TEXT("extent_x"), Extent.X);
+    R->SetNumberField(TEXT("extent_y"), Extent.Y);
+    R->SetNumberField(TEXT("extent_z"), Extent.Z);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNavDescribeAgentSettings(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return CreateErrorResponse(TEXT("No editor world available"));
+
+    UNavigationSystemV1* NavSys = FNavigationSystem::GetCurrent<UNavigationSystemV1>(World);
+    TArray<TSharedPtr<FJsonValue>> Agents;
+    if (NavSys)
+    {
+        const TArray<FNavDataConfig>& SupportedAgents = NavSys->GetSupportedAgents();
+        for (int32 Index = 0; Index < SupportedAgents.Num(); ++Index)
+        {
+            const FNavDataConfig& Config = SupportedAgents[Index];
+            TSharedPtr<FJsonObject> AObj = MakeShared<FJsonObject>();
+            AObj->SetNumberField(TEXT("index"), Index);
+            AObj->SetStringField(TEXT("name"), Config.Name.ToString());
+            AObj->SetNumberField(TEXT("agent_radius"), Config.AgentRadius);
+            AObj->SetNumberField(TEXT("agent_height"), Config.AgentHeight);
+            AObj->SetNumberField(TEXT("query_extent_x"), Config.DefaultQueryExtent.X);
+            AObj->SetNumberField(TEXT("query_extent_y"), Config.DefaultQueryExtent.Y);
+            AObj->SetNumberField(TEXT("query_extent_z"), Config.DefaultQueryExtent.Z);
+            if (UClass* NavDataClass = Config.GetNavDataClass<ANavigationData>())
+            {
+                AObj->SetStringField(TEXT("nav_data_class"), NavDataClass->GetName());
+            }
+            Agents.Add(MakeShared<FJsonValueObject>(AObj));
+        }
+    }
+
+    TArray<AActor*> NavBounds;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavMeshBoundsVolume::StaticClass(), NavBounds);
+    TArray<AActor*> LinkProxies;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavLinkProxy::StaticClass(), LinkProxies);
+    TArray<AActor*> ModifierVolumes;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavModifierVolume::StaticClass(), ModifierVolumes);
+    TArray<AActor*> NavDataActors;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavigationData::StaticClass(), NavDataActors);
+
+    TArray<TSharedPtr<FJsonValue>> NavData;
+    for (AActor* Actor : NavDataActors)
+    {
+        if (ANavigationData* Data = Cast<ANavigationData>(Actor))
+        {
+            TSharedPtr<FJsonObject> DObj = MakeShared<FJsonObject>();
+            DObj->SetStringField(TEXT("name"), Data->GetActorLabel());
+            DObj->SetStringField(TEXT("class"), Data->GetClass()->GetName());
+            DObj->SetStringField(TEXT("runtime_generation"), RuntimeGenerationToString(Data->GetRuntimeGenerationMode()));
+            NavData.Add(MakeShared<FJsonValueObject>(DObj));
+        }
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("navigation_system_present"), NavSys != nullptr);
+    R->SetArrayField(TEXT("supported_agents"), Agents);
+    R->SetArrayField(TEXT("nav_data"), NavData);
+    R->SetNumberField(TEXT("navmesh_bounds_count"), NavBounds.Num());
+    R->SetNumberField(TEXT("nav_link_proxy_count"), LinkProxies.Num());
+    R->SetNumberField(TEXT("nav_modifier_volume_count"), ModifierVolumes.Num());
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCrowdConfigureRVO(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    if (!BP->GeneratedClass)
+    {
+        FKismetEditorUtilities::CompileBlueprint(BP);
+    }
+
+    ACharacter* CharacterCDO = BP->GeneratedClass ? Cast<ACharacter>(BP->GeneratedClass->GetDefaultObject()) : nullptr;
+    if (!CharacterCDO || !CharacterCDO->GetCharacterMovement())
+    {
+        return CreateErrorResponse(TEXT("Blueprint is not a Character or has no CharacterMovement component"));
+    }
+
+    UCharacterMovementComponent* Movement = CharacterCDO->GetCharacterMovement();
+    Movement->Modify();
+
+    bool bEnabled = true;
+    Params->TryGetBoolField(TEXT("enabled"), bEnabled);
+    double ConsiderationRadius = Movement->AvoidanceConsiderationRadius > 0.0f ? Movement->AvoidanceConsiderationRadius : 500.0;
+    double AvoidanceWeight = Movement->AvoidanceWeight > 0.0f ? Movement->AvoidanceWeight : 0.5;
+    Params->TryGetNumberField(TEXT("consideration_radius"), ConsiderationRadius);
+    Params->TryGetNumberField(TEXT("avoidance_weight"), AvoidanceWeight);
+
+    double GroupD = 1.0, GroupsToAvoidD = 0xFFFFFFFF, GroupsToIgnoreD = 0.0;
+    Params->TryGetNumberField(TEXT("avoidance_group"), GroupD);
+    Params->TryGetNumberField(TEXT("groups_to_avoid"), GroupsToAvoidD);
+    Params->TryGetNumberField(TEXT("groups_to_ignore"), GroupsToIgnoreD);
+
+    FNavAvoidanceMask AvoidanceGroup;
+    AvoidanceGroup.SetFlagsDirectly((uint32)GroupD);
+    FNavAvoidanceMask GroupsToAvoid;
+    GroupsToAvoid.SetFlagsDirectly((uint32)GroupsToAvoidD);
+    FNavAvoidanceMask GroupsToIgnore;
+    GroupsToIgnore.SetFlagsDirectly((uint32)GroupsToIgnoreD);
+
+    Movement->SetAvoidanceEnabled(bEnabled);
+    Movement->AvoidanceConsiderationRadius = (float)ConsiderationRadius;
+    Movement->AvoidanceWeight = (float)AvoidanceWeight;
+    Movement->SetAvoidanceGroupMask(AvoidanceGroup);
+    Movement->SetGroupsToAvoidMask(GroupsToAvoid);
+    Movement->SetGroupsToIgnoreMask(GroupsToIgnore);
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetBoolField(TEXT("enabled"), Movement->bUseRVOAvoidance);
+    R->SetNumberField(TEXT("consideration_radius"), Movement->AvoidanceConsiderationRadius);
+    R->SetNumberField(TEXT("avoidance_weight"), Movement->AvoidanceWeight);
+    R->SetNumberField(TEXT("avoidance_group"), Movement->GetAvoidanceGroupMask());
+    R->SetNumberField(TEXT("groups_to_avoid"), Movement->GetGroupsToAvoidMask());
+    R->SetNumberField(TEXT("groups_to_ignore"), Movement->GetGroupsToIgnoreMask());
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCrowdConfigureDetour(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    Params->TryGetStringField(TEXT("blueprint_name"), BPName);
+
+    UBlueprint* BP = BPName.IsEmpty() ? nullptr : FindBlueprint(BPName);
+    AAIController* ControllerCDO = nullptr;
+    if (BP)
+    {
+        if (!BP->GeneratedClass) FKismetEditorUtilities::CompileBlueprint(BP);
+        ControllerCDO = BP->GeneratedClass ? Cast<AAIController>(BP->GeneratedClass->GetDefaultObject()) : nullptr;
+    }
+
+    UCrowdFollowingComponent* Crowd = ControllerCDO
+        ? Cast<UCrowdFollowingComponent>(ControllerCDO->GetPathFollowingComponent())
+        : nullptr;
+    if (!Crowd)
+    {
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetBoolField(TEXT("configured"), false);
+        R->SetStringField(TEXT("blueprint_name"), BPName);
+        R->SetStringField(TEXT("message"),
+            TEXT("Detour crowd following requires the AIController's PathFollowingComponent default subobject to be UCrowdFollowingComponent. "
+                 "Blueprints cannot safely swap that inherited default subobject after construction; create a native AIController class with "
+                 "ObjectInitializer.SetDefaultSubobjectClass<UCrowdFollowingComponent>(TEXT(\"PathFollowingComponent\")), then reparent the Blueprint."));
+        R->SetStringField(TEXT("required_component_class"), UCrowdFollowingComponent::StaticClass()->GetName());
+        return R;
+    }
+
+    Crowd->Modify();
+    bool bObstacleAvoidance = true, bSeparation = true, bAnticipateTurns = true, bOptimizeVisibility = true, bOptimizeTopology = true;
+    Params->TryGetBoolField(TEXT("obstacle_avoidance"), bObstacleAvoidance);
+    Params->TryGetBoolField(TEXT("separation"), bSeparation);
+    Params->TryGetBoolField(TEXT("anticipate_turns"), bAnticipateTurns);
+    Params->TryGetBoolField(TEXT("optimize_visibility"), bOptimizeVisibility);
+    Params->TryGetBoolField(TEXT("optimize_topology"), bOptimizeTopology);
+
+    double SeparationWeight = Crowd->GetCrowdSeparationWeight();
+    double CollisionRange = Crowd->GetCrowdCollisionQueryRange();
+    double OptimizationRange = Crowd->GetCrowdPathOptimizationRange();
+    double RangeMultiplier = Crowd->GetCrowdAvoidanceRangeMultiplier();
+    Params->TryGetNumberField(TEXT("separation_weight"), SeparationWeight);
+    Params->TryGetNumberField(TEXT("collision_query_range"), CollisionRange);
+    Params->TryGetNumberField(TEXT("path_optimization_range"), OptimizationRange);
+    Params->TryGetNumberField(TEXT("avoidance_range_multiplier"), RangeMultiplier);
+
+    FString QualityName;
+    Params->TryGetStringField(TEXT("avoidance_quality"), QualityName);
+    ECrowdAvoidanceQuality::Type Quality = ResolveCrowdQuality(QualityName);
+
+    Crowd->SetCrowdSimulationState(ECrowdSimulationState::Enabled);
+    Crowd->SuspendCrowdSteering(false);
+    Crowd->SetCrowdObstacleAvoidance(bObstacleAvoidance, false);
+    Crowd->SetCrowdSeparation(bSeparation, false);
+    Crowd->SetCrowdAnticipateTurns(bAnticipateTurns, false);
+    Crowd->SetCrowdOptimizeVisibility(bOptimizeVisibility, false);
+    Crowd->SetCrowdOptimizeTopology(bOptimizeTopology, false);
+    Crowd->SetCrowdSeparationWeight((float)SeparationWeight, false);
+    Crowd->SetCrowdCollisionQueryRange((float)CollisionRange, false);
+    Crowd->SetCrowdPathOptimizationRange((float)OptimizationRange, false);
+    Crowd->SetCrowdAvoidanceRangeMultiplier((float)RangeMultiplier, false);
+    Crowd->SetCrowdAvoidanceQuality(Quality, true);
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = BP ? TrySaveAndCompileBlueprint(BP, bCompile, bSave) : false;
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("configured"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("component_class"), Crowd->GetClass()->GetName());
+    R->SetStringField(TEXT("avoidance_quality"), CrowdQualityToString(Crowd->GetCrowdAvoidanceQuality()));
+    R->SetBoolField(TEXT("obstacle_avoidance"), Crowd->IsCrowdObstacleAvoidanceEnabled());
+    R->SetBoolField(TEXT("separation"), Crowd->IsCrowdSeparationEnabled());
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleGameplayDebuggerCaptureAI(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World) return CreateErrorResponse(TEXT("No editor world available"));
+
+    TArray<AActor*> Controllers;
+    UGameplayStatics::GetAllActorsOfClass(World, AAIController::StaticClass(), Controllers);
+
+    TArray<TSharedPtr<FJsonValue>> ControllerList;
+    for (AActor* Actor : Controllers)
+    {
+        AAIController* Controller = Cast<AAIController>(Actor);
+        if (!Controller) continue;
+
+        TSharedPtr<FJsonObject> CObj = MakeShared<FJsonObject>();
+        CObj->SetStringField(TEXT("name"), Controller->GetActorLabel());
+        CObj->SetStringField(TEXT("class"), Controller->GetClass()->GetName());
+        CObj->SetStringField(TEXT("pawn"), Controller->GetPawn() ? Controller->GetPawn()->GetActorLabel() : TEXT(""));
+        CObj->SetStringField(TEXT("move_status"), PathFollowingStatusToString(Controller->GetMoveStatus()));
+        CObj->SetBoolField(TEXT("has_partial_path"), Controller->HasPartialPath());
+        if (UPathFollowingComponent* Path = Controller->GetPathFollowingComponent())
+        {
+            CObj->SetStringField(TEXT("path_following_class"), Path->GetClass()->GetName());
+        }
+        if (UBrainComponent* Brain = Controller->GetBrainComponent())
+        {
+            CObj->SetStringField(TEXT("brain_class"), Brain->GetClass()->GetName());
+            CObj->SetBoolField(TEXT("brain_running"), Brain->IsRunning());
+            if (UBehaviorTreeComponent* BTC = Cast<UBehaviorTreeComponent>(Brain))
+            {
+                CObj->SetStringField(TEXT("active_node"), BTC->GetActiveNode() ? BTC->GetActiveNode()->GetNodeName() : TEXT(""));
+            }
+        }
+        if (UBlackboardComponent* Blackboard = Controller->GetBlackboardComponent())
+        {
+            CObj->SetStringField(TEXT("blackboard_asset"), Blackboard->GetBlackboardAsset()
+                ? Blackboard->GetBlackboardAsset()->GetPathName()
+                : TEXT(""));
+        }
+        ControllerList.Add(MakeShared<FJsonValueObject>(CObj));
+    }
+
+    TArray<AActor*> NavLinks;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavLinkProxy::StaticClass(), NavLinks);
+    TArray<AActor*> Modifiers;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavModifierVolume::StaticClass(), Modifiers);
+    TArray<AActor*> NavBounds;
+    UGameplayStatics::GetAllActorsOfClass(World, ANavMeshBoundsVolume::StaticClass(), NavBounds);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("world"), World->GetName());
+    R->SetNumberField(TEXT("ai_controller_count"), Controllers.Num());
+    R->SetArrayField(TEXT("controllers"), ControllerList);
+    R->SetNumberField(TEXT("nav_link_proxy_count"), NavLinks.Num());
+    R->SetNumberField(TEXT("nav_modifier_volume_count"), Modifiers.Num());
+    R->SetNumberField(TEXT("navmesh_bounds_count"), NavBounds.Num());
+    R->SetStringField(TEXT("capture_type"), TEXT("ai_debug_snapshot"));
+    return R;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddPawnSensingComponent(
     const TSharedPtr<FJsonObject>& Params)
 {
@@ -6554,6 +8983,242 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAttachBTSubNode(
         R->SetStringField(TEXT("instance_class"),
             SubGraphNode->NodeInstance->GetClass()->GetName());
     R->SetNumberField(TEXT("parent_sub_node_count"), (double)ParentNode->SubNodes.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// bt_add_run_eqs_service
+// Params:
+//   behavior_tree_name : string
+//   query_path         : string EQS query path or unique asset name
+//   result_key         : string Blackboard key that receives the query result
+//   parent_node_index  : int    0-based index into non-root nodes; -1 = first non-root
+//   run_mode           : string single_result | random_best_5_pct | random_best_25_pct | all_matching
+//   update_bb_on_fail  : bool   optional, default false
+//   interval           : float  optional service tick interval
+//   update_existing    : bool   optional, default true
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddRunEQSService(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BTName, QueryPath, ResultKey;
+    if (!Params->TryGetStringField(TEXT("behavior_tree_name"), BTName))
+        return CreateErrorResponse(TEXT("Missing 'behavior_tree_name'"));
+    if (!Params->TryGetStringField(TEXT("query_path"), QueryPath))
+        return CreateErrorResponse(TEXT("Missing 'query_path'"));
+    if (!Params->TryGetStringField(TEXT("result_key"), ResultKey))
+        return CreateErrorResponse(TEXT("Missing 'result_key'"));
+
+    UBehaviorTree* BT = FindBehaviorTree(BTName);
+    if (!BT)
+        return CreateErrorResponse(FString::Printf(TEXT("BehaviorTree not found: %s"), *BTName));
+
+    FString EQSPackagePath;
+    UEnvQuery* Query = LoadEQSQueryByPathOrName(QueryPath, EQSPackagePath);
+    if (!Query)
+        return CreateErrorResponse(FString::Printf(TEXT("EQS query not found: %s"), *QueryPath));
+
+    CloseAllBTEditors(BT);
+
+    UBehaviorTreeGraph* BTGraph = GetOrCreateBTGraph(BT);
+    if (!BTGraph)
+        return CreateErrorResponse(TEXT("Failed to get/create BehaviorTreeGraph"));
+
+    TArray<UBehaviorTreeGraphNode*> NonRootNodes;
+    for (UEdGraphNode* Node : BTGraph->Nodes)
+    {
+        if (Node && !Node->IsA<UBehaviorTreeGraphNode_Root>())
+        {
+            if (UBehaviorTreeGraphNode* BTN = Cast<UBehaviorTreeGraphNode>(Node))
+            {
+                NonRootNodes.Add(BTN);
+            }
+        }
+    }
+
+    double ParentIdxD = -1;
+    Params->TryGetNumberField(TEXT("parent_node_index"), ParentIdxD);
+    const int32 ParentIdx = (int32)ParentIdxD;
+
+    UBehaviorTreeGraphNode* ParentNode = nullptr;
+    if (ParentIdx < 0)
+    {
+        if (NonRootNodes.Num() > 0)
+        {
+            ParentNode = NonRootNodes[0];
+        }
+    }
+    else if (ParentIdx < NonRootNodes.Num())
+    {
+        ParentNode = NonRootNodes[ParentIdx];
+    }
+
+    if (!ParentNode)
+    {
+        return CreateErrorResponse(FString::Printf(
+            TEXT("No non-root node at index %d (total non-root nodes: %d)"),
+            ParentIdx, NonRootNodes.Num()));
+    }
+
+    bool bUpdateExisting = true;
+    Params->TryGetBoolField(TEXT("update_existing"), bUpdateExisting);
+
+    UAIGraphNode* ServiceGraphNode = nullptr;
+    for (UAIGraphNode* Existing : ParentNode->SubNodes)
+    {
+        if (Existing && Existing->NodeInstance &&
+            Existing->NodeInstance->IsA(UBTService_RunEQS::StaticClass()))
+        {
+            ServiceGraphNode = Existing;
+            break;
+        }
+    }
+
+    if (ServiceGraphNode && !bUpdateExisting)
+    {
+        TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+        R->SetBoolField(TEXT("success"), true);
+        R->SetBoolField(TEXT("already_attached"), true);
+        R->SetStringField(TEXT("behavior_tree"), BTName);
+        R->SetStringField(TEXT("query_path"), Query->GetPathName());
+        R->SetStringField(TEXT("result_key"), ResultKey);
+        R->SetNumberField(TEXT("parent_index"), (double)ParentIdx);
+        return R;
+    }
+
+    bool bCreated = false;
+    if (!ServiceGraphNode)
+    {
+        UBehaviorTreeGraphNode_Service* NewServiceNode =
+            NewObject<UBehaviorTreeGraphNode_Service>(BTGraph, NAME_None, RF_Transactional);
+        if (!NewServiceNode)
+            return CreateErrorResponse(TEXT("Failed to create Run EQS service graph node"));
+
+        ServiceGraphNode = NewServiceNode;
+        ServiceGraphNode->ClassData = FGraphNodeClassData(UBTService_RunEQS::StaticClass(), FString());
+        ServiceGraphNode->CreateNewGuid();
+        ServiceGraphNode->PostPlacedNewNode();
+        if (ServiceGraphNode->NodeInstance)
+        {
+            ServiceGraphNode->InitializeInstance();
+        }
+        if (ServiceGraphNode->GetOuter() != BTGraph)
+        {
+            ServiceGraphNode->Rename(nullptr, BTGraph,
+                REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+        }
+        ServiceGraphNode->SetFlags(RF_Transactional);
+        ServiceGraphNode->bIsSubNode = 1;
+        ServiceGraphNode->ParentNode = ParentNode;
+        ParentNode->SubNodes.Add(ServiceGraphNode);
+        ParentNode->OnSubNodeAdded(ServiceGraphNode);
+        bCreated = true;
+    }
+
+    UBTService_RunEQS* RunEQSService = ServiceGraphNode && ServiceGraphNode->NodeInstance
+        ? Cast<UBTService_RunEQS>(ServiceGraphNode->NodeInstance)
+        : nullptr;
+    if (!RunEQSService)
+        return CreateErrorResponse(TEXT("Run EQS service node has no UBTService_RunEQS instance"));
+
+    FString RunModeName;
+    Params->TryGetStringField(TEXT("run_mode"), RunModeName);
+    if (RunModeName.IsEmpty())
+    {
+        RunModeName = TEXT("single_result");
+    }
+
+    EEnvQueryRunMode::Type RunMode = EEnvQueryRunMode::SingleResult;
+    if (RunModeName.Equals(TEXT("random_best_5_pct"), ESearchCase::IgnoreCase) ||
+        RunModeName.Equals(TEXT("random_best_5"), ESearchCase::IgnoreCase) ||
+        RunModeName.Equals(TEXT("randombest5pct"), ESearchCase::IgnoreCase))
+    {
+        RunMode = EEnvQueryRunMode::RandomBest5Pct;
+    }
+    else if (RunModeName.Equals(TEXT("random_best_25_pct"), ESearchCase::IgnoreCase) ||
+             RunModeName.Equals(TEXT("random_best_25"), ESearchCase::IgnoreCase) ||
+             RunModeName.Equals(TEXT("randombest25pct"), ESearchCase::IgnoreCase))
+    {
+        RunMode = EEnvQueryRunMode::RandomBest25Pct;
+    }
+    else if (RunModeName.Equals(TEXT("all_matching"), ESearchCase::IgnoreCase) ||
+             RunModeName.Equals(TEXT("all"), ESearchCase::IgnoreCase))
+    {
+        RunMode = EEnvQueryRunMode::AllMatching;
+    }
+
+    if (FStructProperty* RequestProp =
+            FindFProperty<FStructProperty>(RunEQSService->GetClass(), TEXT("EQSRequest")))
+    {
+        if (RequestProp->Struct == FEQSParametrizedQueryExecutionRequest::StaticStruct())
+        {
+            FEQSParametrizedQueryExecutionRequest* Request =
+                RequestProp->ContainerPtrToValuePtr<FEQSParametrizedQueryExecutionRequest>(RunEQSService);
+            Request->QueryTemplate = Query;
+            Request->RunMode = RunMode;
+            Request->bUseBBKeyForQueryTemplate = false;
+            if (BT->BlackboardAsset)
+            {
+                Request->InitForOwnerAndBlackboard(*RunEQSService, BT->BlackboardAsset);
+            }
+        }
+    }
+
+    if (FStructProperty* BlackboardKeyProp =
+            FindFProperty<FStructProperty>(RunEQSService->GetClass(), TEXT("BlackboardKey")))
+    {
+        if (BlackboardKeyProp->Struct == FBlackboardKeySelector::StaticStruct())
+        {
+            FBlackboardKeySelector* KeySelector =
+                BlackboardKeyProp->ContainerPtrToValuePtr<FBlackboardKeySelector>(RunEQSService);
+            KeySelector->SelectedKeyName = FName(*ResultKey);
+            KeySelector->InvalidateResolvedKey();
+            if (BT->BlackboardAsset)
+            {
+                KeySelector->ResolveSelectedKey(*BT->BlackboardAsset);
+            }
+        }
+    }
+
+    bool bUpdateBBOnFail = false;
+    Params->TryGetBoolField(TEXT("update_bb_on_fail"), bUpdateBBOnFail);
+    if (FBoolProperty* UpdateOnFailProp =
+            FindFProperty<FBoolProperty>(RunEQSService->GetClass(), TEXT("bUpdateBBOnFail")))
+    {
+        UpdateOnFailProp->SetPropertyValue_InContainer(RunEQSService, bUpdateBBOnFail);
+    }
+
+    double IntervalD = -1.0;
+    if (Params->TryGetNumberField(TEXT("interval"), IntervalD) && IntervalD > 0.0)
+    {
+        if (FFloatProperty* IntervalProp =
+                FindFProperty<FFloatProperty>(RunEQSService->GetClass(), TEXT("Interval")))
+        {
+            IntervalProp->SetPropertyValue_InContainer(RunEQSService, (float)IntervalD);
+        }
+    }
+
+    RunEQSService->InitializeFromAsset(*BT);
+    SafeUpdateBTAsset(BT, BTGraph);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), bCreated);
+    R->SetStringField(TEXT("behavior_tree"), BTName);
+    R->SetStringField(TEXT("query_path"), Query->GetPathName());
+    R->SetStringField(TEXT("result_key"), ResultKey);
+    R->SetStringField(TEXT("run_mode"), RunModeName);
+    R->SetBoolField(TEXT("update_bb_on_fail"), bUpdateBBOnFail);
+    R->SetNumberField(TEXT("parent_index"), (double)ParentIdx);
+    R->SetNumberField(TEXT("parent_sub_node_count"), (double)ParentNode->SubNodes.Num());
+    if (BT->BlackboardAsset)
+    {
+        R->SetStringField(TEXT("blackboard"), BT->BlackboardAsset->GetPathName());
+    }
+    if (ServiceGraphNode->NodeInstance)
+    {
+        R->SetStringField(TEXT("instance_class"), ServiceGraphNode->NodeInstance->GetClass()->GetName());
+    }
     return R;
 }
 
