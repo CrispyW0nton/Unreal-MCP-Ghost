@@ -133,6 +133,10 @@ private:
     TSharedPtr<FJsonObject> HandleNetAddAuthorityGate(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleNetAddRoleSwitch(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleNetSetOwnerReference(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSessionCreateBlueprintFlow(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleSessionFindBlueprintFlow(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetworkDebugReplication(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetValidateCommonMistakes(const TSharedPtr<FJsonObject>& Params);
 
     // ?? BT Graph Node Manipulation ???????????????????????????????????????????
     /** build_behavior_tree: populate a BT asset's graph from a JSON tree description */

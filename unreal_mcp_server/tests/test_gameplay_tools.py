@@ -41,6 +41,10 @@ class TestGameplayToolsRegistration(unittest.TestCase):
         self.assertIn("net_add_authority_gate", names)
         self.assertIn("net_add_role_switch", names)
         self.assertIn("net_set_owner_reference", names)
+        self.assertIn("session_create_blueprint_flow", names)
+        self.assertIn("session_find_blueprint_flow", names)
+        self.assertIn("network_debug_replication", names)
+        self.assertIn("net_validate_common_mistakes", names)
 
 
 if __name__ == "__main__":

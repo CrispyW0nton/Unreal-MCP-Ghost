@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 464 MCP tools: 461 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 468 MCP tools: 465 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -39,7 +39,7 @@ Partially live areas:
 
 Missing or thin areas:
 
-- Multiplayer/networking tools: Slice 1 now covers replication inspection, actor/component replication toggles, replicated property configuration, and RepNotify variable creation. Slice 2 now covers RPC Custom Event creation/configuration, authority gates, role switches, and owner setup nodes. Session flows and replication diagnostics remain.
+- Multiplayer/networking tools: Slices 1-3 now cover replication inspection/defaults, RepNotify variables, RPC Custom Event authoring/configuration, authority/role/owner graph helpers, Blueprint session flow nodes, runtime replication snapshots, and common mistake validation.
 - Niagara native authoring: systems from recipes, emitters, modules, renderers, parameters, events, ribbons, GPU/CPU collision, fluid/flipbook workflows, and profiling.
 - Production distribution/performance: command registry generated from metadata, startup profiling, and optional high-performance server packaging.
 
@@ -200,7 +200,7 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: support networked gameplay authoring without relying on generic property setters.
 
-Status: Slice 1 replication inspection and safe replication defaults are implemented and live-tested in Lab5E. Slice 2 RPC and authority graph helpers are implemented and live-tested in Lab5E.
+Status: Slice 1 replication inspection and safe replication defaults are implemented and live-tested in Lab5E. Slice 2 RPC and authority graph helpers are implemented and live-tested in Lab5E. Slice 3 session flow helpers and replication diagnostics are implemented and live-tested in Lab5E.
 
 Slice 1:
 
@@ -220,10 +220,10 @@ Slice 2:
 
 Slice 3:
 
-- `session_create_blueprint_flow`
-- `session_find_blueprint_flow`
-- `network_debug_replication`
-- `net_validate_common_mistakes`
+- `session_create_blueprint_flow` - implemented as a `CreateSession` async Blueprint node with `GetPlayerController(0)` wired and public connection/LAN/lobby defaults set.
+- `session_find_blueprint_flow` - implemented as a `FindSessions` async Blueprint node with `GetPlayerController(0)` wired and max result/LAN/lobby defaults set.
+- `network_debug_replication` - implemented as a runtime/editor snapshot for net mode, net driver, connections, network object counts, and replicated actor samples.
+- `net_validate_common_mistakes` - implemented for Actor replication defaults, replicated components/variables, RepNotify handlers, owner-conditioned variables, and risky reliable multicast RPCs.
 
 Validation:
 
@@ -244,6 +244,10 @@ Lab5E smoke result, 2026-05-16:
 - Added an `ENetRole` switch node with `ROLE_None`, `ROLE_SimulatedProxy`, `ROLE_AutonomousProxy`, and `ROLE_Authority` pins.
 - Added a `SetOwner` call node exposing the `NewOwner` pin.
 - Native readback reported `Server_Phase3_DoThing` under `rpc_functions` with `net_multicast` flags.
+- Added a `CreateSession` async Blueprint flow with `GetPlayerController(0)` wired, `PublicConnections=6`, LAN enabled, and lobbies enabled.
+- Added a `FindSessions` async Blueprint flow with `GetPlayerController(0)` wired, `MaxResults=12`, LAN enabled, and lobbies enabled.
+- Captured a runtime replication snapshot for world `Lab-0X`; the standalone editor world reported no active net driver and 4 replicated actor samples.
+- Ran common networking validation against `BP_MCP_Phase3_NetActor`; it checked 1 Blueprint and reported 0 issues.
 
 ## Phase 4 - Technical Art Pipeline
 
@@ -357,8 +361,8 @@ Validation:
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 3 Slice 3: add session flow helpers and runtime replication diagnostics.
-5. Phase 4 Slice 1: begin master material and material function pipeline tooling.
+4. Phase 4 Slice 1: begin master material and material function pipeline tooling.
+5. Phase 4 Slice 2: add vertex paint, ORM packing, and shader/performance view helpers.
 
 ## Backlog Notes
 

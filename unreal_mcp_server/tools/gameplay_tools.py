@@ -382,6 +382,85 @@ def register_gameplay_tools(mcp: FastMCP):
         return _send("net_set_owner_reference", params)
 
     @mcp.tool()
+    def session_create_blueprint_flow(
+        ctx: Context,
+        blueprint_name: str,
+        public_connections: int = 4,
+        use_lan: bool = True,
+        use_lobbies_if_available: bool = True,
+        node_position: Optional[List[float]] = None,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add a Create Session async Blueprint node and wire GetPlayerController(0).
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "public_connections": public_connections,
+            "use_lan": use_lan,
+            "use_lobbies_if_available": use_lobbies_if_available,
+            "save": save,
+            "compile": compile,
+        }
+        if node_position:
+            params["node_position"] = node_position
+        return _send("session_create_blueprint_flow", params)
+
+    @mcp.tool()
+    def session_find_blueprint_flow(
+        ctx: Context,
+        blueprint_name: str,
+        max_results: int = 20,
+        use_lan: bool = True,
+        use_lobbies: bool = True,
+        node_position: Optional[List[float]] = None,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add a Find Sessions async Blueprint node and wire GetPlayerController(0).
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "max_results": max_results,
+            "use_lan": use_lan,
+            "use_lobbies": use_lobbies,
+            "save": save,
+            "compile": compile,
+        }
+        if node_position:
+            params["node_position"] = node_position
+        return _send("session_find_blueprint_flow", params)
+
+    @mcp.tool()
+    def network_debug_replication(
+        ctx: Context,
+        max_actors: int = 25,
+    ) -> Dict[str, Any]:
+        """
+        Capture a runtime/editor replication snapshot: net mode, net driver,
+        connections, network object counts, and replicated actor samples.
+        """
+        return _send("network_debug_replication", {
+            "max_actors": max_actors,
+        })
+
+    @mcp.tool()
+    def net_validate_common_mistakes(
+        ctx: Context,
+        blueprint_name: str = "",
+    ) -> Dict[str, Any]:
+        """
+        Validate common Blueprint networking mistakes such as replicated state
+        on non-replicating Actors, missing RepNotify handlers, and risky RPCs.
+        """
+        params: Dict[str, Any] = {}
+        if blueprint_name:
+            params["blueprint_name"] = blueprint_name
+        return _send("net_validate_common_mistakes", params)
+
+    @mcp.tool()
     def create_character_blueprint(
         ctx: Context,
         name: str,

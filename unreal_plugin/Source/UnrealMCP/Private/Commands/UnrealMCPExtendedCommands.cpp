@@ -18,6 +18,7 @@
 // Blueprint/Graph headers
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "EngineUtils.h"
 #include "Factories/BlueprintFactory.h"
 #include "EdGraphSchema_K2.h"
 #include "EdGraph/EdGraph.h"
@@ -35,6 +36,7 @@
 #include "K2Node_CustomEvent.h"
 #include "K2Node_IfThenElse.h"
 #include "K2Node_SwitchEnum.h"
+#include "K2Node_AsyncAction.h"
 #include "K2Node_CreateDelegate.h"
 #include "K2Node_AddDelegate.h"
 #include "K2Node_RemoveDelegate.h"
@@ -153,6 +155,9 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/ActorComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "Engine/NetDriver.h"
+#include "Engine/NetConnection.h"
+#include "Engine/NetworkObjectList.h"
 #include "UObject/CoreNetTypes.h"
 #include "Navigation/CrowdFollowingComponent.h"
 #include "Navigation/PathFollowingComponent.h"
@@ -369,6 +374,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("net_add_authority_gate"))             return HandleNetAddAuthorityGate(Params);
     if (CommandType == TEXT("net_add_role_switch"))                return HandleNetAddRoleSwitch(Params);
     if (CommandType == TEXT("net_set_owner_reference"))            return HandleNetSetOwnerReference(Params);
+    if (CommandType == TEXT("session_create_blueprint_flow"))      return HandleSessionCreateBlueprintFlow(Params);
+    if (CommandType == TEXT("session_find_blueprint_flow"))        return HandleSessionFindBlueprintFlow(Params);
+    if (CommandType == TEXT("network_debug_replication"))          return HandleNetworkDebugReplication(Params);
+    if (CommandType == TEXT("net_validate_common_mistakes"))       return HandleNetValidateCommonMistakes(Params);
 
     // BT Graph Node Manipulation
     if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
@@ -8088,6 +8097,163 @@ static TArray<TSharedPtr<FJsonValue>> VisiblePinNames(UEdGraphNode* Node)
     return Pins;
 }
 
+static FString NetModeToString(ENetMode Mode)
+{
+    switch (Mode)
+    {
+    case NM_Standalone: return TEXT("standalone");
+    case NM_DedicatedServer: return TEXT("dedicated_server");
+    case NM_ListenServer: return TEXT("listen_server");
+    case NM_Client: return TEXT("client");
+    default: return TEXT("unknown");
+    }
+}
+
+static FString NetRoleToString(ENetRole Role)
+{
+    switch (Role)
+    {
+    case ROLE_None: return TEXT("none");
+    case ROLE_SimulatedProxy: return TEXT("simulated_proxy");
+    case ROLE_AutonomousProxy: return TEXT("autonomous_proxy");
+    case ROLE_Authority: return TEXT("authority");
+    default: return TEXT("unknown");
+    }
+}
+
+static FString DormancyToString(ENetDormancy Dormancy)
+{
+    switch (Dormancy)
+    {
+    case DORM_Never: return TEXT("never");
+    case DORM_Awake: return TEXT("awake");
+    case DORM_DormantAll: return TEXT("dormant_all");
+    case DORM_DormantPartial: return TEXT("dormant_partial");
+    case DORM_Initial: return TEXT("initial");
+    default: return TEXT("unknown");
+    }
+}
+
+static UWorld* GetPreferredNetDebugWorld()
+{
+    if (GEditor && GEditor->PlayWorld)
+    {
+        return GEditor->PlayWorld;
+    }
+    return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+}
+
+static UClass* ResolveOnlineProxyClass(const TCHAR* ClassName)
+{
+    const FString ClassPath = FString::Printf(TEXT("/Script/OnlineSubsystemUtils.%s"), ClassName);
+    UClass* ProxyClass = LoadObject<UClass>(nullptr, *ClassPath);
+    if (ProxyClass)
+    {
+        return ProxyClass;
+    }
+    return FindFirstObject<UClass>(ClassName, EFindFirstObjectOptions::None);
+}
+
+static UK2Node_CallFunction* AddGetPlayerControllerNode(UEdGraph* Graph, const FVector2D& Pos)
+{
+    if (!Graph) return nullptr;
+    UFunction* Func = UGameplayStatics::StaticClass()->FindFunctionByName(TEXT("GetPlayerController"));
+    if (!Func) return nullptr;
+
+    UK2Node_CallFunction* Node = NewObject<UK2Node_CallFunction>(Graph);
+    Node->SetFromFunction(Func);
+    Node->NodePosX = Pos.X;
+    Node->NodePosY = Pos.Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->PostPlacedNewNode();
+    Node->AllocateDefaultPins();
+    if (UEdGraphPin* PlayerIndexPin = Node->FindPin(TEXT("PlayerIndex")))
+    {
+        PlayerIndexPin->DefaultValue = TEXT("0");
+    }
+    return Node;
+}
+
+static bool SetPinDefaultString(UEdGraphNode* Node, const TCHAR* PinName, const FString& Value)
+{
+    if (!Node) return false;
+    if (UEdGraphPin* Pin = Node->FindPin(PinName))
+    {
+        Pin->DefaultValue = Value;
+        return true;
+    }
+    return false;
+}
+
+static bool SetPinDefaultBool(UEdGraphNode* Node, const TCHAR* PinName, bool bValue)
+{
+    return SetPinDefaultString(Node, PinName, bValue ? TEXT("true") : TEXT("false"));
+}
+
+static bool ConnectPlayerControllerToAsyncNode(UEdGraph* Graph, UK2Node_CallFunction* PlayerNode, UK2Node_AsyncAction* AsyncNode)
+{
+    if (!Graph || !PlayerNode || !AsyncNode) return false;
+    const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+    UEdGraphPin* ReturnPin = PlayerNode->FindPin(TEXT("ReturnValue"));
+    UEdGraphPin* PlayerPin = AsyncNode->FindPin(TEXT("PlayerController"));
+    return (Schema && ReturnPin && PlayerPin) ? Schema->TryCreateConnection(ReturnPin, PlayerPin) : false;
+}
+
+static UK2Node_AsyncAction* AddOnlineSessionAsyncNode(
+    UEdGraph* Graph,
+    const TCHAR* ProxyClassName,
+    const TCHAR* FactoryFunctionName,
+    const FVector2D& Pos,
+    FString& OutError)
+{
+    UClass* ProxyClass = ResolveOnlineProxyClass(ProxyClassName);
+    if (!ProxyClass)
+    {
+        OutError = FString::Printf(TEXT("OnlineSubsystemUtils proxy class not found: %s"), ProxyClassName);
+        return nullptr;
+    }
+
+    UFunction* FactoryFunction = ProxyClass->FindFunctionByName(FactoryFunctionName);
+    if (!FactoryFunction)
+    {
+        OutError = FString::Printf(TEXT("%s.%s function not found"), ProxyClassName, FactoryFunctionName);
+        return nullptr;
+    }
+
+    UK2Node_AsyncAction* Node = NewObject<UK2Node_AsyncAction>(Graph);
+    Node->InitializeProxyFromFunction(FactoryFunction);
+    Node->NodePosX = Pos.X;
+    Node->NodePosY = Pos.Y;
+    Graph->AddNode(Node, true, false);
+    Node->CreateNewGuid();
+    Node->PostPlacedNewNode();
+    Node->AllocateDefaultPins();
+    return Node;
+}
+
+static bool BlueprintHasFunctionCallNode(UBlueprint* BP, const FName& FunctionName)
+{
+    if (!BP) return false;
+    TArray<UEdGraph*> Graphs;
+    Graphs.Append(BP->UbergraphPages);
+    Graphs.Append(BP->FunctionGraphs);
+    Graphs.Append(BP->MacroGraphs);
+    for (UEdGraph* Graph : Graphs)
+    {
+        if (!Graph) continue;
+        for (UEdGraphNode* Node : Graph->Nodes)
+        {
+            UK2Node_CallFunction* CallNode = Cast<UK2Node_CallFunction>(Node);
+            if (CallNode && CallNode->FunctionReference.GetMemberName() == FunctionName)
+            {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetDescribeBlueprintReplication(
     const TSharedPtr<FJsonObject>& Params)
 {
@@ -8629,6 +8795,357 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetSetOwnerReference(
     R->SetStringField(TEXT("function"), TEXT("SetOwner"));
     R->SetArrayField(TEXT("pins"), VisiblePinNames(SetOwnerNode));
     R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSessionCreateBlueprintFlow(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    const FVector2D Pos = GetNodePosition(Params);
+    FString Error;
+    UK2Node_AsyncAction* SessionNode = AddOnlineSessionAsyncNode(
+        Graph,
+        TEXT("CreateSessionCallbackProxy"),
+        TEXT("CreateSession"),
+        Pos,
+        Error);
+    if (!SessionNode)
+    {
+        return CreateErrorResponse(Error);
+    }
+
+    UK2Node_CallFunction* PlayerNode = AddGetPlayerControllerNode(Graph, FVector2D(Pos.X - 360.0f, Pos.Y + 140.0f));
+    const bool bPlayerConnected = ConnectPlayerControllerToAsyncNode(Graph, PlayerNode, SessionNode);
+
+    double PublicConnectionsValue = 4;
+    bool bUseLAN = true;
+    bool bUseLobbies = true;
+    Params->TryGetNumberField(TEXT("public_connections"), PublicConnectionsValue);
+    const int32 PublicConnections = FMath::Max(1, FMath::RoundToInt(PublicConnectionsValue));
+    Params->TryGetBoolField(TEXT("use_lan"), bUseLAN);
+    Params->TryGetBoolField(TEXT("use_lobbies_if_available"), bUseLobbies);
+    SetPinDefaultString(SessionNode, TEXT("PublicConnections"), FString::FromInt(PublicConnections));
+    SetPinDefaultBool(SessionNode, TEXT("bUseLAN"), bUseLAN);
+    SetPinDefaultBool(SessionNode, TEXT("bUseLobbiesIfAvailable"), bUseLobbies);
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("session_node_id"), SessionNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("player_controller_node_id"), PlayerNode ? PlayerNode->NodeGuid.ToString() : TEXT(""));
+    R->SetBoolField(TEXT("player_controller_connected"), bPlayerConnected);
+    R->SetNumberField(TEXT("public_connections"), PublicConnections);
+    R->SetBoolField(TEXT("use_lan"), bUseLAN);
+    R->SetBoolField(TEXT("use_lobbies_if_available"), bUseLobbies);
+    R->SetArrayField(TEXT("pins"), VisiblePinNames(SessionNode));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSessionFindBlueprintFlow(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    const FVector2D Pos = GetNodePosition(Params);
+    FString Error;
+    UK2Node_AsyncAction* SessionNode = AddOnlineSessionAsyncNode(
+        Graph,
+        TEXT("FindSessionsCallbackProxy"),
+        TEXT("FindSessions"),
+        Pos,
+        Error);
+    if (!SessionNode)
+    {
+        return CreateErrorResponse(Error);
+    }
+
+    UK2Node_CallFunction* PlayerNode = AddGetPlayerControllerNode(Graph, FVector2D(Pos.X - 360.0f, Pos.Y + 140.0f));
+    const bool bPlayerConnected = ConnectPlayerControllerToAsyncNode(Graph, PlayerNode, SessionNode);
+
+    double MaxResultsValue = 20;
+    bool bUseLAN = true;
+    bool bUseLobbies = true;
+    Params->TryGetNumberField(TEXT("max_results"), MaxResultsValue);
+    const int32 MaxResults = FMath::Max(1, FMath::RoundToInt(MaxResultsValue));
+    Params->TryGetBoolField(TEXT("use_lan"), bUseLAN);
+    Params->TryGetBoolField(TEXT("use_lobbies"), bUseLobbies);
+    SetPinDefaultString(SessionNode, TEXT("MaxResults"), FString::FromInt(MaxResults));
+    SetPinDefaultBool(SessionNode, TEXT("bUseLAN"), bUseLAN);
+    SetPinDefaultBool(SessionNode, TEXT("bUseLobbies"), bUseLobbies);
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("session_node_id"), SessionNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("player_controller_node_id"), PlayerNode ? PlayerNode->NodeGuid.ToString() : TEXT(""));
+    R->SetBoolField(TEXT("player_controller_connected"), bPlayerConnected);
+    R->SetNumberField(TEXT("max_results"), MaxResults);
+    R->SetBoolField(TEXT("use_lan"), bUseLAN);
+    R->SetBoolField(TEXT("use_lobbies"), bUseLobbies);
+    R->SetArrayField(TEXT("pins"), VisiblePinNames(SessionNode));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetworkDebugReplication(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    UWorld* World = GetPreferredNetDebugWorld();
+    if (!World) return CreateErrorResponse(TEXT("No editor or PIE world available"));
+
+    double MaxActorsValue = 25;
+    Params->TryGetNumberField(TEXT("max_actors"), MaxActorsValue);
+    const int32 MaxActors = FMath::Clamp(FMath::RoundToInt(MaxActorsValue), 0, 200);
+
+    UNetDriver* NetDriver = World->GetNetDriver();
+    TArray<TSharedPtr<FJsonValue>> Connections;
+    if (NetDriver)
+    {
+        auto AddConnection = [&Connections](const FString& Kind, UNetConnection* Connection)
+        {
+            if (!Connection) return;
+            TSharedPtr<FJsonObject> CObj = MakeShared<FJsonObject>();
+            CObj->SetStringField(TEXT("kind"), Kind);
+            CObj->SetStringField(TEXT("state"), LexToString(Connection->GetConnectionState()));
+            CObj->SetStringField(TEXT("description"), Connection->Describe());
+            CObj->SetStringField(TEXT("low_level"), Connection->LowLevelDescribe());
+            CObj->SetNumberField(TEXT("open_channels"), Connection->OpenChannels.Num());
+            CObj->SetNumberField(TEXT("actor_channels"), Connection->ActorChannelsNum());
+            CObj->SetStringField(TEXT("player_controller"), GetNameSafe(Connection->PlayerController));
+            Connections.Add(MakeShared<FJsonValueObject>(CObj));
+        };
+
+        AddConnection(TEXT("server"), NetDriver->ServerConnection);
+        for (UNetConnection* Connection : NetDriver->ClientConnections)
+        {
+            AddConnection(TEXT("client"), Connection);
+        }
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Actors;
+    int32 ReplicatedActorCount = 0;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        AActor* Actor = *It;
+        if (!Actor || !Actor->GetIsReplicated()) continue;
+        ++ReplicatedActorCount;
+        if (Actors.Num() >= MaxActors) continue;
+
+        TSharedPtr<FJsonObject> AObj = MakeShared<FJsonObject>();
+#if WITH_EDITOR
+        AObj->SetStringField(TEXT("name"), Actor->GetActorLabel());
+#else
+        AObj->SetStringField(TEXT("name"), Actor->GetName());
+#endif
+        AObj->SetStringField(TEXT("class"), Actor->GetClass()->GetName());
+        AObj->SetStringField(TEXT("path"), Actor->GetPathName());
+        AObj->SetStringField(TEXT("local_role"), NetRoleToString(Actor->GetLocalRole()));
+        AObj->SetStringField(TEXT("remote_role"), NetRoleToString(Actor->GetRemoteRole()));
+        AObj->SetStringField(TEXT("owner"), GetNameSafe(Actor->GetOwner()));
+        AObj->SetBoolField(TEXT("replicate_movement"), Actor->IsReplicatingMovement());
+        AObj->SetNumberField(TEXT("net_update_frequency"), Actor->GetNetUpdateFrequency());
+        AObj->SetStringField(TEXT("net_dormancy"), DormancyToString(Actor->NetDormancy));
+        Actors.Add(MakeShared<FJsonValueObject>(AObj));
+    }
+
+    int32 ActiveNetworkObjects = 0;
+    int32 DormantAllConnections = 0;
+    int32 AllNetworkObjects = 0;
+    if (NetDriver)
+    {
+        const FNetworkObjectList& NetObjects = NetDriver->GetNetworkObjectList();
+        ActiveNetworkObjects = NetObjects.GetActiveObjects().Num();
+        DormantAllConnections = NetObjects.GetDormantObjectsOnAllConnections().Num();
+        AllNetworkObjects = NetObjects.GetAllObjects().Num();
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("world"), World->GetName());
+    R->SetBoolField(TEXT("is_pie_world"), World->WorldType == EWorldType::PIE);
+    R->SetStringField(TEXT("net_mode"), NetModeToString(World->GetNetMode()));
+    R->SetBoolField(TEXT("has_net_driver"), NetDriver != nullptr);
+    if (NetDriver)
+    {
+        R->SetStringField(TEXT("net_driver_name"), NetDriver->NetDriverName.ToString());
+        R->SetStringField(TEXT("net_driver_class"), NetDriver->GetClass()->GetName());
+        R->SetBoolField(TEXT("is_server"), NetDriver->IsServer());
+        R->SetNumberField(TEXT("client_connection_count"), NetDriver->ClientConnections.Num());
+        R->SetBoolField(TEXT("has_server_connection"), NetDriver->ServerConnection != nullptr);
+        R->SetBoolField(TEXT("has_replication_driver"), NetDriver->GetReplicationDriver() != nullptr);
+        R->SetNumberField(TEXT("active_network_objects"), ActiveNetworkObjects);
+        R->SetNumberField(TEXT("dormant_all_connections"), DormantAllConnections);
+        R->SetNumberField(TEXT("all_network_objects"), AllNetworkObjects);
+    }
+    R->SetNumberField(TEXT("replicated_actor_count"), ReplicatedActorCount);
+    R->SetArrayField(TEXT("replicated_actors_sample"), Actors);
+    R->SetArrayField(TEXT("connections"), Connections);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetValidateCommonMistakes(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    Params->TryGetStringField(TEXT("blueprint_name"), BPName);
+
+    TArray<UBlueprint*> BlueprintsToCheck;
+    if (!BPName.IsEmpty())
+    {
+        UBlueprint* BP = FindBlueprint(BPName);
+        if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+        BlueprintsToCheck.Add(BP);
+    }
+    else
+    {
+        for (TObjectIterator<UBlueprint> It; It; ++It)
+        {
+            if (*It && (*It)->GeneratedClass)
+            {
+                BlueprintsToCheck.Add(*It);
+            }
+        }
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Issues;
+    auto AddIssue = [&Issues](const FString& BlueprintName, const FString& Severity, const FString& Code, const FString& Message, const FString& Fix)
+    {
+        TSharedPtr<FJsonObject> IObj = MakeShared<FJsonObject>();
+        IObj->SetStringField(TEXT("blueprint_name"), BlueprintName);
+        IObj->SetStringField(TEXT("severity"), Severity);
+        IObj->SetStringField(TEXT("code"), Code);
+        IObj->SetStringField(TEXT("message"), Message);
+        IObj->SetStringField(TEXT("fix"), Fix);
+        Issues.Add(MakeShared<FJsonValueObject>(IObj));
+    };
+
+    for (UBlueprint* BP : BlueprintsToCheck)
+    {
+        if (!BP) continue;
+        if (!BP->GeneratedClass) FKismetEditorUtilities::CompileBlueprint(BP);
+
+        const FString CheckedBPName = BP->GetName();
+        AActor* ActorCDO = BP->GeneratedClass ? Cast<AActor>(BP->GeneratedClass->GetDefaultObject()) : nullptr;
+        const bool bActorReplicates = ActorCDO && ActorCDO->GetIsReplicated();
+        const bool bHasSetOwnerNode = BlueprintHasFunctionCallNode(BP, TEXT("SetOwner"));
+
+        int32 ReplicatedVarCount = 0;
+        int32 ReplicatedComponentCount = 0;
+        int32 RPCCount = 0;
+        bool bHasOwnerCondition = false;
+
+        for (const FBPVariableDescription& Var : BP->NewVariables)
+        {
+            const bool bReplicated = (Var.PropertyFlags & CPF_Net) != 0;
+            if (!bReplicated) continue;
+            ++ReplicatedVarCount;
+            if (Var.ReplicationCondition == COND_OwnerOnly || Var.ReplicationCondition == COND_SkipOwner || Var.ReplicationCondition == COND_InitialOrOwner)
+            {
+                bHasOwnerCondition = true;
+            }
+            if ((Var.PropertyFlags & CPF_RepNotify) != 0)
+            {
+                if (Var.RepNotifyFunc.IsNone() || !FindObject<UEdGraph>(BP, *Var.RepNotifyFunc.ToString()))
+                {
+                    AddIssue(CheckedBPName, TEXT("error"), TEXT("repnotify_missing_handler"),
+                        FString::Printf(TEXT("RepNotify variable '%s' has no matching OnRep graph."), *Var.VarName.ToString()),
+                        TEXT("Regenerate or assign the RepNotify function with net_add_repnotify_variable or net_configure_replicated_property."));
+                }
+            }
+        }
+
+        if (BP->SimpleConstructionScript)
+        {
+            for (USCS_Node* Node : BP->SimpleConstructionScript->GetAllNodes())
+            {
+                UActorComponent* Component = Node ? Cast<UActorComponent>(Node->ComponentTemplate) : nullptr;
+                if (Component && Component->GetIsReplicated())
+                {
+                    ++ReplicatedComponentCount;
+                }
+            }
+        }
+
+        TArray<UEdGraph*> Graphs;
+        Graphs.Append(BP->UbergraphPages);
+        for (UEdGraph* Graph : Graphs)
+        {
+            if (!Graph) continue;
+            for (UEdGraphNode* Node : Graph->Nodes)
+            {
+                UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(Node);
+                if (!CustomEvent || (CustomEvent->FunctionFlags & FUNC_Net) == 0) continue;
+                ++RPCCount;
+                if ((CustomEvent->FunctionFlags & FUNC_NetMulticast) != 0 && (CustomEvent->FunctionFlags & FUNC_NetReliable) != 0)
+                {
+                    AddIssue(CheckedBPName, TEXT("warning"), TEXT("reliable_multicast"),
+                        FString::Printf(TEXT("RPC '%s' is a reliable multicast."), *CustomEvent->CustomFunctionName.ToString()),
+                        TEXT("Use reliable multicast only for rare critical events; prefer unreliable multicast for frequent cosmetic events."));
+                }
+            }
+        }
+
+        const bool bHasNetworkSurface = ReplicatedVarCount > 0 || ReplicatedComponentCount > 0 || RPCCount > 0;
+        if (!ActorCDO && bHasNetworkSurface)
+        {
+            AddIssue(CheckedBPName, TEXT("error"), TEXT("network_surface_on_non_actor"),
+                TEXT("Replication settings or RPCs were found on a non-Actor Blueprint."),
+                TEXT("Move replicated state and RPC Custom Events to an Actor-derived Blueprint."));
+        }
+        if (ActorCDO && !bActorReplicates && bHasNetworkSurface)
+        {
+            AddIssue(CheckedBPName, TEXT("warning"), TEXT("actor_not_replicating"),
+                TEXT("Blueprint has replicated variables, replicated components, or RPCs, but the Actor replication default is disabled."),
+                TEXT("Enable Actor replication with net_set_actor_replicates."));
+        }
+        if (ActorCDO && !bActorReplicates && ReplicatedComponentCount > 0)
+        {
+            AddIssue(CheckedBPName, TEXT("warning"), TEXT("component_replicates_actor_does_not"),
+                TEXT("One or more components replicate, but the owning Actor does not."),
+                TEXT("Enable Actor replication before relying on component replication."));
+        }
+        if (bHasOwnerCondition && !bHasSetOwnerNode)
+        {
+            AddIssue(CheckedBPName, TEXT("info"), TEXT("owner_condition_without_owner_setup"),
+                TEXT("Owner-based replication conditions are used, but no SetOwner call node was found in this Blueprint."),
+                TEXT("Ensure ownership is assigned in authoritative server logic; net_set_owner_reference can add the graph call node."));
+        }
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetNumberField(TEXT("blueprints_checked"), BlueprintsToCheck.Num());
+    R->SetNumberField(TEXT("issue_count"), Issues.Num());
+    R->SetArrayField(TEXT("issues"), Issues);
     return R;
 }
 
