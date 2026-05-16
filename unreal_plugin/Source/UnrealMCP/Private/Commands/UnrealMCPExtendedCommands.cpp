@@ -239,9 +239,19 @@
 #include "Animation/AnimNotifies/AnimNotify.h"
 
 // Material Instance
+#include "Factories/MaterialFactoryNew.h"
+#include "Factories/MaterialFunctionFactoryNew.h"
+#include "Factories/MaterialInstanceConstantFactoryNew.h"
+#include "Materials/Material.h"
+#include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionTextureSampleParameter2D.h"
+#include "Materials/MaterialExpressionVectorParameter.h"
+#include "Materials/MaterialFunction.h"
 #include "Materials/MaterialInstanceConstant.h"
 #include "Materials/MaterialInterface.h"
 #include "MaterialEditingLibrary.h"
+#include "Engine/Texture.h"
 
 // Sequencer / Level Sequence
 #include "LevelSequence.h"
@@ -253,6 +263,213 @@
 #include "LevelSequenceActor.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealMCPExt, Log, All);
+
+static FString MCPNormalizeAssetPath(const FString& Path)
+{
+    FString Normalized = Path;
+    Normalized.TrimStartAndEndInline();
+    if (Normalized.IsEmpty() || Normalized.Contains(TEXT(".")))
+    {
+        return Normalized;
+    }
+
+    FString PackagePath;
+    FString AssetName;
+    if (Normalized.Split(TEXT("/"), &PackagePath, &AssetName, ESearchCase::CaseSensitive, ESearchDir::FromEnd) && !AssetName.IsEmpty())
+    {
+        return FString::Printf(TEXT("%s/%s.%s"), *PackagePath, *AssetName, *AssetName);
+    }
+    return Normalized;
+}
+
+template <typename AssetType>
+static AssetType* MCPLoadAsset(const FString& Path)
+{
+    AssetType* Asset = LoadObject<AssetType>(nullptr, *Path);
+    if (!Asset)
+    {
+        Asset = LoadObject<AssetType>(nullptr, *MCPNormalizeAssetPath(Path));
+    }
+    return Asset;
+}
+
+static FString MCPMakePackagePath(const FString& FolderPath, const FString& AssetName)
+{
+    FString CleanFolder = FolderPath.IsEmpty() ? TEXT("/Game") : FolderPath;
+    CleanFolder.RemoveFromEnd(TEXT("/"));
+    return CleanFolder + TEXT("/") + AssetName;
+}
+
+static FString MCPMakeObjectPath(const FString& FolderPath, const FString& AssetName)
+{
+    const FString PackagePath = MCPMakePackagePath(FolderPath, AssetName);
+    return PackagePath + TEXT(".") + AssetName;
+}
+
+static FLinearColor MCPReadLinearColor(
+    const TSharedPtr<FJsonObject>& Params,
+    const FString& FieldName,
+    const FLinearColor& DefaultValue)
+{
+    const TArray<TSharedPtr<FJsonValue>>* ArrayValue = nullptr;
+    if (!Params->TryGetArrayField(FieldName, ArrayValue) || !ArrayValue)
+    {
+        return DefaultValue;
+    }
+
+    const double R = ArrayValue->IsValidIndex(0) ? (*ArrayValue)[0]->AsNumber() : DefaultValue.R;
+    const double G = ArrayValue->IsValidIndex(1) ? (*ArrayValue)[1]->AsNumber() : DefaultValue.G;
+    const double B = ArrayValue->IsValidIndex(2) ? (*ArrayValue)[2]->AsNumber() : DefaultValue.B;
+    const double A = ArrayValue->IsValidIndex(3) ? (*ArrayValue)[3]->AsNumber() : DefaultValue.A;
+    return FLinearColor((float)R, (float)G, (float)B, (float)A);
+}
+
+static FLinearColor MCPReadLinearColorValue(
+    const TSharedPtr<FJsonValue>& JsonValue,
+    const FLinearColor& DefaultValue)
+{
+    if (!JsonValue.IsValid())
+    {
+        return DefaultValue;
+    }
+
+    const TArray<TSharedPtr<FJsonValue>>* ArrayValue = nullptr;
+    if (!JsonValue->TryGetArray(ArrayValue) || !ArrayValue)
+    {
+        return DefaultValue;
+    }
+
+    const double R = ArrayValue->IsValidIndex(0) ? (*ArrayValue)[0]->AsNumber() : DefaultValue.R;
+    const double G = ArrayValue->IsValidIndex(1) ? (*ArrayValue)[1]->AsNumber() : DefaultValue.G;
+    const double B = ArrayValue->IsValidIndex(2) ? (*ArrayValue)[2]->AsNumber() : DefaultValue.B;
+    const double A = ArrayValue->IsValidIndex(3) ? (*ArrayValue)[3]->AsNumber() : DefaultValue.A;
+    return FLinearColor((float)R, (float)G, (float)B, (float)A);
+}
+
+static void MCPEnsureAssetFolder(const FString& FolderPath)
+{
+    if (!UEditorAssetLibrary::DoesDirectoryExist(FolderPath))
+    {
+        UEditorAssetLibrary::MakeDirectory(FolderPath);
+    }
+}
+
+static UMaterialExpressionScalarParameter* MCPAddScalarParameter(
+    UMaterial* Material,
+    const FName& ParameterName,
+    float DefaultValue,
+    int32 X,
+    int32 Y)
+{
+    UMaterialExpressionScalarParameter* Expression = Cast<UMaterialExpressionScalarParameter>(
+        UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionScalarParameter::StaticClass(), X, Y));
+    if (Expression)
+    {
+        Expression->ParameterName = ParameterName;
+        Expression->DefaultValue = DefaultValue;
+        Expression->SliderMin = 0.0f;
+        Expression->SliderMax = 1.0f;
+    }
+    return Expression;
+}
+
+static UMaterialExpressionVectorParameter* MCPAddVectorParameter(
+    UMaterial* Material,
+    const FName& ParameterName,
+    const FLinearColor& DefaultValue,
+    int32 X,
+    int32 Y)
+{
+    UMaterialExpressionVectorParameter* Expression = Cast<UMaterialExpressionVectorParameter>(
+        UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionVectorParameter::StaticClass(), X, Y));
+    if (Expression)
+    {
+        Expression->ParameterName = ParameterName;
+        Expression->DefaultValue = DefaultValue;
+    }
+    return Expression;
+}
+
+static UMaterialExpressionTextureSampleParameter2D* MCPAddTextureParameter(
+    UMaterial* Material,
+    const FName& ParameterName,
+    UTexture* Texture,
+    int32 X,
+    int32 Y)
+{
+    UMaterialExpressionTextureSampleParameter2D* Expression = Cast<UMaterialExpressionTextureSampleParameter2D>(
+        UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionTextureSampleParameter2D::StaticClass(), X, Y));
+    if (Expression)
+    {
+        Expression->ParameterName = ParameterName;
+        Expression->Texture = Texture;
+        Expression->AutoSetSampleType();
+    }
+    return Expression;
+}
+
+static bool MCPWireTextureToProperty(
+    UMaterial* Material,
+    UTexture* Texture,
+    const FName& ParameterName,
+    EMaterialProperty Property,
+    int32 X,
+    int32 Y)
+{
+    UMaterialExpressionTextureSampleParameter2D* TextureExpression =
+        MCPAddTextureParameter(Material, ParameterName, Texture, X, Y);
+    if (!TextureExpression)
+    {
+        return false;
+    }
+    return UMaterialEditingLibrary::ConnectMaterialProperty(TextureExpression, TEXT("RGB"), Property);
+}
+
+static bool MCPWireORMTexture(UMaterial* Material, UTexture* Texture, int32 X, int32 Y)
+{
+    UMaterialExpressionTextureSampleParameter2D* ORMExpression =
+        MCPAddTextureParameter(Material, TEXT("ORMTexture"), Texture, X, Y);
+    if (!ORMExpression)
+    {
+        return false;
+    }
+
+    struct FMaskTarget
+    {
+        bool R;
+        bool G;
+        bool B;
+        EMaterialProperty Property;
+        int32 YOffset;
+    };
+
+    const FMaskTarget Targets[] = {
+        {true, false, false, MP_AmbientOcclusion, -120},
+        {false, true, false, MP_Roughness, 0},
+        {false, false, true, MP_Metallic, 120},
+    };
+
+    bool bAllConnected = true;
+    for (const FMaskTarget& Target : Targets)
+    {
+        UMaterialExpressionComponentMask* Mask = Cast<UMaterialExpressionComponentMask>(
+            UMaterialEditingLibrary::CreateMaterialExpression(Material, UMaterialExpressionComponentMask::StaticClass(), X + 260, Y + Target.YOffset));
+        if (!Mask)
+        {
+            bAllConnected = false;
+            continue;
+        }
+
+        Mask->R = Target.R;
+        Mask->G = Target.G;
+        Mask->B = Target.B;
+        Mask->A = false;
+        UMaterialEditingLibrary::ConnectMaterialExpressions(ORMExpression, TEXT("RGB"), Mask, TEXT(""));
+        bAllConnected &= UMaterialEditingLibrary::ConnectMaterialProperty(Mask, TEXT(""), Target.Property);
+    }
+
+    return bAllConnected;
+}
 
 // ─── Forward declarations for file-local BT helpers ───────────────────────────
 // These static helpers are DEFINED near the bottom of this TU (around line
@@ -519,6 +736,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
 
     // ── Material / Collision (Ch. 5, 9) ─────────────────────────────────────
     if (CommandType == TEXT("create_material"))                  return HandleCreateMaterial(Params);
+    if (CommandType == TEXT("material_create_master"))           return HandleMaterialCreateMaster(Params);
+    if (CommandType == TEXT("material_create_function"))         return HandleMaterialCreateFunction(Params);
+    if (CommandType == TEXT("material_wire_texture_set"))        return HandleMaterialWireTextureSet(Params);
+    if (CommandType == TEXT("material_create_instance_from_master")) return HandleMaterialCreateInstanceFromMaster(Params);
+    if (CommandType == TEXT("material_set_instance_parameters_bulk")) return HandleMaterialSetInstanceParametersBulk(Params);
     if (CommandType == TEXT("set_material_on_actor"))            return HandleSetMaterialOnActor(Params);
     if (CommandType == TEXT("create_dynamic_material_instance")) return HandleCreateDynamicMaterialInstance(Params);
     if (CommandType == TEXT("setup_hit_material_swap"))          return HandleSetupHitMaterialSwap(Params);
@@ -6586,6 +6808,507 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCreateMaterial(
     R->SetBoolField(TEXT("success"), true);
     R->SetStringField(TEXT("message"),
         TEXT("Use exec_python with unreal.AssetToolsHelpers and MaterialFactory to create a Material asset."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialCreateMaster(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MaterialName;
+    if (!Params->TryGetStringField(TEXT("material_name"), MaterialName))
+    {
+        Params->TryGetStringField(TEXT("name"), MaterialName);
+    }
+    if (MaterialName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'material_name'"));
+    }
+
+    FString FolderPath = TEXT("/Game/Materials");
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    FolderPath.RemoveFromEnd(TEXT("/"));
+
+    bool bOverwrite = false;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    bool bSave = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    bool bCompile = false;
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+
+    const FString PackagePath = MCPMakePackagePath(FolderPath, MaterialName);
+    const FString ObjectPath = MCPMakeObjectPath(FolderPath, MaterialName);
+
+    if (UEditorAssetLibrary::DoesAssetExist(PackagePath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("existing"), true);
+            R->SetStringField(TEXT("asset_path"), PackagePath);
+            R->SetStringField(TEXT("object_path"), ObjectPath);
+            R->SetStringField(TEXT("message"), TEXT("Master material already exists; set overwrite=true to rebuild it."));
+            return R;
+        }
+        if (!UEditorAssetLibrary::DeleteAsset(PackagePath))
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Could not delete existing material: %s"), *PackagePath));
+        }
+    }
+
+    MCPEnsureAssetFolder(FolderPath);
+
+    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+    UMaterialFactoryNew* Factory = NewObject<UMaterialFactoryNew>(GetTransientPackage());
+    UMaterial* Material = Cast<UMaterial>(
+        AssetTools.CreateAsset(MaterialName, FolderPath, UMaterial::StaticClass(), Factory));
+    if (!Material)
+    {
+        return CreateErrorResponse(TEXT("AssetTools failed to create a Material"));
+    }
+
+    double Metallic = 0.0;
+    double Roughness = 0.5;
+    double Opacity = 1.0;
+    Params->TryGetNumberField(TEXT("metallic"), Metallic);
+    Params->TryGetNumberField(TEXT("roughness"), Roughness);
+    Params->TryGetNumberField(TEXT("opacity"), Opacity);
+
+    const FLinearColor BaseColor = MCPReadLinearColor(Params, TEXT("base_color"), FLinearColor(1.0f, 1.0f, 1.0f, 1.0f));
+    const FLinearColor EmissiveColor = MCPReadLinearColor(Params, TEXT("emissive_color"), FLinearColor::Black);
+
+    UMaterialExpressionVectorParameter* BaseColorParam =
+        MCPAddVectorParameter(Material, TEXT("BaseColor"), BaseColor, -760, -180);
+    UMaterialExpressionScalarParameter* MetallicParam =
+        MCPAddScalarParameter(Material, TEXT("Metallic"), (float)Metallic, -760, 40);
+    UMaterialExpressionScalarParameter* RoughnessParam =
+        MCPAddScalarParameter(Material, TEXT("Roughness"), (float)Roughness, -760, 180);
+    UMaterialExpressionVectorParameter* EmissiveParam =
+        MCPAddVectorParameter(Material, TEXT("EmissiveColor"), EmissiveColor, -760, 340);
+    UMaterialExpressionScalarParameter* OpacityParam =
+        MCPAddScalarParameter(Material, TEXT("Opacity"), (float)Opacity, -760, 500);
+
+    FString BlendMode;
+    Params->TryGetStringField(TEXT("blend_mode"), BlendMode);
+    const bool bTranslucent = BlendMode.Equals(TEXT("translucent"), ESearchCase::IgnoreCase);
+    if (bTranslucent)
+    {
+        Material->BlendMode = BLEND_Translucent;
+    }
+
+    bool bConnected = true;
+    if (BaseColorParam)
+    {
+        bConnected &= UMaterialEditingLibrary::ConnectMaterialProperty(BaseColorParam, TEXT(""), MP_BaseColor);
+    }
+    if (MetallicParam)
+    {
+        bConnected &= UMaterialEditingLibrary::ConnectMaterialProperty(MetallicParam, TEXT(""), MP_Metallic);
+    }
+    if (RoughnessParam)
+    {
+        bConnected &= UMaterialEditingLibrary::ConnectMaterialProperty(RoughnessParam, TEXT(""), MP_Roughness);
+    }
+    if (EmissiveParam)
+    {
+        bConnected &= UMaterialEditingLibrary::ConnectMaterialProperty(EmissiveParam, TEXT(""), MP_EmissiveColor);
+    }
+    if (bTranslucent && OpacityParam)
+    {
+        bConnected &= UMaterialEditingLibrary::ConnectMaterialProperty(OpacityParam, TEXT(""), MP_Opacity);
+    }
+
+    bool bUseTextureParameters = true;
+    Params->TryGetBoolField(TEXT("use_texture_parameters"), bUseTextureParameters);
+    int32 TextureParameterCount = 0;
+    if (bUseTextureParameters)
+    {
+        MCPAddTextureParameter(Material, TEXT("BaseColorTexture"), nullptr, -1040, -420);
+        MCPAddTextureParameter(Material, TEXT("NormalTexture"), nullptr, -1040, -260);
+        MCPAddTextureParameter(Material, TEXT("ORMTexture"), nullptr, -1040, -100);
+        MCPAddTextureParameter(Material, TEXT("EmissiveTexture"), nullptr, -1040, 60);
+        TextureParameterCount = 4;
+    }
+
+    UMaterialEditingLibrary::LayoutMaterialExpressions(Material);
+    if (bCompile)
+    {
+        UMaterialEditingLibrary::RecompileMaterial(Material);
+    }
+    Material->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetBoolField(TEXT("compiled"), bCompile);
+    R->SetBoolField(TEXT("connected"), bConnected);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), Material->GetPathName());
+    R->SetNumberField(TEXT("parameter_count"), 5 + TextureParameterCount);
+    R->SetStringField(TEXT("note"), TEXT("Created master material with BaseColor, Metallic, Roughness, EmissiveColor, and Opacity parameters."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialCreateFunction(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString FunctionName;
+    if (!Params->TryGetStringField(TEXT("function_name"), FunctionName))
+    {
+        Params->TryGetStringField(TEXT("name"), FunctionName);
+    }
+    if (FunctionName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'function_name'"));
+    }
+
+    FString FolderPath = TEXT("/Game/Materials/Functions");
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    FolderPath.RemoveFromEnd(TEXT("/"));
+
+    bool bOverwrite = false;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    const FString PackagePath = MCPMakePackagePath(FolderPath, FunctionName);
+    const FString ObjectPath = MCPMakeObjectPath(FolderPath, FunctionName);
+    if (UEditorAssetLibrary::DoesAssetExist(PackagePath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("existing"), true);
+            R->SetStringField(TEXT("asset_path"), PackagePath);
+            R->SetStringField(TEXT("object_path"), ObjectPath);
+            return R;
+        }
+        if (!UEditorAssetLibrary::DeleteAsset(PackagePath))
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Could not delete existing material function: %s"), *PackagePath));
+        }
+    }
+
+    MCPEnsureAssetFolder(FolderPath);
+
+    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+    UMaterialFunctionFactoryNew* Factory = NewObject<UMaterialFunctionFactoryNew>(GetTransientPackage());
+    UMaterialFunction* Function = Cast<UMaterialFunction>(
+        AssetTools.CreateAsset(FunctionName, FolderPath, UMaterialFunction::StaticClass(), Factory));
+    if (!Function)
+    {
+        return CreateErrorResponse(TEXT("AssetTools failed to create a Material Function"));
+    }
+
+    FString Description;
+    Params->TryGetStringField(TEXT("description"), Description);
+    Function->Description = Description;
+    Function->bExposeToLibrary = true;
+    Function->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), Function->GetPathName());
+    R->SetStringField(TEXT("description"), Description);
+    R->SetStringField(TEXT("note"), TEXT("Created exposed Material Function asset; use material graph tools for detailed function internals."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialWireTextureSet(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MaterialPath;
+    if (!Params->TryGetStringField(TEXT("material_path"), MaterialPath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'material_path'"));
+    }
+
+    UMaterial* Material = MCPLoadAsset<UMaterial>(MaterialPath);
+    if (!Material)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Material not found: %s"), *MaterialPath));
+    }
+
+    bool bSave = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    bool bCompile = false;
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+
+    int32 WiredCount = 0;
+    TArray<FString> MissingTextures;
+
+    auto LoadTextureField = [&Params, &MissingTextures](const TCHAR* FieldName) -> UTexture*
+    {
+        FString TexturePath;
+        if (!Params->TryGetStringField(FieldName, TexturePath) || TexturePath.IsEmpty())
+        {
+            return nullptr;
+        }
+        UTexture* Texture = MCPLoadAsset<UTexture>(TexturePath);
+        if (!Texture)
+        {
+            MissingTextures.Add(FString(FieldName) + TEXT("=") + TexturePath);
+        }
+        return Texture;
+    };
+
+    if (UTexture* BaseColorTexture = LoadTextureField(TEXT("base_color_texture")))
+    {
+        if (MCPWireTextureToProperty(Material, BaseColorTexture, TEXT("BaseColorTexture"), MP_BaseColor, -1120, -360))
+        {
+            ++WiredCount;
+        }
+    }
+    if (UTexture* NormalTexture = LoadTextureField(TEXT("normal_texture")))
+    {
+        if (MCPWireTextureToProperty(Material, NormalTexture, TEXT("NormalTexture"), MP_Normal, -1120, -120))
+        {
+            ++WiredCount;
+        }
+    }
+    if (UTexture* ORMTexture = LoadTextureField(TEXT("orm_texture")))
+    {
+        if (MCPWireORMTexture(Material, ORMTexture, -1120, 160))
+        {
+            ++WiredCount;
+        }
+    }
+    if (UTexture* EmissiveTexture = LoadTextureField(TEXT("emissive_texture")))
+    {
+        if (MCPWireTextureToProperty(Material, EmissiveTexture, TEXT("EmissiveTexture"), MP_EmissiveColor, -1120, 520))
+        {
+            ++WiredCount;
+        }
+    }
+
+    if (WiredCount == 0 && MissingTextures.Num() > 0)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("No textures could be loaded: %s"), *FString::Join(MissingTextures, TEXT(", "))));
+    }
+
+    UMaterialEditingLibrary::LayoutMaterialExpressions(Material);
+    if (bCompile)
+    {
+        UMaterialEditingLibrary::RecompileMaterial(Material);
+    }
+    Material->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(Material->GetOutermost()->GetName(), false);
+    }
+
+    TArray<TSharedPtr<FJsonValue>> MissingJson;
+    for (const FString& Missing : MissingTextures)
+    {
+        MissingJson.Add(MakeShared<FJsonValueString>(Missing));
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetBoolField(TEXT("compiled"), bCompile);
+    R->SetStringField(TEXT("material_path"), Material->GetPathName());
+    R->SetNumberField(TEXT("wired_texture_count"), WiredCount);
+    R->SetArrayField(TEXT("missing_textures"), MissingJson);
+    R->SetStringField(TEXT("note"), TEXT("Wired base color, normal, ORM, and/or emissive textures to material properties."));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialCreateInstanceFromMaster(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString InstanceName;
+    if (!Params->TryGetStringField(TEXT("instance_name"), InstanceName))
+    {
+        Params->TryGetStringField(TEXT("material_instance_name"), InstanceName);
+    }
+    if (InstanceName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'instance_name'"));
+    }
+
+    FString ParentPath;
+    if (!Params->TryGetStringField(TEXT("parent_material_path"), ParentPath))
+    {
+        Params->TryGetStringField(TEXT("master_material_path"), ParentPath);
+    }
+    if (ParentPath.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'parent_material_path'"));
+    }
+
+    UMaterialInterface* ParentMaterial = MCPLoadAsset<UMaterialInterface>(ParentPath);
+    if (!ParentMaterial)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Parent material not found: %s"), *ParentPath));
+    }
+
+    FString FolderPath = TEXT("/Game/Materials/Instances");
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    FolderPath.RemoveFromEnd(TEXT("/"));
+
+    bool bOverwrite = false;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    const FString PackagePath = MCPMakePackagePath(FolderPath, InstanceName);
+    const FString ObjectPath = MCPMakeObjectPath(FolderPath, InstanceName);
+    if (UEditorAssetLibrary::DoesAssetExist(PackagePath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("existing"), true);
+            R->SetStringField(TEXT("asset_path"), PackagePath);
+            R->SetStringField(TEXT("object_path"), ObjectPath);
+            R->SetStringField(TEXT("parent_material_path"), ParentMaterial->GetPathName());
+            return R;
+        }
+        if (!UEditorAssetLibrary::DeleteAsset(PackagePath))
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Could not delete existing material instance: %s"), *PackagePath));
+        }
+    }
+
+    MCPEnsureAssetFolder(FolderPath);
+
+    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>("AssetTools").Get();
+    UMaterialInstanceConstantFactoryNew* Factory = NewObject<UMaterialInstanceConstantFactoryNew>(GetTransientPackage());
+    Factory->InitialParent = ParentMaterial;
+    UMaterialInstanceConstant* Instance = Cast<UMaterialInstanceConstant>(
+        AssetTools.CreateAsset(InstanceName, FolderPath, UMaterialInstanceConstant::StaticClass(), Factory));
+    if (!Instance)
+    {
+        return CreateErrorResponse(TEXT("AssetTools failed to create a Material Instance Constant"));
+    }
+
+    Instance->SetParentEditorOnly(ParentMaterial);
+    Instance->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), Instance->GetPathName());
+    R->SetStringField(TEXT("parent_material_path"), ParentMaterial->GetPathName());
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialSetInstanceParametersBulk(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString InstancePath;
+    if (!Params->TryGetStringField(TEXT("material_instance_path"), InstancePath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'material_instance_path'"));
+    }
+
+    UMaterialInstanceConstant* Instance = MCPLoadAsset<UMaterialInstanceConstant>(InstancePath);
+    if (!Instance)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("MaterialInstanceConstant not found: %s"), *InstancePath));
+    }
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    int32 ScalarCount = 0;
+    int32 VectorCount = 0;
+    int32 TextureCount = 0;
+    TArray<FString> MissingTextures;
+
+    const TSharedPtr<FJsonObject>* ScalarParameters = nullptr;
+    if (Params->TryGetObjectField(TEXT("scalar_parameters"), ScalarParameters) && ScalarParameters)
+    {
+        for (const auto& KV : (*ScalarParameters)->Values)
+        {
+            UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(
+                Instance, FName(*KV.Key), (float)KV.Value->AsNumber());
+            ++ScalarCount;
+        }
+    }
+
+    const TSharedPtr<FJsonObject>* VectorParameters = nullptr;
+    if (Params->TryGetObjectField(TEXT("vector_parameters"), VectorParameters) && VectorParameters)
+    {
+        for (const auto& KV : (*VectorParameters)->Values)
+        {
+            const FLinearColor Color = MCPReadLinearColorValue(KV.Value, FLinearColor::White);
+            UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(
+                Instance, FName(*KV.Key), Color);
+            ++VectorCount;
+        }
+    }
+
+    const TSharedPtr<FJsonObject>* TextureParameters = nullptr;
+    if (Params->TryGetObjectField(TEXT("texture_parameters"), TextureParameters) && TextureParameters)
+    {
+        for (const auto& KV : (*TextureParameters)->Values)
+        {
+            const FString TexturePath = KV.Value->AsString();
+            UTexture* Texture = MCPLoadAsset<UTexture>(TexturePath);
+            if (!Texture)
+            {
+                MissingTextures.Add(KV.Key + TEXT("=") + TexturePath);
+                continue;
+            }
+            UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(
+                Instance, FName(*KV.Key), Texture);
+            ++TextureCount;
+        }
+    }
+
+    Instance->PostEditChange();
+    Instance->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(Instance->GetOutermost()->GetName(), false);
+    }
+
+    TArray<TSharedPtr<FJsonValue>> MissingJson;
+    for (const FString& Missing : MissingTextures)
+    {
+        MissingJson.Add(MakeShared<FJsonValueString>(Missing));
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("material_instance_path"), Instance->GetPathName());
+    R->SetNumberField(TEXT("scalar_parameters_set"), ScalarCount);
+    R->SetNumberField(TEXT("vector_parameters_set"), VectorCount);
+    R->SetNumberField(TEXT("texture_parameters_set"), TextureCount);
+    R->SetArrayField(TEXT("missing_textures"), MissingJson);
     return R;
 }
 

@@ -201,6 +201,11 @@ private:
 
     // ?? Material Commands (Ch. 5, 6, 9) ??????????????????????????????????????
     TSharedPtr<FJsonObject> HandleCreateMaterial(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleMaterialCreateMaster(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleMaterialCreateFunction(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleMaterialWireTextureSet(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleMaterialCreateInstanceFromMaster(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleMaterialSetInstanceParametersBulk(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetMaterialOnActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddSetMaterialNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateDynamicMaterialInstance(const TSharedPtr<FJsonObject>& Params);

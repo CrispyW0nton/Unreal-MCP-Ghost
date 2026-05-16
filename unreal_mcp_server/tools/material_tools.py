@@ -68,6 +68,176 @@ def register_material_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def material_create_master(
+        ctx: Context,
+        material_name: str,
+        folder_path: str = "/Game/Materials",
+        base_color: List[float] = [1.0, 1.0, 1.0, 1.0],
+        metallic: float = 0.0,
+        roughness: float = 0.5,
+        emissive_color: List[float] = [0.0, 0.0, 0.0, 1.0],
+        opacity: float = 1.0,
+        blend_mode: str = "opaque",
+        use_texture_parameters: bool = True,
+        overwrite: bool = False,
+        compile: bool = False,
+        save: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Create a reusable master Material with standard technical-art parameters.
+
+        The generated graph includes BaseColor, Metallic, Roughness, EmissiveColor,
+        and Opacity parameters, plus optional texture parameters for BaseColor,
+        Normal, ORM, and Emissive maps. Use material_wire_texture_set to wire
+        actual texture assets into the graph after creation.
+
+        Args:
+            material_name: Material asset name, e.g. "M_Master_Prop"
+            folder_path: Content Browser folder for the asset
+            base_color: RGBA default BaseColor parameter
+            metallic: Default Metallic scalar
+            roughness: Default Roughness scalar
+            emissive_color: RGBA default EmissiveColor parameter
+            opacity: Default Opacity scalar
+            blend_mode: "opaque" or "translucent"
+            use_texture_parameters: Add standard texture parameter nodes
+            overwrite: Delete/recreate an existing asset at the same path
+            compile: Force a material shader compile before returning
+            save: Save the asset package immediately
+        """
+        return _send("material_create_master", {
+            "material_name": material_name,
+            "folder_path": folder_path,
+            "base_color": base_color,
+            "metallic": metallic,
+            "roughness": roughness,
+            "emissive_color": emissive_color,
+            "opacity": opacity,
+            "blend_mode": blend_mode,
+            "use_texture_parameters": use_texture_parameters,
+            "overwrite": overwrite,
+            "compile": compile,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def material_create_function(
+        ctx: Context,
+        function_name: str,
+        folder_path: str = "/Game/Materials/Functions",
+        description: str = "",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Create a Material Function asset and expose it to the material function library.
+
+        Args:
+            function_name: Function asset name, e.g. "MF_TriplanarTint"
+            folder_path: Content Browser folder for the function
+            description: Tooltip/description shown in the Material Editor
+            overwrite: Delete/recreate an existing asset at the same path
+            save: Save the asset package immediately
+        """
+        return _send("material_create_function", {
+            "function_name": function_name,
+            "folder_path": folder_path,
+            "description": description,
+            "overwrite": overwrite,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def material_wire_texture_set(
+        ctx: Context,
+        material_path: str,
+        base_color_texture: str = "",
+        normal_texture: str = "",
+        orm_texture: str = "",
+        emissive_texture: str = "",
+        compile: bool = False,
+        save: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Wire a standard texture set into a Material graph.
+
+        ORM textures are assumed to pack Occlusion in R, Roughness in G, and
+        Metallic in B. Empty texture paths are ignored.
+
+        Args:
+            material_path: Material asset path
+            base_color_texture: Texture path wired to BaseColor
+            normal_texture: Texture path wired to Normal
+            orm_texture: Packed ORM texture path wired to AO/Roughness/Metallic
+            emissive_texture: Texture path wired to EmissiveColor
+            compile: Force a material shader compile before returning
+            save: Save the material package immediately
+        """
+        return _send("material_wire_texture_set", {
+            "material_path": material_path,
+            "base_color_texture": base_color_texture,
+            "normal_texture": normal_texture,
+            "orm_texture": orm_texture,
+            "emissive_texture": emissive_texture,
+            "compile": compile,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def material_create_instance_from_master(
+        ctx: Context,
+        instance_name: str,
+        parent_material_path: str,
+        folder_path: str = "/Game/Materials/Instances",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Create a Material Instance Constant from a master Material.
+
+        Args:
+            instance_name: Material instance asset name, e.g. "MI_Prop_Red"
+            parent_material_path: Parent material or material instance path
+            folder_path: Content Browser folder for the instance
+            overwrite: Delete/recreate an existing asset at the same path
+            save: Save the asset package immediately
+        """
+        return _send("material_create_instance_from_master", {
+            "instance_name": instance_name,
+            "parent_material_path": parent_material_path,
+            "folder_path": folder_path,
+            "overwrite": overwrite,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def material_set_instance_parameters_bulk(
+        ctx: Context,
+        material_instance_path: str,
+        scalar_parameters: Optional[Dict[str, float]] = None,
+        vector_parameters: Optional[Dict[str, List[float]]] = None,
+        texture_parameters: Optional[Dict[str, str]] = None,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Set many Material Instance parameters in one bridge call.
+
+        Args:
+            material_instance_path: Material Instance Constant asset path
+            scalar_parameters: Mapping of scalar parameter names to floats
+            vector_parameters: Mapping of vector parameter names to RGBA arrays
+            texture_parameters: Mapping of texture parameter names to texture paths
+            save: Save the material instance package immediately
+        """
+        return _send("material_set_instance_parameters_bulk", {
+            "material_instance_path": material_instance_path,
+            "scalar_parameters": scalar_parameters or {},
+            "vector_parameters": vector_parameters or {},
+            "texture_parameters": texture_parameters or {},
+            "save": save,
+        })
+
+    @mcp.tool()
     def set_material_on_actor(
         ctx: Context,
         actor_name: str,

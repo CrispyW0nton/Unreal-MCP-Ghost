@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 468 MCP tools: 465 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 473 MCP tools: 470 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -34,7 +34,7 @@ Partially live areas:
 
 - Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
 - AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
-- Technical art covers basic materials and material instance parameters, but lacks master material pipelines, material function tooling, vertex paint automation, ORM generation, shader complexity, and overdraw analysis.
+- Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, and bulk instance parameter updates. It still lacks vertex paint automation, ORM generation, shader complexity, and overdraw analysis.
 - Autonomous verification exists in pieces through diagnostics, screenshots, source control status, and chat, but needs a formal execution journal, risk evaluation, PIE automation, and screenshot analysis loop.
 
 Missing or thin areas:
@@ -253,13 +253,15 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: make materials, textures, and performance views as automatable as Blueprints.
 
+Status: Slice 1 master material and material instance pipeline tooling is implemented and live-tested in Lab5E.
+
 Slice 1:
 
-- `material_create_master`
-- `material_create_function`
-- `material_wire_texture_set`
-- `material_create_instance_from_master`
-- `material_set_instance_parameters_bulk`
+- `material_create_master` - implemented as a native C++ bridge command with a Python MCP wrapper for standard BaseColor, Metallic, Roughness, EmissiveColor, Opacity, and texture parameters.
+- `material_create_function` - implemented as a native C++ bridge command with a Python MCP wrapper for exposed Material Function assets.
+- `material_wire_texture_set` - implemented as a native C++ bridge command with a Python MCP wrapper for BaseColor, Normal, ORM, and Emissive texture wiring. ORM maps R/G/B to AO/Roughness/Metallic.
+- `material_create_instance_from_master` - implemented as a native C++ bridge command with a Python MCP wrapper for Material Instance Constant creation.
+- `material_set_instance_parameters_bulk` - implemented as a native C++ bridge command with a Python MCP wrapper for scalar, vector, and texture parameter updates in one call.
 
 Slice 2:
 
@@ -279,6 +281,15 @@ Validation:
 
 - Build one PBR master material from a texture set.
 - Verify material compile diagnostics, parameter names, texture compression, and asset references.
+
+Lab5E smoke result, 2026-05-16:
+
+- Live Coding loaded the updated Lab5E project plugin after UE 5.6 material API checks and timeout fixes.
+- Created `/Game/MCP_Test/Materials/M_MCP_Phase4_MasterFast3` with standard scalar/vector/texture parameters; native result reported `connected=true`, `saved=false`, and `compiled=false`.
+- Created and saved `/Game/MCP_Test/Materials/MF_MCP_Phase4_Test` as an exposed Material Function asset.
+- Created and saved `/Game/MCP_Test/Materials/MI_MCP_Phase4_MasterFast` from `/Game/MCP_Test/Materials/M_MCP_Phase4_MasterFast`.
+- Bulk-updated `MI_MCP_Phase4_MasterFast` parameters: `Metallic`, `Roughness`, and `BaseColor`; native result reported 2 scalar and 1 vector parameters set.
+- Wired `/Engine/EngineResources/DefaultTexture.DefaultTexture` into the master material as `BaseColorTexture`; native result reported 1 wired texture and no missing textures.
 
 ## Phase 5 - Animation Closure
 
@@ -361,8 +372,8 @@ Validation:
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 4 Slice 1: begin master material and material function pipeline tooling.
-5. Phase 4 Slice 2: add vertex paint, ORM packing, and shader/performance view helpers.
+4. Phase 4 Slice 2: add vertex paint, ORM packing, and shader/performance view helpers.
+5. Phase 5: close animation montage/control-rig gaps.
 
 ## Backlog Notes
 
