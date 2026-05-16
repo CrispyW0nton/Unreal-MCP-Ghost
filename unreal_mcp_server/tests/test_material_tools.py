@@ -36,6 +36,10 @@ class TestMaterialToolsRegistration(unittest.TestCase):
         self.assertIn("material_wire_texture_set", names)
         self.assertIn("material_create_instance_from_master", names)
         self.assertIn("material_set_instance_parameters_bulk", names)
+        self.assertIn("texture_generate_orm", names)
+        self.assertIn("texture_audit_memory", names)
+        self.assertIn("vertex_paint_actor", names)
+        self.assertIn("mesh_audit_uv_channels", names)
 
 
 if __name__ == "__main__":

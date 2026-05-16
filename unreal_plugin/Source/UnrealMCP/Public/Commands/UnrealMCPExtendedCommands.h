@@ -206,6 +206,10 @@ private:
     TSharedPtr<FJsonObject> HandleMaterialWireTextureSet(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleMaterialCreateInstanceFromMaster(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleMaterialSetInstanceParametersBulk(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleTextureGenerateORM(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleTextureAuditMemory(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleVertexPaintActor(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleMeshAuditUVChannels(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetMaterialOnActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddSetMaterialNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateDynamicMaterialInstance(const TSharedPtr<FJsonObject>& Params);

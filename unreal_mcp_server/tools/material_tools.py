@@ -238,6 +238,127 @@ def register_material_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def texture_generate_orm(
+        ctx: Context,
+        output_name: str,
+        folder_path: str = "/Game/Materials/Textures",
+        occlusion_texture_path: str = "",
+        roughness_texture_path: str = "",
+        metallic_texture_path: str = "",
+        occlusion_channel: str = "r",
+        roughness_channel: str = "r",
+        metallic_channel: str = "r",
+        occlusion: float = 1.0,
+        roughness: float = 0.5,
+        metallic: float = 0.0,
+        width: int = 4,
+        height: int = 4,
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Generate a packed ORM Texture2D asset for technical-art material pipelines.
+
+        The output packs Occlusion into R, Roughness into G, Metallic into B, and
+        alpha to 255. If a source texture path is omitted or cannot be sampled,
+        the matching flat default value is used.
+
+        Args:
+            output_name: Texture asset name, e.g. "T_Prop_ORM"
+            folder_path: Content Browser folder for the generated texture
+            occlusion_texture_path: Optional grayscale/source texture for R
+            roughness_texture_path: Optional grayscale/source texture for G
+            metallic_texture_path: Optional grayscale/source texture for B
+            occlusion_channel: Source channel to sample, one of r/g/b/a
+            roughness_channel: Source channel to sample, one of r/g/b/a
+            metallic_channel: Source channel to sample, one of r/g/b/a
+            occlusion: Flat fallback value 0.0-1.0
+            roughness: Flat fallback value 0.0-1.0
+            metallic: Flat fallback value 0.0-1.0
+            width: Generated texture width when flat/default data is used
+            height: Generated texture height when flat/default data is used
+            overwrite: Delete/recreate an existing asset at the same path
+            save: Save the generated texture package immediately
+        """
+        return _send("texture_generate_orm", {
+            "output_name": output_name,
+            "folder_path": folder_path,
+            "occlusion_texture_path": occlusion_texture_path,
+            "roughness_texture_path": roughness_texture_path,
+            "metallic_texture_path": metallic_texture_path,
+            "occlusion_channel": occlusion_channel,
+            "roughness_channel": roughness_channel,
+            "metallic_channel": metallic_channel,
+            "occlusion": occlusion,
+            "roughness": roughness,
+            "metallic": metallic,
+            "width": width,
+            "height": height,
+            "overwrite": overwrite,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def texture_audit_memory(
+        ctx: Context,
+        texture_path: str,
+    ) -> Dict[str, Any]:
+        """
+        Inspect Texture2D size, compression, streaming flags, mips, and memory estimate.
+
+        Args:
+            texture_path: Texture2D asset path to audit
+        """
+        return _send("texture_audit_memory", {
+            "texture_path": texture_path,
+        })
+
+    @mcp.tool()
+    def vertex_paint_actor(
+        ctx: Context,
+        actor_name: str,
+        component_name: str = "",
+        color: List[float] = [1.0, 1.0, 1.0, 1.0],
+        lod_index: int = 0,
+        apply_to_all_vertices: bool = True,
+        save: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Apply component override vertex colors to a placed StaticMeshActor/component.
+
+        Args:
+            actor_name: Actor name or editor label
+            component_name: Optional StaticMeshComponent name
+            color: RGBA color array used for all vertices
+            lod_index: LOD to paint
+            apply_to_all_vertices: Must be true for this initial implementation
+            save: Save the actor package/level if supported
+        """
+        return _send("vertex_paint_actor", {
+            "actor_name": actor_name,
+            "component_name": component_name,
+            "color": color,
+            "lod_index": lod_index,
+            "apply_to_all_vertices": apply_to_all_vertices,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def mesh_audit_uv_channels(
+        ctx: Context,
+        static_mesh_path: str,
+    ) -> Dict[str, Any]:
+        """
+        Audit StaticMesh LODs for UV channel counts, vertex counts, and triangles.
+
+        Args:
+            static_mesh_path: StaticMesh asset path to inspect
+        """
+        return _send("mesh_audit_uv_channels", {
+            "static_mesh_path": static_mesh_path,
+        })
+
+    @mcp.tool()
     def set_material_on_actor(
         ctx: Context,
         actor_name: str,

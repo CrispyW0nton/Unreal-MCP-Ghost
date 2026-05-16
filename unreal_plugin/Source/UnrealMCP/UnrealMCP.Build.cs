@@ -86,6 +86,7 @@ public class UnrealMCP : ModuleRules
 
                 // Physics / Collision (extended ? Chapter 14)
                 "PhysicsCore",
+                "RenderCore",
 
                 // Procedural Mesh (extended ? Chapter 19)
                 "ProceduralMeshComponent",

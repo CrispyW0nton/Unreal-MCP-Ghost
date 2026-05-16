@@ -231,6 +231,11 @@
 #include "ViewModels/Stack/NiagaraStackGraphUtilities.h"
 #include "K2Node_CallFunction.h"
 #include "Engine/StaticMesh.h"
+#include "Components/StaticMeshComponent.h"
+#include "Engine/Texture2D.h"
+#include "Rendering/ColorVertexBuffer.h"
+#include "StaticMeshComponentLODInfo.h"
+#include "StaticMeshResources.h"
 
 // Animation Notifies
 #include "Animation/AnimSequenceBase.h"
@@ -469,6 +474,101 @@ static bool MCPWireORMTexture(UMaterial* Material, UTexture* Texture, int32 X, i
     }
 
     return bAllConnected;
+}
+
+static uint8 MCPToByte(double Value)
+{
+    return (uint8)FMath::Clamp(FMath::RoundToInt(Value * 255.0), 0, 255);
+}
+
+static uint8 MCPReadByteField(const TSharedPtr<FJsonObject>& Params, const TCHAR* FieldName, double DefaultValue)
+{
+    double Value = DefaultValue;
+    Params->TryGetNumberField(FieldName, Value);
+    return MCPToByte(Value);
+}
+
+static uint8 MCPReadTextureChannel(
+    UTexture2D* Texture,
+    int32 X,
+    int32 Y,
+    int32 TargetWidth,
+    int32 TargetHeight,
+    const FString& Channel,
+    uint8 DefaultValue,
+    bool& bUsedTexture)
+{
+    bUsedTexture = false;
+    if (!Texture || Texture->Source.GetSizeX() <= 0 || Texture->Source.GetSizeY() <= 0)
+    {
+        return DefaultValue;
+    }
+
+    TArray64<uint8> SourceData;
+    if (!Texture->Source.GetMipData(SourceData, 0) || SourceData.Num() == 0)
+    {
+        return DefaultValue;
+    }
+
+    const int32 SourceWidth = Texture->Source.GetSizeX();
+    const int32 SourceHeight = Texture->Source.GetSizeY();
+    const int32 SampleX = FMath::Clamp((X * SourceWidth) / FMath::Max(1, TargetWidth), 0, SourceWidth - 1);
+    const int32 SampleY = FMath::Clamp((Y * SourceHeight) / FMath::Max(1, TargetHeight), 0, SourceHeight - 1);
+    const int64 PixelIndex = (int64)SampleY * SourceWidth + SampleX;
+    const ETextureSourceFormat Format = Texture->Source.GetFormat();
+    const FString LowerChannel = Channel.ToLower();
+
+    if (Format == TSF_G8)
+    {
+        if (SourceData.IsValidIndex(PixelIndex))
+        {
+            bUsedTexture = true;
+            return SourceData[PixelIndex];
+        }
+        return DefaultValue;
+    }
+
+    if (Format == TSF_BGRA8 || Format == TSF_BGRE8)
+    {
+        const int64 BaseIndex = PixelIndex * 4;
+        if (!SourceData.IsValidIndex(BaseIndex + 3))
+        {
+            return DefaultValue;
+        }
+
+        bUsedTexture = true;
+        if (LowerChannel == TEXT("g"))
+        {
+            return SourceData[BaseIndex + 1];
+        }
+        if (LowerChannel == TEXT("b"))
+        {
+            return SourceData[BaseIndex + 0];
+        }
+        if (LowerChannel == TEXT("a"))
+        {
+            return SourceData[BaseIndex + 3];
+        }
+        return SourceData[BaseIndex + 2];
+    }
+
+    if (Format == TSF_G16)
+    {
+        const int64 BaseIndex = PixelIndex * 2;
+        if (SourceData.IsValidIndex(BaseIndex + 1))
+        {
+            bUsedTexture = true;
+            const uint16 Value = (uint16)SourceData[BaseIndex] | ((uint16)SourceData[BaseIndex + 1] << 8);
+            return (uint8)(Value >> 8);
+        }
+    }
+
+    return DefaultValue;
+}
+
+static FString MCPEnumName(const UEnum* Enum, int64 Value)
+{
+    return Enum ? Enum->GetNameStringByValue(Value) : FString::FromInt((int32)Value);
 }
 
 // ─── Forward declarations for file-local BT helpers ───────────────────────────
@@ -741,6 +841,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("material_wire_texture_set"))        return HandleMaterialWireTextureSet(Params);
     if (CommandType == TEXT("material_create_instance_from_master")) return HandleMaterialCreateInstanceFromMaster(Params);
     if (CommandType == TEXT("material_set_instance_parameters_bulk")) return HandleMaterialSetInstanceParametersBulk(Params);
+    if (CommandType == TEXT("texture_generate_orm"))             return HandleTextureGenerateORM(Params);
+    if (CommandType == TEXT("texture_audit_memory"))             return HandleTextureAuditMemory(Params);
+    if (CommandType == TEXT("vertex_paint_actor"))               return HandleVertexPaintActor(Params);
+    if (CommandType == TEXT("mesh_audit_uv_channels"))           return HandleMeshAuditUVChannels(Params);
     if (CommandType == TEXT("set_material_on_actor"))            return HandleSetMaterialOnActor(Params);
     if (CommandType == TEXT("create_dynamic_material_instance")) return HandleCreateDynamicMaterialInstance(Params);
     if (CommandType == TEXT("setup_hit_material_swap"))          return HandleSetupHitMaterialSwap(Params);
@@ -7309,6 +7413,364 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialSetInstancePar
     R->SetNumberField(TEXT("vector_parameters_set"), VectorCount);
     R->SetNumberField(TEXT("texture_parameters_set"), TextureCount);
     R->SetArrayField(TEXT("missing_textures"), MissingJson);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleTextureGenerateORM(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString OutputName;
+    if (!Params->TryGetStringField(TEXT("output_name"), OutputName))
+    {
+        Params->TryGetStringField(TEXT("texture_name"), OutputName);
+    }
+    if (OutputName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'output_name'"));
+    }
+
+    FString FolderPath = TEXT("/Game/Materials/Textures");
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    FolderPath.RemoveFromEnd(TEXT("/"));
+
+    bool bOverwrite = false;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    double WidthValue = 4.0;
+    double HeightValue = 4.0;
+    Params->TryGetNumberField(TEXT("width"), WidthValue);
+    Params->TryGetNumberField(TEXT("height"), HeightValue);
+    const int32 Width = FMath::Clamp((int32)WidthValue, 1, 8192);
+    const int32 Height = FMath::Clamp((int32)HeightValue, 1, 8192);
+
+    FString AOPath;
+    FString RoughnessPath;
+    FString MetallicPath;
+    Params->TryGetStringField(TEXT("occlusion_texture_path"), AOPath);
+    Params->TryGetStringField(TEXT("roughness_texture_path"), RoughnessPath);
+    Params->TryGetStringField(TEXT("metallic_texture_path"), MetallicPath);
+
+    FString AOChannel = TEXT("r");
+    FString RoughnessChannel = TEXT("r");
+    FString MetallicChannel = TEXT("r");
+    Params->TryGetStringField(TEXT("occlusion_channel"), AOChannel);
+    Params->TryGetStringField(TEXT("roughness_channel"), RoughnessChannel);
+    Params->TryGetStringField(TEXT("metallic_channel"), MetallicChannel);
+
+    UTexture2D* AOTexture = AOPath.IsEmpty() ? nullptr : MCPLoadAsset<UTexture2D>(AOPath);
+    UTexture2D* RoughnessTexture = RoughnessPath.IsEmpty() ? nullptr : MCPLoadAsset<UTexture2D>(RoughnessPath);
+    UTexture2D* MetallicTexture = MetallicPath.IsEmpty() ? nullptr : MCPLoadAsset<UTexture2D>(MetallicPath);
+
+    const uint8 DefaultAO = MCPReadByteField(Params, TEXT("occlusion"), 1.0);
+    const uint8 DefaultRoughness = MCPReadByteField(Params, TEXT("roughness"), 0.5);
+    const uint8 DefaultMetallic = MCPReadByteField(Params, TEXT("metallic"), 0.0);
+
+    TArray<uint8> Pixels;
+    Pixels.SetNumUninitialized(Width * Height * 4);
+    bool bUsedAOTexture = false;
+    bool bUsedRoughnessTexture = false;
+    bool bUsedMetallicTexture = false;
+    for (int32 Y = 0; Y < Height; ++Y)
+    {
+        for (int32 X = 0; X < Width; ++X)
+        {
+            bool bUsedThisAO = false;
+            bool bUsedThisRoughness = false;
+            bool bUsedThisMetallic = false;
+            const uint8 AO = MCPReadTextureChannel(AOTexture, X, Y, Width, Height, AOChannel, DefaultAO, bUsedThisAO);
+            const uint8 Roughness = MCPReadTextureChannel(RoughnessTexture, X, Y, Width, Height, RoughnessChannel, DefaultRoughness, bUsedThisRoughness);
+            const uint8 Metallic = MCPReadTextureChannel(MetallicTexture, X, Y, Width, Height, MetallicChannel, DefaultMetallic, bUsedThisMetallic);
+            bUsedAOTexture |= bUsedThisAO;
+            bUsedRoughnessTexture |= bUsedThisRoughness;
+            bUsedMetallicTexture |= bUsedThisMetallic;
+
+            const int32 BaseIndex = (Y * Width + X) * 4;
+            Pixels[BaseIndex + 0] = Metallic;
+            Pixels[BaseIndex + 1] = Roughness;
+            Pixels[BaseIndex + 2] = AO;
+            Pixels[BaseIndex + 3] = 255;
+        }
+    }
+
+    const FString PackagePath = MCPMakePackagePath(FolderPath, OutputName);
+    if (UEditorAssetLibrary::DoesAssetExist(PackagePath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("existing"), true);
+            R->SetStringField(TEXT("asset_path"), PackagePath);
+            R->SetStringField(TEXT("object_path"), MCPMakeObjectPath(FolderPath, OutputName));
+            R->SetStringField(TEXT("message"), TEXT("ORM texture already exists; set overwrite=true to rebuild it."));
+            return R;
+        }
+        if (!UEditorAssetLibrary::DeleteAsset(PackagePath))
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Could not delete existing texture: %s"), *PackagePath));
+        }
+    }
+
+    MCPEnsureAssetFolder(FolderPath);
+    UPackage* Package = CreatePackage(*PackagePath);
+    UTexture2D* Texture = NewObject<UTexture2D>(Package, *OutputName, RF_Public | RF_Standalone | RF_Transactional);
+    if (!Texture)
+    {
+        return CreateErrorResponse(TEXT("Failed to allocate UTexture2D asset"));
+    }
+
+    Texture->PreEditChange(nullptr);
+    Texture->Source.Init(Width, Height, 1, 1, TSF_BGRA8, Pixels.GetData());
+    Texture->SRGB = false;
+    Texture->CompressionSettings = TC_Masks;
+    Texture->MipGenSettings = TMGS_NoMipmaps;
+    Texture->PostEditChange();
+    Texture->UpdateResource();
+    FAssetRegistryModule::AssetCreated(Texture);
+    Package->MarkPackageDirty();
+
+    bool bSaved = false;
+    if (bSave)
+    {
+        bSaved = UEditorAssetLibrary::SaveAsset(PackagePath, false);
+    }
+
+    TSharedPtr<FJsonObject> SourceUsage = MakeShared<FJsonObject>();
+    SourceUsage->SetBoolField(TEXT("occlusion"), bUsedAOTexture);
+    SourceUsage->SetBoolField(TEXT("roughness"), bUsedRoughnessTexture);
+    SourceUsage->SetBoolField(TEXT("metallic"), bUsedMetallicTexture);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("asset_path"), PackagePath);
+    R->SetStringField(TEXT("object_path"), Texture->GetPathName());
+    R->SetNumberField(TEXT("width"), Width);
+    R->SetNumberField(TEXT("height"), Height);
+    R->SetObjectField(TEXT("used_source_textures"), SourceUsage);
+    R->SetStringField(TEXT("packing"), TEXT("R=Occlusion, G=Roughness, B=Metallic, A=255"));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleTextureAuditMemory(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString TexturePath;
+    if (!Params->TryGetStringField(TEXT("texture_path"), TexturePath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'texture_path'"));
+    }
+
+    UTexture2D* Texture = MCPLoadAsset<UTexture2D>(TexturePath);
+    if (!Texture)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Texture2D not found: %s"), *TexturePath));
+    }
+
+    const int32 Width = Texture->GetSizeX();
+    const int32 Height = Texture->GetSizeY();
+    const ETextureSourceFormat SourceFormat = Texture->Source.GetFormat();
+    int32 BytesPerPixel = 4;
+    if (SourceFormat == TSF_G8)
+    {
+        BytesPerPixel = 1;
+    }
+    else if (SourceFormat == TSF_G16)
+    {
+        BytesPerPixel = 2;
+    }
+    else if (SourceFormat == TSF_RGBA16 || SourceFormat == TSF_RGBA16F)
+    {
+        BytesPerPixel = 8;
+    }
+    else if (SourceFormat == TSF_RGBA32F)
+    {
+        BytesPerPixel = 16;
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("texture_path"), Texture->GetPathName());
+    R->SetNumberField(TEXT("width"), Width);
+    R->SetNumberField(TEXT("height"), Height);
+    R->SetNumberField(TEXT("source_width"), Texture->Source.GetSizeX());
+    R->SetNumberField(TEXT("source_height"), Texture->Source.GetSizeY());
+    R->SetNumberField(TEXT("num_mips"), Texture->GetNumMips());
+    R->SetBoolField(TEXT("srgb"), Texture->SRGB);
+    R->SetBoolField(TEXT("never_stream"), Texture->NeverStream);
+    R->SetStringField(TEXT("compression_settings"), MCPEnumName(StaticEnum<TextureCompressionSettings>(), Texture->CompressionSettings));
+    R->SetStringField(TEXT("lod_group"), MCPEnumName(StaticEnum<TextureGroup>(), Texture->LODGroup));
+    R->SetStringField(TEXT("source_format"), MCPEnumName(StaticEnum<ETextureSourceFormat>(), SourceFormat));
+    R->SetNumberField(TEXT("estimated_source_bytes"), (double)Width * (double)Height * (double)BytesPerPixel);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleVertexPaintActor(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString ActorName;
+    if (!Params->TryGetStringField(TEXT("actor_name"), ActorName) || ActorName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'actor_name'"));
+    }
+
+    FString ComponentName;
+    Params->TryGetStringField(TEXT("component_name"), ComponentName);
+
+    double LODValue = 0.0;
+    Params->TryGetNumberField(TEXT("lod_index"), LODValue);
+    const int32 LODIndex = FMath::Max(0, (int32)LODValue);
+
+    bool bApplyToAllVertices = true;
+    Params->TryGetBoolField(TEXT("apply_to_all_vertices"), bApplyToAllVertices);
+    if (!bApplyToAllVertices)
+    {
+        return CreateErrorResponse(TEXT("Partial vertex selection is not supported yet; set apply_to_all_vertices=true."));
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (!World)
+    {
+        return CreateErrorResponse(TEXT("No editor world is available"));
+    }
+
+    AActor* TargetActor = nullptr;
+    for (TActorIterator<AActor> It(World); It; ++It)
+    {
+        AActor* Actor = *It;
+        if (Actor && (Actor->GetName() == ActorName || Actor->GetActorLabel() == ActorName))
+        {
+            TargetActor = Actor;
+            break;
+        }
+    }
+    if (!TargetActor)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Actor not found: %s"), *ActorName));
+    }
+
+    UStaticMeshComponent* MeshComponent = nullptr;
+    TArray<UStaticMeshComponent*> Components;
+    TargetActor->GetComponents<UStaticMeshComponent>(Components);
+    for (UStaticMeshComponent* Component : Components)
+    {
+        if (!Component)
+        {
+            continue;
+        }
+        if (ComponentName.IsEmpty() || Component->GetName() == ComponentName || Component->GetFName().ToString() == ComponentName)
+        {
+            MeshComponent = Component;
+            break;
+        }
+    }
+    if (!MeshComponent)
+    {
+        return CreateErrorResponse(TEXT("No matching StaticMeshComponent found on actor"));
+    }
+
+    UStaticMesh* Mesh = MeshComponent->GetStaticMesh();
+    if (!Mesh || !Mesh->GetRenderData() || !Mesh->GetRenderData()->LODResources.IsValidIndex(LODIndex))
+    {
+        return CreateErrorResponse(TEXT("StaticMesh render data is unavailable for the requested LOD"));
+    }
+
+    const FStaticMeshLODResources& LOD = Mesh->GetRenderData()->LODResources[LODIndex];
+    const int32 VertexCount = LOD.GetNumVertices();
+    if (VertexCount <= 0)
+    {
+        return CreateErrorResponse(TEXT("Requested LOD has no vertices"));
+    }
+
+    const FLinearColor LinearColor = MCPReadLinearColor(Params, TEXT("color"), FLinearColor::White);
+    const FColor PaintColor = LinearColor.ToFColor(true);
+    TArray<FColor> Colors;
+    Colors.Init(PaintColor, VertexCount);
+
+    TargetActor->Modify();
+    MeshComponent->Modify();
+    MeshComponent->SetLODDataCount(LODIndex + 1, LODIndex + 1);
+    FStaticMeshComponentLODInfo& LODInfo = MeshComponent->LODData[LODIndex];
+    if (LODInfo.OverrideVertexColors)
+    {
+        LODInfo.ReleaseOverrideVertexColorsAndBlock();
+    }
+    LODInfo.OverrideVertexColors = new FColorVertexBuffer();
+    LODInfo.OverrideVertexColors->InitFromColorArray(Colors);
+    BeginInitResource(LODInfo.OverrideVertexColors);
+    MeshComponent->MarkRenderStateDirty();
+    MeshComponent->MarkPackageDirty();
+
+    bool bSaveLevel = false;
+    Params->TryGetBoolField(TEXT("save"), bSaveLevel);
+    bool bSaved = false;
+    if (bSaveLevel && TargetActor->GetOutermost())
+    {
+        bSaved = UEditorAssetLibrary::SaveLoadedAsset(TargetActor->GetOutermost(), false);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("saved"), bSaved);
+    R->SetStringField(TEXT("actor_name"), TargetActor->GetActorLabel());
+    R->SetStringField(TEXT("component_name"), MeshComponent->GetName());
+    R->SetStringField(TEXT("mesh_path"), Mesh->GetPathName());
+    R->SetNumberField(TEXT("lod_index"), LODIndex);
+    R->SetNumberField(TEXT("vertices_painted"), VertexCount);
+    R->SetStringField(TEXT("mode"), TEXT("component_override_vertex_colors"));
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMeshAuditUVChannels(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MeshPath;
+    if (!Params->TryGetStringField(TEXT("static_mesh_path"), MeshPath))
+    {
+        Params->TryGetStringField(TEXT("mesh_path"), MeshPath);
+    }
+    if (MeshPath.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'static_mesh_path'"));
+    }
+
+    UStaticMesh* Mesh = MCPLoadAsset<UStaticMesh>(MeshPath);
+    if (!Mesh)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("StaticMesh not found: %s"), *MeshPath));
+    }
+    const FStaticMeshRenderData* RenderData = Mesh->GetRenderData();
+    if (!RenderData)
+    {
+        return CreateErrorResponse(TEXT("StaticMesh render data is unavailable"));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> LODArray;
+    int32 MaxUVChannels = 0;
+    for (int32 LODIndex = 0; LODIndex < RenderData->LODResources.Num(); ++LODIndex)
+    {
+        const FStaticMeshLODResources& LOD = RenderData->LODResources[LODIndex];
+        const int32 UVChannels = LOD.VertexBuffers.StaticMeshVertexBuffer.GetNumTexCoords();
+        MaxUVChannels = FMath::Max(MaxUVChannels, UVChannels);
+
+        TSharedPtr<FJsonObject> LODJson = MakeShared<FJsonObject>();
+        LODJson->SetNumberField(TEXT("lod_index"), LODIndex);
+        LODJson->SetNumberField(TEXT("vertex_count"), LOD.GetNumVertices());
+        LODJson->SetNumberField(TEXT("triangle_count"), LOD.GetNumTriangles());
+        LODJson->SetNumberField(TEXT("uv_channels"), UVChannels);
+        LODJson->SetBoolField(TEXT("has_vertex_colors"), LOD.VertexBuffers.ColorVertexBuffer.GetNumVertices() > 0);
+        LODArray.Add(MakeShared<FJsonValueObject>(LODJson));
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("static_mesh_path"), Mesh->GetPathName());
+    R->SetNumberField(TEXT("lod_count"), RenderData->LODResources.Num());
+    R->SetNumberField(TEXT("max_uv_channels"), MaxUVChannels);
+    R->SetArrayField(TEXT("lods"), LODArray);
     return R;
 }
 

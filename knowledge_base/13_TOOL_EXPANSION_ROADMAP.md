@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 473 MCP tools: 470 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 477 MCP tools: 474 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -34,7 +34,7 @@ Partially live areas:
 
 - Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
 - AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
-- Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, and bulk instance parameter updates. It still lacks vertex paint automation, ORM generation, shader complexity, and overdraw analysis.
+- Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, bulk instance parameter updates, ORM texture generation, texture memory audits, vertex paint automation, and mesh UV-channel audits. It still lacks shader complexity, overdraw, and GPU performance view helpers.
 - Autonomous verification exists in pieces through diagnostics, screenshots, source control status, and chat, but needs a formal execution journal, risk evaluation, PIE automation, and screenshot analysis loop.
 
 Missing or thin areas:
@@ -253,7 +253,7 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: make materials, textures, and performance views as automatable as Blueprints.
 
-Status: Slice 1 master material and material instance pipeline tooling is implemented and live-tested in Lab5E.
+Status: Slice 1 master material and material instance pipeline tooling is implemented and live-tested in Lab5E. Slice 2 texture/mesh/vertex-paint audit helpers are implemented and live-tested in Lab5E.
 
 Slice 1:
 
@@ -265,10 +265,10 @@ Slice 1:
 
 Slice 2:
 
-- `texture_generate_orm`
-- `texture_audit_memory`
-- `vertex_paint_actor`
-- `mesh_audit_uv_channels`
+- `texture_generate_orm` - implemented as a native C++ bridge command with a Python MCP wrapper for packed R/G/B ORM Texture2D generation from source maps or flat defaults.
+- `texture_audit_memory` - implemented as a native C++ bridge command with a Python MCP wrapper for Texture2D size, mip, compression, streaming, source-format, and estimated source-memory readback.
+- `vertex_paint_actor` - implemented as a native C++ bridge command with a Python MCP wrapper for component override vertex colors on placed StaticMesh actors/components.
+- `mesh_audit_uv_channels` - implemented as a native C++ bridge command with a Python MCP wrapper for StaticMesh LOD, UV-channel, vertex, triangle, and vertex-color readback.
 
 Slice 3:
 
@@ -290,6 +290,11 @@ Lab5E smoke result, 2026-05-16:
 - Created and saved `/Game/MCP_Test/Materials/MI_MCP_Phase4_MasterFast` from `/Game/MCP_Test/Materials/M_MCP_Phase4_MasterFast`.
 - Bulk-updated `MI_MCP_Phase4_MasterFast` parameters: `Metallic`, `Roughness`, and `BaseColor`; native result reported 2 scalar and 1 vector parameters set.
 - Wired `/Engine/EngineResources/DefaultTexture.DefaultTexture` into the master material as `BaseColorTexture`; native result reported 1 wired texture and no missing textures.
+- Added `RenderCore` as a plugin dependency for component override vertex-color initialization.
+- Created and saved `/Game/MCP_Test/Materials/T_MCP_Phase4_Slice2_ORM` as an 8x8 packed ORM texture; native result reported `R=Occlusion, G=Roughness, B=Metallic, A=255`.
+- Audited `T_MCP_Phase4_Slice2_ORM`; native readback reported `TC_Masks`, `SRGB=false`, `source_format=TSF_BGRA8`, 1 mip, and 256 estimated source bytes.
+- Audited `/Engine/BasicShapes/Cube.Cube`; native readback reported 1 LOD, 54 vertices, 48 triangles, and 2 UV channels.
+- Spawned `MCP_Phase4_VertexPaintActor` in the editor world and applied component override vertex colors to 54 vertices on LOD 0.
 
 ## Phase 5 - Animation Closure
 
@@ -372,7 +377,7 @@ Validation:
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 4 Slice 2: add vertex paint, ORM packing, and shader/performance view helpers.
+4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers.
 5. Phase 5: close animation montage/control-rig gaps.
 
 ## Backlog Notes
