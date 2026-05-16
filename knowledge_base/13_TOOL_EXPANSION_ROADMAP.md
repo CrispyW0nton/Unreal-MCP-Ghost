@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 454 MCP tools: 451 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 459 MCP tools: 456 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -39,7 +39,7 @@ Partially live areas:
 
 Missing or thin areas:
 
-- Multiplayer/networking tools: RPC creation, replicated property workflows, RepNotify, ownership, relevancy, roles, session flows, and replication diagnostics.
+- Multiplayer/networking tools: Slice 1 now covers replication inspection, actor/component replication toggles, replicated property configuration, and RepNotify variable creation. RPC creation, authority gates, ownership, session flows, and replication diagnostics remain.
 - Niagara native authoring: systems from recipes, emitters, modules, renderers, parameters, events, ribbons, GPU/CPU collision, fluid/flipbook workflows, and profiling.
 - Production distribution/performance: command registry generated from metadata, startup profiling, and optional high-performance server packaging.
 
@@ -200,13 +200,15 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: support networked gameplay authoring without relying on generic property setters.
 
+Status: Slice 1 replication inspection and safe replication defaults are implemented and live-tested in Lab5E.
+
 Slice 1:
 
-- `net_describe_blueprint_replication`
-- `net_set_actor_replicates`
-- `net_set_component_replicates`
-- `net_configure_replicated_property`
-- `net_add_repnotify_variable`
+- `net_describe_blueprint_replication` - implemented as readback for Actor replication defaults, replicated Blueprint variables, RepNotify functions, SCS component replication, and existing RPC functions.
+- `net_set_actor_replicates` - implemented for Actor-derived Blueprint CDO defaults: `bReplicates`, movement replication, update frequency, and min update frequency.
+- `net_set_component_replicates` - implemented for Blueprint SCS component templates using the public component replication API.
+- `net_configure_replicated_property` - implemented for existing Blueprint member variables with none/replicated/RepNotify modes and lifetime conditions.
+- `net_add_repnotify_variable` - implemented for adding simple Blueprint member variables and generating the `OnRep_` function graph.
 
 Slice 2:
 
@@ -227,6 +229,16 @@ Validation:
 
 - Two-player PIE smoke plan if available.
 - Static graph inspection for RPC flags, replicated variables, RepNotify handlers, and authority guards.
+
+Lab5E smoke result, 2026-05-16:
+
+- Live Coding loaded the updated Lab5E project plugin after UE 5.6 API fixes for movement replication readback and component replication.
+- Created `BP_MCP_Phase3_NetActor`.
+- Added SCS component `ReplicatedMesh` and configured it to replicate.
+- Enabled Actor replication and movement replication; set net update frequency to `30` and min net update frequency to `5`.
+- Added existing variable `Score` and configured it as replicated with `owner_only` lifetime condition.
+- Added RepNotify variable `Health`, generated `OnRep_Health`, and configured it with `skip_owner` lifetime condition.
+- Native readback reported `actor_replicates=true`, `replicate_movement=true`, `ReplicatedMesh.is_replicated=true`, `Score.is_replicated=true`, and `Health.is_repnotify=true`.
 
 ## Phase 4 - Technical Art Pipeline
 
@@ -340,8 +352,8 @@ Validation:
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 3: start with read-only networking inspection, then add safe replication toggles before RPC mutation tools.
-5. Phase 3: add read-only replication description before any mutation tools.
+4. Phase 3 Slice 2: add RPC event creation/configuration plus authority-gate graph helpers.
+5. Phase 3 Slice 3: add session flow helpers and runtime replication diagnostics.
 
 ## Backlog Notes
 

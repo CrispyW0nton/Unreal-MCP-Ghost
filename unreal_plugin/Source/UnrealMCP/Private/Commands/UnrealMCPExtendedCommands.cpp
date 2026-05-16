@@ -148,7 +148,9 @@
 #include "BrainComponent.h"
 #include "GameFramework/Character.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Components/ActorComponent.h"
 #include "Kismet/GameplayStatics.h"
+#include "UObject/CoreNetTypes.h"
 #include "Navigation/CrowdFollowingComponent.h"
 #include "Navigation/PathFollowingComponent.h"
 #include "NavigationSystem.h"
@@ -352,6 +354,13 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("crowd_configure_rvo"))             return HandleCrowdConfigureRVO(Params);
     if (CommandType == TEXT("crowd_configure_detour"))          return HandleCrowdConfigureDetour(Params);
     if (CommandType == TEXT("gameplay_debugger_capture_ai"))    return HandleGameplayDebuggerCaptureAI(Params);
+
+    // Networking / Replication
+    if (CommandType == TEXT("net_describe_blueprint_replication")) return HandleNetDescribeBlueprintReplication(Params);
+    if (CommandType == TEXT("net_set_actor_replicates"))           return HandleNetSetActorReplicates(Params);
+    if (CommandType == TEXT("net_set_component_replicates"))       return HandleNetSetComponentReplicates(Params);
+    if (CommandType == TEXT("net_configure_replicated_property"))  return HandleNetConfigureReplicatedProperty(Params);
+    if (CommandType == TEXT("net_add_repnotify_variable"))         return HandleNetAddRepNotifyVariable(Params);
 
     // BT Graph Node Manipulation
     if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
@@ -7764,6 +7773,454 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleGameplayDebuggerCaptur
     R->SetNumberField(TEXT("nav_modifier_volume_count"), Modifiers.Num());
     R->SetNumberField(TEXT("navmesh_bounds_count"), NavBounds.Num());
     R->SetStringField(TEXT("capture_type"), TEXT("ai_debug_snapshot"));
+    return R;
+}
+
+static FString ReplicationConditionToString(ELifetimeCondition Condition)
+{
+    switch (Condition)
+    {
+    case COND_None: return TEXT("none");
+    case COND_InitialOnly: return TEXT("initial_only");
+    case COND_OwnerOnly: return TEXT("owner_only");
+    case COND_SkipOwner: return TEXT("skip_owner");
+    case COND_SimulatedOnly: return TEXT("simulated_only");
+    case COND_AutonomousOnly: return TEXT("autonomous_only");
+    case COND_SimulatedOrPhysics: return TEXT("simulated_or_physics");
+    case COND_InitialOrOwner: return TEXT("initial_or_owner");
+    case COND_Custom: return TEXT("custom");
+    case COND_ReplayOrOwner: return TEXT("replay_or_owner");
+    case COND_ReplayOnly: return TEXT("replay_only");
+    case COND_SimulatedOnlyNoReplay: return TEXT("simulated_only_no_replay");
+    case COND_SimulatedOrPhysicsNoReplay: return TEXT("simulated_or_physics_no_replay");
+    case COND_SkipReplay: return TEXT("skip_replay");
+    case COND_Dynamic: return TEXT("dynamic");
+    case COND_Never: return TEXT("never");
+    default: return TEXT("unknown");
+    }
+}
+
+static ELifetimeCondition ResolveReplicationCondition(const FString& Name)
+{
+    if (Name.Equals(TEXT("initial_only"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("initialonly"), ESearchCase::IgnoreCase)) return COND_InitialOnly;
+    if (Name.Equals(TEXT("owner_only"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("owneronly"), ESearchCase::IgnoreCase)) return COND_OwnerOnly;
+    if (Name.Equals(TEXT("skip_owner"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("skipowner"), ESearchCase::IgnoreCase)) return COND_SkipOwner;
+    if (Name.Equals(TEXT("simulated_only"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("simulatedonly"), ESearchCase::IgnoreCase)) return COND_SimulatedOnly;
+    if (Name.Equals(TEXT("autonomous_only"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("autonomousonly"), ESearchCase::IgnoreCase)) return COND_AutonomousOnly;
+    if (Name.Equals(TEXT("simulated_or_physics"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("simulatedorphysics"), ESearchCase::IgnoreCase)) return COND_SimulatedOrPhysics;
+    if (Name.Equals(TEXT("initial_or_owner"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("initialorowner"), ESearchCase::IgnoreCase)) return COND_InitialOrOwner;
+    if (Name.Equals(TEXT("custom"), ESearchCase::IgnoreCase)) return COND_Custom;
+    if (Name.Equals(TEXT("replay_or_owner"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("replayorowner"), ESearchCase::IgnoreCase)) return COND_ReplayOrOwner;
+    if (Name.Equals(TEXT("replay_only"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("replayonly"), ESearchCase::IgnoreCase)) return COND_ReplayOnly;
+    if (Name.Equals(TEXT("simulated_only_no_replay"), ESearchCase::IgnoreCase)) return COND_SimulatedOnlyNoReplay;
+    if (Name.Equals(TEXT("simulated_or_physics_no_replay"), ESearchCase::IgnoreCase)) return COND_SimulatedOrPhysicsNoReplay;
+    if (Name.Equals(TEXT("skip_replay"), ESearchCase::IgnoreCase) || Name.Equals(TEXT("skipreplay"), ESearchCase::IgnoreCase)) return COND_SkipReplay;
+    if (Name.Equals(TEXT("dynamic"), ESearchCase::IgnoreCase)) return COND_Dynamic;
+    if (Name.Equals(TEXT("never"), ESearchCase::IgnoreCase)) return COND_Never;
+    return COND_None;
+}
+
+static FString FunctionNetFlagsToString(UFunction* Function)
+{
+    if (!Function || !Function->HasAnyFunctionFlags(FUNC_Net)) return TEXT("");
+    TArray<FString> Parts;
+    if (Function->HasAnyFunctionFlags(FUNC_NetServer)) Parts.Add(TEXT("server"));
+    if (Function->HasAnyFunctionFlags(FUNC_NetClient)) Parts.Add(TEXT("client"));
+    if (Function->HasAnyFunctionFlags(FUNC_NetMulticast)) Parts.Add(TEXT("net_multicast"));
+    if (Function->HasAnyFunctionFlags(FUNC_NetReliable)) Parts.Add(TEXT("reliable"));
+    if (Parts.Num() == 0) Parts.Add(TEXT("net"));
+    return FString::Join(Parts, TEXT("|"));
+}
+
+static bool ResolveNetVariablePinType(const FString& VarType, FEdGraphPinType& OutPinType, FString& OutError)
+{
+    const FString Lower = VarType.ToLower();
+    if (Lower == TEXT("boolean") || Lower == TEXT("bool"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Boolean;
+    }
+    else if (Lower == TEXT("integer") || Lower == TEXT("int") || Lower == TEXT("int32"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Int;
+    }
+    else if (Lower == TEXT("integer64") || Lower == TEXT("int64"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Int64;
+    }
+    else if (Lower == TEXT("float"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+        OutPinType.PinSubCategory = UEdGraphSchema_K2::PC_Float;
+    }
+    else if (Lower == TEXT("double"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Real;
+        OutPinType.PinSubCategory = UEdGraphSchema_K2::PC_Double;
+    }
+    else if (Lower == TEXT("string"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_String;
+    }
+    else if (Lower == TEXT("name"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Name;
+    }
+    else if (Lower == TEXT("text"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Text;
+    }
+    else if (Lower == TEXT("vector"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        OutPinType.PinSubCategoryObject = TBaseStructure<FVector>::Get();
+    }
+    else if (Lower == TEXT("rotator"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        OutPinType.PinSubCategoryObject = TBaseStructure<FRotator>::Get();
+    }
+    else if (Lower == TEXT("transform"))
+    {
+        OutPinType.PinCategory = UEdGraphSchema_K2::PC_Struct;
+        OutPinType.PinSubCategoryObject = TBaseStructure<FTransform>::Get();
+    }
+    else
+    {
+        OutError = FString::Printf(TEXT("Unsupported replicated variable type '%s'"), *VarType);
+        return false;
+    }
+    return true;
+}
+
+static FBPVariableDescription* FindNewVariable(UBlueprint* BP, const FString& VariableName)
+{
+    if (!BP) return nullptr;
+    const FName VarFName(*VariableName);
+    for (FBPVariableDescription& Var : BP->NewVariables)
+    {
+        if (Var.VarName == VarFName)
+        {
+            return &Var;
+        }
+    }
+    return nullptr;
+}
+
+static void EnsureRepNotifyFunction(UBlueprint* BP, FBPVariableDescription& Var, const FString& NotifyName)
+{
+    if (!BP || NotifyName.IsEmpty())
+    {
+        Var.RepNotifyFunc = NAME_None;
+        return;
+    }
+
+    UEdGraph* FuncGraph = FindObject<UEdGraph>(BP, *NotifyName);
+    if (!FuncGraph)
+    {
+        FuncGraph = FBlueprintEditorUtils::CreateNewGraph(BP, FName(*NotifyName), UEdGraph::StaticClass(), UEdGraphSchema_K2::StaticClass());
+        FBlueprintEditorUtils::AddFunctionGraph<UClass>(BP, FuncGraph, false, nullptr);
+    }
+    if (FuncGraph)
+    {
+        FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(BP, Var.VarName, FName(*NotifyName));
+        Var.RepNotifyFunc = FName(*NotifyName);
+    }
+}
+
+static void ApplyVariableReplication(UBlueprint* BP, FBPVariableDescription& Var, const FString& Mode, ELifetimeCondition Condition)
+{
+    const bool bRepNotify = Mode.Equals(TEXT("repnotify"), ESearchCase::IgnoreCase) ||
+        Mode.Equals(TEXT("rep_notify"), ESearchCase::IgnoreCase);
+    const bool bReplicated = bRepNotify ||
+        Mode.Equals(TEXT("replicated"), ESearchCase::IgnoreCase) ||
+        Mode.Equals(TEXT("rep"), ESearchCase::IgnoreCase);
+
+    if (!bReplicated)
+    {
+        Var.PropertyFlags &= ~CPF_Net;
+        Var.PropertyFlags &= ~CPF_RepNotify;
+        Var.RepNotifyFunc = NAME_None;
+        Var.ReplicationCondition = COND_None;
+        FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(BP, Var.VarName, NAME_None);
+        return;
+    }
+
+    Var.PropertyFlags |= CPF_Net;
+    Var.ReplicationCondition = Condition;
+    if (bRepNotify)
+    {
+        Var.PropertyFlags |= CPF_RepNotify;
+        const FString NotifyName = FString::Printf(TEXT("OnRep_%s"), *Var.VarName.ToString());
+        EnsureRepNotifyFunction(BP, Var, NotifyName);
+    }
+    else
+    {
+        Var.PropertyFlags &= ~CPF_RepNotify;
+        Var.RepNotifyFunc = NAME_None;
+        FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(BP, Var.VarName, NAME_None);
+    }
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetDescribeBlueprintReplication(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    if (!BP->GeneratedClass) FKismetEditorUtilities::CompileBlueprint(BP);
+
+    AActor* ActorCDO = BP->GeneratedClass ? Cast<AActor>(BP->GeneratedClass->GetDefaultObject()) : nullptr;
+
+    TArray<TSharedPtr<FJsonValue>> Variables;
+    for (const FBPVariableDescription& Var : BP->NewVariables)
+    {
+        TSharedPtr<FJsonObject> VObj = MakeShared<FJsonObject>();
+        VObj->SetStringField(TEXT("name"), Var.VarName.ToString());
+        VObj->SetStringField(TEXT("type"), Var.VarType.PinCategory.ToString());
+        VObj->SetBoolField(TEXT("is_replicated"), (Var.PropertyFlags & CPF_Net) != 0);
+        VObj->SetBoolField(TEXT("is_repnotify"), (Var.PropertyFlags & CPF_RepNotify) != 0);
+        VObj->SetStringField(TEXT("rep_notify_func"), Var.RepNotifyFunc.ToString());
+        VObj->SetStringField(TEXT("replication_condition"), ReplicationConditionToString(Var.ReplicationCondition));
+        Variables.Add(MakeShared<FJsonValueObject>(VObj));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Components;
+    if (BP->SimpleConstructionScript)
+    {
+        for (USCS_Node* Node : BP->SimpleConstructionScript->GetAllNodes())
+        {
+            if (!Node || !Node->ComponentTemplate) continue;
+            if (UActorComponent* Component = Cast<UActorComponent>(Node->ComponentTemplate))
+            {
+                TSharedPtr<FJsonObject> CObj = MakeShared<FJsonObject>();
+                CObj->SetStringField(TEXT("name"), Node->GetVariableName().ToString());
+                CObj->SetStringField(TEXT("class"), Component->GetClass()->GetName());
+                CObj->SetBoolField(TEXT("is_replicated"), Component->GetIsReplicated());
+                Components.Add(MakeShared<FJsonValueObject>(CObj));
+            }
+        }
+    }
+
+    TArray<TSharedPtr<FJsonValue>> RPCs;
+    UClass* FunctionClass = BP->SkeletonGeneratedClass ? BP->SkeletonGeneratedClass.Get() : BP->GeneratedClass.Get();
+    if (FunctionClass)
+    {
+        for (TFieldIterator<UFunction> It(FunctionClass, EFieldIteratorFlags::IncludeSuper); It; ++It)
+        {
+            UFunction* Function = *It;
+            if (!Function || !Function->HasAnyFunctionFlags(FUNC_Net)) continue;
+            TSharedPtr<FJsonObject> FObj = MakeShared<FJsonObject>();
+            FObj->SetStringField(TEXT("name"), Function->GetName());
+            FObj->SetStringField(TEXT("net_flags"), FunctionNetFlagsToString(Function));
+            RPCs.Add(MakeShared<FJsonValueObject>(FObj));
+        }
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetBoolField(TEXT("is_actor_blueprint"), ActorCDO != nullptr);
+    if (ActorCDO)
+    {
+        R->SetBoolField(TEXT("actor_replicates"), ActorCDO->GetIsReplicated());
+        R->SetBoolField(TEXT("replicate_movement"), ActorCDO->IsReplicatingMovement());
+        R->SetNumberField(TEXT("net_update_frequency"), ActorCDO->GetNetUpdateFrequency());
+        R->SetNumberField(TEXT("min_net_update_frequency"), ActorCDO->GetMinNetUpdateFrequency());
+    }
+    R->SetArrayField(TEXT("variables"), Variables);
+    R->SetArrayField(TEXT("components"), Components);
+    R->SetArrayField(TEXT("rpc_functions"), RPCs);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetSetActorReplicates(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+    if (!BP->GeneratedClass) FKismetEditorUtilities::CompileBlueprint(BP);
+
+    AActor* ActorCDO = BP->GeneratedClass ? Cast<AActor>(BP->GeneratedClass->GetDefaultObject()) : nullptr;
+    if (!ActorCDO) return CreateErrorResponse(TEXT("Blueprint is not an Actor-derived Blueprint"));
+
+    bool bReplicates = true, bReplicateMovement = ActorCDO->IsReplicatingMovement();
+    Params->TryGetBoolField(TEXT("replicates"), bReplicates);
+    Params->TryGetBoolField(TEXT("replicate_movement"), bReplicateMovement);
+
+    ActorCDO->Modify();
+    ActorCDO->SetReplicates(bReplicates);
+    ActorCDO->SetReplicateMovement(bReplicateMovement);
+
+    double NetUpdate = ActorCDO->GetNetUpdateFrequency();
+    double MinNetUpdate = ActorCDO->GetMinNetUpdateFrequency();
+    if (Params->TryGetNumberField(TEXT("net_update_frequency"), NetUpdate))
+    {
+        ActorCDO->SetNetUpdateFrequency((float)NetUpdate);
+    }
+    if (Params->TryGetNumberField(TEXT("min_net_update_frequency"), MinNetUpdate))
+    {
+        ActorCDO->SetMinNetUpdateFrequency((float)MinNetUpdate);
+    }
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetBoolField(TEXT("replicates"), ActorCDO->GetIsReplicated());
+    R->SetBoolField(TEXT("replicate_movement"), ActorCDO->IsReplicatingMovement());
+    R->SetNumberField(TEXT("net_update_frequency"), ActorCDO->GetNetUpdateFrequency());
+    R->SetNumberField(TEXT("min_net_update_frequency"), ActorCDO->GetMinNetUpdateFrequency());
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetSetComponentReplicates(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, ComponentName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName))
+        return CreateErrorResponse(TEXT("Missing 'component_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UActorComponent* Component = FindSCSComponentTemplate(BP, ComponentName, UActorComponent::StaticClass());
+    if (!Component)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("SCS component not found: %s"), *ComponentName));
+    }
+
+    bool bReplicates = true;
+    Params->TryGetBoolField(TEXT("replicates"), bReplicates);
+    Component->Modify();
+    Component->SetIsReplicated(bReplicates);
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("component_name"), ComponentName);
+    R->SetStringField(TEXT("component_class"), Component->GetClass()->GetName());
+    R->SetBoolField(TEXT("replicates"), Component->GetIsReplicated());
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetConfigureReplicatedProperty(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, VariableName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("variable_name"), VariableName))
+        return CreateErrorResponse(TEXT("Missing 'variable_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    FBPVariableDescription* Var = FindNewVariable(BP, VariableName);
+    if (!Var)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Blueprint variable not found: %s"), *VariableName));
+    }
+
+    FString Mode = TEXT("replicated");
+    FString ConditionName;
+    Params->TryGetStringField(TEXT("replication_mode"), Mode);
+    Params->TryGetStringField(TEXT("replication_condition"), ConditionName);
+    ApplyVariableReplication(BP, *Var, Mode, ResolveReplicationCondition(ConditionName));
+
+    bool bSave = true, bCompile = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("variable_name"), VariableName);
+    R->SetStringField(TEXT("replication_mode"), (Var->PropertyFlags & CPF_RepNotify) ? TEXT("repnotify") : ((Var->PropertyFlags & CPF_Net) ? TEXT("replicated") : TEXT("none")));
+    R->SetStringField(TEXT("rep_notify_func"), Var->RepNotifyFunc.ToString());
+    R->SetStringField(TEXT("replication_condition"), ReplicationConditionToString(Var->ReplicationCondition));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetAddRepNotifyVariable(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, VariableName, VariableType;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("variable_name"), VariableName))
+        return CreateErrorResponse(TEXT("Missing 'variable_name'"));
+    if (!Params->TryGetStringField(TEXT("variable_type"), VariableType))
+        return CreateErrorResponse(TEXT("Missing 'variable_type'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    FBPVariableDescription* Var = FindNewVariable(BP, VariableName);
+    bool bCreated = false;
+    if (!Var)
+    {
+        FEdGraphPinType PinType;
+        FString Error;
+        if (!ResolveNetVariablePinType(VariableType, PinType, Error))
+        {
+            return CreateErrorResponse(Error);
+        }
+        FBlueprintEditorUtils::AddMemberVariable(BP, FName(*VariableName), PinType);
+        Var = FindNewVariable(BP, VariableName);
+        bCreated = Var != nullptr;
+    }
+    if (!Var)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Failed to create variable: %s"), *VariableName));
+    }
+
+    FString DefaultValue;
+    if (Params->TryGetStringField(TEXT("default_value"), DefaultValue))
+    {
+        Var->DefaultValue = DefaultValue;
+    }
+
+    FString ConditionName;
+    Params->TryGetStringField(TEXT("replication_condition"), ConditionName);
+    ApplyVariableReplication(BP, *Var, TEXT("repnotify"), ResolveReplicationCondition(ConditionName));
+
+    bool bSave = true, bCompile = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), bCreated);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("variable_name"), VariableName);
+    R->SetStringField(TEXT("variable_type"), VariableType);
+    R->SetStringField(TEXT("replication_mode"), TEXT("repnotify"));
+    R->SetStringField(TEXT("rep_notify_func"), Var->RepNotifyFunc.ToString());
+    R->SetStringField(TEXT("replication_condition"), ReplicationConditionToString(Var->ReplicationCondition));
+    R->SetBoolField(TEXT("saved"), bSaved);
     return R;
 }
 

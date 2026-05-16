@@ -123,6 +123,11 @@ private:
     TSharedPtr<FJsonObject> HandleCrowdConfigureRVO(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCrowdConfigureDetour(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGameplayDebuggerCaptureAI(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetDescribeBlueprintReplication(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetSetActorReplicates(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetSetComponentReplicates(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetConfigureReplicatedProperty(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetAddRepNotifyVariable(const TSharedPtr<FJsonObject>& Params);
 
     // ?? BT Graph Node Manipulation ???????????????????????????????????????????
     /** build_behavior_tree: populate a BT asset's graph from a JSON tree description */

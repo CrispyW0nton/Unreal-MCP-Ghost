@@ -151,6 +151,121 @@ def register_gameplay_tools(mcp: FastMCP):
         return _send("set_game_mode_for_level", {"game_mode_name": game_mode_name})
 
     @mcp.tool()
+    def net_describe_blueprint_replication(
+        ctx: Context,
+        blueprint_name: str,
+    ) -> Dict[str, Any]:
+        """
+        Inspect an Actor Blueprint's replication defaults, replicated variables,
+        RepNotify callbacks, replicated components, and existing RPC functions.
+        """
+        return _send("net_describe_blueprint_replication", {
+            "blueprint_name": blueprint_name,
+        })
+
+    @mcp.tool()
+    def net_set_actor_replicates(
+        ctx: Context,
+        blueprint_name: str,
+        replicates: bool = True,
+        replicate_movement: bool = False,
+        net_update_frequency: float = -1.0,
+        min_net_update_frequency: float = -1.0,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Configure safe Actor replication defaults on an Actor-derived Blueprint.
+        """
+        params = {
+            "blueprint_name": blueprint_name,
+            "replicates": replicates,
+            "replicate_movement": replicate_movement,
+            "save": save,
+            "compile": compile,
+        }
+        if net_update_frequency > 0:
+            params["net_update_frequency"] = net_update_frequency
+        if min_net_update_frequency > 0:
+            params["min_net_update_frequency"] = min_net_update_frequency
+        return _send("net_set_actor_replicates", params)
+
+    @mcp.tool()
+    def net_set_component_replicates(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str,
+        replicates: bool = True,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Configure replication-by-default on a Blueprint SCS component template.
+        """
+        return _send("net_set_component_replicates", {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "replicates": replicates,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def net_configure_replicated_property(
+        ctx: Context,
+        blueprint_name: str,
+        variable_name: str,
+        replication_mode: str = "replicated",
+        replication_condition: str = "none",
+        save: bool = True,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Configure an existing Blueprint member variable as none, replicated, or RepNotify.
+
+        Supported replication_condition values include none, initial_only,
+        owner_only, skip_owner, simulated_only, autonomous_only, initial_or_owner,
+        replay_only, skip_replay, custom, dynamic, and never.
+        """
+        return _send("net_configure_replicated_property", {
+            "blueprint_name": blueprint_name,
+            "variable_name": variable_name,
+            "replication_mode": replication_mode,
+            "replication_condition": replication_condition,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def net_add_repnotify_variable(
+        ctx: Context,
+        blueprint_name: str,
+        variable_name: str,
+        variable_type: str = "Boolean",
+        default_value: str = "",
+        replication_condition: str = "none",
+        save: bool = True,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Add a Blueprint member variable and configure it for RepNotify.
+
+        Supported variable_type values: Boolean, Integer, Integer64, Float,
+        Double, String, Name, Text, Vector, Rotator, and Transform.
+        """
+        params = {
+            "blueprint_name": blueprint_name,
+            "variable_name": variable_name,
+            "variable_type": variable_type,
+            "replication_condition": replication_condition,
+            "save": save,
+            "compile": compile,
+        }
+        if default_value:
+            params["default_value"] = default_value
+        return _send("net_add_repnotify_variable", params)
+
+    @mcp.tool()
     def create_character_blueprint(
         ctx: Context,
         name: str,
