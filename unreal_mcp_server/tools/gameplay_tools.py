@@ -266,6 +266,122 @@ def register_gameplay_tools(mcp: FastMCP):
         return _send("net_add_repnotify_variable", params)
 
     @mcp.tool()
+    def net_create_rpc_event(
+        ctx: Context,
+        blueprint_name: str,
+        event_name: str,
+        rpc_type: str = "server",
+        reliable: bool = True,
+        inputs: Optional[List[Dict[str, str]]] = None,
+        node_position: Optional[List[float]] = None,
+        save: bool = True,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Create or update a Custom Event as a Blueprint RPC.
+
+        Supported rpc_type values: server, client, net_multicast, and none.
+        Optional inputs are simple typed event parameters, for example
+        [{"name": "Damage", "type": "Float"}].
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "event_name": event_name,
+            "rpc_type": rpc_type,
+            "reliable": reliable,
+            "save": save,
+            "compile": compile,
+        }
+        if inputs:
+            params["inputs"] = inputs
+        if node_position:
+            params["node_position"] = node_position
+        return _send("net_create_rpc_event", params)
+
+    @mcp.tool()
+    def net_configure_rpc(
+        ctx: Context,
+        blueprint_name: str,
+        event_name: str,
+        rpc_type: str = "server",
+        reliable: bool = True,
+        save: bool = True,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Configure network flags on an existing Blueprint Custom Event RPC.
+        """
+        return _send("net_configure_rpc", {
+            "blueprint_name": blueprint_name,
+            "event_name": event_name,
+            "rpc_type": rpc_type,
+            "reliable": reliable,
+            "save": save,
+            "compile": compile,
+        })
+
+    @mcp.tool()
+    def net_add_authority_gate(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: Optional[List[float]] = None,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add a HasAuthority function node wired into a Branch node.
+        The Branch Then pin represents authority/server flow; Else is remote/client flow.
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "save": save,
+            "compile": compile,
+        }
+        if node_position:
+            params["node_position"] = node_position
+        return _send("net_add_authority_gate", params)
+
+    @mcp.tool()
+    def net_add_role_switch(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: Optional[List[float]] = None,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add an ENetRole switch node for role-specific Blueprint flow.
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "save": save,
+            "compile": compile,
+        }
+        if node_position:
+            params["node_position"] = node_position
+        return _send("net_add_role_switch", params)
+
+    @mcp.tool()
+    def net_set_owner_reference(
+        ctx: Context,
+        blueprint_name: str,
+        node_position: Optional[List[float]] = None,
+        save: bool = True,
+        compile: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Add an AActor.SetOwner call node for server-side ownership setup.
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "save": save,
+            "compile": compile,
+        }
+        if node_position:
+            params["node_position"] = node_position
+        return _send("net_set_owner_reference", params)
+
+    @mcp.tool()
     def create_character_blueprint(
         ctx: Context,
         name: str,

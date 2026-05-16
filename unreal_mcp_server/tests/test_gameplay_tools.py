@@ -36,6 +36,11 @@ class TestGameplayToolsRegistration(unittest.TestCase):
         self.assertIn("net_set_component_replicates", names)
         self.assertIn("net_configure_replicated_property", names)
         self.assertIn("net_add_repnotify_variable", names)
+        self.assertIn("net_create_rpc_event", names)
+        self.assertIn("net_configure_rpc", names)
+        self.assertIn("net_add_authority_gate", names)
+        self.assertIn("net_add_role_switch", names)
+        self.assertIn("net_set_owner_reference", names)
 
 
 if __name__ == "__main__":

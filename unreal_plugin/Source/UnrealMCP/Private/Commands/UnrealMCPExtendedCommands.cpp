@@ -33,6 +33,8 @@
 #include "K2Node_DynamicCast.h"
 #include "K2Node_Timeline.h"
 #include "K2Node_CustomEvent.h"
+#include "K2Node_IfThenElse.h"
+#include "K2Node_SwitchEnum.h"
 #include "K2Node_CreateDelegate.h"
 #include "K2Node_AddDelegate.h"
 #include "K2Node_RemoveDelegate.h"
@@ -147,6 +149,7 @@
 #include "AIController.h"
 #include "BrainComponent.h"
 #include "GameFramework/Character.h"
+#include "GameFramework/Actor.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Components/ActorComponent.h"
 #include "Kismet/GameplayStatics.h"
@@ -361,6 +364,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("net_set_component_replicates"))       return HandleNetSetComponentReplicates(Params);
     if (CommandType == TEXT("net_configure_replicated_property"))  return HandleNetConfigureReplicatedProperty(Params);
     if (CommandType == TEXT("net_add_repnotify_variable"))         return HandleNetAddRepNotifyVariable(Params);
+    if (CommandType == TEXT("net_create_rpc_event"))               return HandleNetCreateRPCEvent(Params);
+    if (CommandType == TEXT("net_configure_rpc"))                  return HandleNetConfigureRPC(Params);
+    if (CommandType == TEXT("net_add_authority_gate"))             return HandleNetAddAuthorityGate(Params);
+    if (CommandType == TEXT("net_add_role_switch"))                return HandleNetAddRoleSwitch(Params);
+    if (CommandType == TEXT("net_set_owner_reference"))            return HandleNetSetOwnerReference(Params);
 
     // BT Graph Node Manipulation
     if (CommandType == TEXT("build_behavior_tree"))             return HandleBuildBehaviorTree(Params);
@@ -7832,6 +7840,53 @@ static FString FunctionNetFlagsToString(UFunction* Function)
     return FString::Join(Parts, TEXT("|"));
 }
 
+static FString NetFlagsToString(uint32 Flags)
+{
+    if ((Flags & FUNC_Net) == 0) return TEXT("");
+    TArray<FString> Parts;
+    if ((Flags & FUNC_NetServer) != 0) Parts.Add(TEXT("server"));
+    if ((Flags & FUNC_NetClient) != 0) Parts.Add(TEXT("client"));
+    if ((Flags & FUNC_NetMulticast) != 0) Parts.Add(TEXT("net_multicast"));
+    if ((Flags & FUNC_NetReliable) != 0) Parts.Add(TEXT("reliable"));
+    if (Parts.Num() == 0) Parts.Add(TEXT("net"));
+    return FString::Join(Parts, TEXT("|"));
+}
+
+static bool ResolveRPCFlags(const FString& RPCType, bool bReliable, uint32& OutFlags, FString& OutError)
+{
+    const FString Type = RPCType.ToLower();
+    OutFlags = 0;
+    if (Type.IsEmpty() || Type == TEXT("none") || Type == TEXT("local"))
+    {
+        return true;
+    }
+
+    OutFlags = FUNC_Net;
+    if (Type == TEXT("server"))
+    {
+        OutFlags |= FUNC_NetServer;
+    }
+    else if (Type == TEXT("client") || Type == TEXT("owning_client"))
+    {
+        OutFlags |= FUNC_NetClient;
+    }
+    else if (Type == TEXT("multicast") || Type == TEXT("net_multicast") || Type == TEXT("netmulticast"))
+    {
+        OutFlags |= FUNC_NetMulticast;
+    }
+    else
+    {
+        OutError = FString::Printf(TEXT("Unsupported rpc_type '%s'. Use server, client, net_multicast, or none."), *RPCType);
+        return false;
+    }
+
+    if (bReliable)
+    {
+        OutFlags |= FUNC_NetReliable;
+    }
+    return true;
+}
+
 static bool ResolveNetVariablePinType(const FString& VarType, FEdGraphPinType& OutPinType, FString& OutError)
 {
     const FString Lower = VarType.ToLower();
@@ -7959,6 +8014,78 @@ static void ApplyVariableReplication(UBlueprint* BP, FBPVariableDescription& Var
         Var.RepNotifyFunc = NAME_None;
         FBlueprintEditorUtils::SetBlueprintVariableRepNotifyFunc(BP, Var.VarName, NAME_None);
     }
+}
+
+static UK2Node_CustomEvent* FindCustomEventNode(UEdGraph* Graph, const FString& EventName)
+{
+    if (!Graph) return nullptr;
+    const FName EventFName(*EventName);
+    for (UEdGraphNode* Node : Graph->Nodes)
+    {
+        UK2Node_CustomEvent* CustomEvent = Cast<UK2Node_CustomEvent>(Node);
+        if (CustomEvent && CustomEvent->CustomFunctionName == EventFName)
+        {
+            return CustomEvent;
+        }
+    }
+    return nullptr;
+}
+
+static int32 AddInputsToNetCustomEvent(UK2Node_CustomEvent* EventNode, const TArray<TSharedPtr<FJsonValue>>& InputsArray, FString& OutError)
+{
+    if (!EventNode) return 0;
+    int32 AddedCount = 0;
+    for (const TSharedPtr<FJsonValue>& PinVal : InputsArray)
+    {
+        const TSharedPtr<FJsonObject>* PinObj = nullptr;
+        if (!PinVal.IsValid() || !PinVal->TryGetObject(PinObj) || !PinObj) continue;
+
+        FString PinName;
+        FString PinTypeStr;
+        (*PinObj)->TryGetStringField(TEXT("name"), PinName);
+        (*PinObj)->TryGetStringField(TEXT("type"), PinTypeStr);
+        if (PinName.IsEmpty() || PinTypeStr.IsEmpty()) continue;
+
+        bool bExists = false;
+        for (UEdGraphPin* Existing : EventNode->Pins)
+        {
+            if (Existing && Existing->PinName == FName(*PinName))
+            {
+                bExists = true;
+                break;
+            }
+        }
+        if (bExists) continue;
+
+        FEdGraphPinType PinType;
+        if (!ResolveNetVariablePinType(PinTypeStr, PinType, OutError))
+        {
+            return AddedCount;
+        }
+
+        EventNode->CreateUserDefinedPin(FName(*PinName), PinType, EGPD_Output, true);
+        ++AddedCount;
+    }
+
+    if (AddedCount > 0)
+    {
+        EventNode->ReconstructNode();
+    }
+    return AddedCount;
+}
+
+static TArray<TSharedPtr<FJsonValue>> VisiblePinNames(UEdGraphNode* Node)
+{
+    TArray<TSharedPtr<FJsonValue>> Pins;
+    if (!Node) return Pins;
+    for (UEdGraphPin* Pin : Node->Pins)
+    {
+        if (Pin && !Pin->bHidden)
+        {
+            Pins.Add(MakeShared<FJsonValueString>(Pin->PinName.ToString()));
+        }
+    }
+    return Pins;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetDescribeBlueprintReplication(
@@ -8220,6 +8347,287 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetAddRepNotifyVariabl
     R->SetStringField(TEXT("replication_mode"), TEXT("repnotify"));
     R->SetStringField(TEXT("rep_notify_func"), Var->RepNotifyFunc.ToString());
     R->SetStringField(TEXT("replication_condition"), ReplicationConditionToString(Var->ReplicationCondition));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetCreateRPCEvent(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+        return CreateErrorResponse(TEXT("Missing 'event_name'"));
+
+    FString RPCType = TEXT("server");
+    bool bReliable = true;
+    Params->TryGetStringField(TEXT("rpc_type"), RPCType);
+    Params->TryGetBoolField(TEXT("reliable"), bReliable);
+
+    uint32 NetFlags = 0;
+    FString Error;
+    if (!ResolveRPCFlags(RPCType, bReliable, NetFlags, Error))
+    {
+        return CreateErrorResponse(Error);
+    }
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    bool bAlreadyExisted = true;
+    UK2Node_CustomEvent* CustomEvent = FindCustomEventNode(Graph, EventName);
+    if (!CustomEvent)
+    {
+        bAlreadyExisted = false;
+        const FVector2D Pos = GetNodePosition(Params);
+        CustomEvent = NewObject<UK2Node_CustomEvent>(Graph);
+        CustomEvent->CustomFunctionName = FName(*EventName);
+        CustomEvent->NodePosX = Pos.X;
+        CustomEvent->NodePosY = Pos.Y;
+        CustomEvent->CreateNewGuid();
+        Graph->AddNode(CustomEvent, true, false);
+        CustomEvent->PostPlacedNewNode();
+        CustomEvent->AllocateDefaultPins();
+    }
+
+    CustomEvent->Modify();
+    CustomEvent->FunctionFlags &= ~(FUNC_Net | FUNC_NetServer | FUNC_NetClient | FUNC_NetMulticast | FUNC_NetReliable);
+    CustomEvent->FunctionFlags |= NetFlags;
+
+    int32 PinsAdded = 0;
+    const TArray<TSharedPtr<FJsonValue>>* InputsArray = nullptr;
+    if (Params->TryGetArrayField(TEXT("inputs"), InputsArray) && InputsArray)
+    {
+        PinsAdded = AddInputsToNetCustomEvent(CustomEvent, *InputsArray, Error);
+        if (!Error.IsEmpty())
+        {
+            return CreateErrorResponse(Error);
+        }
+    }
+
+    bool bSave = true, bCompile = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("already_existed"), bAlreadyExisted);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("event_name"), EventName);
+    R->SetStringField(TEXT("node_id"), CustomEvent->NodeGuid.ToString());
+    R->SetStringField(TEXT("rpc_type"), RPCType);
+    R->SetBoolField(TEXT("reliable"), (CustomEvent->FunctionFlags & FUNC_NetReliable) != 0);
+    R->SetStringField(TEXT("net_flags"), NetFlagsToString(CustomEvent->FunctionFlags));
+    R->SetNumberField(TEXT("pins_added"), PinsAdded);
+    R->SetArrayField(TEXT("pins"), VisiblePinNames(CustomEvent));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetConfigureRPC(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName, EventName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+    if (!Params->TryGetStringField(TEXT("event_name"), EventName))
+        return CreateErrorResponse(TEXT("Missing 'event_name'"));
+
+    FString RPCType = TEXT("server");
+    bool bReliable = true;
+    Params->TryGetStringField(TEXT("rpc_type"), RPCType);
+    Params->TryGetBoolField(TEXT("reliable"), bReliable);
+
+    uint32 NetFlags = 0;
+    FString Error;
+    if (!ResolveRPCFlags(RPCType, bReliable, NetFlags, Error))
+    {
+        return CreateErrorResponse(Error);
+    }
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    UK2Node_CustomEvent* CustomEvent = FindCustomEventNode(Graph, EventName);
+    if (!CustomEvent)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Custom event not found: %s"), *EventName));
+    }
+
+    CustomEvent->Modify();
+    CustomEvent->FunctionFlags &= ~(FUNC_Net | FUNC_NetServer | FUNC_NetClient | FUNC_NetMulticast | FUNC_NetReliable);
+    CustomEvent->FunctionFlags |= NetFlags;
+    CustomEvent->ReconstructNode();
+
+    bool bSave = true, bCompile = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("event_name"), EventName);
+    R->SetStringField(TEXT("node_id"), CustomEvent->NodeGuid.ToString());
+    R->SetStringField(TEXT("rpc_type"), RPCType);
+    R->SetBoolField(TEXT("reliable"), (CustomEvent->FunctionFlags & FUNC_NetReliable) != 0);
+    R->SetStringField(TEXT("net_flags"), NetFlagsToString(CustomEvent->FunctionFlags));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetAddAuthorityGate(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    const FVector2D Pos = GetNodePosition(Params);
+    UFunction* HasAuthorityFunc = AActor::StaticClass()->FindFunctionByName(TEXT("HasAuthority"));
+    if (!HasAuthorityFunc)
+    {
+        return CreateErrorResponse(TEXT("AActor::HasAuthority Blueprint function not found"));
+    }
+
+    UK2Node_CallFunction* HasAuthorityNode = NewObject<UK2Node_CallFunction>(Graph);
+    HasAuthorityNode->SetFromFunction(HasAuthorityFunc);
+    HasAuthorityNode->NodePosX = Pos.X;
+    HasAuthorityNode->NodePosY = Pos.Y;
+    Graph->AddNode(HasAuthorityNode, true, false);
+    HasAuthorityNode->CreateNewGuid();
+    HasAuthorityNode->PostPlacedNewNode();
+    HasAuthorityNode->AllocateDefaultPins();
+
+    UK2Node_IfThenElse* BranchNode = NewObject<UK2Node_IfThenElse>(Graph);
+    BranchNode->NodePosX = Pos.X + 320.0f;
+    BranchNode->NodePosY = Pos.Y;
+    Graph->AddNode(BranchNode, true, false);
+    BranchNode->CreateNewGuid();
+    BranchNode->PostPlacedNewNode();
+    BranchNode->AllocateDefaultPins();
+
+    const UEdGraphSchema_K2* Schema = GetDefault<UEdGraphSchema_K2>();
+    UEdGraphPin* ReturnPin = HasAuthorityNode->FindPin(TEXT("ReturnValue"));
+    UEdGraphPin* ConditionPin = BranchNode->GetConditionPin();
+    const bool bConnected = (Schema && ReturnPin && ConditionPin) ? Schema->TryCreateConnection(ReturnPin, ConditionPin) : false;
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("has_authority_node_id"), HasAuthorityNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("branch_node_id"), BranchNode->NodeGuid.ToString());
+    R->SetBoolField(TEXT("condition_connected"), bConnected);
+    R->SetStringField(TEXT("authority_pin"), TEXT("Then"));
+    R->SetStringField(TEXT("remote_pin"), TEXT("Else"));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetAddRoleSwitch(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    UEnum* NetRoleEnum = StaticEnum<ENetRole>();
+    if (!NetRoleEnum)
+    {
+        return CreateErrorResponse(TEXT("ENetRole enum not available"));
+    }
+
+    const FVector2D Pos = GetNodePosition(Params);
+    UK2Node_SwitchEnum* SwitchNode = NewObject<UK2Node_SwitchEnum>(Graph);
+    SwitchNode->SetEnum(NetRoleEnum);
+    SwitchNode->NodePosX = Pos.X;
+    SwitchNode->NodePosY = Pos.Y;
+    Graph->AddNode(SwitchNode, true, false);
+    SwitchNode->CreateNewGuid();
+    SwitchNode->PostPlacedNewNode();
+    SwitchNode->AllocateDefaultPins();
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("node_id"), SwitchNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("enum"), NetRoleEnum->GetName());
+    R->SetArrayField(TEXT("pins"), VisiblePinNames(SwitchNode));
+    R->SetStringField(TEXT("note"), TEXT("Switch node is created with ENetRole cases; wire a role enum source to the selection pin in graph logic."));
+    R->SetBoolField(TEXT("saved"), bSaved);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleNetSetOwnerReference(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString BPName;
+    if (!Params->TryGetStringField(TEXT("blueprint_name"), BPName))
+        return CreateErrorResponse(TEXT("Missing 'blueprint_name'"));
+
+    UBlueprint* BP = FindBlueprint(BPName);
+    if (!BP) return CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BPName));
+
+    UEdGraph* Graph = FUnrealMCPCommonUtils::FindOrCreateEventGraph(BP);
+    if (!Graph) return CreateErrorResponse(TEXT("Failed to get event graph"));
+
+    UFunction* SetOwnerFunc = AActor::StaticClass()->FindFunctionByName(TEXT("SetOwner"));
+    if (!SetOwnerFunc)
+    {
+        return CreateErrorResponse(TEXT("AActor::SetOwner Blueprint function not found"));
+    }
+
+    const FVector2D Pos = GetNodePosition(Params);
+    UK2Node_CallFunction* SetOwnerNode = NewObject<UK2Node_CallFunction>(Graph);
+    SetOwnerNode->SetFromFunction(SetOwnerFunc);
+    SetOwnerNode->NodePosX = Pos.X;
+    SetOwnerNode->NodePosY = Pos.Y;
+    Graph->AddNode(SetOwnerNode, true, false);
+    SetOwnerNode->CreateNewGuid();
+    SetOwnerNode->PostPlacedNewNode();
+    SetOwnerNode->AllocateDefaultPins();
+
+    bool bSave = true, bCompile = false;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+    Params->TryGetBoolField(TEXT("compile"), bCompile);
+    const bool bSaved = TrySaveAndCompileBlueprint(BP, bCompile, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("blueprint_name"), BPName);
+    R->SetStringField(TEXT("node_id"), SetOwnerNode->NodeGuid.ToString());
+    R->SetStringField(TEXT("function"), TEXT("SetOwner"));
+    R->SetArrayField(TEXT("pins"), VisiblePinNames(SetOwnerNode));
     R->SetBoolField(TEXT("saved"), bSaved);
     return R;
 }

@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 459 MCP tools: 456 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 464 MCP tools: 461 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -39,7 +39,7 @@ Partially live areas:
 
 Missing or thin areas:
 
-- Multiplayer/networking tools: Slice 1 now covers replication inspection, actor/component replication toggles, replicated property configuration, and RepNotify variable creation. RPC creation, authority gates, ownership, session flows, and replication diagnostics remain.
+- Multiplayer/networking tools: Slice 1 now covers replication inspection, actor/component replication toggles, replicated property configuration, and RepNotify variable creation. Slice 2 now covers RPC Custom Event creation/configuration, authority gates, role switches, and owner setup nodes. Session flows and replication diagnostics remain.
 - Niagara native authoring: systems from recipes, emitters, modules, renderers, parameters, events, ribbons, GPU/CPU collision, fluid/flipbook workflows, and profiling.
 - Production distribution/performance: command registry generated from metadata, startup profiling, and optional high-performance server packaging.
 
@@ -200,7 +200,7 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: support networked gameplay authoring without relying on generic property setters.
 
-Status: Slice 1 replication inspection and safe replication defaults are implemented and live-tested in Lab5E.
+Status: Slice 1 replication inspection and safe replication defaults are implemented and live-tested in Lab5E. Slice 2 RPC and authority graph helpers are implemented and live-tested in Lab5E.
 
 Slice 1:
 
@@ -212,11 +212,11 @@ Slice 1:
 
 Slice 2:
 
-- `net_create_rpc_event`
-- `net_configure_rpc`
-- `net_add_authority_gate`
-- `net_add_role_switch`
-- `net_set_owner_reference`
+- `net_create_rpc_event` - implemented for creating/updating Custom Events with Server, Client, NetMulticast, reliable, and simple typed input parameters.
+- `net_configure_rpc` - implemented for retagging existing Custom Events with RPC type/reliability flags.
+- `net_add_authority_gate` - implemented as `AActor::HasAuthority` wired into a Branch node so `Then` is authority/server flow and `Else` is remote/client flow.
+- `net_add_role_switch` - implemented as an `ENetRole` switch node with role case pins for graph wiring.
+- `net_set_owner_reference` - implemented as an `AActor::SetOwner` call node for server-side ownership setup.
 
 Slice 3:
 
@@ -239,6 +239,11 @@ Lab5E smoke result, 2026-05-16:
 - Added existing variable `Score` and configured it as replicated with `owner_only` lifetime condition.
 - Added RepNotify variable `Health`, generated `OnRep_Health`, and configured it with `skip_owner` lifetime condition.
 - Native readback reported `actor_replicates=true`, `replicate_movement=true`, `ReplicatedMesh.is_replicated=true`, `Score.is_replicated=true`, and `Health.is_repnotify=true`.
+- Created RPC Custom Event `Server_Phase3_DoThing` with a `Damage` float input, initially configured as reliable Server, then reconfigured to NetMulticast.
+- Added a live authority gate; readback confirmed the HasAuthority return pin was connected to the Branch condition.
+- Added an `ENetRole` switch node with `ROLE_None`, `ROLE_SimulatedProxy`, `ROLE_AutonomousProxy`, and `ROLE_Authority` pins.
+- Added a `SetOwner` call node exposing the `NewOwner` pin.
+- Native readback reported `Server_Phase3_DoThing` under `rpc_functions` with `net_multicast` flags.
 
 ## Phase 4 - Technical Art Pipeline
 
@@ -352,8 +357,8 @@ Validation:
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 3 Slice 2: add RPC event creation/configuration plus authority-gate graph helpers.
-5. Phase 3 Slice 3: add session flow helpers and runtime replication diagnostics.
+4. Phase 3 Slice 3: add session flow helpers and runtime replication diagnostics.
+5. Phase 4 Slice 1: begin master material and material function pipeline tooling.
 
 ## Backlog Notes
 

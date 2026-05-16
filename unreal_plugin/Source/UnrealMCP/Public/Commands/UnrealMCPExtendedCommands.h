@@ -128,6 +128,11 @@ private:
     TSharedPtr<FJsonObject> HandleNetSetComponentReplicates(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleNetConfigureReplicatedProperty(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleNetAddRepNotifyVariable(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetCreateRPCEvent(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetConfigureRPC(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetAddAuthorityGate(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetAddRoleSwitch(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleNetSetOwnerReference(const TSharedPtr<FJsonObject>& Params);
 
     // ?? BT Graph Node Manipulation ???????????????????????????????????????????
     /** build_behavior_tree: populate a BT asset's graph from a JSON tree description */
