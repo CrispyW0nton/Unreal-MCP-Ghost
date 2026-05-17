@@ -42,6 +42,7 @@ class TestToolCountDocumentation(unittest.TestCase):
     def test_tool_inventory_has_categories_for_all_tool_modules(self):
         inventory = _load_inventory_module().build_inventory()
 
+        self.assertEqual(inventory["source_scope"], "git_tracked_worktree")
         self.assertEqual(inventory["missing_category_modules"], [])
 
 

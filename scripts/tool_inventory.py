@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import subprocess
 from collections import Counter
 from pathlib import Path
 from typing import Any, Dict, Iterable, List
@@ -33,7 +34,27 @@ def load_category_map(path: Path = CATEGORY_MAP_PATH) -> Dict[str, Dict[str, str
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-def iter_tool_files() -> Iterable[Path]:
+def _git_tracked_paths(prefixes: List[str]) -> List[Path] | None:
+    try:
+        completed = subprocess.run(
+            ["git", "ls-files", *prefixes],
+            cwd=REPO_ROOT,
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+    except (OSError, subprocess.CalledProcessError):
+        return None
+    return [REPO_ROOT / line.strip() for line in completed.stdout.splitlines() if line.strip()]
+
+
+def iter_tool_files(include_untracked: bool = False) -> Iterable[Path]:
+    if not include_untracked:
+        tracked = _git_tracked_paths(["unreal_mcp_server/tools", "unreal_mcp_server/skills"])
+        if tracked is not None:
+            yield from sorted(path for path in tracked if path.suffix == ".py")
+            return
+
     for root_name in ("tools", "skills"):
         root = SERVER_ROOT / root_name
         if not root.exists():
@@ -41,12 +62,12 @@ def iter_tool_files() -> Iterable[Path]:
         yield from sorted(root.rglob("*.py"))
 
 
-def build_inventory() -> Dict[str, Any]:
+def build_inventory(include_untracked: bool = False) -> Dict[str, Any]:
     categories = load_category_map()
     modules: List[Dict[str, Any]] = []
     missing_category: List[str] = []
 
-    for path in iter_tool_files():
+    for path in iter_tool_files(include_untracked=include_untracked):
         text = path.read_text(encoding="utf-8")
         tool_names = TOOL_RE.findall(text)
         if not tool_names:
@@ -81,6 +102,7 @@ def build_inventory() -> Dict[str, Any]:
     return {
         "tool_count": sum(module["tool_count"] for module in modules),
         "module_count": len(modules),
+        "source_scope": "tracked_plus_untracked" if include_untracked else "git_tracked_worktree",
         "modules": modules,
         "category_counts": dict(sorted(category_counts.items())),
         "phase_counts": dict(sorted(phase_counts.items())),
@@ -127,9 +149,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Print the static MCP tool inventory.")
     parser.add_argument("--json", action="store_true", help="Print full inventory as JSON.")
     parser.add_argument("--markdown", action="store_true", help="Print inventory as Markdown.")
+    parser.add_argument("--include-untracked", action="store_true", help="Include untracked tool files in the scan.")
     args = parser.parse_args()
 
-    inventory = build_inventory()
+    inventory = build_inventory(include_untracked=args.include_untracked)
     if args.json:
         print(json.dumps(inventory, indent=2, sort_keys=True))
     elif args.markdown:

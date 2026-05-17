@@ -606,6 +606,7 @@ from tools.blueprint_tools import register_blueprint_tools
 from tools.node_tools import register_blueprint_node_tools
 from tools.project_tools import register_project_tools
 from tools.umg_tools import register_umg_tools
+from tools.widget_tools import register_widget_tools
 from tools.gameplay_tools import register_gameplay_tools
 from tools.animation_tools import register_animation_tools
 from tools.ai_tools import register_ai_tools
@@ -658,6 +659,7 @@ register_blueprint_tools(mcp)
 register_blueprint_node_tools(mcp)
 register_project_tools(mcp)
 register_umg_tools(mcp)
+register_widget_tools(mcp)
 register_gameplay_tools(mcp)
 register_animation_tools(mcp)
 register_ai_tools(mcp)

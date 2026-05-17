@@ -41,10 +41,10 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertGreater(commands["create_blueprint"]["python_references"], 0)
         self.assertGreater(commands["create_blueprint"]["cpp_routes"], 0)
         review = {entry["command"]: entry for entry in registry["cpp_unreferenced_review"]}
-        self.assertIn("ping", review)
-        self.assertEqual(review["ping"]["recommendation"], "needs_python_wrapper")
-        self.assertIn("widget_set_property", review)
-        self.assertEqual(review["widget_set_property"]["priority"], "high")
+        self.assertIn("add_niagara_component", review)
+        self.assertEqual(review["add_niagara_component"]["recommendation"], "needs_python_wrapper")
+        self.assertIn("set_behavior_tree_blackboard", review)
+        self.assertEqual(review["set_behavior_tree_blackboard"]["priority"], "high")
 
     def test_registry_snapshot_comparison_is_stable_after_write(self):
         audit = _load_audit_module()
@@ -70,7 +70,7 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertIn("## C++-Only Route Review", markdown)
         self.assertIn("## Commands By Category", markdown)
         self.assertIn("Python missing C++ routes", markdown)
-        self.assertIn("widget_set_property", markdown)
+        self.assertIn("set_behavior_tree_blackboard", markdown)
 
 
 if __name__ == "__main__":

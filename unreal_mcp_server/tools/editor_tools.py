@@ -12,6 +12,19 @@ logger = logging.getLogger("UnrealMCP")
 def register_editor_tools(mcp: FastMCP):
 
     @mcp.tool()
+    def ping_unreal(ctx: Context) -> Dict[str, Any]:
+        """Ping the UnrealMCP bridge and return its health response."""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected to Unreal Engine"}
+            return unreal.send_command("ping", {}) or {}
+        except Exception as e:
+            logger.error(f"Error pinging Unreal bridge: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
     def get_actors_in_level(ctx: Context) -> str:
         """Get a list of all actors in the current UE5 level.
 

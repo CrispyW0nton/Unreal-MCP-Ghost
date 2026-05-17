@@ -16,7 +16,7 @@ python -m unittest unreal_mcp_server.tests.test_tool_count unreal_mcp_server.tes
 
 Expected results:
 
-- `tool_inventory.py` exits with code `0` and reports no uncategorized modules.
+- `tool_inventory.py` exits with code `0`, scans Git-tracked tool files by default, and reports no uncategorized modules.
 - `profile_mcp_startup.py` exits with code `0`, prints a Markdown timing table, and writes optional JSON/Markdown artifacts when output paths are provided.
 - `bridge_command_audit.py` prints the Python/C++ bridge command metadata summary; `Python missing C++ routes` should remain `0`, and the C++-only route review should keep every unwrapped C++ command classified.
 - The unittest command passes without requiring Unreal Editor or the TCP bridge.
@@ -52,6 +52,10 @@ Store `knowledge_base\Reports\mcp_startup_profile.json` and
 `knowledge_base\Reports\mcp_startup_profile.md` as build artifacts. Compare the
 median timings across commits before changing startup-heavy imports, bulk tool
 registration, or bridge routing code.
+
+Use `python scripts\tool_inventory.py --include-untracked` only for local
+workspace audits. CI should keep the default tracked-file scan so scratch tools
+do not change documented tool counts.
 
 To create a machine-readable bridge command snapshot for review:
 
