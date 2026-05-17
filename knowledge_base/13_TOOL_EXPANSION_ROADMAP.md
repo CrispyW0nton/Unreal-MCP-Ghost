@@ -413,12 +413,12 @@ Slice 2 smoke result, 2026-05-17:
 
 Goal: make the platform easier to run in production and CI.
 
-Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested. Slice 3 UMG missing-route cleanup is implemented and offline-tested.
+Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested. Slice 3 UMG missing-route cleanup is implemented and offline-tested. Slice 4 C++-only route review is implemented and offline-tested.
 
 Slices:
 
 - Profile startup and most-used tool latency - implemented as `scripts/profile_mcp_startup.py` for inventory build timing, subprocess inventory startup timing, optional server `--help` cold-start timing, and slowest static module decorator scans.
-- Add command metadata registry to reduce routing drift between Python and C++ - implemented as `scripts/bridge_command_audit.py`, with JSON snapshot support and Markdown drift reporting.
+- Add command metadata registry to reduce routing drift between Python and C++ - implemented as `scripts/bridge_command_audit.py`, with JSON snapshot support, Markdown drift reporting, and C++-only route review recommendations.
 - Investigate T3D or bulk Blueprint graph injection for large graph creation.
 - Add headless build and smoke-test documentation - started with `docs/ci-smoke.md` for offline inventory/profile tests and optional live bridge smoke.
 - Evaluate optional single-binary or Go/Rust sidecar only after command metadata and test coverage are solid.
@@ -451,6 +451,14 @@ Slice 3 smoke result, 2026-05-17:
 - Kept the public MCP tools registered, but retired unstable convenience wrappers now return structured `retired_route` guidance instead of sending nonexistent commands to the plugin.
 - Routed `add_create_widget_node` through the existing `add_blueprint_function_node` bridge route for `GameplayStatics.CreateWidget`.
 - Current audit result: 0 Python bridge commands without discovered C++ routes. The remaining unresolved call site is the intentional dynamic CLI passthrough in `ue5cli.py`.
+
+Slice 4 smoke result, 2026-05-17:
+
+- Extended `scripts/bridge_command_audit.py` with explicit review recommendations for C++ routes that are not referenced by Python wrappers.
+- Classified each C++-only route as `needs_python_wrapper`, `internal_alias`, `internal_helper`, `legacy_or_superseded`, or `recipe_or_sample`.
+- Current tracked-worktree review finds 37 C++-only routes: 27 should receive Python wrappers, 4 are aliases/helpers, 2 are legacy or superseded, and 4 are sample/recipe routes better suited to skills or removal.
+- Highest-priority wrapper candidates are `ping`, generic `widget_*` primitives, `add_niagara_component`, `add_blueprint_function_with_pins`, `add_construction_script_node`, `add_relational_operator_node`, `connect_anim_graph_nodes`, `set_behavior_tree_blackboard`, and `set_blueprint_parent_class`.
+- Offline tests now assert that the registry includes the C++-only review section and that high-value routes receive deterministic recommendations.
 
 ## Phase 8 - Production Skills And Game Templates
 
@@ -499,7 +507,8 @@ Slice 1 smoke result, 2026-05-17:
 10. Phase 7 Slice 1: add startup/tool latency profiling and repeatable CI smoke docs. Done and offline-tested.
 11. Phase 7 Slice 2: add command metadata registry to reduce routing drift between Python and C++. Done and offline-tested.
 12. Phase 7 Slice 3: close or formally retire the 12 UMG Python wrappers that have no discovered C++ route. Done and offline-tested.
-13. Phase 7 Slice 4: review C++-only routes not referenced by Python and decide which should receive wrappers, remain internal aliases, or be removed.
+13. Phase 7 Slice 4: review C++-only routes not referenced by Python and decide which should receive wrappers, remain internal aliases, or be removed. Done and offline-tested.
+14. Phase 7 Slice 5: implement the highest-priority read-only/generic C++-only wrappers first: bridge `ping`, `widget_get_children`, `widget_set_property`, `widget_add_child`, and `widget_set_anchor`.
 
 ## Backlog Notes
 

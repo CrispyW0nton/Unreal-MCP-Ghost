@@ -36,6 +36,201 @@ BRIDGE_CALL_NAMES = {
 }
 
 
+CPP_ONLY_ROUTE_REVIEW: Dict[str, Tuple[str, str, str]] = {
+    "add_arithmetic_operator_node": (
+        "needs_python_wrapper",
+        "high",
+        "Useful low-level Blueprint graph primitive; expose next to the other math node helpers.",
+    ),
+    "add_blueprint_custom_event_node": (
+        "internal_alias",
+        "low",
+        "Covered by the public add_blueprint_event_node path; keep as a compatibility route unless the C++ alias is removed.",
+    ),
+    "add_blueprint_function_with_pins": (
+        "needs_python_wrapper",
+        "high",
+        "High-value graph construction primitive for one-call function node creation with explicit pins.",
+    ),
+    "add_blueprint_set_component_property": (
+        "internal_alias",
+        "low",
+        "Overlaps with existing component/property mutation wrappers; keep only if older agents still call it.",
+    ),
+    "add_clear_blackboard_value_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Completes Behavior Tree task graph coverage for clearing Blackboard keys.",
+    ),
+    "add_construction_script_node": (
+        "needs_python_wrapper",
+        "high",
+        "Important Blueprint construction workflow primitive that should be reachable from Python.",
+    ),
+    "add_custom_event": (
+        "needs_python_wrapper",
+        "medium",
+        "Useful Blueprint event helper; decide whether to expose directly or retire in favor of add_blueprint_event_node.",
+    ),
+    "add_finish_execute_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Completes Behavior Tree task authoring coverage by letting generated tasks finish execution cleanly.",
+    ),
+    "add_get_random_reachable_point_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Useful AI movement graph helper, especially for wander and patrol recipes.",
+    ),
+    "add_interface_event_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Required for Blueprint interface-driven gameplay systems.",
+    ),
+    "add_map_variable": (
+        "needs_python_wrapper",
+        "medium",
+        "Data-structure coverage gap; expose alongside array and variable helpers.",
+    ),
+    "add_niagara_component": (
+        "needs_python_wrapper",
+        "high",
+        "VFX roadmap gap; expose component attachment so agents can place Niagara systems on Blueprints.",
+    ),
+    "add_open_level_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Common flow-control/gameplay utility for menus, portals, and level transitions.",
+    ),
+    "add_pawn_sensing_component": (
+        "legacy_or_superseded",
+        "low",
+        "PawnSensing is mostly superseded by AI Perception; keep for legacy projects, but do not prioritize.",
+    ),
+    "add_relational_operator_node": (
+        "needs_python_wrapper",
+        "high",
+        "Useful low-level Blueprint graph primitive; expose next to branch and comparison helpers.",
+    ),
+    "add_sequence_player_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Animation graph coverage gap for sequence-player based AnimBP authoring.",
+    ),
+    "attach_bt_sub_node": (
+        "internal_helper",
+        "low",
+        "Looks like a Behavior Tree implementation helper; prefer higher-level BT wrappers unless users need raw attachment.",
+    ),
+    "bt_get_info": (
+        "needs_python_wrapper",
+        "medium",
+        "Read-only Behavior Tree inspection is safe and useful for discovery-before-mutation workflows.",
+    ),
+    "call_custom_event": (
+        "needs_python_wrapper",
+        "medium",
+        "Useful companion to custom event creation for Blueprint graph wiring.",
+    ),
+    "connect_anim_graph_nodes": (
+        "needs_python_wrapper",
+        "high",
+        "Animation graph state machine and AnimBP work needs reliable node-linking coverage.",
+    ),
+    "create_actor": (
+        "internal_alias",
+        "low",
+        "Prefer the public spawn_actor wrapper; keep this only as a legacy route.",
+    ),
+    "create_bt_attack_task": (
+        "recipe_or_sample",
+        "low",
+        "Game-specific sample recipe; avoid public generic API until the command is generalized.",
+    ),
+    "create_bt_wander_task": (
+        "recipe_or_sample",
+        "low",
+        "Game-specific sample recipe; avoid public generic API until the command is generalized.",
+    ),
+    "create_enemy_spawner_blueprint": (
+        "recipe_or_sample",
+        "low",
+        "Game-specific sample recipe; keep out of the generic wrapper surface unless converted into a skill.",
+    ),
+    "create_full_upgraded_enemy_ai": (
+        "recipe_or_sample",
+        "low",
+        "Game-specific sample recipe; candidate for a skill, not a low-level MCP tool.",
+    ),
+    "ping": (
+        "needs_python_wrapper",
+        "high",
+        "Bridge health checks should be a first-class read-only MCP tool and CLI smoke primitive.",
+    ),
+    "reconstruct_blueprint_node": (
+        "needs_python_wrapper",
+        "medium",
+        "Useful repair-loop primitive after pin/default mutation.",
+    ),
+    "rename_blueprint_comment_node": (
+        "needs_python_wrapper",
+        "low",
+        "Useful polish helper, but lower priority than graph creation and repair primitives.",
+    ),
+    "set_behavior_tree_blackboard": (
+        "needs_python_wrapper",
+        "high",
+        "Core AI workflow gap; Behavior Trees need explicit Blackboard assignment.",
+    ),
+    "set_blueprint_parent_class": (
+        "needs_python_wrapper",
+        "high",
+        "Important refactor/class-architecture primitive for generated gameplay classes.",
+    ),
+    "set_material_instance_parameter": (
+        "legacy_or_superseded",
+        "low",
+        "Superseded by material_set_instance_parameters_bulk; retain only as a compatibility route.",
+    ),
+    "set_pawn_properties": (
+        "needs_python_wrapper",
+        "medium",
+        "Complements character/pawn setup workflows if the C++ route is still reliable.",
+    ),
+    "set_spawn_actor_class": (
+        "needs_python_wrapper",
+        "medium",
+        "Useful Blueprint graph helper for SpawnActor nodes.",
+    ),
+    "widget_add_child": (
+        "needs_python_wrapper",
+        "high",
+        "Replacement target for retired UMG convenience routes; expose as a generic widget-tree primitive.",
+    ),
+    "widget_get_children": (
+        "needs_python_wrapper",
+        "high",
+        "Replacement target for retired UMG convenience routes; read-only widget discovery should be public.",
+    ),
+    "widget_set_anchor": (
+        "needs_python_wrapper",
+        "high",
+        "Replacement target for retired UMG convenience routes; required for layout-safe UMG generation.",
+    ),
+    "widget_set_property": (
+        "needs_python_wrapper",
+        "high",
+        "Replacement target for retired UMG convenience routes; required for generic widget mutation.",
+    ),
+}
+
+DEFAULT_CPP_ONLY_REVIEW = (
+    "needs_triage",
+    "medium",
+    "No explicit review rule yet; inspect the C++ handler before exposing or retiring.",
+)
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds").replace("+00:00", "Z")
 
@@ -250,6 +445,7 @@ def build_registry(include_untracked: bool = False) -> Dict[str, Any]:
 
     python_missing_cpp = sorted(command for command in python_commands if command not in cpp_commands)
     cpp_unreferenced_by_python = sorted(command for command in cpp_commands if command not in python_commands)
+    cpp_unreferenced_review = review_cpp_unreferenced_routes(cpp_unreferenced_by_python)
 
     return {
         "schema": "unreal_mcp_bridge_command_registry.v1",
@@ -266,8 +462,24 @@ def build_registry(include_untracked: bool = False) -> Dict[str, Any]:
         "commands": entries,
         "python_missing_cpp": python_missing_cpp,
         "cpp_unreferenced_by_python": cpp_unreferenced_by_python,
+        "cpp_unreferenced_review": cpp_unreferenced_review,
         "python_unresolved_calls": unresolved,
     }
+
+
+def review_cpp_unreferenced_routes(commands: Iterable[str]) -> List[Dict[str, str]]:
+    review: List[Dict[str, str]] = []
+    for command in sorted(commands):
+        recommendation, priority, rationale = CPP_ONLY_ROUTE_REVIEW.get(command, DEFAULT_CPP_ONLY_REVIEW)
+        review.append(
+            {
+                "command": command,
+                "recommendation": recommendation,
+                "priority": priority,
+                "rationale": rationale,
+            }
+        )
+    return review
 
 
 def registry_signature(registry: Dict[str, Any]) -> Dict[str, Any]:
@@ -285,6 +497,7 @@ def registry_signature(registry: Dict[str, Any]) -> Dict[str, Any]:
         ],
         "python_missing_cpp": registry["python_missing_cpp"],
         "cpp_unreferenced_by_python": registry["cpp_unreferenced_by_python"],
+        "cpp_unreferenced_review": registry.get("cpp_unreferenced_review", []),
         "python_unresolved_calls": registry["python_unresolved_calls"],
     }
 
@@ -328,6 +541,27 @@ def format_markdown(registry: Dict[str, Any], comparison: Optional[Dict[str, Any
             lines.append(f"- `{item['path']}:{item['line']}` uses `{item['arg']}`")
         if len(registry["python_unresolved_calls"]) > 25:
             lines.append(f"- ... {len(registry['python_unresolved_calls']) - 25} more")
+
+    if registry.get("cpp_unreferenced_review"):
+        lines.extend(
+            [
+                "",
+                "## C++-Only Route Review",
+                "",
+                "| Recommendation | Count |",
+                "|---|---:|",
+            ]
+        )
+        recommendation_counts: Dict[str, int] = defaultdict(int)
+        for item in registry["cpp_unreferenced_review"]:
+            recommendation_counts[item["recommendation"]] += 1
+        for recommendation, count in sorted(recommendation_counts.items()):
+            lines.append(f"| {recommendation} | {count} |")
+        lines.extend(["", "| Command | Recommendation | Priority | Rationale |", "|---|---|---|---|"])
+        for item in registry["cpp_unreferenced_review"]:
+            lines.append(
+                f"| `{item['command']}` | {item['recommendation']} | {item['priority']} | {item['rationale']} |"
+            )
 
     if comparison is not None:
         lines.extend(["", "## Registry Comparison", ""])

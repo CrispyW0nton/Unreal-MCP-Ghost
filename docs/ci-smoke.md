@@ -18,7 +18,7 @@ Expected results:
 
 - `tool_inventory.py` exits with code `0` and reports no uncategorized modules.
 - `profile_mcp_startup.py` exits with code `0`, prints a Markdown timing table, and writes optional JSON/Markdown artifacts when output paths are provided.
-- `bridge_command_audit.py` prints the Python/C++ bridge command metadata summary; `Python missing C++ routes` should remain `0`.
+- `bridge_command_audit.py` prints the Python/C++ bridge command metadata summary; `Python missing C++ routes` should remain `0`, and the C++-only route review should keep every unwrapped C++ command classified.
 - The unittest command passes without requiring Unreal Editor or the TCP bridge.
 
 ## Optional Full Server Startup Probe
@@ -35,8 +35,9 @@ This still does not connect to Unreal Editor. It only times the server's
 
 ## Optional Live Bridge Smoke
 
-Use this only when Unreal Editor is already open with the plugin running on
-`127.0.0.1:55557`:
+Use this only when Unreal Editor is already open with the plugin running. Most
+local projects use `127.0.0.1:55557`; Insanitii and some project-specific
+setups use `127.0.0.1:55655`.
 
 ```powershell
 python scripts\bridge_ping.py
@@ -60,3 +61,7 @@ python scripts\bridge_command_audit.py --write-registry --registry knowledge_bas
 
 Use `--check --registry <path>` against a saved snapshot when you want CI to
 fail on unreviewed command routing drift.
+
+The Markdown audit includes a C++-only route review table. Treat new
+`needs_triage` rows as blocking review items before exposing, retiring, or
+shipping new native bridge routes.
