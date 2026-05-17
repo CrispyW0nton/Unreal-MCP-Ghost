@@ -485,6 +485,181 @@ def register_animation_tools(mcp: FastMCP):
         return _send("insert_anim_graph_slot", params)
 
     @mcp.tool()
+    def add_anim_notify(
+        ctx: Context,
+        animation_path: str,
+        notify_name: str,
+        time: float = 0.0,
+        notify_type: str = "notify",
+        notify_state_duration: float = 0.1
+    ) -> Dict[str, Any]:
+        """
+        Add an Anim Notify or Notify State to an Animation Sequence or Montage.
+
+        Args:
+            animation_path: Full asset path (e.g. /Game/Characters/Run.Run)
+            notify_name: Event name to trigger from the AnimBP
+            time: Time in seconds
+            notify_type: "notify" or "notify_state"
+            notify_state_duration: Duration for notify_state entries
+        """
+        return _send("add_anim_notify", {
+            "animation_path": animation_path,
+            "notify_name": notify_name,
+            "time": time,
+            "notify_type": notify_type,
+            "notify_state_duration": notify_state_duration,
+        })
+
+    @mcp.tool()
+    def anim_create_montage(
+        ctx: Context,
+        montage_name: str,
+        folder_path: str = "/Game/Animation/Montages",
+        source_animation_path: str = "",
+        skeleton_path: str = "",
+        slot_name: str = "DefaultSlot",
+        section_name: str = "Default",
+        overwrite: bool = False,
+        save: bool = True,
+        play_rate: float = 1.0,
+        loop_count: int = 1
+    ) -> Dict[str, Any]:
+        """
+        Create an Animation Montage asset from a source AnimSequence or Skeleton.
+
+        Args:
+            montage_name: New montage asset name
+            folder_path: Content Browser destination folder
+            source_animation_path: Optional AnimSequence used to seed the first slot
+            skeleton_path: Optional Skeleton; required when source_animation_path is empty
+            slot_name: Initial montage slot
+            section_name: Initial section name
+            overwrite: Replace an existing asset with the same name
+            save: Save the asset after creation
+            play_rate: Playback rate for the seeded segment
+            loop_count: Loop count for the seeded segment
+        """
+        return _send("anim_create_montage", {
+            "montage_name": montage_name,
+            "folder_path": folder_path,
+            "source_animation_path": source_animation_path,
+            "skeleton_path": skeleton_path,
+            "slot_name": slot_name,
+            "section_name": section_name,
+            "overwrite": overwrite,
+            "save": save,
+            "play_rate": play_rate,
+            "loop_count": loop_count,
+        })
+
+    @mcp.tool()
+    def anim_describe_montage(
+        ctx: Context,
+        montage_path: str
+    ) -> Dict[str, Any]:
+        """
+        Inspect a Montage's slots, segments, sections, and notifies.
+
+        Args:
+            montage_path: Full montage asset path
+        """
+        return _send("anim_describe_montage", {"montage_path": montage_path})
+
+    @mcp.tool()
+    def anim_add_montage_slot(
+        ctx: Context,
+        montage_path: str,
+        slot_name: str,
+        source_animation_path: str = "",
+        start_time: float = 0.0,
+        play_rate: float = 1.0,
+        loop_count: int = 1,
+        replace_existing: bool = False,
+        save: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Add or update a slot on an Animation Montage, optionally adding a segment.
+
+        Args:
+            montage_path: Full montage asset path
+            slot_name: Slot name to create or update
+            source_animation_path: Optional AnimSequence/AnimSequenceBase to add as a segment
+            start_time: Segment start time in montage seconds
+            play_rate: Segment playback rate
+            loop_count: Segment loop count
+            replace_existing: Clear existing segments on the slot before adding
+            save: Save the montage after editing
+        """
+        return _send("anim_add_montage_slot", {
+            "montage_path": montage_path,
+            "slot_name": slot_name,
+            "source_animation_path": source_animation_path,
+            "start_time": start_time,
+            "play_rate": play_rate,
+            "loop_count": loop_count,
+            "replace_existing": replace_existing,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def anim_set_montage_section(
+        ctx: Context,
+        montage_path: str,
+        section_name: str,
+        start_time: float = 0.0,
+        next_section_name: str = "",
+        save: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Create or reposition a Montage section and optionally set its next section.
+
+        Args:
+            montage_path: Full montage asset path
+            section_name: Section name
+            start_time: Section start time in seconds
+            next_section_name: Optional next section for looping/chaining
+            save: Save the montage after editing
+        """
+        return _send("anim_set_montage_section", {
+            "montage_path": montage_path,
+            "section_name": section_name,
+            "start_time": start_time,
+            "next_section_name": next_section_name,
+            "save": save,
+        })
+
+    @mcp.tool()
+    def anim_add_branching_point(
+        ctx: Context,
+        montage_path: str,
+        branching_point_name: str,
+        time: float = 0.0,
+        notify_type: str = "notify",
+        notify_state_duration: float = 0.1,
+        save: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Add a Montage Branching Point backed by a branching AnimNotify event.
+
+        Args:
+            montage_path: Full montage asset path
+            branching_point_name: Branching event name
+            time: Time in seconds
+            notify_type: "notify" or "notify_state"
+            notify_state_duration: Duration for notify_state entries
+            save: Save the montage after editing
+        """
+        return _send("anim_add_branching_point", {
+            "montage_path": montage_path,
+            "branching_point_name": branching_point_name,
+            "time": time,
+            "notify_type": notify_type,
+            "notify_state_duration": notify_state_duration,
+            "save": save,
+        })
+
+    @mcp.tool()
     def insert_blend_bool_fire_before_slot(
         ctx: Context,
         anim_blueprint_name: str,

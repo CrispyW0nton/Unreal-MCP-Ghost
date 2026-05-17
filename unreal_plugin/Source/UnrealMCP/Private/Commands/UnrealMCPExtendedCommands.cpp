@@ -252,7 +252,10 @@
 #include "Animation/AnimSequenceBase.h"
 #include "Animation/AnimSequence.h"
 #include "Animation/AnimMontage.h"
+#include "Animation/AnimCompositeBase.h"
+#include "Animation/Skeleton.h"
 #include "Animation/AnimNotifies/AnimNotify.h"
+#include "Factories/AnimMontageFactory.h"
 
 // Material Instance
 #include "Factories/MaterialFactoryNew.h"
@@ -325,6 +328,82 @@ static FString MCPMakeObjectPath(const FString& FolderPath, const FString& Asset
 {
     const FString PackagePath = MCPMakePackagePath(FolderPath, AssetName);
     return PackagePath + TEXT(".") + AssetName;
+}
+
+static void MCPSaveAssetIfRequested(UObject* Asset, bool bSave)
+{
+    if (!Asset)
+    {
+        return;
+    }
+
+    Asset->MarkPackageDirty();
+    Asset->PostEditChange();
+    if (bSave)
+    {
+        UEditorAssetLibrary::SaveAsset(Asset->GetPathName(), false);
+    }
+}
+
+static FSlotAnimationTrack* MCPFindMontageSlot(UAnimMontage* Montage, const FName& SlotName)
+{
+    if (!Montage)
+    {
+        return nullptr;
+    }
+
+    for (FSlotAnimationTrack& SlotTrack : Montage->SlotAnimTracks)
+    {
+        if (SlotTrack.SlotName == SlotName)
+        {
+            return &SlotTrack;
+        }
+    }
+    return nullptr;
+}
+
+static FSlotAnimationTrack& MCPFindOrAddMontageSlot(UAnimMontage* Montage, const FName& SlotName, bool& bCreated)
+{
+    if (FSlotAnimationTrack* Existing = MCPFindMontageSlot(Montage, SlotName))
+    {
+        bCreated = false;
+        return *Existing;
+    }
+
+    bCreated = true;
+    FSlotAnimationTrack& NewTrack = Montage->SlotAnimTracks.AddDefaulted_GetRef();
+    NewTrack.SlotName = SlotName;
+    return NewTrack;
+}
+
+static FCompositeSection* MCPFindMontageSection(UAnimMontage* Montage, const FName& SectionName)
+{
+    if (!Montage)
+    {
+        return nullptr;
+    }
+
+    for (FCompositeSection& Section : Montage->CompositeSections)
+    {
+        if (Section.SectionName == SectionName)
+        {
+            return &Section;
+        }
+    }
+    return nullptr;
+}
+
+static void MCPSortMontageSections(UAnimMontage* Montage)
+{
+    if (!Montage)
+    {
+        return;
+    }
+
+    Montage->CompositeSections.Sort([](const FCompositeSection& A, const FCompositeSection& B)
+    {
+        return A.GetTime() < B.GetTime();
+    });
 }
 
 static FLinearColor MCPReadLinearColor(
@@ -853,6 +932,11 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
 
     // Animation Notifies
     if (CommandType == TEXT("add_anim_notify"))                 return HandleAddAnimNotify(Params);
+    if (CommandType == TEXT("anim_create_montage"))             return HandleAnimCreateMontage(Params);
+    if (CommandType == TEXT("anim_describe_montage"))           return HandleAnimDescribeMontage(Params);
+    if (CommandType == TEXT("anim_add_montage_slot"))           return HandleAnimAddMontageSlot(Params);
+    if (CommandType == TEXT("anim_set_montage_section"))        return HandleAnimSetMontageSection(Params);
+    if (CommandType == TEXT("anim_add_branching_point"))        return HandleAnimAddBranchingPoint(Params);
 
     // Materials
     if (CommandType == TEXT("set_material_instance_parameter")) return HandleSetMaterialInstanceParameter(Params);
@@ -6130,6 +6214,462 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddAnimNotify(
     R->SetNumberField(TEXT("time"),           TimeSeconds);
     if (bIsState) R->SetNumberField(TEXT("duration"), Duration);
     R->SetNumberField(TEXT("total_notifies"), (double)AnimAsset->Notifies.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// anim_create_montage
+// Params: montage_name, folder_path, [source_animation_path], [skeleton_path],
+//         [slot_name], [section_name], [overwrite], [save], [play_rate], [loop_count]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAnimCreateMontage(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MontageName;
+    if (!Params->TryGetStringField(TEXT("montage_name"), MontageName))
+    {
+        Params->TryGetStringField(TEXT("name"), MontageName);
+    }
+    if (MontageName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'montage_name'"));
+    }
+
+    FString FolderPath = TEXT("/Game/Animation/Montages");
+    Params->TryGetStringField(TEXT("folder_path"), FolderPath);
+    MCPEnsureAssetFolder(FolderPath);
+
+    bool bOverwrite = false;
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("overwrite"), bOverwrite);
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    const FString ObjectPath = MCPMakeObjectPath(FolderPath, MontageName);
+    if (UAnimMontage* Existing = MCPLoadAsset<UAnimMontage>(ObjectPath))
+    {
+        if (!bOverwrite)
+        {
+            TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+            R->SetBoolField(TEXT("success"), true);
+            R->SetBoolField(TEXT("created"), false);
+            R->SetStringField(TEXT("montage_path"), Existing->GetPathName());
+            R->SetNumberField(TEXT("slot_count"), Existing->SlotAnimTracks.Num());
+            R->SetNumberField(TEXT("section_count"), Existing->CompositeSections.Num());
+            return R;
+        }
+        if (!UEditorAssetLibrary::DeleteAsset(Existing->GetPathName()))
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Failed to overwrite montage: %s"), *ObjectPath));
+        }
+    }
+
+    FString SourceAnimationPath;
+    Params->TryGetStringField(TEXT("source_animation_path"), SourceAnimationPath);
+    UAnimSequence* SourceSequence = nullptr;
+    if (!SourceAnimationPath.IsEmpty())
+    {
+        SourceSequence = MCPLoadAsset<UAnimSequence>(SourceAnimationPath);
+        if (!SourceSequence)
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Source animation sequence not found: %s"), *SourceAnimationPath));
+        }
+    }
+
+    FString SkeletonPath;
+    Params->TryGetStringField(TEXT("skeleton_path"), SkeletonPath);
+    USkeleton* TargetSkeleton = nullptr;
+    if (!SkeletonPath.IsEmpty())
+    {
+        TargetSkeleton = MCPLoadAsset<USkeleton>(SkeletonPath);
+        if (!TargetSkeleton)
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Skeleton not found: %s"), *SkeletonPath));
+        }
+    }
+    if (!TargetSkeleton && SourceSequence)
+    {
+        TargetSkeleton = SourceSequence->GetSkeleton();
+    }
+    if (!TargetSkeleton)
+    {
+        return CreateErrorResponse(TEXT("Provide either 'source_animation_path' or 'skeleton_path'"));
+    }
+
+    UAnimMontageFactory* Factory = NewObject<UAnimMontageFactory>();
+    Factory->SourceAnimation = SourceSequence;
+    Factory->TargetSkeleton = TargetSkeleton;
+
+    IAssetTools& AssetTools = FModuleManager::LoadModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+    UAnimMontage* Montage = Cast<UAnimMontage>(
+        AssetTools.CreateAsset(MontageName, FolderPath, UAnimMontage::StaticClass(), Factory));
+    if (!Montage)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Failed to create montage: %s"), *ObjectPath));
+    }
+
+    FString SlotName = TEXT("DefaultSlot");
+    FString SectionName = TEXT("Default");
+    Params->TryGetStringField(TEXT("slot_name"), SlotName);
+    Params->TryGetStringField(TEXT("section_name"), SectionName);
+
+    bool bCreatedSlot = false;
+    FSlotAnimationTrack& SlotTrack = MCPFindOrAddMontageSlot(Montage, FName(*SlotName), bCreatedSlot);
+    if (SourceSequence && SlotTrack.AnimTrack.AnimSegments.Num() == 0)
+    {
+        FAnimSegment Segment;
+        Segment.SetAnimReference(SourceSequence, true);
+        Segment.StartPos = 0.f;
+        Segment.AnimStartTime = 0.f;
+        Segment.AnimEndTime = SourceSequence->GetPlayLength();
+
+        double PlayRate = 1.0;
+        Params->TryGetNumberField(TEXT("play_rate"), PlayRate);
+        Segment.AnimPlayRate = FMath::IsNearlyZero((float)PlayRate) ? 1.f : (float)PlayRate;
+
+        double LoopCount = 1.0;
+        Params->TryGetNumberField(TEXT("loop_count"), LoopCount);
+        Segment.LoopingCount = FMath::Max(1, (int32)LoopCount);
+        SlotTrack.AnimTrack.AnimSegments.Add(Segment);
+    }
+
+    if (Montage->CompositeSections.Num() == 0)
+    {
+        FCompositeSection& Section = Montage->CompositeSections.AddDefaulted_GetRef();
+        Section.SectionName = FName(*SectionName);
+        Section.SetTime(0.f);
+    }
+    else
+    {
+        Montage->CompositeSections[0].SectionName = FName(*SectionName);
+    }
+
+    const float SequenceLength = Montage->CalculateSequenceLength();
+    if (SequenceLength > 0.f)
+    {
+        Montage->SetCompositeLength(SequenceLength);
+    }
+
+    MCPSaveAssetIfRequested(Montage, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetBoolField(TEXT("created"), true);
+    R->SetStringField(TEXT("montage_path"), Montage->GetPathName());
+    R->SetStringField(TEXT("source_animation_path"), SourceAnimationPath);
+    R->SetStringField(TEXT("skeleton_path"), TargetSkeleton->GetPathName());
+    R->SetStringField(TEXT("slot_name"), SlotName);
+    R->SetStringField(TEXT("section_name"), SectionName);
+    R->SetNumberField(TEXT("slot_count"), Montage->SlotAnimTracks.Num());
+    R->SetNumberField(TEXT("section_count"), Montage->CompositeSections.Num());
+    R->SetNumberField(TEXT("length"), Montage->GetPlayLength());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// anim_describe_montage
+// Params: montage_path
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAnimDescribeMontage(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MontagePath;
+    if (!Params->TryGetStringField(TEXT("montage_path"), MontagePath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'montage_path'"));
+    }
+
+    UAnimMontage* Montage = MCPLoadAsset<UAnimMontage>(MontagePath);
+    if (!Montage)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Montage not found: %s"), *MontagePath));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Slots;
+    for (const FSlotAnimationTrack& SlotTrack : Montage->SlotAnimTracks)
+    {
+        TSharedPtr<FJsonObject> SlotJson = MakeShared<FJsonObject>();
+        SlotJson->SetStringField(TEXT("slot_name"), SlotTrack.SlotName.ToString());
+        SlotJson->SetNumberField(TEXT("segment_count"), SlotTrack.AnimTrack.AnimSegments.Num());
+
+        TArray<TSharedPtr<FJsonValue>> Segments;
+        for (const FAnimSegment& Segment : SlotTrack.AnimTrack.AnimSegments)
+        {
+            TSharedPtr<FJsonObject> SegmentJson = MakeShared<FJsonObject>();
+            UAnimSequenceBase* AnimRef = Segment.GetAnimReference();
+            SegmentJson->SetStringField(TEXT("animation_path"), AnimRef ? AnimRef->GetPathName() : FString());
+            SegmentJson->SetNumberField(TEXT("start_pos"), Segment.StartPos);
+            SegmentJson->SetNumberField(TEXT("end_pos"), Segment.GetEndPos());
+            SegmentJson->SetNumberField(TEXT("anim_start_time"), Segment.AnimStartTime);
+            SegmentJson->SetNumberField(TEXT("anim_end_time"), Segment.AnimEndTime);
+            SegmentJson->SetNumberField(TEXT("play_rate"), Segment.AnimPlayRate);
+            SegmentJson->SetNumberField(TEXT("loop_count"), Segment.LoopingCount);
+            Segments.Add(MakeShared<FJsonValueObject>(SegmentJson));
+        }
+        SlotJson->SetArrayField(TEXT("segments"), Segments);
+        Slots.Add(MakeShared<FJsonValueObject>(SlotJson));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Sections;
+    for (int32 Index = 0; Index < Montage->CompositeSections.Num(); ++Index)
+    {
+        const FCompositeSection& Section = Montage->CompositeSections[Index];
+        TSharedPtr<FJsonObject> SectionJson = MakeShared<FJsonObject>();
+        SectionJson->SetStringField(TEXT("section_name"), Section.SectionName.ToString());
+        SectionJson->SetStringField(TEXT("next_section_name"), Section.NextSectionName.ToString());
+        SectionJson->SetNumberField(TEXT("time"), Section.GetTime());
+        SectionJson->SetNumberField(TEXT("length"), Montage->GetSectionLength(Index));
+        Sections.Add(MakeShared<FJsonValueObject>(SectionJson));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Notifies;
+    for (const FAnimNotifyEvent& Notify : Montage->Notifies)
+    {
+        TSharedPtr<FJsonObject> NotifyJson = MakeShared<FJsonObject>();
+        NotifyJson->SetStringField(TEXT("notify_name"), Notify.NotifyName.ToString());
+        NotifyJson->SetStringField(TEXT("notify_type"), Notify.NotifyStateClass ? TEXT("notify_state") : TEXT("notify"));
+        NotifyJson->SetNumberField(TEXT("time"), Notify.GetTime());
+        NotifyJson->SetNumberField(TEXT("duration"), Notify.GetDuration());
+        NotifyJson->SetBoolField(TEXT("is_branching_point"), Notify.MontageTickType == EMontageNotifyTickType::BranchingPoint);
+        Notifies.Add(MakeShared<FJsonValueObject>(NotifyJson));
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("montage_path"), Montage->GetPathName());
+    R->SetStringField(TEXT("skeleton_path"), Montage->GetSkeleton() ? Montage->GetSkeleton()->GetPathName() : FString());
+    R->SetNumberField(TEXT("length"), Montage->GetPlayLength());
+    R->SetNumberField(TEXT("slot_count"), Montage->SlotAnimTracks.Num());
+    R->SetArrayField(TEXT("slots"), Slots);
+    R->SetNumberField(TEXT("section_count"), Montage->CompositeSections.Num());
+    R->SetArrayField(TEXT("sections"), Sections);
+    R->SetNumberField(TEXT("notify_count"), Montage->Notifies.Num());
+    R->SetArrayField(TEXT("notifies"), Notifies);
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// anim_add_montage_slot
+// Params: montage_path, slot_name, [source_animation_path], [start_time],
+//         [play_rate], [loop_count], [replace_existing], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAnimAddMontageSlot(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MontagePath, SlotName;
+    if (!Params->TryGetStringField(TEXT("montage_path"), MontagePath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'montage_path'"));
+    }
+    if (!Params->TryGetStringField(TEXT("slot_name"), SlotName))
+    {
+        return CreateErrorResponse(TEXT("Missing 'slot_name'"));
+    }
+
+    UAnimMontage* Montage = MCPLoadAsset<UAnimMontage>(MontagePath);
+    if (!Montage)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Montage not found: %s"), *MontagePath));
+    }
+
+    bool bReplaceExisting = false;
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("replace_existing"), bReplaceExisting);
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    bool bCreated = false;
+    FSlotAnimationTrack& SlotTrack = MCPFindOrAddMontageSlot(Montage, FName(*SlotName), bCreated);
+    if (bReplaceExisting)
+    {
+        SlotTrack.AnimTrack.AnimSegments.Reset();
+    }
+
+    FString SourceAnimationPath;
+    Params->TryGetStringField(TEXT("source_animation_path"), SourceAnimationPath);
+    bool bAddedSegment = false;
+    if (!SourceAnimationPath.IsEmpty())
+    {
+        UAnimSequenceBase* SourceAnim = MCPLoadAsset<UAnimSequenceBase>(SourceAnimationPath);
+        if (!SourceAnim)
+        {
+            return CreateErrorResponse(FString::Printf(TEXT("Source animation not found: %s"), *SourceAnimationPath));
+        }
+
+        double StartTime = 0.0;
+        double PlayRate = 1.0;
+        double LoopCount = 1.0;
+        Params->TryGetNumberField(TEXT("start_time"), StartTime);
+        Params->TryGetNumberField(TEXT("play_rate"), PlayRate);
+        Params->TryGetNumberField(TEXT("loop_count"), LoopCount);
+
+        FAnimSegment Segment;
+        Segment.SetAnimReference(SourceAnim, true);
+        Segment.StartPos = FMath::Max(0.f, (float)StartTime);
+        Segment.AnimStartTime = 0.f;
+        Segment.AnimEndTime = SourceAnim->GetPlayLength();
+        Segment.AnimPlayRate = FMath::IsNearlyZero((float)PlayRate) ? 1.f : (float)PlayRate;
+        Segment.LoopingCount = FMath::Max(1, (int32)LoopCount);
+        SlotTrack.AnimTrack.AnimSegments.Add(Segment);
+        SlotTrack.AnimTrack.SortAnimSegments();
+        bAddedSegment = true;
+
+        const float NewLength = FMath::Max(Montage->CalculateSequenceLength(), SlotTrack.AnimTrack.GetLength());
+        if (NewLength > 0.f)
+        {
+            Montage->SetCompositeLength(NewLength);
+        }
+    }
+
+    MCPSaveAssetIfRequested(Montage, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("montage_path"), Montage->GetPathName());
+    R->SetStringField(TEXT("slot_name"), SlotName);
+    R->SetBoolField(TEXT("created"), bCreated);
+    R->SetBoolField(TEXT("added_segment"), bAddedSegment);
+    R->SetNumberField(TEXT("segment_count"), SlotTrack.AnimTrack.AnimSegments.Num());
+    R->SetNumberField(TEXT("slot_count"), Montage->SlotAnimTracks.Num());
+    R->SetNumberField(TEXT("length"), Montage->GetPlayLength());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// anim_set_montage_section
+// Params: montage_path, section_name, start_time, [next_section_name], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAnimSetMontageSection(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MontagePath, SectionName;
+    if (!Params->TryGetStringField(TEXT("montage_path"), MontagePath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'montage_path'"));
+    }
+    if (!Params->TryGetStringField(TEXT("section_name"), SectionName))
+    {
+        return CreateErrorResponse(TEXT("Missing 'section_name'"));
+    }
+
+    UAnimMontage* Montage = MCPLoadAsset<UAnimMontage>(MontagePath);
+    if (!Montage)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Montage not found: %s"), *MontagePath));
+    }
+
+    double StartTime = 0.0;
+    Params->TryGetNumberField(TEXT("start_time"), StartTime);
+    const float ClampedStart = FMath::Clamp((float)StartTime, 0.f, Montage->GetPlayLength());
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    bool bCreated = false;
+    FCompositeSection* Section = MCPFindMontageSection(Montage, FName(*SectionName));
+    if (!Section)
+    {
+        bCreated = true;
+        Section = &Montage->CompositeSections.AddDefaulted_GetRef();
+        Section->SectionName = FName(*SectionName);
+    }
+
+    Section->SetTime(ClampedStart);
+
+    FString NextSectionName;
+    if (Params->TryGetStringField(TEXT("next_section_name"), NextSectionName))
+    {
+        Section->NextSectionName = NextSectionName.IsEmpty() ? NAME_None : FName(*NextSectionName);
+    }
+
+    MCPSortMontageSections(Montage);
+    MCPSaveAssetIfRequested(Montage, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("montage_path"), Montage->GetPathName());
+    R->SetStringField(TEXT("section_name"), SectionName);
+    R->SetBoolField(TEXT("created"), bCreated);
+    R->SetNumberField(TEXT("time"), ClampedStart);
+    R->SetNumberField(TEXT("section_count"), Montage->CompositeSections.Num());
+    return R;
+}
+
+// ════════════════════════════════════════════════════════════════════════════
+// anim_add_branching_point
+// Params: montage_path, branching_point_name, time, [notify_state_duration],
+//         [notify_type], [save]
+// ════════════════════════════════════════════════════════════════════════════
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAnimAddBranchingPoint(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MontagePath, BranchingPointName;
+    if (!Params->TryGetStringField(TEXT("montage_path"), MontagePath))
+    {
+        return CreateErrorResponse(TEXT("Missing 'montage_path'"));
+    }
+    if (!Params->TryGetStringField(TEXT("branching_point_name"), BranchingPointName))
+    {
+        Params->TryGetStringField(TEXT("notify_name"), BranchingPointName);
+    }
+    if (BranchingPointName.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'branching_point_name'"));
+    }
+
+    UAnimMontage* Montage = MCPLoadAsset<UAnimMontage>(MontagePath);
+    if (!Montage)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Montage not found: %s"), *MontagePath));
+    }
+
+    double TimeVal = 0.0;
+    double DurationVal = 0.1;
+    Params->TryGetNumberField(TEXT("time"), TimeVal);
+    Params->TryGetNumberField(TEXT("notify_state_duration"), DurationVal);
+    const float TimeSeconds = FMath::Clamp((float)TimeVal, 0.f, Montage->GetPlayLength());
+    const float Duration = FMath::Max(0.f, (float)DurationVal);
+
+    FString NotifyType = TEXT("notify");
+    Params->TryGetStringField(TEXT("notify_type"), NotifyType);
+    const bool bIsState = NotifyType.ToLower() == TEXT("notify_state");
+
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    if (Montage->AnimNotifyTracks.Num() == 0)
+    {
+        FAnimNotifyTrack NewTrack;
+        NewTrack.TrackName = TEXT("Branching Points");
+        NewTrack.TrackColor = FLinearColor::White;
+        Montage->AnimNotifyTracks.Add(NewTrack);
+    }
+
+    FAnimNotifyEvent NewEvent;
+    NewEvent.NotifyName = FName(*BranchingPointName);
+    NewEvent.SetTime(TimeSeconds);
+    NewEvent.TrackIndex = 0;
+    NewEvent.Notify = nullptr;
+    NewEvent.MontageTickType = EMontageNotifyTickType::BranchingPoint;
+    NewEvent.bConvertedFromBranchingPoint = true;
+    if (bIsState)
+    {
+        NewEvent.SetDuration(Duration);
+        NewEvent.NotifyStateClass = nullptr;
+    }
+    Montage->Notifies.Add(NewEvent);
+
+    MCPSaveAssetIfRequested(Montage, bSave);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("montage_path"), Montage->GetPathName());
+    R->SetStringField(TEXT("branching_point_name"), BranchingPointName);
+    R->SetStringField(TEXT("notify_type"), bIsState ? TEXT("notify_state") : TEXT("notify"));
+    R->SetNumberField(TEXT("time"), TimeSeconds);
+    if (bIsState)
+    {
+        R->SetNumberField(TEXT("duration"), Duration);
+    }
+    R->SetNumberField(TEXT("total_notifies"), Montage->Notifies.Num());
     return R;
 }
 

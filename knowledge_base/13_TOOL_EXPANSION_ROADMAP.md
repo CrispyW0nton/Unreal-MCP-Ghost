@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 481 MCP tools: 478 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 487 MCP tools: 484 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -307,6 +307,8 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: close the remaining animation gaps rather than rebuilding what already works.
 
+Status: Slice 1 montage and notify tooling is implemented and live-tested in Lab5E.
+
 Already strong:
 
 - Animation Blueprints.
@@ -317,13 +319,17 @@ Already strong:
 - Batch retargeting.
 - Anim notify native handler exists in the plugin.
 
-Slices:
+Slice 1:
 
-- Add Python wrapper coverage for native `add_anim_notify` if missing from registered tools.
-- `anim_create_montage`
-- `anim_add_montage_slot`
-- `anim_set_montage_section`
-- `anim_add_branching_point`
+- `add_anim_notify` - implemented as Python wrapper coverage for the existing native bridge command.
+- `anim_create_montage` - implemented as a native C++ bridge command with Python wrapper.
+- `anim_describe_montage` - implemented as readback inspection for slots, segments, sections, and notifies.
+- `anim_add_montage_slot` - implemented as a native C++ bridge command for adding slots and optional animation segments.
+- `anim_set_montage_section` - implemented as a native C++ bridge command for creating/repositioning sections and optional next-section links.
+- `anim_add_branching_point` - implemented as a native C++ bridge command that adds branching AnimNotify events on montages.
+
+Slice 2:
+
 - `control_rig_create`
 - `control_rig_add_control`
 - `control_rig_add_constraint`
@@ -334,6 +340,17 @@ Validation:
 - Locomotion AnimBP with state machine and slot.
 - Montage with notify.
 - Optional Control Rig asset creation and basic inspection.
+
+Lab5E smoke result, 2026-05-16:
+
+- Live Coding compiled the updated Lab5E project plugin successfully; a second Live Coding pass remapped the bridge routing function in the running editor.
+- Discovered project animation assets under `/Game/ArtAssets/Characters/Mannequins/Animations`.
+- Created and saved `/Game/MCP_Test/Animation/M_MCP_Phase5_MontageSmoke` from `/Game/ArtAssets/Characters/Mannequins/Animations/Manny/MM_Idle`.
+- Added `UpperBody` as a second montage slot with `/Game/ArtAssets/Characters/Mannequins/Animations/Manny/MM_Run_Fwd` as a segment.
+- Added an `Attack` montage section at `0.25s` with `next_section_name=Start`.
+- Added branching point `MCP_Hit` at `0.35s`.
+- Added regular notify `MCP_GenericNotify` through the exposed `add_anim_notify` wrapper.
+- Native describe reported 2 slots, 2 sections, and 2 notifies, including `MCP_Hit` as a branching point and `MCP_GenericNotify` as a regular notify.
 
 ## Phase 6 - Autonomous Verification Loop
 
@@ -385,7 +402,8 @@ Validation:
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
 4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers. Done.
-5. Phase 5: close animation montage/control-rig gaps.
+5. Phase 5 Slice 1: close montage/notify tooling gaps. Done in code; live validation pending.
+6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling.
 
 ## Backlog Notes
 
