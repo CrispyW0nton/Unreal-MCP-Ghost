@@ -36,6 +36,7 @@ What do you need?
 ├─ "I need to work with data (arrays/structs)" → Read 07_DATA_STRUCTURES.md
 ├─ "I need to add new MCP commands"         → Read 13_TOOL_EXPANSION_ROADMAP.md + v4/GRAPH_SCRIPTING_SPEC_V4.md
 ├─ "I need current tool counts/categories"  → Run scripts/tool_inventory.py
+├─ "I need CI smoke/profile commands"       → Read ../docs/ci-smoke.md + run scripts/profile_mcp_startup.py
 ├─ "I need to edit a Blueprint graph (V4)" → Use bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile
 ├─ "I need to remove a node / break a pin" → Use bp_remove_node, bp_disconnect_pin
 ├─ "I need a new function in a Blueprint"   → Use bp_add_function, then bp_add_node with graph_name=<fn>
@@ -54,6 +55,8 @@ What do you need?
 |------|---------|
 | `13_TOOL_EXPANSION_ROADMAP.md` | Current 360-degree roadmap: registry hygiene, Niagara, AI/EQS, networking, technical art, animation closure, autonomous verification |
 | `../scripts/tool_inventory.py` | Canonical offline inventory command for tool counts, modules, roadmap categories, and status |
+| `../scripts/profile_mcp_startup.py` | Phase 7 offline startup and static tool-discovery profiler |
+| `../docs/ci-smoke.md` | Repeatable offline CI smoke and optional live bridge smoke commands |
 | `../unreal_mcp_server/tool_inventory_categories.json` | Machine-readable module-to-category map used by the inventory script |
 
 ---

@@ -413,12 +413,14 @@ Slice 2 smoke result, 2026-05-17:
 
 Goal: make the platform easier to run in production and CI.
 
+Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested.
+
 Slices:
 
-- Profile startup and most-used tool latency.
+- Profile startup and most-used tool latency - implemented as `scripts/profile_mcp_startup.py` for inventory build timing, subprocess inventory startup timing, optional server `--help` cold-start timing, and slowest static module decorator scans.
 - Add command metadata registry to reduce routing drift between Python and C++.
 - Investigate T3D or bulk Blueprint graph injection for large graph creation.
-- Add headless build and smoke-test documentation.
+- Add headless build and smoke-test documentation - started with `docs/ci-smoke.md` for offline inventory/profile tests and optional live bridge smoke.
 - Evaluate optional single-binary or Go/Rust sidecar only after command metadata and test coverage are solid.
 
 Validation:
@@ -426,6 +428,14 @@ Validation:
 - Startup time baseline.
 - Repeatable CI smoke commands.
 - Large Blueprint creation benchmark before and after bulk injection.
+
+Slice 1 smoke result, 2026-05-17:
+
+- Added `scripts/profile_mcp_startup.py` with JSON and Markdown report output.
+- Added offline tests covering profile schema, Markdown sections, and report artifact writing.
+- Documented repeatable CI commands in `docs/ci-smoke.md`.
+- Verified the profiler against the 503-tool static registry without requiring Unreal Editor.
+- Local baseline on Python 3.14: inventory build median about 8 ms, inventory subprocess median about 113 ms, optional server `--help` cold start about 1.07 s.
 
 ## Phase 8 - Production Skills And Game Templates
 
@@ -471,7 +481,8 @@ Slice 1 smoke result, 2026-05-17:
 7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation. Done and offline-tested.
 8. Phase 6 Slice 2: add PIE/log/viewport evidence tooling. Done and live-tested.
 9. Phase 8 Slice 1: add vertical slice report packaging skill. Done and offline-tested.
-10. Phase 7 Slice 1: add startup/tool latency profiling and repeatable CI smoke docs.
+10. Phase 7 Slice 1: add startup/tool latency profiling and repeatable CI smoke docs. Done and offline-tested.
+11. Phase 7 Slice 2: add command metadata registry to reduce routing drift between Python and C++.
 
 ## Backlog Notes
 

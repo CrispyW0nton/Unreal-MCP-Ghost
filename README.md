@@ -306,6 +306,14 @@ python scripts\tool_inventory.py --markdown
 
 The inventory uses [unreal_mcp_server/tool_inventory_categories.json](unreal_mcp_server/tool_inventory_categories.json) to map modules to roadmap categories and phases. Keep this in sync when adding new tool modules.
 
+Phase 7 startup/tool-discovery profiler:
+
+```powershell
+python scripts\profile_mcp_startup.py --iterations 3 --markdown-out knowledge_base\Reports\mcp_startup_profile.md --json-out knowledge_base\Reports\mcp_startup_profile.json
+```
+
+For repeatable offline CI smoke commands, see [docs/ci-smoke.md](docs/ci-smoke.md).
+
 ## Safe Blueprint Workflow
 
 1. Read relevant knowledge docs.
