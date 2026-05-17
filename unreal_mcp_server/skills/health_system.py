@@ -33,6 +33,8 @@ from __future__ import annotations
 import json
 import logging
 import textwrap
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 # Must be importable at module level for FastMCP annotation evaluation
@@ -96,6 +98,168 @@ def _ok(raw: dict) -> bool:
         raw.get("status") == "success"
         or raw.get("success") is True
         or (raw.get("result") or {}).get("success") is True
+    )
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _slugify(value: str, default: str = "report") -> str:
+    import re
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
+    return (slug or default)[:80]
+
+
+def _resolve_workspace_path(path: str) -> Path:
+    root = Path(__file__).resolve().parents[2]
+    candidate = Path(path or ".mcp_reports")
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(root.resolve())
+    except ValueError as exc:
+        raise ValueError(f"Path must stay inside workspace root: {root}") from exc
+    return resolved
+
+
+def _read_optional_journal(journal_path: str) -> Dict[str, Any]:
+    if not journal_path:
+        return {}
+    path = _resolve_workspace_path(journal_path)
+    if not path.exists():
+        raise FileNotFoundError(f"Execution journal not found: {path}")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    if data.get("schema") != "unreal_mcp_execution_journal.v1":
+        raise ValueError(f"Unsupported journal schema in {path}")
+    return data
+
+
+def _markdown_value(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        return json.dumps(value, indent=2, sort_keys=True)
+    if value is None:
+        return ""
+    return str(value)
+
+
+def skill_package_vertical_slice_report(
+    title: str = "Vertical Slice Report",
+    summary: str = "",
+    journal_path: str = "",
+    report_dir: str = "knowledge_base/Reports",
+    project_name: str = "",
+    artifacts: Optional[List[str]] = None,
+    verification: Optional[Dict[str, Any]] = None,
+    include_journal_entries: bool = True,
+    max_entries: int = 30,
+) -> Dict[str, Any]:
+    """Package a production-style vertical slice report from journal evidence.
+
+    This skill is intentionally file/report oriented: it does not mutate Unreal
+    assets. It takes evidence produced by lower-level Phase 6 tools and turns it
+    into a compact artifact a solo developer can review, share, or archive.
+    """
+    artifacts = artifacts or []
+    verification = verification or {}
+    generated_at = _utc_now()
+    journal = _read_optional_journal(journal_path)
+    report_root = _resolve_workspace_path(report_dir)
+    report_root.mkdir(parents=True, exist_ok=True)
+    report_path = report_root / f"{generated_at.replace(':', '').replace('-', '')}_{_slugify(title)}.md"
+
+    journal_artifacts = journal.get("artifacts", []) if journal else []
+    all_artifacts: List[str] = []
+    for item in [*journal_artifacts, *artifacts]:
+        if item and item not in all_artifacts:
+            all_artifacts.append(item)
+
+    merged_verification: Dict[str, Any] = {}
+    if isinstance(journal.get("verification"), dict):
+        merged_verification.update(journal["verification"])
+    merged_verification.update(verification)
+
+    entries = journal.get("entries", []) if journal else []
+    stats = journal.get("stats", {}) if journal else {}
+    report_summary = summary or journal.get("summary", "") or "No summary supplied."
+    display_project = project_name or journal.get("project_name", "")
+
+    lines: List[str] = [
+        f"# {title}",
+        "",
+        f"- Generated: `{generated_at}`",
+        f"- Project: `{display_project or 'unspecified'}`",
+        f"- Source journal: `{journal_path or 'none'}`",
+        f"- Status: `{journal.get('status', 'report_only')}`",
+        "",
+        "## Summary",
+        "",
+        report_summary,
+        "",
+        "## Verification",
+        "",
+    ]
+    if merged_verification:
+        for key, value in sorted(merged_verification.items()):
+            lines.append(f"- `{key}`: {_markdown_value(value)}")
+    else:
+        lines.append("- No verification evidence supplied.")
+
+    lines.extend(["", "## Artifacts", ""])
+    if all_artifacts:
+        for artifact in all_artifacts:
+            lines.append(f"- `{artifact}`")
+    else:
+        lines.append("- No artifacts recorded.")
+
+    lines.extend(["", "## Journal Stats", ""])
+    if stats:
+        for key, value in sorted(stats.items()):
+            lines.append(f"- `{key}`: {_markdown_value(value)}")
+    else:
+        lines.append("- No journal stats available.")
+
+    if include_journal_entries:
+        lines.extend(["", "## Journal Entries", ""])
+        if entries:
+            for entry in entries[-max(1, int(max_entries)):]:
+                timestamp = entry.get("timestamp", "")
+                event_type = entry.get("event_type", "event")
+                severity = entry.get("severity", "info")
+                message = entry.get("message", "")
+                success = entry.get("success", "")
+                lines.append(f"- `{timestamp}` `{severity}` `{event_type}` success=`{success}`: {message}")
+        else:
+            lines.append("- No journal entries available.")
+
+    lines.extend([
+        "",
+        "## Follow-Up Checklist",
+        "",
+        "- Confirm all changed assets compile cleanly.",
+        "- Capture or attach at least one screenshot for player-facing changes.",
+        "- Run PIE or a packaged smoke test for runtime behavior.",
+        "- Record unresolved warnings or blocked verification steps before continuing.",
+        "",
+    ])
+
+    report_path.write_text("\n".join(lines), encoding="utf-8", newline="\n")
+    return _make_result(
+        success=True,
+        stage="skill_package_vertical_slice_report",
+        message=f"Vertical slice report written: {report_path}",
+        outputs={
+            "report_path": str(report_path),
+            "journal_path": journal_path,
+            "project_name": display_project,
+            "artifact_count": len(all_artifacts),
+            "verification_keys": sorted(merged_verification.keys()),
+            "journal_entry_count": len(entries),
+            "status": journal.get("status", "report_only"),
+        },
+        warnings=[],
+        errors=[],
     )
 
 
@@ -578,6 +742,7 @@ def register_health_system_skill(mcp):
     import skills.health_system as _mod
     # Use module-level reference to avoid shadowing by the inner tool function
     _impl = _mod.skill_create_health_system
+    _report_impl = _mod.skill_package_vertical_slice_report
 
     @mcp.tool()
     async def skill_create_health_system(
@@ -630,5 +795,51 @@ def register_health_system_skill(mcp):
             blueprint_path=blueprint_path,
             initial_health=initial_health,
             initial_max_health=initial_max_health,
+        )
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def skill_package_vertical_slice_report(
+        ctx: Context,
+        title: str = "Vertical Slice Report",
+        summary: str = "",
+        journal_path: str = "",
+        report_dir: str = "knowledge_base/Reports",
+        project_name: str = "",
+        artifacts: Optional[List[str]] = None,
+        verification: Optional[Dict[str, Any]] = None,
+        include_journal_entries: bool = True,
+        max_entries: int = 30,
+    ) -> str:
+        """Package journal evidence into a production-style vertical slice report.
+
+        This skill composes Phase 6 outputs into a readable Markdown artifact:
+        execution journal entries, screenshots/logs/assets, verification results,
+        and a short follow-up checklist. It does not mutate Unreal assets.
+
+        Args:
+            title: Report title
+            summary: Human-readable closeout summary
+            journal_path: Optional path returned by execution_journal_start
+            report_dir: Workspace-relative report output directory
+            project_name: Optional Unreal project/map name
+            artifacts: Optional asset, screenshot, log, or file paths
+            verification: Optional final verification evidence
+            include_journal_entries: Include recent journal entries in the report
+            max_entries: Maximum journal entries to include
+
+        Returns:
+            JSON StructuredResult with outputs.report_path and evidence counts.
+        """
+        result = _report_impl(
+            title=title,
+            summary=summary,
+            journal_path=journal_path,
+            report_dir=report_dir,
+            project_name=project_name,
+            artifacts=artifacts or [],
+            verification=verification or {},
+            include_journal_entries=include_journal_entries,
+            max_entries=max_entries,
         )
         return json.dumps(result)

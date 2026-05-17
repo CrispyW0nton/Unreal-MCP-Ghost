@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 502 MCP tools: 499 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 503 MCP tools: 499 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -431,6 +431,8 @@ Validation:
 
 Goal: turn trustworthy low-level tools into repeatable, inspectable game-development workflows.
 
+Status: Slice 1 vertical slice reporting skill is implemented and offline-tested.
+
 Why this is explicit:
 
 - The tool surface is broad enough to build many systems, but single-developer productivity depends on higher-level skills that chain discovery, creation, verification, and repair.
@@ -445,12 +447,18 @@ Slices:
 - `skill_build_niagara_explosion`
 - `skill_create_master_material_pipeline`
 - `skill_create_enemy_encounter_ai`
-- `skill_package_vertical_slice_report`
+- `skill_package_vertical_slice_report` - implemented as a Markdown report packager for execution journals, artifacts, verification evidence, and follow-up checklists.
 
 Validation:
 
 - Each skill must call existing low-level tools rather than duplicating engine logic.
 - Each skill must produce a small project artifact plus evidence: compile diagnostics, graph summaries, asset descriptions, screenshots, PIE logs, or journal entries.
+
+Slice 1 smoke result, 2026-05-17:
+
+- Registered `skill_package_vertical_slice_report` through the existing skills registration path.
+- Packaged a synthetic execution journal into a workspace-local Markdown report.
+- Verified the report includes project name, summary, journal entry, artifact paths, verification keys, stats, and checklist.
 
 ## Immediate Execution Queue
 
@@ -462,7 +470,8 @@ Validation:
 6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling. Done and live-tested.
 7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation. Done and offline-tested.
 8. Phase 6 Slice 2: add PIE/log/viewport evidence tooling. Done and live-tested.
-9. Phase 8 Slice 1: convert the strongest existing vertical workflows into explicit production skills after Phase 6 verification exists.
+9. Phase 8 Slice 1: add vertical slice report packaging skill. Done and offline-tested.
+10. Phase 7 Slice 1: add startup/tool latency profiling and repeatable CI smoke docs.
 
 ## Backlog Notes
 

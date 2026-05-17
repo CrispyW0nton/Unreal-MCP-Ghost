@@ -6,7 +6,7 @@
   },
   "skills.health_system": {
     "category": "skill",
-    "roadmap_phase": "phase_6_autonomous_verification",
+    "roadmap_phase": "phase_8_production_skills_game_templates",
     "status": "live"
   },
   "skills.repair_broken_blueprint.skill": {

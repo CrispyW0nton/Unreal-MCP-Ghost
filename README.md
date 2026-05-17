@@ -2,7 +2,7 @@
 
 Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP server that lets AI agents inspect and modify live UE projects through the Model Context Protocol.
 
-The current server registers **502 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
+The current server registers **503 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
 
 ## What It Can Do
 
@@ -25,7 +25,7 @@ AI client or Cursor watcher
   v
 Python FastMCP server
   - unreal_mcp_server/unreal_mcp_server.py
-  - 502 registered MCP tools
+  - 503 registered MCP tools
   - optional /chat/* HTTP routes on port 8000
   |
   | TCP JSON, one command per connection
@@ -280,7 +280,7 @@ Agents should read repository knowledge before making Unreal changes:
 
 ## Current Tool Surface
 
-The server currently registers **502 MCP tools**, including:
+The server currently registers **503 MCP tools**, including:
 
 - Core editor/actor tools
 - Blueprint creation, graph editing, node connection, variable/function tools
@@ -293,7 +293,7 @@ The server currently registers **502 MCP tools**, including:
 - Asset import and folder import tools
 - GhostRigger bridge tools
 - Safe execution substrate, execution journals, action risk evaluation, PIE/log/viewport evidence capture, reflection, diagnostics, source control, project intelligence, C++ bridge, and repair tools
-- Higher-level skills such as blueprint health audit, health system creation, and broken blueprint repair
+- Higher-level skills such as blueprint health audit, health system creation, vertical slice report packaging, and broken blueprint repair
 - Chat tools: `chat_poll_messages`, `chat_send_response`, `chat_get_context`
 
 Use `list_knowledge_base_topics`, `get_knowledge_base`, and `search_knowledge_base` before implementing systems. Use `get_blueprint_nodes`, `get_blueprint_variables`, and `get_blueprint_components` before modifying any Blueprint.

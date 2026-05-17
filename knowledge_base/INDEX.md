@@ -193,7 +193,7 @@ What do you need?
 | Property | Value |
 |----------|-------|
 | Engine | UE 5.6 |
-| MCP Tools | 502 |
+| MCP Tools | 503 |
 | Tool Modules | 37 categorized modules/skills |
 | C++ Commands | 168 |
 | Transports | stdio, SSE, streamable-HTTP |
