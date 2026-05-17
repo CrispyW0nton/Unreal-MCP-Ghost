@@ -232,7 +232,18 @@
 #include "K2Node_CallFunction.h"
 #include "Engine/StaticMesh.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/PrimitiveComponent.h"
 #include "Engine/Texture2D.h"
+#include "Engine/World.h"
+#include "EditorViewportClient.h"
+#include "HAL/FileManager.h"
+#include "HAL/PlatformMemory.h"
+#include "ImageUtils.h"
+#include "LevelEditorViewport.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Paths.h"
+#include "RHI.h"
+#include "RHIStrings.h"
 #include "Rendering/ColorVertexBuffer.h"
 #include "StaticMeshComponentLODInfo.h"
 #include "StaticMeshResources.h"
@@ -249,7 +260,12 @@
 #include "Factories/MaterialInstanceConstantFactoryNew.h"
 #include "Materials/Material.h"
 #include "Materials/MaterialExpressionComponentMask.h"
+#include "Materials/MaterialExpressionCustom.h"
+#include "Materials/MaterialExpressionIf.h"
+#include "Materials/MaterialExpressionMaterialFunctionCall.h"
 #include "Materials/MaterialExpressionScalarParameter.h"
+#include "Materials/MaterialExpressionStaticSwitch.h"
+#include "Materials/MaterialExpressionTextureSample.h"
 #include "Materials/MaterialExpressionTextureSampleParameter2D.h"
 #include "Materials/MaterialExpressionVectorParameter.h"
 #include "Materials/MaterialFunction.h"
@@ -571,6 +587,122 @@ static FString MCPEnumName(const UEnum* Enum, int64 Value)
     return Enum ? Enum->GetNameStringByValue(Value) : FString::FromInt((int32)Value);
 }
 
+static FString MCPViewModeName(EViewModeIndex ViewMode)
+{
+    switch (ViewMode)
+    {
+    case VMI_Wireframe: return TEXT("wireframe");
+    case VMI_Unlit: return TEXT("unlit");
+    case VMI_Lit: return TEXT("lit");
+    case VMI_Lit_DetailLighting: return TEXT("detail_lighting");
+    case VMI_LightingOnly: return TEXT("lighting_only");
+    case VMI_LightComplexity: return TEXT("light_complexity");
+    case VMI_ShaderComplexity: return TEXT("shader_complexity");
+    case VMI_QuadOverdraw: return TEXT("quad_overdraw");
+    case VMI_ShaderComplexityWithQuadOverdraw: return TEXT("shader_complexity_with_quad_overdraw");
+    case VMI_MaterialTextureScaleAccuracy: return TEXT("material_texture_scale_accuracy");
+    case VMI_RequiredTextureResolution: return TEXT("required_texture_resolution");
+    default: return TEXT("unknown");
+    }
+}
+
+static bool MCPViewModeFromString(const FString& Input, EViewModeIndex& OutViewMode, FString& OutCanonicalName)
+{
+    FString Mode = Input.IsEmpty() ? TEXT("lit") : Input.ToLower();
+    Mode.ReplaceInline(TEXT("-"), TEXT("_"));
+    Mode.ReplaceInline(TEXT(" "), TEXT("_"));
+
+    if (Mode == TEXT("wireframe")) { OutViewMode = VMI_Wireframe; }
+    else if (Mode == TEXT("unlit")) { OutViewMode = VMI_Unlit; }
+    else if (Mode == TEXT("lit")) { OutViewMode = VMI_Lit; }
+    else if (Mode == TEXT("detail_lighting")) { OutViewMode = VMI_Lit_DetailLighting; }
+    else if (Mode == TEXT("lighting_only")) { OutViewMode = VMI_LightingOnly; }
+    else if (Mode == TEXT("light_complexity")) { OutViewMode = VMI_LightComplexity; }
+    else if (Mode == TEXT("shader_complexity")) { OutViewMode = VMI_ShaderComplexity; }
+    else if (Mode == TEXT("quad_overdraw") || Mode == TEXT("overdraw")) { OutViewMode = VMI_QuadOverdraw; }
+    else if (Mode == TEXT("shader_complexity_with_quad_overdraw") || Mode == TEXT("shader_complexity_and_quads"))
+    {
+        OutViewMode = VMI_ShaderComplexityWithQuadOverdraw;
+    }
+    else if (Mode == TEXT("material_texture_scale_accuracy")) { OutViewMode = VMI_MaterialTextureScaleAccuracy; }
+    else if (Mode == TEXT("required_texture_resolution")) { OutViewMode = VMI_RequiredTextureResolution; }
+    else { return false; }
+
+    OutCanonicalName = MCPViewModeName(OutViewMode);
+    return true;
+}
+
+static FLevelEditorViewportClient* MCPGetActiveLevelViewportClient()
+{
+    if (!GEditor)
+    {
+        return nullptr;
+    }
+
+    FViewport* ActiveViewport = GEditor->GetActiveViewport();
+    for (FLevelEditorViewportClient* Client : GEditor->GetLevelViewportClients())
+    {
+        if (Client && Client->Viewport && (!ActiveViewport || Client->Viewport == ActiveViewport))
+        {
+            return Client;
+        }
+    }
+
+    for (FLevelEditorViewportClient* Client : GEditor->GetLevelViewportClients())
+    {
+        if (Client && Client->Viewport)
+        {
+            return Client;
+        }
+    }
+
+    return nullptr;
+}
+
+static bool MCPCaptureViewportPNG(
+    FLevelEditorViewportClient* ViewportClient,
+    const FString& FilePath,
+    FIntPoint& OutSize,
+    FString& OutError)
+{
+    FViewport* Viewport = ViewportClient && ViewportClient->Viewport
+        ? ViewportClient->Viewport
+        : (GEditor ? GEditor->GetActiveViewport() : nullptr);
+    if (!Viewport)
+    {
+        OutError = TEXT("No active level viewport found. Open the level editor viewport and try again.");
+        return false;
+    }
+
+    OutSize = Viewport->GetSizeXY();
+    if (OutSize.X <= 0 || OutSize.Y <= 0)
+    {
+        OutError = TEXT("Active viewport has no drawable size");
+        return false;
+    }
+
+    TArray<FColor> Bitmap;
+    const FIntRect ViewportRect(0, 0, OutSize.X, OutSize.Y);
+    if (!Viewport->ReadPixels(Bitmap, FReadSurfaceDataFlags(), ViewportRect))
+    {
+        OutError = TEXT("Failed to read viewport pixels");
+        return false;
+    }
+
+    TArray64<uint8> CompressedBitmap64;
+    FImageUtils::PNGCompressImageArray(OutSize.X, OutSize.Y, Bitmap, CompressedBitmap64);
+    TArray<uint8> CompressedBitmap(CompressedBitmap64.GetData(), (int32)CompressedBitmap64.Num());
+
+    IFileManager::Get().MakeDirectory(*FPaths::GetPath(FilePath), true);
+    if (!FFileHelper::SaveArrayToFile(CompressedBitmap, *FilePath))
+    {
+        OutError = FString::Printf(TEXT("Failed to save viewport PNG: %s"), *FilePath);
+        return false;
+    }
+
+    return true;
+}
+
 // ─── Forward declarations for file-local BT helpers ───────────────────────────
 // These static helpers are DEFINED near the bottom of this TU (around line
 // ~4100+) but are CALLED from earlier functions (HandleCreateBTSimple,
@@ -845,6 +977,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleCommand(
     if (CommandType == TEXT("texture_audit_memory"))             return HandleTextureAuditMemory(Params);
     if (CommandType == TEXT("vertex_paint_actor"))               return HandleVertexPaintActor(Params);
     if (CommandType == TEXT("mesh_audit_uv_channels"))           return HandleMeshAuditUVChannels(Params);
+    if (CommandType == TEXT("shader_analyze_complexity"))        return HandleShaderAnalyzeComplexity(Params);
+    if (CommandType == TEXT("renderer_capture_viewmode"))        return HandleRendererCaptureViewmode(Params);
+    if (CommandType == TEXT("shader_visualize_overdraw"))        return HandleShaderVisualizeOverdraw(Params);
+    if (CommandType == TEXT("performance_audit_gpu"))            return HandlePerformanceAuditGPU(Params);
     if (CommandType == TEXT("set_material_on_actor"))            return HandleSetMaterialOnActor(Params);
     if (CommandType == TEXT("create_dynamic_material_instance")) return HandleCreateDynamicMaterialInstance(Params);
     if (CommandType == TEXT("setup_hit_material_swap"))          return HandleSetupHitMaterialSwap(Params);
@@ -7771,6 +7907,358 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMeshAuditUVChannels(
     R->SetNumberField(TEXT("lod_count"), RenderData->LODResources.Num());
     R->SetNumberField(TEXT("max_uv_channels"), MaxUVChannels);
     R->SetArrayField(TEXT("lods"), LODArray);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleShaderAnalyzeComplexity(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString MaterialPath;
+    if (!Params->TryGetStringField(TEXT("material_path"), MaterialPath))
+    {
+        Params->TryGetStringField(TEXT("asset_path"), MaterialPath);
+    }
+    if (MaterialPath.IsEmpty())
+    {
+        return CreateErrorResponse(TEXT("Missing 'material_path'"));
+    }
+
+    bool bIncludeRecommendations = true;
+    Params->TryGetBoolField(TEXT("include_recommendations"), bIncludeRecommendations);
+
+    UMaterialInterface* MaterialInterface = MCPLoadAsset<UMaterialInterface>(MaterialPath);
+    if (!MaterialInterface)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("MaterialInterface not found: %s"), *MaterialPath));
+    }
+
+    UMaterial* Material = MaterialInterface->GetMaterial();
+    if (!Material)
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Could not resolve base material for: %s"), *MaterialPath));
+    }
+
+    int32 TotalExpressions = 0;
+    int32 TextureSampleCount = 0;
+    int32 ScalarParameterCount = 0;
+    int32 VectorParameterCount = 0;
+    int32 FunctionCallCount = 0;
+    int32 StaticSwitchCount = 0;
+    int32 IfExpressionCount = 0;
+    int32 CustomExpressionCount = 0;
+
+    for (const TObjectPtr<UMaterialExpression>& ExpressionPtr : Material->GetExpressionCollection().Expressions)
+    {
+        UMaterialExpression* Expression = ExpressionPtr.Get();
+        if (!Expression)
+        {
+            continue;
+        }
+
+        ++TotalExpressions;
+        TextureSampleCount += Expression->IsA<UMaterialExpressionTextureSample>() ? 1 : 0;
+        ScalarParameterCount += Expression->IsA<UMaterialExpressionScalarParameter>() ? 1 : 0;
+        VectorParameterCount += Expression->IsA<UMaterialExpressionVectorParameter>() ? 1 : 0;
+        FunctionCallCount += Expression->IsA<UMaterialExpressionMaterialFunctionCall>() ? 1 : 0;
+        StaticSwitchCount += Expression->IsA<UMaterialExpressionStaticSwitch>() ? 1 : 0;
+        IfExpressionCount += Expression->IsA<UMaterialExpressionIf>() ? 1 : 0;
+        CustomExpressionCount += Expression->IsA<UMaterialExpressionCustom>() ? 1 : 0;
+    }
+
+    const int32 EstimatedScore =
+        TotalExpressions +
+        TextureSampleCount * 3 +
+        FunctionCallCount * 5 +
+        StaticSwitchCount * 2 +
+        IfExpressionCount * 4 +
+        CustomExpressionCount * 10 +
+        (Material->BlendMode == BLEND_Translucent ? 10 : 0) +
+        (Material->TwoSided ? 6 : 0);
+
+    FString RiskLevel = TEXT("low");
+    if (EstimatedScore >= 80)
+    {
+        RiskLevel = TEXT("high");
+    }
+    else if (EstimatedScore >= 40)
+    {
+        RiskLevel = TEXT("medium");
+    }
+
+    TArray<TSharedPtr<FJsonValue>> Recommendations;
+    if (bIncludeRecommendations)
+    {
+        if (TextureSampleCount >= 8)
+        {
+            Recommendations.Add(MakeShared<FJsonValueString>(
+                TEXT("Texture sample count is high; consider packing masks, reusing samples, or moving repeated logic into material functions.")));
+        }
+        if (FunctionCallCount >= 4)
+        {
+            Recommendations.Add(MakeShared<FJsonValueString>(
+                TEXT("Material function depth is notable; audit duplicated function calls and static branches.")));
+        }
+        if (CustomExpressionCount > 0)
+        {
+            Recommendations.Add(MakeShared<FJsonValueString>(
+                TEXT("Custom HLSL expressions need platform review and should be tested with shader complexity viewmodes.")));
+        }
+        if (Material->BlendMode == BLEND_Translucent)
+        {
+            Recommendations.Add(MakeShared<FJsonValueString>(
+                TEXT("Translucent materials are overdraw-sensitive; capture shader_complexity_with_quad_overdraw in representative scenes.")));
+        }
+        if (Material->TwoSided)
+        {
+            Recommendations.Add(MakeShared<FJsonValueString>(
+                TEXT("Two-sided rendering can double visible surface work; keep it reserved for thin geometry that needs it.")));
+        }
+        if (Recommendations.Num() == 0)
+        {
+            Recommendations.Add(MakeShared<FJsonValueString>(
+                TEXT("No obvious graph-level shader complexity risks found. Validate with viewport captures on final scene geometry.")));
+        }
+    }
+
+    TSharedPtr<FJsonObject> Counts = MakeShared<FJsonObject>();
+    Counts->SetNumberField(TEXT("total_expressions"), TotalExpressions);
+    Counts->SetNumberField(TEXT("texture_samples"), TextureSampleCount);
+    Counts->SetNumberField(TEXT("scalar_parameters"), ScalarParameterCount);
+    Counts->SetNumberField(TEXT("vector_parameters"), VectorParameterCount);
+    Counts->SetNumberField(TEXT("material_function_calls"), FunctionCallCount);
+    Counts->SetNumberField(TEXT("static_switches"), StaticSwitchCount);
+    Counts->SetNumberField(TEXT("if_expressions"), IfExpressionCount);
+    Counts->SetNumberField(TEXT("custom_expressions"), CustomExpressionCount);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("material_path"), MaterialInterface->GetPathName());
+    R->SetStringField(TEXT("analyzed_material_path"), Material->GetPathName());
+    R->SetStringField(TEXT("analysis_type"), TEXT("graph_complexity_estimate"));
+    R->SetStringField(TEXT("blend_mode"), MCPEnumName(StaticEnum<EBlendMode>(), Material->BlendMode));
+    R->SetBoolField(TEXT("two_sided"), Material->TwoSided);
+    R->SetObjectField(TEXT("expression_counts"), Counts);
+    R->SetNumberField(TEXT("estimated_complexity_score"), EstimatedScore);
+    R->SetStringField(TEXT("risk_level"), RiskLevel);
+    R->SetStringField(TEXT("note"), TEXT("Score is a lightweight graph heuristic, not a compiled shader instruction count."));
+    R->SetArrayField(TEXT("recommendations"), Recommendations);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleRendererCaptureViewmode(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString ViewModeText = TEXT("lit");
+    if (!Params->TryGetStringField(TEXT("viewmode"), ViewModeText))
+    {
+        Params->TryGetStringField(TEXT("view_mode"), ViewModeText);
+    }
+
+    EViewModeIndex ViewMode = VMI_Lit;
+    FString CanonicalName;
+    if (!MCPViewModeFromString(ViewModeText, ViewMode, CanonicalName))
+    {
+        return CreateErrorResponse(FString::Printf(TEXT("Unsupported viewmode: %s"), *ViewModeText));
+    }
+
+    FString FilePath;
+    if (!Params->TryGetStringField(TEXT("filepath"), FilePath))
+    {
+        Params->TryGetStringField(TEXT("file_path"), FilePath);
+    }
+    if (FilePath.IsEmpty())
+    {
+        const FString FileName = FPaths::MakeValidFileName(
+            FString::Printf(TEXT("%s_%s.png"), *CanonicalName, *FDateTime::Now().ToString(TEXT("%Y%m%d_%H%M%S"))));
+        FilePath = FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("MCP"), TEXT("Viewmodes"), FileName);
+    }
+    if (!FilePath.EndsWith(TEXT(".png")))
+    {
+        FilePath += TEXT(".png");
+    }
+
+    bool bRestoreViewMode = false;
+    Params->TryGetBoolField(TEXT("restore_viewmode"), bRestoreViewMode);
+
+    FLevelEditorViewportClient* ViewportClient = MCPGetActiveLevelViewportClient();
+    if (!ViewportClient)
+    {
+        return CreateErrorResponse(TEXT("No active level viewport found. Open the level editor viewport and try again."));
+    }
+
+    const EViewModeIndex PreviousViewMode = ViewportClient->GetViewMode();
+    const FString PreviousName = MCPViewModeName(PreviousViewMode);
+
+    ViewportClient->SetViewMode(ViewMode);
+    ViewportClient->Invalidate();
+    if (GEditor)
+    {
+        GEditor->RedrawAllViewports(false);
+    }
+
+    FIntPoint Size(0, 0);
+    FString Error;
+    const bool bCaptured = MCPCaptureViewportPNG(ViewportClient, FilePath, Size, Error);
+
+    if (bRestoreViewMode)
+    {
+        ViewportClient->SetViewMode(PreviousViewMode);
+        ViewportClient->Invalidate();
+        if (GEditor)
+        {
+            GEditor->RedrawAllViewports(false);
+        }
+    }
+
+    if (!bCaptured)
+    {
+        return CreateErrorResponse(Error);
+    }
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("viewmode"), CanonicalName);
+    R->SetStringField(TEXT("previous_viewmode"), PreviousName);
+    R->SetBoolField(TEXT("restored_viewmode"), bRestoreViewMode);
+    R->SetStringField(TEXT("filepath"), FilePath);
+    R->SetNumberField(TEXT("width"), Size.X);
+    R->SetNumberField(TEXT("height"), Size.Y);
+    return R;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleShaderVisualizeOverdraw(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    FString ViewMode = TEXT("shader_complexity_with_quad_overdraw");
+    Params->TryGetStringField(TEXT("viewmode"), ViewMode);
+    Params->TryGetStringField(TEXT("view_mode"), ViewMode);
+
+    TSharedPtr<FJsonObject> CaptureParams = MakeShared<FJsonObject>();
+    CaptureParams->SetStringField(TEXT("viewmode"), ViewMode);
+
+    FString FilePath;
+    if (Params->TryGetStringField(TEXT("filepath"), FilePath) || Params->TryGetStringField(TEXT("file_path"), FilePath))
+    {
+        CaptureParams->SetStringField(TEXT("filepath"), FilePath);
+    }
+
+    bool bRestoreViewMode = false;
+    Params->TryGetBoolField(TEXT("restore_viewmode"), bRestoreViewMode);
+    CaptureParams->SetBoolField(TEXT("restore_viewmode"), bRestoreViewMode);
+
+    TSharedPtr<FJsonObject> Result = HandleRendererCaptureViewmode(CaptureParams);
+    if (Result.IsValid() && Result->GetBoolField(TEXT("success")))
+    {
+        Result->SetStringField(TEXT("analysis_type"), TEXT("overdraw_visualization"));
+        Result->SetStringField(TEXT("note"), TEXT("Warm/white regions indicate expensive shader work and overdraw; inspect translucent and layered materials first."));
+    }
+    return Result;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandlePerformanceAuditGPU(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    bool bIncludeMemory = true;
+    bool bIncludeViewport = true;
+    Params->TryGetBoolField(TEXT("include_memory"), bIncludeMemory);
+    Params->TryGetBoolField(TEXT("include_viewport"), bIncludeViewport);
+
+    TSharedPtr<FJsonObject> R = MakeShared<FJsonObject>();
+    R->SetBoolField(TEXT("success"), true);
+    R->SetStringField(TEXT("analysis_type"), TEXT("lightweight_editor_gpu_audit"));
+
+    FString FeatureLevelName;
+    GetFeatureLevelName(GMaxRHIFeatureLevel, FeatureLevelName);
+
+    TSharedPtr<FJsonObject> RHIInfo = MakeShared<FJsonObject>();
+    RHIInfo->SetStringField(TEXT("adapter_name"), GRHIAdapterName);
+    RHIInfo->SetNumberField(TEXT("vendor_id"), (double)GRHIVendorId);
+    RHIInfo->SetStringField(TEXT("max_feature_level"), FeatureLevelName);
+    R->SetObjectField(TEXT("rhi"), RHIInfo);
+
+    if (bIncludeMemory)
+    {
+        const FPlatformMemoryStats Stats = FPlatformMemory::GetStats();
+        auto ToMB = [](uint64 Bytes) -> double { return (double)Bytes / (1024.0 * 1024.0); };
+
+        TSharedPtr<FJsonObject> Memory = MakeShared<FJsonObject>();
+        Memory->SetNumberField(TEXT("total_physical_mb"), ToMB(Stats.TotalPhysical));
+        Memory->SetNumberField(TEXT("available_physical_mb"), ToMB(Stats.AvailablePhysical));
+        Memory->SetNumberField(TEXT("used_physical_mb"), ToMB(Stats.UsedPhysical));
+        Memory->SetNumberField(TEXT("peak_used_physical_mb"), ToMB(Stats.PeakUsedPhysical));
+        Memory->SetNumberField(TEXT("available_virtual_mb"), ToMB(Stats.AvailableVirtual));
+        Memory->SetNumberField(TEXT("used_virtual_mb"), ToMB(Stats.UsedVirtual));
+        R->SetObjectField(TEXT("memory"), Memory);
+    }
+
+    if (bIncludeViewport)
+    {
+        FLevelEditorViewportClient* ViewportClient = MCPGetActiveLevelViewportClient();
+        TSharedPtr<FJsonObject> Viewport = MakeShared<FJsonObject>();
+        if (ViewportClient && ViewportClient->Viewport)
+        {
+            const FIntPoint Size = ViewportClient->Viewport->GetSizeXY();
+            Viewport->SetBoolField(TEXT("available"), true);
+            Viewport->SetStringField(TEXT("viewmode"), MCPViewModeName(ViewportClient->GetViewMode()));
+            Viewport->SetNumberField(TEXT("width"), Size.X);
+            Viewport->SetNumberField(TEXT("height"), Size.Y);
+        }
+        else
+        {
+            Viewport->SetBoolField(TEXT("available"), false);
+        }
+        R->SetObjectField(TEXT("viewport"), Viewport);
+    }
+
+    UWorld* World = GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    if (World)
+    {
+        int32 ActorCount = 0;
+        int32 StaticMeshComponentCount = 0;
+        int32 PrimitiveComponentCount = 0;
+        int32 VisiblePrimitiveComponentCount = 0;
+
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            AActor* Actor = *It;
+            if (!Actor)
+            {
+                continue;
+            }
+
+            ++ActorCount;
+
+            TArray<UStaticMeshComponent*> StaticMeshComponents;
+            Actor->GetComponents<UStaticMeshComponent>(StaticMeshComponents);
+            StaticMeshComponentCount += StaticMeshComponents.Num();
+
+            TArray<UPrimitiveComponent*> PrimitiveComponents;
+            Actor->GetComponents<UPrimitiveComponent>(PrimitiveComponents);
+            PrimitiveComponentCount += PrimitiveComponents.Num();
+            for (UPrimitiveComponent* PrimitiveComponent : PrimitiveComponents)
+            {
+                if (PrimitiveComponent && PrimitiveComponent->IsVisible())
+                {
+                    ++VisiblePrimitiveComponentCount;
+                }
+            }
+        }
+
+        TSharedPtr<FJsonObject> Scene = MakeShared<FJsonObject>();
+        Scene->SetStringField(TEXT("world_name"), World->GetName());
+        Scene->SetNumberField(TEXT("actor_count"), ActorCount);
+        Scene->SetNumberField(TEXT("static_mesh_component_count"), StaticMeshComponentCount);
+        Scene->SetNumberField(TEXT("primitive_component_count"), PrimitiveComponentCount);
+        Scene->SetNumberField(TEXT("visible_primitive_component_count"), VisiblePrimitiveComponentCount);
+        R->SetObjectField(TEXT("scene"), Scene);
+    }
+
+    TArray<TSharedPtr<FJsonValue>> NextSteps;
+    NextSteps.Add(MakeShared<FJsonValueString>(TEXT("Capture shader_complexity_with_quad_overdraw for visual hot-spot review.")));
+    NextSteps.Add(MakeShared<FJsonValueString>(TEXT("Use Unreal's stat gpu or ProfileGPU for pass-level timings when deeper profiling is needed.")));
+    NextSteps.Add(MakeShared<FJsonValueString>(TEXT("Audit high-risk materials with shader_analyze_complexity and texture_audit_memory.")));
+    R->SetArrayField(TEXT("recommended_next_steps"), NextSteps);
+    R->SetStringField(TEXT("note"), TEXT("This audit is a fast editor snapshot, not a replacement for GPU profiler captures."));
     return R;
 }
 

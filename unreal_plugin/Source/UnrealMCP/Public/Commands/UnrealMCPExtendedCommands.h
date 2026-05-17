@@ -210,6 +210,10 @@ private:
     TSharedPtr<FJsonObject> HandleTextureAuditMemory(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleVertexPaintActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleMeshAuditUVChannels(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleShaderAnalyzeComplexity(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleRendererCaptureViewmode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleShaderVisualizeOverdraw(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandlePerformanceAuditGPU(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetMaterialOnActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddSetMaterialNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCreateDynamicMaterialInstance(const TSharedPtr<FJsonObject>& Params);

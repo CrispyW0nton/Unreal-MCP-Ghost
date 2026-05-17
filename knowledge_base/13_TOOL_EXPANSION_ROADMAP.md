@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 477 MCP tools: 474 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 481 MCP tools: 478 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -34,7 +34,7 @@ Partially live areas:
 
 - Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
 - AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
-- Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, bulk instance parameter updates, ORM texture generation, texture memory audits, vertex paint automation, and mesh UV-channel audits. It still lacks shader complexity, overdraw, and GPU performance view helpers.
+- Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, bulk instance parameter updates, ORM texture generation, texture memory audits, vertex paint automation, mesh UV-channel audits, shader graph complexity estimates, diagnostic viewmode captures, overdraw visualization, and lightweight GPU/performance snapshots.
 - Autonomous verification exists in pieces through diagnostics, screenshots, source control status, and chat, but needs a formal execution journal, risk evaluation, PIE automation, and screenshot analysis loop.
 
 Missing or thin areas:
@@ -253,7 +253,7 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: make materials, textures, and performance views as automatable as Blueprints.
 
-Status: Slice 1 master material and material instance pipeline tooling is implemented and live-tested in Lab5E. Slice 2 texture/mesh/vertex-paint audit helpers are implemented and live-tested in Lab5E.
+Status: Slice 1 master material and material instance pipeline tooling is implemented and live-tested in Lab5E. Slice 2 texture/mesh/vertex-paint audit helpers are implemented and live-tested in Lab5E. Slice 3 shader/viewmode/GPU audit helpers are implemented and live-tested in Lab5E.
 
 Slice 1:
 
@@ -272,15 +272,17 @@ Slice 2:
 
 Slice 3:
 
-- `shader_analyze_complexity`
-- `shader_visualize_overdraw`
-- `renderer_capture_viewmode`
-- `performance_audit_gpu`
+- `shader_analyze_complexity` - implemented as a native C++ bridge command with a Python MCP wrapper for fast graph-level shader complexity estimates and recommendations.
+- `renderer_capture_viewmode` - implemented as a native C++ bridge command with a Python MCP wrapper for active viewport diagnostic PNG capture.
+- `shader_visualize_overdraw` - implemented as a native C++ bridge command with a Python MCP wrapper for shader complexity plus quad-overdraw review.
+- `performance_audit_gpu` - implemented as a native C++ bridge command with a Python MCP wrapper for RHI adapter, feature level, memory, viewport, and scene/component snapshots.
 
 Validation:
 
 - Build one PBR master material from a texture set.
 - Verify material compile diagnostics, parameter names, texture compression, and asset references.
+- Capture shader complexity and overdraw viewmodes from a live editor viewport.
+- Return GPU/RHI, memory, viewport, and scene-count evidence for lightweight performance triage.
 
 Lab5E smoke result, 2026-05-16:
 
@@ -295,6 +297,11 @@ Lab5E smoke result, 2026-05-16:
 - Audited `T_MCP_Phase4_Slice2_ORM`; native readback reported `TC_Masks`, `SRGB=false`, `source_format=TSF_BGRA8`, 1 mip, and 256 estimated source bytes.
 - Audited `/Engine/BasicShapes/Cube.Cube`; native readback reported 1 LOD, 54 vertices, 48 triangles, and 2 UV channels.
 - Spawned `MCP_Phase4_VertexPaintActor` in the editor world and applied component override vertex colors to 54 vertices on LOD 0.
+- Added `RHI` as a plugin dependency for GPU adapter and feature-level readback.
+- Live Coding recompiled the updated Lab5E project plugin successfully.
+- Analyzed `/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial`; native readback reported 2 expressions, risk `low`, and a graph heuristic score of 2.
+- Captured `shader_complexity` and `shader_complexity_with_quad_overdraw` PNGs from the active Lab5E viewport at 1431x870.
+- Captured a lightweight GPU audit: NVIDIA GeForce RTX 3090, SM6, active `lit` viewport, 39 actors, 19 StaticMeshComponents, and 54 PrimitiveComponents.
 
 ## Phase 5 - Animation Closure
 
@@ -377,7 +384,7 @@ Validation:
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers.
+4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers. Done.
 5. Phase 5: close animation montage/control-rig gaps.
 
 ## Backlog Notes

@@ -40,6 +40,10 @@ class TestMaterialToolsRegistration(unittest.TestCase):
         self.assertIn("texture_audit_memory", names)
         self.assertIn("vertex_paint_actor", names)
         self.assertIn("mesh_audit_uv_channels", names)
+        self.assertIn("shader_analyze_complexity", names)
+        self.assertIn("renderer_capture_viewmode", names)
+        self.assertIn("shader_visualize_overdraw", names)
+        self.assertIn("performance_audit_gpu", names)
 
 
 if __name__ == "__main__":

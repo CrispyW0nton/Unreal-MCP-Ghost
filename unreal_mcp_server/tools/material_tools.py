@@ -359,6 +359,95 @@ def register_material_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def shader_analyze_complexity(
+        ctx: Context,
+        material_path: str,
+        include_recommendations: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Estimate Material shader complexity from graph structure and risk flags.
+
+        This is a fast technical-art audit, not a compiled instruction count.
+        Pair it with renderer_capture_viewmode or shader_visualize_overdraw for
+        scene-level visual validation.
+
+        Args:
+            material_path: Material or Material Instance asset path to inspect
+            include_recommendations: Include optimization suggestions
+        """
+        return _send("shader_analyze_complexity", {
+            "material_path": material_path,
+            "include_recommendations": include_recommendations,
+        })
+
+    @mcp.tool()
+    def renderer_capture_viewmode(
+        ctx: Context,
+        viewmode: str,
+        filepath: str = "",
+        restore_viewmode: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Switch the active level viewport to a diagnostic viewmode and save a PNG.
+
+        Supported viewmodes include lit, unlit, wireframe, shader_complexity,
+        quad_overdraw, shader_complexity_with_quad_overdraw,
+        material_texture_scale_accuracy, and required_texture_resolution.
+
+        Args:
+            viewmode: Diagnostic viewmode to capture
+            filepath: Optional output .png path; defaults to Saved/MCP/Viewmodes
+            restore_viewmode: Restore the previous viewport mode after capture
+        """
+        return _send("renderer_capture_viewmode", {
+            "viewmode": viewmode,
+            "filepath": filepath,
+            "restore_viewmode": restore_viewmode,
+        })
+
+    @mcp.tool()
+    def shader_visualize_overdraw(
+        ctx: Context,
+        viewmode: str = "shader_complexity_with_quad_overdraw",
+        filepath: str = "",
+        restore_viewmode: bool = False,
+    ) -> Dict[str, Any]:
+        """
+        Capture an overdraw-focused viewport visualization for material review.
+
+        Args:
+            viewmode: shader_complexity_with_quad_overdraw or quad_overdraw
+            filepath: Optional output .png path; defaults to Saved/MCP/Viewmodes
+            restore_viewmode: Restore the previous viewport mode after capture
+        """
+        return _send("shader_visualize_overdraw", {
+            "viewmode": viewmode,
+            "filepath": filepath,
+            "restore_viewmode": restore_viewmode,
+        })
+
+    @mcp.tool()
+    def performance_audit_gpu(
+        ctx: Context,
+        include_memory: bool = True,
+        include_viewport: bool = True,
+    ) -> Dict[str, Any]:
+        """
+        Capture a lightweight editor GPU/performance audit snapshot.
+
+        Returns RHI adapter details, memory stats, active viewport state, and
+        scene/component counts. Use Unreal's ProfileGPU for pass timings.
+
+        Args:
+            include_memory: Include process/platform memory stats
+            include_viewport: Include active viewport dimensions and viewmode
+        """
+        return _send("performance_audit_gpu", {
+            "include_memory": include_memory,
+            "include_viewport": include_viewport,
+        })
+
+    @mcp.tool()
     def set_material_on_actor(
         ctx: Context,
         actor_name: str,
