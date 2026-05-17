@@ -413,7 +413,7 @@ Slice 2 smoke result, 2026-05-17:
 
 Goal: make the platform easier to run in production and CI.
 
-Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested.
+Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested. Slice 3 UMG missing-route cleanup is implemented and offline-tested.
 
 Slices:
 
@@ -444,6 +444,13 @@ Slice 2 smoke result, 2026-05-17:
 - Added tests covering registry schema, stable snapshot comparison, and Markdown drift sections.
 - Current tracked-worktree audit finds 313 bridge command names, 276 Python-referenced commands, 301 C++ routed commands, 12 Python commands without discovered C++ routes, and 1 intentionally dynamic CLI call site.
 - The 12 current missing routes are UMG convenience wrappers: `add_canvas_panel_to_widget`, `add_checkbox_to_widget`, `add_create_widget_node`, `add_horizontal_box_to_widget`, `add_image_to_widget`, `add_named_slot_to_widget`, `add_progress_bar_to_widget`, `add_slider_to_widget`, `add_vertical_box_to_widget`, `add_widget_animation`, `create_hud_widget`, and `create_win_menu_widget`.
+
+Slice 3 smoke result, 2026-05-17:
+
+- Removed Python calls to the 12 missing UMG bridge routes discovered by the Slice 2 audit.
+- Kept the public MCP tools registered, but retired unstable convenience wrappers now return structured `retired_route` guidance instead of sending nonexistent commands to the plugin.
+- Routed `add_create_widget_node` through the existing `add_blueprint_function_node` bridge route for `GameplayStatics.CreateWidget`.
+- Current audit result: 0 Python bridge commands without discovered C++ routes. The remaining unresolved call site is the intentional dynamic CLI passthrough in `ue5cli.py`.
 
 ## Phase 8 - Production Skills And Game Templates
 
@@ -491,7 +498,8 @@ Slice 1 smoke result, 2026-05-17:
 9. Phase 8 Slice 1: add vertical slice report packaging skill. Done and offline-tested.
 10. Phase 7 Slice 1: add startup/tool latency profiling and repeatable CI smoke docs. Done and offline-tested.
 11. Phase 7 Slice 2: add command metadata registry to reduce routing drift between Python and C++. Done and offline-tested.
-12. Phase 7 Slice 3: close or formally retire the 12 UMG Python wrappers that have no discovered C++ route.
+12. Phase 7 Slice 3: close or formally retire the 12 UMG Python wrappers that have no discovered C++ route. Done and offline-tested.
+13. Phase 7 Slice 4: review C++-only routes not referenced by Python and decide which should receive wrappers, remain internal aliases, or be removed.
 
 ## Backlog Notes
 

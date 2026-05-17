@@ -18,7 +18,7 @@ Expected results:
 
 - `tool_inventory.py` exits with code `0` and reports no uncategorized modules.
 - `profile_mcp_startup.py` exits with code `0`, prints a Markdown timing table, and writes optional JSON/Markdown artifacts when output paths are provided.
-- `bridge_command_audit.py` prints the Python/C++ bridge command metadata summary and known routing drift.
+- `bridge_command_audit.py` prints the Python/C++ bridge command metadata summary; `Python missing C++ routes` should remain `0`.
 - The unittest command passes without requiring Unreal Editor or the TCP bridge.
 
 ## Optional Full Server Startup Probe

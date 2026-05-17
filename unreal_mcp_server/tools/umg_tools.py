@@ -9,6 +9,18 @@ from mcp.server.fastmcp import FastMCP, Context
 logger = logging.getLogger("UnrealMCP")
 
 
+def _retired_umg_route(tool_name: str, replacement: str) -> Dict[str, Any]:
+    return {
+        "success": False,
+        "status": "retired_route",
+        "tool": tool_name,
+        "message": (
+            f"{tool_name} no longer calls its retired native bridge route. "
+            f"{replacement}"
+        ),
+    }
+
+
 def register_umg_tools(mcp: FastMCP):
 
     @mcp.tool()
@@ -235,22 +247,10 @@ def register_umg_tools(mcp: FastMCP):
             background_color: [R,G,B,A] background
             percent: Initial fill (0.0-1.0)
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_progress_bar_to_widget", {
-                "widget_name": widget_name,
-                "progress_bar_name": progress_bar_name,
-                "position": position,
-                "size": size,
-                "fill_color": fill_color,
-                "background_color": background_color,
-                "percent": percent
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_progress_bar_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def add_image_to_widget(
@@ -273,21 +273,10 @@ def register_umg_tools(mcp: FastMCP):
             size: [Width, Height]
             color: [R,G,B,A] tint color
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_image_to_widget", {
-                "widget_name": widget_name,
-                "image_name": image_name,
-                "texture_path": texture_path,
-                "position": position,
-                "size": size,
-                "color": color
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_image_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     # ── Advanced UMG Widgets (Ch. 7, 8, 11, 20) ───────────────────────────────
 
@@ -315,21 +304,10 @@ def register_umg_tools(mcp: FastMCP):
             anchor_preset: UMG anchor preset (\"TopLeft\", \"TopCenter\", \"Center\", etc.)
             size_to_content: Auto-size to fit children
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_horizontal_box_to_widget", {
-                "widget_name": widget_name,
-                "box_name": box_name,
-                "position": position,
-                "size": size,
-                "anchor_preset": anchor_preset,
-                "size_to_content": size_to_content
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_horizontal_box_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def add_vertical_box_to_widget(
@@ -355,21 +333,10 @@ def register_umg_tools(mcp: FastMCP):
             anchor_preset: UMG anchor preset
             size_to_content: Auto-size to fit children
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_vertical_box_to_widget", {
-                "widget_name": widget_name,
-                "box_name": box_name,
-                "position": position,
-                "size": size,
-                "anchor_preset": anchor_preset,
-                "size_to_content": size_to_content
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_vertical_box_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def add_canvas_panel_to_widget(
@@ -387,17 +354,10 @@ def register_umg_tools(mcp: FastMCP):
             widget_name: Widget Blueprint name
             panel_name: Component name for the Canvas Panel
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_canvas_panel_to_widget", {
-                "widget_name": widget_name,
-                "panel_name": panel_name
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_canvas_panel_to_widget",
+            "Use create_umg_widget_blueprint for the default root canvas, or the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def add_slider_to_widget(
@@ -424,23 +384,10 @@ def register_umg_tools(mcp: FastMCP):
             default_value: Initial slider value
             step_size: Increment step
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_slider_to_widget", {
-                "widget_name": widget_name,
-                "slider_name": slider_name,
-                "position": position,
-                "size": size,
-                "min_value": min_value,
-                "max_value": max_value,
-                "default_value": default_value,
-                "step_size": step_size
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_slider_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def add_checkbox_to_widget(
@@ -461,20 +408,10 @@ def register_umg_tools(mcp: FastMCP):
             position: [X, Y] position
             is_checked: Initial checked state
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_checkbox_to_widget", {
-                "widget_name": widget_name,
-                "checkbox_name": checkbox_name,
-                "label_text": label_text,
-                "position": position,
-                "is_checked": is_checked
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_checkbox_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def add_named_slot_to_widget(
@@ -496,19 +433,10 @@ def register_umg_tools(mcp: FastMCP):
             position: [X, Y] position
             size: [Width, Height]
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_named_slot_to_widget", {
-                "widget_name": widget_name,
-                "slot_name": slot_name,
-                "position": position,
-                "size": size
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_named_slot_to_widget",
+            "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
+        )
 
     @mcp.tool()
     def create_hud_widget(
@@ -544,23 +472,10 @@ def register_umg_tools(mcp: FastMCP):
             round_display: Include a round number display
             folder_path: Content browser folder
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("create_hud_widget", {
-                "widget_name": widget_name,
-                "health_bar": health_bar,
-                "stamina_bar": stamina_bar,
-                "ammo_counter": ammo_counter,
-                "targets_counter": targets_counter,
-                "target_goal_display": target_goal_display,
-                "round_display": round_display,
-                "folder_path": folder_path
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "create_hud_widget",
+            "Use create_umg_widget_blueprint with add_text_block_to_widget and add_button_to_widget, then add progress/image controls after a committed widget tree route lands.",
+        )
 
     @mcp.tool()
     def create_win_menu_widget(
@@ -588,22 +503,10 @@ def register_umg_tools(mcp: FastMCP):
             show_round_info: Include current round number display
             folder_path: Content browser folder
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("create_win_menu_widget", {
-                "widget_name": widget_name,
-                "title_text": title_text,
-                "title_color": title_color,
-                "show_restart_button": show_restart_button,
-                "show_quit_button": show_quit_button,
-                "show_round_info": show_round_info,
-                "folder_path": folder_path
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "create_win_menu_widget",
+            "Use create_umg_widget_blueprint, add_text_block_to_widget, and add_button_to_widget to build the screen with currently routed commands.",
+        )
 
     @mcp.tool()
     def add_widget_animation(
@@ -631,22 +534,10 @@ def register_umg_tools(mcp: FastMCP):
             duration: Animation duration in seconds
             loop: Whether the animation loops
         """
-        from unreal_mcp_server import get_unreal_connection
-        try:
-            unreal = get_unreal_connection()
-            if not unreal:
-                return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_widget_animation", {
-                "widget_name": widget_name,
-                "animation_name": animation_name,
-                "animated_property": animated_property,
-                "start_value": start_value,
-                "end_value": end_value,
-                "duration": duration,
-                "loop": loop
-            }) or {}
-        except Exception as e:
-            return {"success": False, "message": str(e)}
+        return _retired_umg_route(
+            "add_widget_animation",
+            "Use exec_python for a project-specific UMG animation script until a native animation route is added.",
+        )
 
     @mcp.tool()
     def add_remove_from_parent_node(
@@ -708,11 +599,15 @@ def register_umg_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_create_widget_node", {
+            return unreal.send_command("add_blueprint_function_node", {
                 "blueprint_name": blueprint_name,
-                "widget_class": widget_class,
-                "owning_player_variable": owning_player_variable,
-                "store_in_variable": store_in_variable,
+                "target": "GameplayStatics",
+                "function_name": "CreateWidget",
+                "params": {
+                    "widget_class": widget_class,
+                    "owning_player_variable": owning_player_variable,
+                    "store_in_variable": store_in_variable,
+                },
                 "node_position": node_position
             }) or {}
         except Exception as e:
