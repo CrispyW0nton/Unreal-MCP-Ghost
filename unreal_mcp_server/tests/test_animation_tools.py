@@ -37,6 +37,11 @@ class TestAnimationToolsRegistration(unittest.TestCase):
         self.assertIn("anim_add_montage_slot", names)
         self.assertIn("anim_set_montage_section", names)
         self.assertIn("anim_add_branching_point", names)
+        self.assertIn("control_rig_create", names)
+        self.assertIn("control_rig_describe", names)
+        self.assertIn("control_rig_add_control", names)
+        self.assertIn("control_rig_add_constraint", names)
+        self.assertIn("control_rig_bake_to_sequence", names)
 
 
 if __name__ == "__main__":

@@ -18,13 +18,13 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 487 MCP tools: 484 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 492 MCP tools: 489 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
 - Blueprint creation, graph editing, variables, functions, nodes, comments, diagnostics, and repair.
 - Behavior Tree and Blackboard authoring, including full-tree JSON construction.
-- Animation Blueprint basics, state machines, AnimGraph slot insertion, IK Rig, IK Retargeter, skeleton inspection, and batch retargeting.
+- Animation Blueprint basics, state machines, AnimGraph slot insertion, Control Rig asset/control/constraint helpers, IK Rig, IK Retargeter, skeleton inspection, and batch retargeting.
 - Import pipelines for textures, meshes, skeletal meshes, audio, batch folders, and GhostRigger assets.
 - UMG/widget, gameplay, data, save-game, procedural, physics, VR, variant, reflection, project intelligence, C++ bridge, source control, and editor chat surfaces.
 - Dual MCP transport support: stdio, SSE, and streamable HTTP.
@@ -41,6 +41,7 @@ Missing or thin areas:
 
 - Multiplayer/networking tools: Slices 1-3 now cover replication inspection/defaults, RepNotify variables, RPC Custom Event authoring/configuration, authority/role/owner graph helpers, Blueprint session flow nodes, runtime replication snapshots, and common mistake validation.
 - Niagara native authoring: systems from recipes, emitters, modules, renderers, parameters, events, ribbons, GPU/CPU collision, fluid/flipbook workflows, and profiling.
+- Production skill workflows: only a few high-level skills exist today; complete game-system templates and larger repeatable workflows still need deliberate buildout.
 - Production distribution/performance: command registry generated from metadata, startup profiling, and optional high-performance server packaging.
 
 ## Engineering Principles
@@ -307,7 +308,7 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: close the remaining animation gaps rather than rebuilding what already works.
 
-Status: Slice 1 montage and notify tooling is implemented and live-tested in Lab5E.
+Status: Slice 1 montage and notify tooling is implemented and live-tested in Lab5E. Slice 2 Control Rig foundation is implemented and live-tested in Lab5E.
 
 Already strong:
 
@@ -330,10 +331,11 @@ Slice 1:
 
 Slice 2:
 
-- `control_rig_create`
-- `control_rig_add_control`
-- `control_rig_add_constraint`
-- `control_rig_bake_to_sequence`
+- `control_rig_create` - implemented as a UE Python Control Rig Blueprint asset creator with optional preview mesh and bone import.
+- `control_rig_describe` - implemented as readback inspection for hierarchy counts, preview mesh, bones, controls, nulls, and curves.
+- `control_rig_add_control` - implemented for transform, position, float, bool, scale, and related control types.
+- `control_rig_add_constraint` - implemented for hierarchy parent and available-space relationships.
+- `control_rig_bake_to_sequence` - implemented as a guarded adapter over `ControlRigSequencerLibrary.bake_to_control_rig`; it validates required Sequencer binding context before invoking the bake.
 
 Validation:
 
@@ -351,6 +353,13 @@ Lab5E smoke result, 2026-05-16:
 - Added branching point `MCP_Hit` at `0.35s`.
 - Added regular notify `MCP_GenericNotify` through the exposed `add_anim_notify` wrapper.
 - Native describe reported 2 slots, 2 sections, and 2 notifies, including `MCP_Hit` as a branching point and `MCP_GenericNotify` as a regular notify.
+- Created `/Game/MCP_Test/Animation/CR_MCP_Phase5_ControlRigSmoke2` from `/Game/ArtAssets/Characters/Mannequins/Meshes/SKM_Manny`.
+- Imported 161 bones from the Skeletal Mesh and verified the preview mesh persisted.
+- Added transform controls `MCP_Root_CTRL` and `MCP_Free_CTRL`.
+- Added an available-space relationship from `MCP_Root_CTRL` to `pelvis`.
+- Added a parent hierarchy relationship from `MCP_Free_CTRL` to `root`.
+- Readback reported 163 hierarchy elements: 161 bones and 2 controls.
+- Ran the guarded bake adapter with missing inputs; it correctly reported the required Level Sequence, Control Rig, and binding display name instead of mutating the project.
 
 ## Phase 6 - Autonomous Verification Loop
 
@@ -396,14 +405,41 @@ Validation:
 - Repeatable CI smoke commands.
 - Large Blueprint creation benchmark before and after bulk injection.
 
+## Phase 8 - Production Skills And Game Templates
+
+Goal: turn trustworthy low-level tools into repeatable, inspectable game-development workflows.
+
+Why this is explicit:
+
+- The tool surface is broad enough to build many systems, but single-developer productivity depends on higher-level skills that chain discovery, creation, verification, and repair.
+- The original 360-degree gap analysis called out complete character, weapon, inventory, multiplayer, VFX, and material-pipeline skills as a differentiator.
+
+Slices:
+
+- `skill_create_complete_character_controller`
+- `skill_build_fps_weapon_system`
+- `skill_create_inventory_ui`
+- `skill_setup_multiplayer_character`
+- `skill_build_niagara_explosion`
+- `skill_create_master_material_pipeline`
+- `skill_create_enemy_encounter_ai`
+- `skill_package_vertical_slice_report`
+
+Validation:
+
+- Each skill must call existing low-level tools rather than duplicating engine logic.
+- Each skill must produce a small project artifact plus evidence: compile diagnostics, graph summaries, asset descriptions, screenshots, PIE logs, or journal entries.
+
 ## Immediate Execution Queue
 
 1. Phase 0: reconcile tool-count docs and add drift guard test.
 2. Phase 1: add Niagara authoring support probe and schema wrappers.
 3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
 4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers. Done.
-5. Phase 5 Slice 1: close montage/notify tooling gaps. Done in code; live validation pending.
-6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling.
+5. Phase 5 Slice 1: close montage/notify tooling gaps. Done and live-tested.
+6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling. Done and live-tested.
+7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation.
+8. Phase 8 Slice 1: convert the strongest existing vertical workflows into explicit production skills after Phase 6 verification exists.
 
 ## Backlog Notes
 

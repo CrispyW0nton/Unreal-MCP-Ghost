@@ -8,6 +8,7 @@ classes live in the IKRigEditor module and are not exposed via the MCP
 C++ bridge.
 """
 import logging
+import ast
 import textwrap
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
@@ -50,6 +51,49 @@ def _exec(code: str) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"exec_python error: {e}")
         return {"success": False, "message": str(e)}
+
+
+def _eval_script(script: str) -> Dict[str, Any]:
+    """Run a UE Python script and return the script's `_mcp_result` dict."""
+    from unreal_mcp_server import get_unreal_connection
+    expression = f"(lambda ns: (exec({script!r}, ns), ns.get('_mcp_result', {{}}))[1])({{}})"
+    try:
+        unreal = get_unreal_connection()
+        if not unreal:
+            return {"success": False, "message": "Not connected to Unreal Engine"}
+        response = unreal.send_command(
+            "exec_python",
+            {"code": expression, "mode": "evaluate_statement"}
+        ) or {}
+    except Exception as e:
+        logger.error(f"exec_python evaluate error: {e}")
+        return {"success": False, "message": str(e)}
+
+    if not response.get("success", response.get("status") != "error"):
+        return {
+            "success": False,
+            "message": response.get("error") or response.get("message") or "exec_python failed",
+            "response": response,
+        }
+
+    raw = response.get("command_result")
+    if raw is None and isinstance(response.get("result"), dict):
+        raw = response["result"].get("command_result")
+    if isinstance(raw, dict):
+        return raw
+    if raw in (None, "", "None"):
+        return {"success": False, "message": "No _mcp_result returned", "response": response}
+    try:
+        parsed = ast.literal_eval(raw)
+    except (SyntaxError, ValueError) as e:
+        return {
+            "success": False,
+            "message": f"Could not parse Control Rig result: {e}",
+            "raw": raw,
+        }
+    if isinstance(parsed, dict):
+        return parsed
+    return {"success": False, "message": "Control Rig script returned a non-dict result", "raw": raw}
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -761,6 +805,567 @@ def register_animation_tools(mcp: FastMCP):
 
         _send("compile_blueprint", {"blueprint_name": anim_blueprint_name})
         return results
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # CONTROL RIG TOOLS
+    # ─────────────────────────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def control_rig_create(
+        ctx: Context,
+        rig_name: str,
+        folder_path: str = "/Game/Animation/ControlRigs",
+        skeletal_mesh_path: str = "",
+        modular_rig: bool = False,
+        import_bones: bool = True,
+        overwrite: bool = False,
+        save: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Create a Control Rig Blueprint asset, optionally seeded from a Skeletal Mesh.
+
+        Args:
+            rig_name: New Control Rig asset name
+            folder_path: Content Browser destination folder
+            skeletal_mesh_path: Optional Skeletal Mesh used as preview mesh and bone source
+            modular_rig: Create as a modular rig when supported by the engine version
+            import_bones: Import bones from the Skeletal Mesh into the rig hierarchy
+            overwrite: Delete and replace an existing Control Rig asset
+            save: Save the asset after creation
+        """
+        script = textwrap.dedent(f"""\
+import unreal
+
+def _finish(result):
+    global _mcp_result
+    _mcp_result = result
+
+try:
+    rig_name = {rig_name!r}
+    folder_path = {folder_path!r}.rstrip("/")
+    asset_path = f"{{folder_path}}/{{rig_name}}"
+    skeletal_mesh_path = {skeletal_mesh_path!r}
+    save_asset = {bool(save)!r}
+    imported_bones = []
+
+    if unreal.EditorAssetLibrary.does_asset_exist(asset_path):
+        if {bool(overwrite)!r}:
+            unreal.EditorAssetLibrary.delete_asset(asset_path)
+        else:
+            rig = unreal.load_asset(asset_path)
+            hierarchy = rig.get_editor_property("hierarchy")
+            keys = hierarchy.get_all_keys() if hierarchy else []
+            _finish({{
+                "success": True,
+                "existed": True,
+                "asset_path": asset_path,
+                "bone_count": len([k for k in keys if k.type == unreal.RigElementType.BONE]),
+                "control_count": len([k for k in keys if k.type == unreal.RigElementType.CONTROL]),
+                "message": "Control Rig already exists"
+            }})
+            raise SystemExit
+
+    try:
+        rig = unreal.ControlRigBlueprintFactory.create_new_control_rig_asset(
+            asset_path, {bool(modular_rig)!r}
+        )
+    except TypeError:
+        rig = unreal.ControlRigBlueprintFactory().create_new_control_rig_asset(
+            asset_path, {bool(modular_rig)!r}
+        )
+
+    if rig is None:
+        _finish({{"success": False, "asset_path": asset_path, "message": "Failed to create Control Rig asset"}})
+        raise SystemExit
+
+    preview_mesh = None
+    if skeletal_mesh_path:
+        preview_mesh = unreal.load_asset(skeletal_mesh_path)
+        if preview_mesh is None:
+            _finish({{
+                "success": False,
+                "asset_path": asset_path,
+                "message": f"Skeletal Mesh not found: {{skeletal_mesh_path}}"
+            }})
+            raise SystemExit
+        if not isinstance(preview_mesh, unreal.SkeletalMesh):
+            loaded_class = preview_mesh.get_class().get_name() if preview_mesh.get_class() else "Unknown"
+            _finish({{
+                "success": False,
+                "asset_path": asset_path,
+                "message": f"Asset is {{loaded_class}}, not SkeletalMesh: {{skeletal_mesh_path}}"
+            }})
+            raise SystemExit
+        rig.set_preview_mesh(preview_mesh, True)
+        if {bool(import_bones)!r}:
+            controller = rig.get_hierarchy_controller()
+            imported_bones = controller.import_bones_from_skeletal_mesh(
+                preview_mesh, unreal.Name(""), True, True, False, False, False
+            )
+
+    try:
+        unreal.ControlRigBlueprintLibrary.recompile_vm(rig)
+    except Exception:
+        pass
+    if save_asset:
+        unreal.EditorAssetLibrary.save_asset(asset_path)
+
+    hierarchy = rig.get_editor_property("hierarchy")
+    keys = hierarchy.get_all_keys() if hierarchy else []
+    _finish({{
+        "success": True,
+        "asset_path": asset_path,
+        "preview_mesh": preview_mesh.get_path_name() if preview_mesh else "",
+        "imported_bone_count": len(imported_bones),
+        "bone_count": len([k for k in keys if k.type == unreal.RigElementType.BONE]),
+        "control_count": len([k for k in keys if k.type == unreal.RigElementType.CONTROL]),
+        "message": "Control Rig created"
+    }})
+except SystemExit:
+    pass
+except Exception as exc:
+    _finish({{"success": False, "message": str(exc)}})
+""")
+        return _eval_script(script)
+
+    @mcp.tool()
+    def control_rig_describe(
+        ctx: Context,
+        rig_path: str,
+        include_names: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Inspect a Control Rig hierarchy, preview mesh, controls, bones, and nulls.
+
+        Args:
+            rig_path: Full Control Rig asset path
+            include_names: Include element name lists in the result
+        """
+        script = textwrap.dedent(f"""\
+import unreal
+
+def _finish(result):
+    global _mcp_result
+    _mcp_result = result
+
+try:
+    rig_path = {rig_path!r}
+    rig = unreal.load_asset(rig_path)
+    if rig is None:
+        _finish({{"success": False, "message": f"Control Rig not found: {{rig_path}}"}})
+        raise SystemExit
+
+    hierarchy = rig.get_editor_property("hierarchy")
+    keys = hierarchy.get_all_keys() if hierarchy else []
+    bones = [str(k.name) for k in keys if k.type == unreal.RigElementType.BONE]
+    controls = [str(k.name) for k in keys if k.type == unreal.RigElementType.CONTROL]
+    nulls = [str(k.name) for k in keys if k.type == unreal.RigElementType.NULL]
+    curves = [str(k.name) for k in keys if k.type == unreal.RigElementType.CURVE]
+    preview_mesh = ""
+    try:
+        mesh = rig.get_preview_mesh()
+        preview_mesh = mesh.get_path_name() if mesh else ""
+    except Exception:
+        pass
+
+    result = {{
+        "success": True,
+        "asset_path": rig_path,
+        "preview_mesh": preview_mesh,
+        "element_count": len(keys),
+        "bone_count": len(bones),
+        "control_count": len(controls),
+        "null_count": len(nulls),
+        "curve_count": len(curves)
+    }}
+    if {bool(include_names)!r}:
+        result.update({{
+            "bones": bones[:250],
+            "controls": controls[:250],
+            "nulls": nulls[:250],
+            "curves": curves[:250]
+        }})
+    _finish(result)
+except SystemExit:
+    pass
+except Exception as exc:
+    _finish({{"success": False, "message": str(exc)}})
+""")
+        return _eval_script(script)
+
+    @mcp.tool()
+    def control_rig_add_control(
+        ctx: Context,
+        rig_path: str,
+        control_name: str,
+        parent_name: str = "",
+        parent_type: str = "BONE",
+        control_type: str = "EULER_TRANSFORM",
+        shape_name: str = "Circle",
+        shape_color: Optional[List[float]] = None,
+        location: Optional[List[float]] = None,
+        rotation: Optional[List[float]] = None,
+        scale: Optional[List[float]] = None,
+        default_float: float = 0.0,
+        default_bool: bool = False,
+        save: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Add an animation control to a Control Rig hierarchy.
+
+        Args:
+            rig_path: Full Control Rig asset path
+            control_name: New control element name
+            parent_name: Optional parent element name
+            parent_type: BONE, NULL, or CONTROL
+            control_type: EULER_TRANSFORM, POSITION, ROTATOR, FLOAT, BOOL, SCALE, or VECTOR2D
+            shape_name: Control shape name from the Control Rig shape library
+            shape_color: Optional RGBA list, 0-1 floats
+            location: Optional XYZ default location
+            rotation: Optional Pitch/Yaw/Roll default rotation
+            scale: Optional XYZ default scale
+            default_float: Default value for FLOAT/SCALE_FLOAT controls
+            default_bool: Default value for BOOL controls
+            save: Save the asset after editing
+        """
+        shape_color = shape_color or [1.0, 0.55, 0.05, 1.0]
+        location = location or [0.0, 0.0, 0.0]
+        rotation = rotation or [0.0, 0.0, 0.0]
+        scale = scale or [1.0, 1.0, 1.0]
+        script = textwrap.dedent(f"""\
+import unreal
+
+def _finish(result):
+    global _mcp_result
+    _mcp_result = result
+
+def _element_type(value):
+    return {{
+        "BONE": unreal.RigElementType.BONE,
+        "NULL": unreal.RigElementType.NULL,
+        "CONTROL": unreal.RigElementType.CONTROL,
+        "CURVE": unreal.RigElementType.CURVE
+    }}.get(str(value).upper(), unreal.RigElementType.NONE)
+
+def _make_key(name, type_name):
+    key = unreal.RigElementKey()
+    key.set_editor_property("name", unreal.Name(name))
+    key.set_editor_property("type", _element_type(type_name))
+    return key
+
+try:
+    rig_path = {rig_path!r}
+    control_name = {control_name!r}
+    rig = unreal.load_asset(rig_path)
+    if rig is None:
+        _finish({{"success": False, "message": f"Control Rig not found: {{rig_path}}"}})
+        raise SystemExit
+
+    hierarchy = rig.get_editor_property("hierarchy")
+    controller = rig.get_hierarchy_controller()
+    existing_key = _make_key(control_name, "CONTROL")
+    if hierarchy and hierarchy.contains(existing_key):
+        _finish({{
+            "success": True,
+            "asset_path": rig_path,
+            "control_name": control_name,
+            "existed": True,
+            "message": "Control already exists"
+        }})
+        raise SystemExit
+
+    parent_key = unreal.RigElementKey()
+    parent_name = {parent_name!r}
+    if parent_name:
+        parent_key = _make_key(parent_name, {parent_type!r})
+
+    control_type_name = str({control_type!r}).upper()
+    control_type_map = {{
+        "BOOL": unreal.RigControlType.BOOL,
+        "FLOAT": unreal.RigControlType.FLOAT,
+        "INTEGER": unreal.RigControlType.INTEGER,
+        "VECTOR2D": unreal.RigControlType.VECTOR2D,
+        "POSITION": unreal.RigControlType.POSITION,
+        "SCALE": unreal.RigControlType.SCALE,
+        "ROTATOR": unreal.RigControlType.ROTATOR,
+        "TRANSFORM": unreal.RigControlType.EULER_TRANSFORM,
+        "EULER_TRANSFORM": unreal.RigControlType.EULER_TRANSFORM,
+        "SCALE_FLOAT": unreal.RigControlType.SCALE_FLOAT
+    }}
+    rig_control_type = control_type_map.get(control_type_name, unreal.RigControlType.EULER_TRANSFORM)
+
+    settings = unreal.RigControlSettings()
+    settings.set_editor_property("control_type", rig_control_type)
+    settings.set_editor_property("animation_type", unreal.RigControlAnimationType.ANIMATION_CONTROL)
+    settings.set_editor_property("display_name", control_name)
+    settings.set_editor_property("shape_name", unreal.Name({shape_name!r}))
+    rgba = {shape_color!r}
+    settings.set_editor_property("shape_color", unreal.LinearColor(float(rgba[0]), float(rgba[1]), float(rgba[2]), float(rgba[3])))
+    try:
+        settings.set_editor_property("shape_visible", True)
+    except Exception:
+        pass
+
+    loc = {location!r}
+    rot = {rotation!r}
+    scl = {scale!r}
+    if rig_control_type == unreal.RigControlType.BOOL:
+        value = hierarchy.make_control_value_from_bool({bool(default_bool)!r})
+    elif rig_control_type in (unreal.RigControlType.FLOAT, unreal.RigControlType.SCALE_FLOAT):
+        value = hierarchy.make_control_value_from_float(float({default_float!r}))
+    elif rig_control_type == unreal.RigControlType.POSITION:
+        value = hierarchy.make_control_value_from_vector(unreal.Vector(float(loc[0]), float(loc[1]), float(loc[2])))
+    else:
+        transform = unreal.Transform(
+            unreal.Vector(float(loc[0]), float(loc[1]), float(loc[2])),
+            unreal.Rotator(float(rot[0]), float(rot[1]), float(rot[2])),
+            unreal.Vector(float(scl[0]), float(scl[1]), float(scl[2]))
+        )
+        value = hierarchy.make_control_value_from_transform(transform)
+
+    key = controller.add_control(unreal.Name(control_name), parent_key, settings, value, True, False)
+    try:
+        unreal.ControlRigBlueprintLibrary.recompile_vm(rig)
+    except Exception:
+        pass
+    if {bool(save)!r}:
+        unreal.EditorAssetLibrary.save_asset(rig_path)
+
+    keys = hierarchy.get_all_keys() if hierarchy else []
+    _finish({{
+        "success": True,
+        "asset_path": rig_path,
+        "control_name": str(key.name),
+        "parent_name": parent_name,
+        "control_count": len([k for k in keys if k.type == unreal.RigElementType.CONTROL]),
+        "message": "Control added"
+    }})
+except SystemExit:
+    pass
+except Exception as exc:
+    _finish({{"success": False, "message": str(exc)}})
+""")
+        return _eval_script(script)
+
+    @mcp.tool()
+    def control_rig_add_constraint(
+        ctx: Context,
+        rig_path: str,
+        child_name: str,
+        parent_name: str,
+        child_type: str = "CONTROL",
+        parent_type: str = "BONE",
+        constraint_type: str = "parent",
+        weight: float = 1.0,
+        maintain_global_transform: bool = True,
+        display_label: str = "",
+        save: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Add a Control Rig hierarchy parent or available-space constraint.
+
+        Args:
+            rig_path: Full Control Rig asset path
+            child_name: Child element name
+            parent_name: Parent/space element name
+            child_type: CONTROL, BONE, or NULL
+            parent_type: BONE, NULL, or CONTROL
+            constraint_type: "parent" for weighted hierarchy parent, "space" for available space
+            weight: Parent weight for parent constraints
+            maintain_global_transform: Preserve child global transform when adding parent
+            display_label: Optional label shown for a space/parent relationship
+            save: Save the asset after editing
+        """
+        script = textwrap.dedent(f"""\
+import unreal
+
+def _finish(result):
+    global _mcp_result
+    _mcp_result = result
+
+def _element_type(value):
+    return {{
+        "BONE": unreal.RigElementType.BONE,
+        "NULL": unreal.RigElementType.NULL,
+        "CONTROL": unreal.RigElementType.CONTROL,
+        "CURVE": unreal.RigElementType.CURVE
+    }}.get(str(value).upper(), unreal.RigElementType.NONE)
+
+def _make_key(name, type_name):
+    key = unreal.RigElementKey()
+    key.set_editor_property("name", unreal.Name(name))
+    key.set_editor_property("type", _element_type(type_name))
+    return key
+
+try:
+    rig_path = {rig_path!r}
+    rig = unreal.load_asset(rig_path)
+    if rig is None:
+        _finish({{"success": False, "message": f"Control Rig not found: {{rig_path}}"}})
+        raise SystemExit
+
+    hierarchy = rig.get_editor_property("hierarchy")
+    controller = rig.get_hierarchy_controller()
+    child_key = _make_key({child_name!r}, {child_type!r})
+    parent_key = _make_key({parent_name!r}, {parent_type!r})
+
+    missing = []
+    if hierarchy and not hierarchy.contains(child_key):
+        missing.append(f"child {{child_key.name}}")
+    if hierarchy and not hierarchy.contains(parent_key):
+        missing.append(f"parent {{parent_key.name}}")
+    if missing:
+        _finish({{
+            "success": False,
+            "asset_path": rig_path,
+            "message": "Missing hierarchy element(s): " + ", ".join(missing)
+        }})
+        raise SystemExit
+
+    label = {display_label!r} or str(parent_key.name)
+    if str({constraint_type!r}).lower() == "space":
+        added = controller.add_available_space(child_key, parent_key, label, False, False)
+        mode = "space"
+    else:
+        added = controller.add_parent(
+            child_key,
+            parent_key,
+            float({weight!r}),
+            {bool(maintain_global_transform)!r},
+            label,
+            False
+        )
+        mode = "parent"
+
+    try:
+        unreal.ControlRigBlueprintLibrary.recompile_vm(rig)
+    except Exception:
+        pass
+    if {bool(save)!r}:
+        unreal.EditorAssetLibrary.save_asset(rig_path)
+
+    _finish({{
+        "success": bool(added),
+        "asset_path": rig_path,
+        "child_name": str(child_key.name),
+        "parent_name": str(parent_key.name),
+        "constraint_type": mode,
+        "message": "Constraint added" if added else "Constraint was not added"
+    }})
+except SystemExit:
+    pass
+except Exception as exc:
+    _finish({{"success": False, "message": str(exc)}})
+""")
+        return _eval_script(script)
+
+    @mcp.tool()
+    def control_rig_bake_to_sequence(
+        ctx: Context,
+        level_sequence_path: str = "",
+        control_rig_path: str = "",
+        binding_display_name: str = "",
+        reduce_keys: bool = True,
+        tolerance: float = 0.001,
+        reset_controls: bool = True
+    ) -> Dict[str, Any]:
+        """
+        Bake a Sequencer skeletal binding to a Control Rig track when binding context exists.
+
+        This is a guarded adapter over Unreal's ControlRigSequencerLibrary. It validates
+        the Level Sequence, Control Rig, and binding name before invoking the bake call.
+
+        Args:
+            level_sequence_path: LevelSequence asset containing the skeletal binding
+            control_rig_path: Control Rig Blueprint asset to bake onto
+            binding_display_name: Display name of the Sequencer binding to bake
+            reduce_keys: Run key reduction during bake
+            tolerance: Key reduction tolerance
+            reset_controls: Reset controls to their initial value on each baked frame
+        """
+        script = textwrap.dedent(f"""\
+import unreal
+
+def _finish(result):
+    global _mcp_result
+    _mcp_result = result
+
+try:
+    level_sequence_path = {level_sequence_path!r}
+    control_rig_path = {control_rig_path!r}
+    binding_display_name = {binding_display_name!r}
+    if not level_sequence_path or not control_rig_path or not binding_display_name:
+        _finish({{
+            "success": False,
+            "available": hasattr(unreal, "ControlRigSequencerLibrary"),
+            "message": "level_sequence_path, control_rig_path, and binding_display_name are required",
+            "required_inputs": ["level_sequence_path", "control_rig_path", "binding_display_name"]
+        }})
+        raise SystemExit
+
+    sequence = unreal.load_asset(level_sequence_path)
+    rig = unreal.load_asset(control_rig_path)
+    if sequence is None:
+        _finish({{"success": False, "message": f"Level Sequence not found: {{level_sequence_path}}"}})
+        raise SystemExit
+    if rig is None:
+        _finish({{"success": False, "message": f"Control Rig not found: {{control_rig_path}}"}})
+        raise SystemExit
+
+    binding = None
+    binding_names = []
+    for candidate in sequence.get_bindings():
+        name = str(candidate.get_display_name())
+        binding_names.append(name)
+        if name == binding_display_name:
+            binding = candidate
+            break
+    if binding is None:
+        _finish({{
+            "success": False,
+            "message": f"Binding '{{binding_display_name}}' not found in sequence",
+            "available_bindings": binding_names
+        }})
+        raise SystemExit
+
+    rig_class = None
+    for attr in ("generated_class", "get_control_rig_class"):
+        try:
+            value = getattr(rig, attr)
+            rig_class = value() if callable(value) else value
+            if rig_class:
+                break
+        except Exception:
+            pass
+    if rig_class is None:
+        _finish({{"success": False, "message": "Could not resolve generated Control Rig class"}})
+        raise SystemExit
+
+    world = unreal.EditorLevelLibrary.get_editor_world()
+    export_options = unreal.AnimSeqExportOption()
+    baked = unreal.ControlRigSequencerLibrary.bake_to_control_rig(
+        world,
+        sequence,
+        rig_class,
+        export_options,
+        {bool(reduce_keys)!r},
+        float({tolerance!r}),
+        binding,
+        {bool(reset_controls)!r}
+    )
+    _finish({{
+        "success": bool(baked),
+        "level_sequence_path": level_sequence_path,
+        "control_rig_path": control_rig_path,
+        "binding_display_name": binding_display_name,
+        "message": "Control Rig bake completed" if baked else "Control Rig bake returned false"
+    }})
+except SystemExit:
+    pass
+except Exception as exc:
+    _finish({{"success": False, "message": str(exc)}})
+""")
+        return _eval_script(script)
 
     # ─────────────────────────────────────────────────────────────────────────
     # IK RIG TOOLS

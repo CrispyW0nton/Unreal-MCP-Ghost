@@ -2,14 +2,14 @@
 
 Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP server that lets AI agents inspect and modify live UE projects through the Model Context Protocol.
 
-The current server registers **487 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
+The current server registers **492 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
 
 ## What It Can Do
 
 - Inspect levels, actors, Blueprints, components, variables, graphs, nodes, pins, compile diagnostics, references, source control state, and project assets.
 - Create and edit Blueprints, Blueprint Interfaces, variables, functions, graph nodes, comments, connections, timers, input handlers, UMG widgets, materials, data assets, save-game systems, and gameplay framework classes.
 - Work with AI systems: Behavior Trees, Blackboards, AI Controllers, BT tasks/decorators/services, navmesh helpers, and higher-level AI setup workflows.
-- Work with animation systems: Animation Blueprints, state machines, blend spaces, AnimGraph slot insertion, IK Rig creation, IK Retargeter creation, skeleton bone inspection, and batch retargeting.
+- Work with animation systems: Animation Blueprints, state machines, blend spaces, AnimGraph slot insertion, Control Rig asset/control/constraint helpers, IK Rig creation, IK Retargeter creation, skeleton bone inspection, and batch retargeting.
 - Import assets: textures, static meshes, skeletal meshes, audio, folders, and KotOR/GhostRigger assets.
 - Add VFX/audio/material logic: Niagara components, spawn Niagara nodes, sound nodes, material instance parameters, collision settings, and Sequencer transform tracks.
 - Validate and repair Blueprints with diagnostic and repair tools.
@@ -25,7 +25,7 @@ AI client or Cursor watcher
   v
 Python FastMCP server
   - unreal_mcp_server/unreal_mcp_server.py
-  - 487 registered MCP tools
+  - 492 registered MCP tools
   - optional /chat/* HTTP routes on port 8000
   |
   | TCP JSON, one command per connection
@@ -280,7 +280,7 @@ Agents should read repository knowledge before making Unreal changes:
 
 ## Current Tool Surface
 
-The server currently registers **487 MCP tools**, including:
+The server currently registers **492 MCP tools**, including:
 
 - Core editor/actor tools
 - Blueprint creation, graph editing, node connection, variable/function tools
