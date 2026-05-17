@@ -32,6 +32,7 @@ Every Unreal-MCP-Ghost development pass that touches project verification should
 5. `inspect_input_mapping_context("/Game/Input/IMC_Default")` confirms the Enhanced Input mappings for Focus, Breathe, Interact, debug state controls, and HUD toggle. The older `/Game/FirstPerson/Input/IMC_Default` path should be treated as stale for the current Insanitii project.
 6. `editor_list_blocking_dialogs()` should run before and after long asset operations. If Unreal opens a blocking prompt, use `editor_dismiss_blocking_dialog(button_text="Yes"|"OK"|"Replace"|"Cancel", title_contains="...")` only with an explicit button choice.
 7. `insanitii_phase1_readiness_report()` should be run at the start of each development pass. It bundles the checks above, uses read-only `exec_python` fallbacks when the active editor has not reloaded new native MCP routes, and returns the manual PIE checklist that still requires human validation.
+8. `insanitii_phase2_lifestyle_report()` should be run after lifestyle-framework changes. It checks native Phase 2 class visibility, `BP_LifestyleManager`, the placed `INS_LifestyleManager`, generated daily tasks, current time/money readback, and blocking dialogs.
 
 ## Roadmap Structure
 
@@ -101,7 +102,49 @@ Every Unreal-MCP-Ghost development pass that touches project verification should
 - Interaction works on placed test actors.
 - HUD toggle and diagnostics behave correctly in PIE.
 
-## Phase 2 - Sensory Experience Layer (2-4 sessions)
+## Phase 2A - Lifestyle Framework Foundation (2-4 sessions)
+
+### Goals
+
+- Establish the daily-life simulation backbone before building full lifestyle minigames.
+- Make time, money, living cost, task generation, and lifestyle transitions inspectable through MCP.
+
+### Workstreams
+
+#### 1) Time and day cycle
+
+- Native `UInsanitiiTimeOfDayComponent`.
+- Morning, work, evening, and sleep periods.
+- Day rollover events.
+
+#### 2) Economy and ledger
+
+- Native `UInsanitiiEconomyComponent`.
+- Cash balance, daily living cost, income/spend APIs, and capped ledger.
+
+#### 3) Lifestyle manager
+
+- Native `AInsanitiiLifestyleManager`.
+- Daily task generation for Office, Gig, Artist, Street Hustler, and Homeless lifestyles.
+- Task outcome evaluation into money, skill, reputation, and mental-state pressure.
+- Basic lifestyle transition gates.
+
+### Status
+
+- Slice 1 implemented and live-tested on 2026-05-17.
+- `BP_LifestyleManager` exists at `/Game/Insanitii/Gameplay/Lifestyles/BP_LifestyleManager`.
+- `INS_LifestyleManager` is placed in `Lvl_FirstPerson`.
+- `insanitii_phase2_lifestyle_report()` returns `pass`.
+- Simulate-in-Editor confirmed the clock advanced from `Day 1 08:00` to `Day 1 08:13`.
+
+### Exit Criteria
+
+- Time and money are visible in debug UI.
+- At least one task can be executed and applies money plus mental-state pressure.
+- Sleep/day advance applies daily living cost exactly once.
+- Lifestyle manager state can be saved and restored by the save skeleton.
+
+## Phase 2B - Sensory Experience Layer (2-4 sessions)
 
 ### Goals
 
@@ -223,9 +266,12 @@ Every Unreal-MCP-Ghost development pass that touches project verification should
 
 ## Immediate Next Milestone
 
-Finish Phase 1 validation, then begin Phase 2 Lifestyle Framework:
+Continue Phase 2 Lifestyle Framework:
 
-- Run the manual PIE checklist for WASD, mouse look, F Focus, Tab Breathe, E interactions, debug +/- state changes, HUD toggle, post-process response, and cascade behavior.
-- Run `insanitii_phase1_readiness_report()` before and after plugin changes. Current live result on 2026-05-17 is `warn`: all static readiness checks pass, but the editor is still using fallback probes because the latest native smoke routes need Live Coding reload or editor restart.
-- Once Phase 1 manual validation passes, implement the Phase 2 time-of-day, money/economy, lifestyle base, home hub, transition framework, and save/load skeleton.
+- Run `insanitii_phase1_readiness_report()` at the start of project-facing MCP work to protect the Phase 1 foundation.
+- Run `insanitii_phase2_lifestyle_report()` after Phase 2 changes. Current live result on 2026-05-17 is `pass`.
+- Build the debug/player-facing time and money surface.
+- Add the home-base placeholder and sleep/day-advance interaction.
+- Add a first task execution flow that calls `EvaluateTaskOutcome`.
+- Begin the save/load skeleton for time, cash, lifestyle, skill, and reputation.
 - Keep all new docs and smoke reports in `knowledge_base/Projects/Insanitii/`.

@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 508 MCP tools from Git-tracked tool files: 504 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 509 MCP tools from Git-tracked tool files: 505 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -479,7 +479,7 @@ Slice 6:
 
 Goal: turn trustworthy low-level tools into repeatable, inspectable game-development workflows.
 
-Status: Slice 1 vertical slice reporting skill is implemented and offline-tested. Slice 2 Insanitii readiness reporting is implemented, offline-tested, and live-tested against the open Insanitii editor with fallbacks for an older loaded plugin binary.
+Status: Slice 1 vertical slice reporting skill is implemented and offline-tested. Slice 2 Insanitii readiness reporting is implemented, offline-tested, and live-tested against the open Insanitii editor with fallbacks for an older loaded plugin binary. Slice 3 Insanitii lifestyle-framework reporting is implemented, offline-tested, and live-tested against the open Insanitii editor.
 
 Why this is explicit:
 
@@ -522,6 +522,20 @@ Slice 2 smoke result, 2026-05-17:
 - Resolved the active First Person input mapping context at `/Game/Input/IMC_Default` and found 18 mappings, including all 6 Insanitii actions.
 - Found 0 visible blocking dialogs.
 - Report status was `warn` rather than `pass` because the running editor still reports the new native smoke routes as unknown; the workflow used `exec_python` fallback coverage until Live Coding or editor restart reloads the plugin.
+
+Slice 3:
+
+- `insanitii_phase2_lifestyle_report` - implemented as a high-level smoke workflow that checks bridge ping, native Phase 2 class visibility, `BP_LifestyleManager`, placed `INS_LifestyleManager`, generated lifestyle task options, current time/money readback, and blocking dialogs.
+
+Slice 3 smoke result, 2026-05-17:
+
+- Added native Insanitii game classes for the Phase 2 lifestyle foundation: `UInsanitiiTimeOfDayComponent`, `UInsanitiiEconomyComponent`, `AInsanitiiLifestyleManager`, and shared lifestyle structs/enums.
+- UHT and C++ compilation succeeded; the first open-editor build failed only at DLL link because Unreal Editor and LiveCodingConsole locked the loaded binaries.
+- Closed the saved editor, rebuilt successfully, reopened Insanitii, and confirmed all 3 native Phase 2 classes load.
+- Created and saved `/Game/Insanitii/Gameplay/Lifestyles/BP_LifestyleManager`.
+- Placed `INS_LifestyleManager` in `Lvl_FirstPerson`.
+- Live `insanitii_phase2_lifestyle_report` returned `pass`: 3 native classes visible, Blueprint generated class valid, manager actor placed, 3 daily tasks generated, cash `$250`, time `Day 1 08:00`, and 0 blocking dialogs.
+- Simulate-in-Editor smoke found the manager in the PIE world and confirmed the clock advanced to `Day 1 08:13`.
 
 ## Immediate Execution Queue
 

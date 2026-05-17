@@ -275,6 +275,140 @@ def _insanitii_imc_fallback_code(imc_path_or_name: str) -> str:
     """)
 
 
+def _insanitii_phase2_lifestyle_fallback_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        class_paths = {
+            "time_of_day_component": "/Script/Insanitii.InsanitiiTimeOfDayComponent",
+            "economy_component": "/Script/Insanitii.InsanitiiEconomyComponent",
+            "lifestyle_manager": "/Script/Insanitii.InsanitiiLifestyleManager",
+        }
+        blueprint_path = "/Game/Insanitii/Gameplay/Lifestyles/BP_LifestyleManager"
+        actor_label = "INS_LifestyleManager"
+
+        class_checks = {}
+        for key, path in class_paths.items():
+            cls = unreal.load_class(None, path)
+            class_checks[key] = {
+                "success": bool(cls),
+                "class_path": path,
+                "loaded_name": cls.get_name() if cls else "",
+            }
+
+        asset = unreal.load_asset(blueprint_path)
+        generated = None
+        parent = None
+        if asset:
+            try:
+                generated_attr = getattr(asset, "generated_class", None)
+                generated = generated_attr() if callable(generated_attr) else None
+            except Exception:
+                generated = None
+            try:
+                parent = generated.get_super_class() if generated else None
+            except Exception:
+                parent = None
+        blueprint_check = {
+            "success": bool(asset),
+            "asset_path": blueprint_path,
+            "has_generated_class": bool(generated),
+            "generated_class": generated.get_path_name() if generated else "",
+            "parent_class": parent.get_path_name() if parent else "",
+        }
+
+        found_actor = None
+        for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+            if actor.get_actor_label() == actor_label or actor.get_name() == actor_label:
+                found_actor = actor
+                break
+
+        actor_check = {"success": bool(found_actor), "label": actor_label}
+        if found_actor:
+            cls = found_actor.get_class()
+            actor_check.update({
+                "name": found_actor.get_name(),
+                "path": found_actor.get_path_name(),
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+            })
+
+        manager_probe = {
+            "success": False,
+            "debug_summary": "",
+            "task_count": 0,
+            "sample_tasks": [],
+            "time": {},
+            "economy": {},
+        }
+        if found_actor:
+            try:
+                summary_fn = getattr(found_actor, "get_debug_summary", None)
+                if callable(summary_fn):
+                    manager_probe["debug_summary"] = str(summary_fn())
+            except Exception as exc:
+                manager_probe["debug_summary_error"] = str(exc)
+
+            try:
+                jobs_fn = getattr(found_actor, "generate_daily_jobs", None)
+                tasks = list(jobs_fn()) if callable(jobs_fn) else []
+                manager_probe["task_count"] = len(tasks)
+                for task in tasks[:5]:
+                    def _prop(name, default=""):
+                        try:
+                            getter = getattr(task, "get_editor_property", None)
+                            value = getter(name) if callable(getter) else getattr(task, name)
+                            return str(value)
+                        except Exception:
+                            return default
+                    manager_probe["sample_tasks"].append({
+                        "task_id": _prop("task_id"),
+                        "display_name": _prop("display_name"),
+                        "base_payout": _prop("base_payout"),
+                        "mental_state_delta_on_success": _prop("mental_state_delta_on_success"),
+                        "mental_state_delta_on_failure": _prop("mental_state_delta_on_failure"),
+                    })
+            except Exception as exc:
+                manager_probe["task_error"] = str(exc)
+
+            try:
+                time_component = found_actor.get_editor_property("time_of_day")
+                if time_component:
+                    formatted_fn = getattr(time_component, "get_formatted_time", None)
+                    period_fn = getattr(time_component, "get_current_day_period", None)
+                    manager_probe["time"] = {
+                        "current_day": int(time_component.get_editor_property("current_day")),
+                        "minute_of_day": float(time_component.get_editor_property("current_minute_of_day")),
+                        "formatted_time": str(formatted_fn()) if callable(formatted_fn) else "",
+                        "period": str(period_fn()) if callable(period_fn) else "",
+                    }
+            except Exception as exc:
+                manager_probe["time_error"] = str(exc)
+
+            try:
+                economy = found_actor.get_editor_property("economy")
+                if economy:
+                    ledger = economy.get_editor_property("ledger")
+                    manager_probe["economy"] = {
+                        "cash_balance": float(economy.get_editor_property("cash_balance")),
+                        "daily_living_cost": float(economy.get_editor_property("daily_living_cost")),
+                        "ledger_count": len(ledger) if ledger else 0,
+                    }
+            except Exception as exc:
+                manager_probe["economy_error"] = str(exc)
+
+            manager_probe["success"] = manager_probe["task_count"] > 0
+
+        print(json.dumps({
+            "success": True,
+            "class_checks": class_checks,
+            "blueprint": blueprint_check,
+            "actor": actor_check,
+            "manager_probe": manager_probe,
+        }))
+    """)
+
+
 def _list_windows(process_name_contains: str = "UnrealEditor") -> Dict[str, Any]:
     """Enumerate visible Windows top-level dialogs using ctypes only."""
     if sys.platform != "win32":
@@ -695,6 +829,115 @@ def register_editor_tools(mcp: FastMCP):
             }
         except Exception as e:
             logger.error(f"Error building Insanitii readiness report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_phase2_lifestyle_report(
+        ctx: Context,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Run the Insanitii Phase 2 lifestyle-framework readiness checklist.
+
+        This smoke workflow verifies that the native time, economy, and lifestyle
+        manager classes are visible to the editor, the Blueprint wrapper exists,
+        the manager actor is placed, and the manager can generate daily job
+        options for the current lifestyle.
+        """
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True:
+                failures.append("Unreal bridge ping did not report success.")
+
+            probe = _exec_python_json(_insanitii_phase2_lifestyle_fallback_code())
+            if not probe.get("success"):
+                failures.append(probe.get("message", "Phase 2 editor probe failed."))
+                class_checks = {}
+                blueprint = {}
+                actor = {}
+                manager_probe = {}
+            else:
+                class_checks = probe.get("class_checks", {})
+                blueprint = probe.get("blueprint", {})
+                actor = probe.get("actor", {})
+                manager_probe = probe.get("manager_probe", {})
+
+                missing_classes = [
+                    name for name, check in class_checks.items()
+                    if not check.get("success")
+                ]
+                if missing_classes:
+                    failures.append(
+                        "Native Phase 2 classes are not loaded in the editor: "
+                        + ", ".join(missing_classes)
+                        + ". Trigger Live Coding or restart the editor after compiling."
+                    )
+
+                if not blueprint.get("success"):
+                    failures.append("Missing BP_LifestyleManager wrapper at /Game/Insanitii/Gameplay/Lifestyles.")
+                elif not blueprint.get("has_generated_class"):
+                    failures.append("BP_LifestyleManager exists but has no valid generated class.")
+
+                if not actor.get("success"):
+                    failures.append("Missing placed INS_LifestyleManager actor in the current level.")
+
+                if actor.get("success") and not manager_probe.get("success"):
+                    failures.append("INS_LifestyleManager is placed but did not generate lifestyle tasks.")
+
+                if manager_probe.get("success") and manager_probe.get("task_count", 0) < 3:
+                    warnings.append("Lifestyle manager generated fewer than 3 daily task options.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Phase 2 lifestyle framework",
+                "summary": {
+                    "bridge_ping": ping,
+                    "native_class_count": sum(1 for check in class_checks.values() if check.get("success")),
+                    "blueprint_has_generated_class": bool(blueprint.get("has_generated_class")),
+                    "manager_actor_placed": bool(actor.get("success")),
+                    "generated_task_count": int(manager_probe.get("task_count") or 0),
+                    "cash_balance": manager_probe.get("economy", {}).get("cash_balance"),
+                    "formatted_time": manager_probe.get("time", {}).get("formatted_time"),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "classes": class_checks,
+                    "blueprint": blueprint,
+                    "actor": actor,
+                    "manager_probe": manager_probe,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "Clock advances while PIE is running",
+                    "Morning, work, evening, and sleep periods roll over at expected times",
+                    "Daily living cost applies once per new day",
+                    "Cash balance updates after task success and failure",
+                    "Lifestyle task options differ by selected lifestyle",
+                    "Transition checks prevent impossible lifestyle changes",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii Phase 2 lifestyle report: {e}")
             return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
 
     @mcp.tool()
