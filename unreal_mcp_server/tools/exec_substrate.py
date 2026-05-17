@@ -12,12 +12,13 @@ Wrappers provided:
   exec_python_capture_logs    — captures output log lines around a script
   exec_python_structured      — returns a normalised StructuredResult JSON
 
-Tool family (7 MCP tools exposed):
+Tool family (13 MCP tools exposed):
   ue_exec_safe      — send any Python snippet using the safe substrate
   ue_exec_transact  — send a Python snippet wrapped in a named transaction
   ue_exec_progress  — send a Python snippet wrapped in a progress dialog
   execution_journal_* — create, append, and finish repo-local journals
   risk_evaluate_action — score planned mutations before execution
+  pie_* / viewport_* — capture PIE/log/screenshot evidence for verification
 
 Reference:
   https://dev.epicgames.com/documentation/unreal-engine/scripting-the-unreal-editor-using-python
@@ -32,6 +33,8 @@ from __future__ import annotations
 import json
 import logging
 import re
+import hashlib
+import ast
 import textwrap
 import uuid
 from datetime import datetime, timezone
@@ -162,6 +165,98 @@ def _journal_stats(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         "by_severity": by_severity,
         "by_event_type": by_event_type,
     }
+
+
+def _artifact_path(kind: str, name: str, extension: str) -> Path:
+    stamp = _utc_now().replace(":", "").replace("-", "")
+    safe_ext = extension.lstrip(".")
+    return _resolve_workspace_path(".mcp_artifacts") / kind / f"{stamp}_{_slugify(name, kind)}.{safe_ext}"
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _png_dimensions(path: Path) -> Dict[str, int]:
+    with path.open("rb") as fh:
+        header = fh.read(24)
+    if len(header) >= 24 and header[:8] == b"\x89PNG\r\n\x1a\n" and header[12:16] == b"IHDR":
+        width = int.from_bytes(header[16:20], "big")
+        height = int.from_bytes(header[20:24], "big")
+        return {"width": width, "height": height}
+    return {"width": 0, "height": 0}
+
+
+def _file_artifact_info(path: Path) -> Dict[str, Any]:
+    resolved = _resolve_workspace_path(str(path))
+    if not resolved.exists():
+        raise FileNotFoundError(f"Artifact not found: {resolved}")
+    info = {
+        "path": str(resolved),
+        "size_bytes": resolved.stat().st_size,
+        "sha256": _sha256_file(resolved),
+    }
+    if resolved.suffix.lower() == ".png":
+        info.update(_png_dimensions(resolved))
+    return info
+
+
+def compare_screenshot_files(
+    baseline_path: str,
+    candidate_path: str,
+    pass_threshold: float = 0.995,
+) -> Dict[str, Any]:
+    """Compare two workspace-local screenshots with Pillow when available."""
+    baseline = _resolve_workspace_path(baseline_path)
+    candidate = _resolve_workspace_path(candidate_path)
+    baseline_info = _file_artifact_info(baseline)
+    candidate_info = _file_artifact_info(candidate)
+    byte_equal = baseline_info["sha256"] == candidate_info["sha256"]
+    dimensions_match = (
+        baseline_info.get("width") == candidate_info.get("width")
+        and baseline_info.get("height") == candidate_info.get("height")
+    )
+    method = "hash_size_dimension"
+    similarity = 1.0 if byte_equal and dimensions_match else 0.0
+    rms_difference = None
+
+    try:
+        from PIL import Image, ImageChops, ImageStat  # type: ignore
+
+        with Image.open(baseline) as base_img, Image.open(candidate) as cand_img:
+            if base_img.size == cand_img.size:
+                method = "pillow_rms"
+                diff = ImageChops.difference(base_img.convert("RGB"), cand_img.convert("RGB"))
+                stat = ImageStat.Stat(diff)
+                rms_difference = sum((value ** 2 for value in stat.rms)) ** 0.5 / len(stat.rms)
+                similarity = max(0.0, 1.0 - (rms_difference / 255.0))
+    except Exception:
+        pass
+
+    passed = similarity >= float(pass_threshold)
+    return make_result(
+        success=passed,
+        stage="viewport_compare_screenshot",
+        message="Screenshots match threshold" if passed else "Screenshots differ beyond threshold",
+        inputs={
+            "baseline_path": baseline_path,
+            "candidate_path": candidate_path,
+            "pass_threshold": pass_threshold,
+        },
+        outputs={
+            "comparison_method": method,
+            "similarity": similarity,
+            "rms_difference": rms_difference,
+            "byte_equal": byte_equal,
+            "dimensions_match": dimensions_match,
+            "baseline": baseline_info,
+            "candidate": candidate_info,
+        },
+    )
 
 
 def _risk_level_from_score(score: int) -> str:
@@ -320,6 +415,16 @@ def _send(command: str, params: dict) -> Dict[str, Any]:
 
 def _parse_ue_json(resp: Dict[str, Any]) -> Dict[str, Any]:
     inner = resp.get("result", resp)
+    command_result = inner.get("command_result", resp.get("command_result"))
+    if command_result not in (None, "", "None"):
+        try:
+            parsed = ast.literal_eval(command_result) if isinstance(command_result, str) else command_result
+            if isinstance(parsed, str):
+                return json.loads(parsed)
+            if isinstance(parsed, dict):
+                return parsed
+        except (SyntaxError, ValueError, json.JSONDecodeError):
+            pass
     output = inner.get("output", resp.get("output", "")) or ""
     for line in output.splitlines():
         line = line.strip()
@@ -445,6 +550,41 @@ def _wrap_structured(user_code: str, stage_name: str) -> str:
     """)
 
 
+def _wrap_structured_eval_expression(user_code: str, stage_name: str) -> str:
+    """Return an evaluate_statement expression that yields a StructuredResult dict."""
+    safe_stage = stage_name.replace('"', '\\"')
+    script = f"""import unreal, json, traceback
+
+_result = {{}}
+_warnings = []
+_errors = []
+_log_tail = []
+
+try:
+{textwrap.indent(user_code, '    ')}
+    _mcp_result = {{
+        "success": True,
+        "stage": "{safe_stage}",
+        "message": "Operation completed",
+        "outputs": _result,
+        "warnings": _warnings,
+        "errors": _errors,
+        "log_tail": _log_tail,
+    }}
+except Exception as _exc:
+    _mcp_result = {{
+        "success": False,
+        "stage": "{safe_stage}",
+        "message": str(_exc),
+        "outputs": _result,
+        "warnings": _warnings,
+        "errors": [str(_exc)],
+        "log_tail": traceback.format_exc().splitlines()[-10:],
+    }}
+"""
+    return f"(lambda ns: (exec({script!r}, ns), ns.get('_mcp_result', {{}}))[1])({{}})"
+
+
 # ── Public helpers exported to other tool modules ─────────────────────────────
 
 def exec_python_transactional(user_code: str, transaction_name: str) -> Dict[str, Any]:
@@ -481,8 +621,8 @@ def exec_python_structured(user_code: str, stage_name: str = "script") -> Dict[s
     User_code should populate _result{}, _warnings[], _errors[] as needed.
     Returns a StructuredResult dict.
     """
-    code = _wrap_structured(user_code, stage_name)
-    resp = _send("exec_python", {"code": code})
+    code = _wrap_structured_eval_expression(user_code, stage_name)
+    resp = _send("exec_python", {"code": code, "mode": "evaluate_statement"})
     result = _parse_ue_json(resp)
     # Normalise to ensure all schema keys present
     for key in ("success", "stage", "message", "outputs", "warnings", "errors", "log_tail"):
@@ -846,4 +986,261 @@ def register_exec_substrate_tools(mcp: FastMCP):
             estimated_scope=estimated_scope,
             mitigations=mitigations or [],
         )
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def pie_launch_session(
+        ctx: Context,
+        mode: str = "simulate",
+        wait_seconds: float = 0.5,
+    ) -> str:
+        """Request a PIE or Simulate session from the Unreal Editor.
+
+        Args:
+            mode: "simulate" for Simulate In Editor, otherwise requests normal PIE
+            wait_seconds: Short post-request delay before reporting session state
+
+        Returns:
+            JSON string with requested mode, prior state, current state, and PIE world count.
+        """
+        code = textwrap.dedent(f"""\
+            import time
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            was_in_pie = bool(subsystem.is_in_play_in_editor())
+            requested_mode = {mode!r}
+            if not was_in_pie:
+                if str(requested_mode).lower() in ("simulate", "sie"):
+                    subsystem.editor_play_simulate()
+                    requested_mode = "simulate"
+                else:
+                    subsystem.editor_request_begin_play()
+                    requested_mode = "play"
+                time.sleep(max(0.0, min(float({wait_seconds!r}), 5.0)))
+            pie_worlds = unreal.EditorLevelLibrary.get_pie_worlds(False)
+            _result["requested_mode"] = requested_mode
+            _result["launch_requested"] = not was_in_pie
+            _result["was_in_pie"] = was_in_pie
+            _result["is_in_play_in_editor"] = bool(subsystem.is_in_play_in_editor())
+            _result["pie_world_count"] = len(pie_worlds)
+            _result["pie_world_names"] = [w.get_name() for w in pie_worlds]
+            _result["readback_note"] = "PIE/SIE state may update on the next editor tick after the request returns"
+        """)
+        result = exec_python_structured(code, "pie_launch_session")
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def pie_stop_session(
+        ctx: Context,
+        wait_seconds: float = 0.5,
+    ) -> str:
+        """Request the active PIE/SIE session to stop.
+
+        Args:
+            wait_seconds: Short post-request delay before reporting session state
+
+        Returns:
+            JSON string with prior and current PIE state.
+        """
+        code = textwrap.dedent(f"""\
+            import time
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            was_in_pie = bool(subsystem.is_in_play_in_editor())
+            if was_in_pie:
+                subsystem.editor_request_end_play()
+                try:
+                    unreal.EditorLevelLibrary.editor_end_play()
+                except Exception:
+                    pass
+                time.sleep(max(0.0, min(float({wait_seconds!r}), 5.0)))
+            pie_worlds = unreal.EditorLevelLibrary.get_pie_worlds(False)
+            _result["stop_requested"] = was_in_pie
+            _result["was_in_pie"] = was_in_pie
+            _result["is_in_play_in_editor"] = bool(subsystem.is_in_play_in_editor())
+            _result["pie_world_count"] = len(pie_worlds)
+            _result["pie_world_names"] = [w.get_name() for w in pie_worlds]
+            _result["readback_note"] = "PIE/SIE state may update on the next editor tick after the request returns"
+        """)
+        result = exec_python_structured(code, "pie_stop_session")
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def pie_capture_log(
+        ctx: Context,
+        max_lines: int = 200,
+        contains: str = "",
+        save_artifact: bool = False,
+        artifact_name: str = "pie_log",
+    ) -> str:
+        """Capture the tail of the current Unreal project log for verification.
+
+        Args:
+            max_lines: Maximum number of log lines to return
+            contains: Optional case-insensitive filter
+            save_artifact: Save captured lines to `.mcp_artifacts/logs`
+            artifact_name: Artifact filename stem when saving
+
+        Returns:
+            JSON string with log file path, captured lines, and optional artifact path.
+        """
+        artifact_path = str(_artifact_path("logs", artifact_name, "log")) if save_artifact else ""
+        code = textwrap.dedent(f"""\
+            import pathlib
+            log_dir = pathlib.Path(unreal.Paths.project_log_dir())
+            logs = sorted(log_dir.glob("*.log"), key=lambda p: p.stat().st_mtime)
+            if not logs:
+                raise RuntimeError(f"No Unreal log files found in {{log_dir}}")
+            log_file = logs[-1]
+            raw_lines = log_file.read_text(encoding="utf-8", errors="replace").splitlines()
+            filter_text = {contains!r}.lower()
+            if filter_text:
+                raw_lines = [line for line in raw_lines if filter_text in line.lower()]
+            limit = max(1, min(int({max_lines!r}), 2000))
+            captured = raw_lines[-limit:]
+            artifact_path = {artifact_path!r}
+            if artifact_path:
+                out = pathlib.Path(artifact_path)
+                out.parent.mkdir(parents=True, exist_ok=True)
+                out.write_text("\\n".join(captured) + "\\n", encoding="utf-8")
+            _result["log_file"] = str(log_file)
+            _result["log_dir"] = str(log_dir)
+            _result["line_count"] = len(captured)
+            _result["contains"] = {contains!r}
+            _result["lines"] = captured
+            _result["artifact_path"] = artifact_path
+        """)
+        result = exec_python_structured(code, "pie_capture_log")
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def pie_simulate_input(
+        ctx: Context,
+        console_command: str,
+        player_index: int = 0,
+        require_pie: bool = True,
+    ) -> str:
+        """Send a console-command style input to the active PIE world.
+
+        This intentionally starts with console commands because they are stable,
+        scriptable, and auditable. Higher-fidelity key/mouse injection can build
+        on top after the PIE loop has enough evidence capture.
+
+        Args:
+            console_command: Console command to execute, such as `stat fps`
+            player_index: Local player controller index
+            require_pie: Fail when no PIE/SIE session is active
+
+        Returns:
+            JSON string with command dispatch details.
+        """
+        code = textwrap.dedent(f"""\
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            in_pie = bool(subsystem.is_in_play_in_editor())
+            if {bool(require_pie)!r} and not in_pie:
+                raise RuntimeError("No active PIE/SIE session; launch PIE before simulating input")
+            world = unreal.EditorLevelLibrary.get_game_world()
+            if world is None:
+                world = unreal.EditorLevelLibrary.get_editor_world()
+            controller = None
+            try:
+                controller = unreal.GameplayStatics.get_player_controller(world, int({player_index!r}))
+            except Exception:
+                controller = None
+            unreal.SystemLibrary.execute_console_command(world, {console_command!r}, controller)
+            _result["console_command"] = {console_command!r}
+            _result["player_index"] = int({player_index!r})
+            _result["required_pie"] = {bool(require_pie)!r}
+            _result["was_in_pie"] = in_pie
+            _result["world_name"] = world.get_name() if world else ""
+            _result["controller_name"] = controller.get_name() if controller else ""
+        """)
+        result = exec_python_structured(code, "pie_simulate_input")
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def viewport_capture_screenshot(
+        ctx: Context,
+        artifact_name: str = "viewport",
+        screenshot_dir: str = ".mcp_artifacts/screenshots",
+        show_ui: bool = False,
+        resolution: Optional[List[int]] = None,
+    ) -> str:
+        """Capture the active Unreal viewport to a workspace-local PNG artifact.
+
+        Args:
+            artifact_name: Screenshot filename stem
+            screenshot_dir: Workspace-relative output directory
+            show_ui: Forwarded to the native screenshot command when supported
+            resolution: Forwarded to the native screenshot command when supported
+
+        Returns:
+            JSON string with filepath, dimensions, size, and hash.
+        """
+        out_dir = _resolve_workspace_path(screenshot_dir)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        filepath = out_dir / f"{_utc_now().replace(':', '').replace('-', '')}_{_slugify(artifact_name, 'viewport')}.png"
+        response = _send("take_screenshot", {
+            "filepath": str(filepath),
+            "show_ui": show_ui,
+            "resolution": resolution or [1920, 1080],
+        })
+        if response.get("status") == "error" or response.get("success") is False:
+            result = make_result(
+                success=False,
+                stage="viewport_capture_screenshot",
+                message=response.get("error") or response.get("message", "Screenshot command failed"),
+                inputs={"artifact_name": artifact_name, "screenshot_dir": screenshot_dir},
+                errors=[response.get("error") or response.get("message", "Screenshot command failed")],
+            )
+            return json.dumps(result)
+        try:
+            info = _file_artifact_info(filepath)
+            result = make_result(
+                success=True,
+                stage="viewport_capture_screenshot",
+                message="Viewport screenshot captured",
+                inputs={"artifact_name": artifact_name, "screenshot_dir": screenshot_dir},
+                outputs=info,
+            )
+        except Exception as exc:
+            result = make_result(
+                success=False,
+                stage="viewport_capture_screenshot",
+                message=str(exc),
+                inputs={"artifact_name": artifact_name, "screenshot_dir": screenshot_dir},
+                errors=[str(exc)],
+                outputs={"native_response": response},
+            )
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def viewport_compare_screenshot(
+        ctx: Context,
+        baseline_path: str,
+        candidate_path: str,
+        pass_threshold: float = 0.995,
+    ) -> str:
+        """Compare two workspace-local viewport screenshot artifacts.
+
+        Args:
+            baseline_path: Workspace-local baseline PNG path
+            candidate_path: Workspace-local candidate PNG path
+            pass_threshold: Similarity threshold, 0-1
+
+        Returns:
+            JSON string with similarity and artifact metadata.
+        """
+        try:
+            result = compare_screenshot_files(baseline_path, candidate_path, pass_threshold)
+        except Exception as exc:
+            result = make_result(
+                success=False,
+                stage="viewport_compare_screenshot",
+                message=str(exc),
+                inputs={
+                    "baseline_path": baseline_path,
+                    "candidate_path": candidate_path,
+                    "pass_threshold": pass_threshold,
+                },
+                errors=[str(exc)],
+            )
         return json.dumps(result)

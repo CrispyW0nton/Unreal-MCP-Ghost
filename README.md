@@ -2,7 +2,7 @@
 
 Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP server that lets AI agents inspect and modify live UE projects through the Model Context Protocol.
 
-The current server registers **496 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
+The current server registers **502 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
 
 ## What It Can Do
 
@@ -12,7 +12,7 @@ The current server registers **496 MCP tools**. The plugin exposes a TCP bridge 
 - Work with animation systems: Animation Blueprints, state machines, blend spaces, AnimGraph slot insertion, Control Rig asset/control/constraint helpers, IK Rig creation, IK Retargeter creation, skeleton bone inspection, and batch retargeting.
 - Import assets: textures, static meshes, skeletal meshes, audio, folders, and KotOR/GhostRigger assets.
 - Add VFX/audio/material logic: Niagara components, spawn Niagara nodes, sound nodes, material instance parameters, collision settings, and Sequencer transform tracks.
-- Validate and repair Blueprints with diagnostic, repair, execution journal, and action risk-evaluation tools.
+- Validate and repair Blueprints with diagnostic, repair, execution journal, action risk-evaluation, PIE, log, and viewport evidence tools.
 - Provide a repo knowledge base for UE5 workflows, Blueprint patterns, MCP usage, first-person systems, retargeting, Sequencer, Control Rig, weapons, melee, force powers, and boss AI.
 - Provide an editor-side chat panel plus an optional Cursor SDK watcher for automatic replies.
 
@@ -25,7 +25,7 @@ AI client or Cursor watcher
   v
 Python FastMCP server
   - unreal_mcp_server/unreal_mcp_server.py
-  - 496 registered MCP tools
+  - 502 registered MCP tools
   - optional /chat/* HTTP routes on port 8000
   |
   | TCP JSON, one command per connection
@@ -280,7 +280,7 @@ Agents should read repository knowledge before making Unreal changes:
 
 ## Current Tool Surface
 
-The server currently registers **496 MCP tools**, including:
+The server currently registers **502 MCP tools**, including:
 
 - Core editor/actor tools
 - Blueprint creation, graph editing, node connection, variable/function tools
@@ -292,7 +292,7 @@ The server currently registers **496 MCP tools**, including:
 - Material, VFX, Niagara, audio, physics, math, trace, procedural, VR, and variant tools
 - Asset import and folder import tools
 - GhostRigger bridge tools
-- Safe execution substrate, execution journals, action risk evaluation, reflection, diagnostics, source control, project intelligence, C++ bridge, and repair tools
+- Safe execution substrate, execution journals, action risk evaluation, PIE/log/viewport evidence capture, reflection, diagnostics, source control, project intelligence, C++ bridge, and repair tools
 - Higher-level skills such as blueprint health audit, health system creation, and broken blueprint repair
 - Chat tools: `chat_poll_messages`, `chat_send_response`, `chat_get_context`
 

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 import sys
 import tempfile
@@ -40,6 +41,12 @@ class TestExecSubstratePhase6(unittest.TestCase):
         self.assertIn("execution_journal_log", names)
         self.assertIn("execution_journal_finish", names)
         self.assertIn("risk_evaluate_action", names)
+        self.assertIn("pie_launch_session", names)
+        self.assertIn("pie_stop_session", names)
+        self.assertIn("pie_capture_log", names)
+        self.assertIn("pie_simulate_input", names)
+        self.assertIn("viewport_capture_screenshot", names)
+        self.assertIn("viewport_compare_screenshot", names)
 
     def test_execution_journal_lifecycle(self):
         with tempfile.TemporaryDirectory(dir=_REPO_ROOT) as tmp_dir:
@@ -125,6 +132,29 @@ class TestExecSubstratePhase6(unittest.TestCase):
         self.assertIn(high["outputs"]["risk_level"], {"high", "critical"})
         self.assertFalse(high["outputs"]["can_autoproceed"])
         self.assertIn("manual_approval_required", high["outputs"]["recommended_gate"])
+
+    def test_viewport_compare_screenshot_identical_pngs(self):
+        png_bytes = base64.b64decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGA"
+            "WjR9awAAAABJRU5ErkJggg=="
+        )
+        with tempfile.TemporaryDirectory(dir=_REPO_ROOT) as tmp_dir:
+            base = Path(tmp_dir) / "baseline.png"
+            cand = Path(tmp_dir) / "candidate.png"
+            base.write_bytes(png_bytes)
+            cand.write_bytes(png_bytes)
+
+            result = json.loads(asyncio.run(self.mcp.tools["viewport_compare_screenshot"](
+                None,
+                str(base),
+                str(cand),
+                0.995,
+            )))
+            self.assertTrue(result["success"])
+            self.assertTrue(result["outputs"]["byte_equal"])
+            self.assertTrue(result["outputs"]["dimensions_match"])
+            self.assertEqual(result["outputs"]["baseline"]["width"], 1)
+            self.assertEqual(result["outputs"]["baseline"]["height"], 1)
 
 
 if __name__ == "__main__":

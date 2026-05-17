@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 496 MCP tools: 493 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 502 MCP tools: 499 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -35,7 +35,7 @@ Partially live areas:
 - Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
 - AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
 - Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, bulk instance parameter updates, ORM texture generation, texture memory audits, vertex paint automation, mesh UV-channel audits, shader graph complexity estimates, diagnostic viewmode captures, overdraw visualization, and lightweight GPU/performance snapshots.
-- Autonomous verification now has a formal execution journal and risk evaluation foundation, plus existing diagnostics, screenshots, source control status, and chat. PIE automation and screenshot analysis loops remain.
+- Autonomous verification now has a formal execution journal, risk evaluation foundation, PIE launch/stop/log/input wrappers, viewport screenshot capture, screenshot comparison, existing diagnostics, source control status, and chat. Vision-language screenshot analysis remains.
 
 Missing or thin areas:
 
@@ -365,7 +365,7 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: give agents a repeatable plan-execute-verify loop.
 
-Status: Slice 1 execution journal and risk-evaluation foundation is implemented and offline-tested.
+Status: Slice 1 execution journal and risk-evaluation foundation is implemented and offline-tested. Slice 2 PIE/log/viewport evidence tooling is implemented and live-tested in Lab5E.
 
 Slices:
 
@@ -373,12 +373,12 @@ Slices:
 - `execution_journal_log` - implemented for structured progress/tool/verification/error entries, artifacts, severities, risk labels, and stats.
 - `execution_journal_finish` - implemented for closeout summary, final status, final artifacts, verification evidence, and stats.
 - `risk_evaluate_action` - implemented as a heuristic risk gate returning risk level, score, reasons, recommended gate, and checklist.
-- `pie_launch_session`
-- `pie_stop_session`
-- `pie_capture_log`
-- `pie_simulate_input`
-- `viewport_capture_screenshot`
-- `viewport_compare_screenshot`
+- `pie_launch_session` - implemented as a UE Python wrapper for Simulate In Editor or requested PIE, with state readback.
+- `pie_stop_session` - implemented as a UE Python wrapper for ending active PIE/SIE sessions, with state readback.
+- `pie_capture_log` - implemented as a project-log tail capture tool with optional workspace artifact output.
+- `pie_simulate_input` - implemented as a console-command input bridge into the active PIE world/player controller.
+- `viewport_capture_screenshot` - implemented as a workspace-local PNG artifact wrapper over the native viewport screenshot command.
+- `viewport_compare_screenshot` - implemented for workspace-local screenshot comparison using Pillow RMS when available, otherwise hash/size/dimension fallback.
 
 Later:
 
@@ -397,6 +397,17 @@ Slice 1 smoke result, 2026-05-16:
 - Appended a verification entry with inputs, outputs, artifact path, severity, and risk label.
 - Finished the journal with final verification evidence and read the persisted JSON schema back from disk.
 - Verified read-only Blueprint inspection scores as low risk and destructive source-touching project-wide deletion scores as critical with a manual approval gate.
+
+Slice 2 smoke result, 2026-05-17:
+
+- Offline tests registered all 6 PIE/log/viewport tools.
+- Verified screenshot comparison against identical PNG artifacts.
+- Live Lab5E validation launched a Simulate In Editor request against map `Lab-0X`.
+- Captured a project log tail from `Lab5E/Saved/Logs/Lab5E.log`, including PIE world duplication/startup lines.
+- Dispatched harmless console-command input `stat fps` to `PlayerController_0` in the PIE/game world.
+- Captured an active viewport PNG at 1431x870 and recorded file size/hash metadata.
+- Compared the screenshot to itself with Pillow RMS; similarity was 1.0 with zero RMS difference.
+- Requested PIE/SIE stop and verified the editor returned to no active PIE world. Launch/stop tools include a readback note because UE applies PIE state changes on the next editor tick.
 
 ## Phase 7 - Performance And Distribution
 
@@ -450,7 +461,8 @@ Validation:
 5. Phase 5 Slice 1: close montage/notify tooling gaps. Done and live-tested.
 6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling. Done and live-tested.
 7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation. Done and offline-tested.
-8. Phase 8 Slice 1: convert the strongest existing vertical workflows into explicit production skills after Phase 6 verification exists.
+8. Phase 6 Slice 2: add PIE/log/viewport evidence tooling. Done and live-tested.
+9. Phase 8 Slice 1: convert the strongest existing vertical workflows into explicit production skills after Phase 6 verification exists.
 
 ## Backlog Notes
 
