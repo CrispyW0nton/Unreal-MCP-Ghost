@@ -15,6 +15,7 @@
 #include "GameFramework/Actor.h"
 #include "Engine/Selection.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
 #include "Engine/StaticMeshActor.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
@@ -25,6 +26,11 @@
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "InputAction.h"
+#include "InputModifiers.h"
+#include "InputMappingContext.h"
+#include "InputTriggers.h"
 
 namespace UnrealMCPExecPythonDetail
 {
@@ -54,6 +60,135 @@ namespace UnrealMCPExecPythonDetail
 	}
 } // namespace UnrealMCPExecPythonDetail
 
+namespace UnrealMCPEditorCommandDetail
+{
+    static bool MatchesText(const FString& Value, const FString& Query, bool bExact)
+    {
+        if (Query.IsEmpty())
+        {
+            return true;
+        }
+        return bExact
+            ? Value.Equals(Query, ESearchCase::IgnoreCase)
+            : Value.Contains(Query, ESearchCase::IgnoreCase);
+    }
+
+    static TSharedPtr<FJsonObject> ClassEntryToJson(UClass* Class)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        Obj->SetStringField(TEXT("name"), Class ? Class->GetName() : TEXT(""));
+        Obj->SetStringField(TEXT("path"), Class ? Class->GetPathName() : TEXT(""));
+        return Obj;
+    }
+
+    static TArray<TSharedPtr<FJsonValue>> ClassChainToJson(UClass* Class)
+    {
+        TArray<TSharedPtr<FJsonValue>> Chain;
+        for (UClass* Current = Class; Current; Current = Current->GetSuperClass())
+        {
+            Chain.Add(MakeShared<FJsonValueObject>(ClassEntryToJson(Current)));
+        }
+        return Chain;
+    }
+
+    static void AppendClassChainStrings(UClass* Class, TArray<FString>& OutNames)
+    {
+        for (UClass* Current = Class; Current; Current = Current->GetSuperClass())
+        {
+            OutNames.Add(Current->GetName());
+            OutNames.Add(Current->GetPathName());
+        }
+    }
+
+    static TSharedPtr<FJsonObject> ActorIdentityToJson(AActor* Actor)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        if (!Actor)
+        {
+            return Obj;
+        }
+
+        UClass* Class = Actor->GetClass();
+        Obj->SetStringField(TEXT("label"), Actor->GetActorLabel());
+        Obj->SetStringField(TEXT("name"), Actor->GetName());
+        Obj->SetStringField(TEXT("path"), Actor->GetPathName());
+        Obj->SetStringField(TEXT("class"), Class ? Class->GetName() : TEXT(""));
+        Obj->SetStringField(TEXT("class_path"), Class ? Class->GetPathName() : TEXT(""));
+        Obj->SetArrayField(TEXT("class_chain"), ClassChainToJson(Class));
+        return Obj;
+    }
+
+    static UBlueprint* LoadBlueprintByPathOrName(const FString& Query)
+    {
+        if (Query.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        TArray<FString> Candidates;
+        Candidates.Add(Query);
+        if (Query.StartsWith(TEXT("/Game/")) && !Query.Contains(TEXT(".")))
+        {
+            const FString AssetName = FPackageName::GetShortName(Query);
+            Candidates.Add(Query + TEXT(".") + AssetName);
+        }
+
+        for (const FString& Candidate : Candidates)
+        {
+            if (UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Candidate))
+            {
+                return Blueprint;
+            }
+        }
+
+        return FUnrealMCPCommonUtils::FindBlueprint(Query);
+    }
+
+    static UInputMappingContext* LoadInputMappingContextByPathOrName(const FString& Query)
+    {
+        if (Query.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        TArray<FString> Candidates;
+        Candidates.Add(Query);
+        if (Query.StartsWith(TEXT("/Game/")) && !Query.Contains(TEXT(".")))
+        {
+            const FString AssetName = FPackageName::GetShortName(Query);
+            Candidates.Add(Query + TEXT(".") + AssetName);
+        }
+
+        for (const FString& Candidate : Candidates)
+        {
+            if (UInputMappingContext* IMC = LoadObject<UInputMappingContext>(nullptr, *Candidate))
+            {
+                return IMC;
+            }
+        }
+
+        const FString ShortName = FPackageName::GetShortName(Query);
+        FAssetRegistryModule& AssetRegistryModule =
+            FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+        FARFilter Filter;
+        Filter.PackagePaths.Add(FName(TEXT("/Game")));
+        Filter.bRecursivePaths = true;
+        Filter.ClassPaths.Add(UInputMappingContext::StaticClass()->GetClassPathName());
+
+        TArray<FAssetData> Assets;
+        AssetRegistryModule.Get().GetAssets(Filter, Assets);
+        for (const FAssetData& Asset : Assets)
+        {
+            if (Asset.AssetName.ToString().Equals(ShortName, ESearchCase::IgnoreCase) ||
+                Asset.PackageName.ToString().EndsWith(TEXT("/") + ShortName, ESearchCase::IgnoreCase))
+            {
+                return Cast<UInputMappingContext>(Asset.GetAsset());
+            }
+        }
+        return nullptr;
+    }
+}
+
 FUnrealMCPEditorCommands::FUnrealMCPEditorCommands()
 {
 }
@@ -65,9 +200,17 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     {
         return HandleGetActorsInLevel(Params);
     }
+    else if (CommandType == TEXT("get_actor_identity"))
+    {
+        return HandleGetActorIdentity(Params);
+    }
     else if (CommandType == TEXT("find_actors_by_name"))
     {
         return HandleFindActorsByName(Params);
+    }
+    else if (CommandType == TEXT("find_actors_by_class"))
+    {
+        return HandleFindActorsByClass(Params);
     }
     else if (CommandType == TEXT("spawn_actor") || CommandType == TEXT("create_actor"))
     {
@@ -92,6 +235,14 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     else if (CommandType == TEXT("set_actor_property"))
     {
         return HandleSetActorProperty(Params);
+    }
+    else if (CommandType == TEXT("check_blueprint_generated_class"))
+    {
+        return HandleCheckBlueprintGeneratedClass(Params);
+    }
+    else if (CommandType == TEXT("inspect_input_mapping_context"))
+    {
+        return HandleInspectInputMappingContext(Params);
     }
     // Blueprint actor spawning
     else if (CommandType == TEXT("spawn_blueprint_actor"))
@@ -135,6 +286,49 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleGetActorsInLevel(const T
     return ResultObj;
 }
 
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleGetActorIdentity(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Query;
+    Params->TryGetStringField(TEXT("actor_name_or_label"), Query);
+
+    bool bIncludeAll = false;
+    Params->TryGetBoolField(TEXT("include_all"), bIncludeAll);
+
+    TArray<AActor*> AllActors;
+    UGameplayStatics::GetAllActorsOfClass(GWorld, AActor::StaticClass(), AllActors);
+
+    TArray<TSharedPtr<FJsonValue>> MatchingActors;
+    for (AActor* Actor : AllActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        UClass* Class = Actor->GetClass();
+        const FString SearchText = FString::Printf(
+            TEXT("%s %s %s %s %s"),
+            *Actor->GetActorLabel(),
+            *Actor->GetName(),
+            *Actor->GetPathName(),
+            Class ? *Class->GetName() : TEXT(""),
+            Class ? *Class->GetPathName() : TEXT(""));
+
+        if (bIncludeAll || Query.IsEmpty() || SearchText.Contains(Query, ESearchCase::IgnoreCase))
+        {
+            MatchingActors.Add(MakeShared<FJsonValueObject>(
+                UnrealMCPEditorCommandDetail::ActorIdentityToJson(Actor)));
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("query"), Query);
+    ResultObj->SetNumberField(TEXT("count"), MatchingActors.Num());
+    ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
+    return ResultObj;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByName(const TSharedPtr<FJsonObject>& Params)
 {
     FString Pattern;
@@ -158,6 +352,57 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByName(const T
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
     
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ClassName;
+    if (!Params->TryGetStringField(TEXT("class_name"), ClassName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'class_name' parameter"));
+    }
+
+    bool bExact = false;
+    Params->TryGetBoolField(TEXT("exact"), bExact);
+
+    TArray<AActor*> AllActors;
+    UGameplayStatics::GetAllActorsOfClass(GWorld, AActor::StaticClass(), AllActors);
+
+    TArray<TSharedPtr<FJsonValue>> MatchingActors;
+    for (AActor* Actor : AllActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        TArray<FString> ClassNames;
+        UnrealMCPEditorCommandDetail::AppendClassChainStrings(Actor->GetClass(), ClassNames);
+
+        bool bMatched = false;
+        for (const FString& Candidate : ClassNames)
+        {
+            if (UnrealMCPEditorCommandDetail::MatchesText(Candidate, ClassName, bExact))
+            {
+                bMatched = true;
+                break;
+            }
+        }
+
+        if (bMatched)
+        {
+            MatchingActors.Add(MakeShared<FJsonValueObject>(
+                UnrealMCPEditorCommandDetail::ActorIdentityToJson(Actor)));
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("class_name"), ClassName);
+    ResultObj->SetBoolField(TEXT("exact"), bExact);
+    ResultObj->SetNumberField(TEXT("count"), MatchingActors.Num());
+    ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
     return ResultObj;
 }
 
@@ -505,6 +750,98 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
     }
 
     return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn blueprint actor"));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCheckBlueprintGeneratedClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPathOrName;
+    if (!Params->TryGetStringField(TEXT("blueprint_path_or_name"), BlueprintPathOrName) &&
+        !Params->TryGetStringField(TEXT("blueprint_name"), BlueprintPathOrName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Missing 'blueprint_path_or_name' parameter"));
+    }
+
+    UBlueprint* Blueprint = UnrealMCPEditorCommandDetail::LoadBlueprintByPathOrName(BlueprintPathOrName);
+    if (!Blueprint)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPathOrName));
+    }
+
+    UClass* GeneratedClass = Blueprint->GeneratedClass;
+    UClass* ParentClass = Blueprint->ParentClass;
+    UObject* CDO = GeneratedClass ? GeneratedClass->GetDefaultObject(false) : nullptr;
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), GeneratedClass != nullptr);
+    ResultObj->SetStringField(TEXT("query"), BlueprintPathOrName);
+    ResultObj->SetStringField(TEXT("blueprint_name"), Blueprint->GetName());
+    ResultObj->SetStringField(TEXT("blueprint_path"), Blueprint->GetPathName());
+    ResultObj->SetBoolField(TEXT("has_generated_class"), GeneratedClass != nullptr);
+    ResultObj->SetStringField(TEXT("generated_class_name"), GeneratedClass ? GeneratedClass->GetName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("generated_class_path"), GeneratedClass ? GeneratedClass->GetPathName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("parent_class_name"), ParentClass ? ParentClass->GetName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("parent_class_path"), ParentClass ? ParentClass->GetPathName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("class_default_object_path"), CDO ? CDO->GetPathName() : TEXT(""));
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleInspectInputMappingContext(const TSharedPtr<FJsonObject>& Params)
+{
+    FString IMCPathOrName;
+    if (!Params->TryGetStringField(TEXT("imc_path_or_name"), IMCPathOrName) &&
+        !Params->TryGetStringField(TEXT("imc_name"), IMCPathOrName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Missing 'imc_path_or_name' parameter"));
+    }
+
+    UInputMappingContext* IMC =
+        UnrealMCPEditorCommandDetail::LoadInputMappingContextByPathOrName(IMCPathOrName);
+    if (!IMC)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Input Mapping Context not found: %s"), *IMCPathOrName));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> MappingArray;
+    const TArray<FEnhancedActionKeyMapping>& Mappings = IMC->GetMappings();
+    for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+    {
+        const FEnhancedActionKeyMapping& Mapping = Mappings[Index];
+        TSharedPtr<FJsonObject> MappingObj = MakeShared<FJsonObject>();
+        MappingObj->SetNumberField(TEXT("index"), Index);
+        MappingObj->SetStringField(TEXT("action_name"), Mapping.Action ? Mapping.Action->GetName() : TEXT(""));
+        MappingObj->SetStringField(TEXT("action_path"), Mapping.Action ? Mapping.Action->GetPathName() : TEXT(""));
+        MappingObj->SetStringField(TEXT("key"), Mapping.Key.ToString());
+
+        TArray<TSharedPtr<FJsonValue>> Modifiers;
+        for (const UInputModifier* Modifier : Mapping.Modifiers)
+        {
+            Modifiers.Add(MakeShared<FJsonValueString>(
+                Modifier && Modifier->GetClass() ? Modifier->GetClass()->GetName() : TEXT("")));
+        }
+        MappingObj->SetArrayField(TEXT("modifiers"), Modifiers);
+
+        TArray<TSharedPtr<FJsonValue>> Triggers;
+        for (const UInputTrigger* Trigger : Mapping.Triggers)
+        {
+            Triggers.Add(MakeShared<FJsonValueString>(
+                Trigger && Trigger->GetClass() ? Trigger->GetClass()->GetName() : TEXT("")));
+        }
+        MappingObj->SetArrayField(TEXT("triggers"), Triggers);
+        MappingArray.Add(MakeShared<FJsonValueObject>(MappingObj));
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("query"), IMCPathOrName);
+    ResultObj->SetStringField(TEXT("name"), IMC->GetName());
+    ResultObj->SetStringField(TEXT("path"), IMC->GetPathName());
+    ResultObj->SetNumberField(TEXT("mapping_count"), MappingArray.Num());
+    ResultObj->SetArrayField(TEXT("mappings"), MappingArray);
+    return ResultObj;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
@@ -950,4 +1287,4 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     }
 
     return ResultObj;
-} 
+}

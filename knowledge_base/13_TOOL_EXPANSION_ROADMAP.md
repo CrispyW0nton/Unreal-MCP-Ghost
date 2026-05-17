@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 501 MCP tools from Git-tracked tool files: 497 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 507 MCP tools from Git-tracked tool files: 503 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -413,7 +413,7 @@ Slice 2 smoke result, 2026-05-17:
 
 Goal: make the platform easier to run in production and CI.
 
-Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested. Slice 3 UMG missing-route cleanup is implemented and offline-tested. Slice 4 C++-only route review is implemented and offline-tested. Slice 5 high-priority wrapper exposure is implemented and offline-tested.
+Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested. Slice 3 UMG missing-route cleanup is implemented and offline-tested. Slice 4 C++-only route review is implemented and offline-tested. Slice 5 high-priority wrapper exposure is implemented and offline-tested. Slice 6 Insanitii project smoke-test wrappers are implemented and offline-tested.
 
 Slices:
 
@@ -466,6 +466,12 @@ Slice 5 smoke result, 2026-05-17:
 - Added `ping_unreal` as a first-class Python MCP wrapper for the native bridge `ping` route.
 - Added `tools/widget_tools.py` with generic `widget_add_child`, `widget_set_property`, `widget_set_anchor`, and `widget_get_children` wrappers for the native UMG widget-tree routes.
 - Hardened `scripts/tool_inventory.py` so the default inventory uses Git-tracked tool files, preventing local untracked scratch tools from changing documented counts. `--include-untracked` remains available for workspace audits.
+
+Slice 6:
+
+- Added native bridge routes plus Python wrappers for `get_actor_identity`, `find_actors_by_class`, `check_blueprint_generated_class`, and `inspect_input_mapping_context`.
+- Added Windows-side prompt safety tools `editor_list_blocking_dialogs` and `editor_dismiss_blocking_dialog` so MCP can detect blocking Unreal/file prompts and explicitly click a named button when automation is stuck behind a dialog.
+- Live Insanitii smoke readback before native plugin reload confirmed bridge `ping`, 7 `INS_` actors by label/path, valid `BP_RuntimeBootstrap` generated class, 18 mappings in `/Game/FirstPerson/Input/IMC_Default`, and no visible blocking dialogs. Native class-chain matching requires Live Coding/reload of the new plugin commands. UBT compiled the updated UnrealMCP C++ files, then failed only at final link because the open editor and LiveCodingConsole locked the loaded DLL/PDB files.
 - Current tracked-worktree audit finds 301 bridge command names, 265 Python-referenced commands, 301 C++ routed commands, 0 Python commands without discovered C++ routes, and 32 C++ routes not referenced by Python.
 - Offline tests cover the ping wrapper, widget wrappers, tracked-only inventory count, and the existing bridge-drift guard.
 
@@ -518,7 +524,7 @@ Slice 1 smoke result, 2026-05-17:
 12. Phase 7 Slice 3: close or formally retire the 12 UMG Python wrappers that have no discovered C++ route. Done and offline-tested.
 13. Phase 7 Slice 4: review C++-only routes not referenced by Python and decide which should receive wrappers, remain internal aliases, or be removed. Done and offline-tested.
 14. Phase 7 Slice 5: implement the highest-priority read-only/generic C++-only wrappers first: bridge `ping`, `widget_get_children`, `widget_set_property`, `widget_add_child`, and `widget_set_anchor`. Done and offline-tested.
-15. Phase 7 Slice 6: add project smoke-test wrappers discovered during Insanitii validation: actor labels/full paths, `find_actors_by_class`, generated-class checks, and Enhanced Input mapping inspection.
+15. Phase 7 Slice 6: add project smoke-test wrappers discovered during Insanitii validation: actor labels/full paths, `find_actors_by_class`, generated-class checks, and Enhanced Input mapping inspection. Done and offline-tested; native reload smoke pending.
 
 ## Backlog Notes
 

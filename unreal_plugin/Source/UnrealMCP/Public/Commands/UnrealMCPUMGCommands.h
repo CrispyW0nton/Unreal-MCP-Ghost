@@ -79,4 +79,16 @@ private:
      * @return JSON response with the binding details
      */
     TSharedPtr<FJsonObject> HandleSetTextBlockBinding(const TSharedPtr<FJsonObject>& Params);
-}; 
+
+    /** Generic widget tree child creation for Widget Blueprints. */
+    TSharedPtr<FJsonObject> HandleWidgetAddChild(const TSharedPtr<FJsonObject>& Params);
+
+    /** Set common widget properties through explicit UMG APIs. */
+    TSharedPtr<FJsonObject> HandleWidgetSetProperty(const TSharedPtr<FJsonObject>& Params);
+
+    /** Set CanvasPanelSlot anchors, position, size, and alignment. */
+    TSharedPtr<FJsonObject> HandleWidgetSetAnchor(const TSharedPtr<FJsonObject>& Params);
+
+    /** List widget tree children and slot information. */
+    TSharedPtr<FJsonObject> HandleWidgetGetChildren(const TSharedPtr<FJsonObject>& Params);
+};

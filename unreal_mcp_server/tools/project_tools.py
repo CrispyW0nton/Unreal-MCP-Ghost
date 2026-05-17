@@ -1,11 +1,54 @@
 """
 Project Tools - Input mappings and project-wide settings.
 """
+import json
 import logging
 from typing import Dict, Any, List
 from mcp.server.fastmcp import FastMCP, Context
 
 logger = logging.getLogger("UnrealMCP")
+
+
+def _send_unreal_command(command: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    from unreal_mcp_server import get_unreal_connection
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Not connected to Unreal Engine"}
+    return unreal.send_command(command, params) or {
+        "success": False,
+        "message": "No response from Unreal Engine",
+    }
+
+
+def _parse_exec_python_json(response: Dict[str, Any]) -> Dict[str, Any]:
+    inner = (response or {}).get("result") or response or {}
+    output = inner.get("output", "") or ""
+    command_result = inner.get("command_result", "") or ""
+    candidates = []
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("[Info] "):
+            line = line[len("[Info] "):].strip()
+        candidates.append(line)
+    if command_result:
+        candidates.append(command_result.strip())
+
+    for line in reversed(candidates):
+        if line.startswith("{") and line.endswith("}"):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+
+    if inner.get("success") is False or (response or {}).get("status") == "error":
+        return {
+            "success": False,
+            "message": inner.get("error") or inner.get("message") or output or "exec_python failed",
+        }
+    return {"success": False, "message": f"Could not parse exec_python JSON output: {output!r}"}
 
 
 def register_project_tools(mcp: FastMCP):
@@ -126,6 +169,34 @@ def register_project_tools(mcp: FastMCP):
                 "key": key
             }) or {}
         except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def inspect_input_mapping_context(
+        ctx: Context,
+        imc_path_or_name: str,
+    ) -> Dict[str, Any]:
+        """Inspect an Enhanced Input Mapping Context and return action/key mappings."""
+        try:
+            return _send_unreal_command("inspect_input_mapping_context", {
+                "imc_path_or_name": imc_path_or_name,
+            })
+        except Exception as e:
+            logger.error(f"Error inspecting Input Mapping Context: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def check_blueprint_generated_class(
+        ctx: Context,
+        blueprint_path_or_name: str,
+    ) -> Dict[str, Any]:
+        """Verify that a Blueprint asset has a valid generated class and report parent/native class data."""
+        try:
+            return _send_unreal_command("check_blueprint_generated_class", {
+                "blueprint_path_or_name": blueprint_path_or_name,
+            })
+        except Exception as e:
+            logger.error(f"Error checking Blueprint generated class: {e}")
             return {"success": False, "message": str(e)}
 
     logger.info("Project tools registered")

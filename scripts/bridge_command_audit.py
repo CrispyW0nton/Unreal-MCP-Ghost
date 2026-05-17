@@ -32,6 +32,7 @@ BRIDGE_CALL_NAMES = {
     "_send_command",
     "_call",
     "_execute",
+    "_send_unreal_command",
     "send_command",
 }
 

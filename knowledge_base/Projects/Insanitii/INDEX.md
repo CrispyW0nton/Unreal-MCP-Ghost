@@ -21,6 +21,7 @@ All Insanitii-specific project notes, implementation logs, audit findings, and p
 - `Insanitii_Development_Roadmap.md`: in-depth multi-phase production roadmap, milestones, and exit gates.
 - `Phase1_Smoke_Test_2026-05-17.md`: live Unreal Editor smoke-test report against the open Insanitii project.
 - `Phase1_Repair_Pass_2026-05-17.md`: repair log for the missing level actors and broken wrapper generated classes found during the smoke test.
+- `Phase7_MCP_Smoke_Tooling_2026-05-17.md`: MCP tooling report for Insanitii-specific smoke wrappers and prompt/dialog handling.
 
 ## Phase Roadmap (Updated)
 

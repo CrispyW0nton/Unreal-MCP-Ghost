@@ -2,11 +2,166 @@
 Editor Tools - Actor management, viewport, spawning.
 Ported from: https://github.com/chongdashu/unreal-mcp
 """
+import json
 import logging
+import sys
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
 
 logger = logging.getLogger("UnrealMCP")
+
+
+def _send_unreal_command(command: str, params: Dict[str, Any]) -> Dict[str, Any]:
+    from unreal_mcp_server import get_unreal_connection
+
+    unreal = get_unreal_connection()
+    if not unreal:
+        return {"success": False, "message": "Not connected to Unreal Engine"}
+    return unreal.send_command(command, params) or {
+        "success": False,
+        "message": "No response from Unreal Engine",
+    }
+
+
+def _parse_exec_python_json(response: Dict[str, Any]) -> Dict[str, Any]:
+    inner = (response or {}).get("result") or response or {}
+    output = inner.get("output", "") or ""
+    command_result = inner.get("command_result", "") or ""
+    candidates: List[str] = []
+
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("[Info] "):
+            line = line[len("[Info] "):].strip()
+        candidates.append(line)
+    if command_result:
+        candidates.append(command_result.strip())
+
+    for line in reversed(candidates):
+        if not line:
+            continue
+        if (line.startswith("{") and line.endswith("}")) or (line.startswith("[") and line.endswith("]")):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    return parsed
+                return {"success": True, "items": parsed}
+            except json.JSONDecodeError:
+                continue
+
+    if inner.get("success") is False or (response or {}).get("status") == "error":
+        return {
+            "success": False,
+            "message": inner.get("error") or inner.get("message") or output or "exec_python failed",
+        }
+    return {"success": False, "message": f"Could not parse exec_python JSON output: {output!r}"}
+
+
+def _list_windows(process_name_contains: str = "UnrealEditor") -> Dict[str, Any]:
+    """Enumerate visible Windows top-level dialogs using ctypes only."""
+    if sys.platform != "win32":
+        return {
+            "success": False,
+            "message": "Window prompt automation is only available on Windows",
+            "windows": [],
+        }
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    PROCESS_VM_READ = 0x0010
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    EnumChildProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    def _window_text(hwnd) -> str:
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return ""
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        return buffer.value
+
+    def _class_name(hwnd) -> str:
+        buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buffer, 256)
+        return buffer.value
+
+    def _process_image(pid: int) -> str:
+        access = PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ
+        handle = kernel32.OpenProcess(access, False, pid)
+        if not handle:
+            return ""
+        try:
+            buffer = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(len(buffer))
+            if psapi.GetModuleFileNameExW(handle, None, buffer, len(buffer)):
+                return buffer.value
+            if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+                return buffer.value
+            return ""
+        finally:
+            kernel32.CloseHandle(handle)
+
+    def _children(hwnd) -> List[Dict[str, Any]]:
+        found: List[Dict[str, Any]] = []
+
+        def _enum_child(child_hwnd, _lparam):
+            text = _window_text(child_hwnd)
+            cls = _class_name(child_hwnd)
+            if text or cls in ("Button", "Edit", "Static"):
+                found.append({
+                    "hwnd": int(child_hwnd),
+                    "class": cls,
+                    "text": text,
+                })
+            return True
+
+        user32.EnumChildWindows(hwnd, EnumChildProc(_enum_child), 0)
+        return found
+
+    windows: List[Dict[str, Any]] = []
+
+    def _enum(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+
+        title = _window_text(hwnd)
+        if not title:
+            return True
+
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        image = _process_image(pid.value)
+        image_lower = image.lower()
+        process_match = (
+            not process_name_contains
+            or process_name_contains.lower() in image_lower
+            or process_name_contains.lower() in title.lower()
+        )
+        if process_match:
+            child_controls = _children(hwnd)
+            windows.append({
+                "hwnd": int(hwnd),
+                "title": title,
+                "class": _class_name(hwnd),
+                "process_id": int(pid.value),
+                "process_image": image,
+                "children": child_controls,
+                "buttons": [
+                    child["text"] for child in child_controls
+                    if child.get("class") == "Button" and child.get("text")
+                ],
+            })
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(_enum), 0)
+    return {"success": True, "windows": windows, "count": len(windows)}
 
 
 def register_editor_tools(mcp: FastMCP):
@@ -22,6 +177,119 @@ def register_editor_tools(mcp: FastMCP):
             return unreal.send_command("ping", {}) or {}
         except Exception as e:
             logger.error(f"Error pinging Unreal bridge: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def get_actor_identity(
+        ctx: Context,
+        actor_name_or_label: str = "",
+        include_all: bool = False,
+    ) -> Dict[str, Any]:
+        """Return actor labels, object names, full paths, classes, and Blueprint generated-class paths."""
+        try:
+            return _send_unreal_command("get_actor_identity", {
+                "actor_name_or_label": actor_name_or_label,
+                "include_all": include_all,
+            })
+        except Exception as e:
+            logger.error(f"Error getting actor identity: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def find_actors_by_class(
+        ctx: Context,
+        class_name: str,
+        exact: bool = False,
+    ) -> Dict[str, Any]:
+        """Find placed actors by native or Blueprint-generated class name/path."""
+        try:
+            return _send_unreal_command("find_actors_by_class", {
+                "class_name": class_name,
+                "exact": exact,
+            })
+        except Exception as e:
+            logger.error(f"Error finding actors by class: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def editor_list_blocking_dialogs(
+        ctx: Context,
+        process_name_contains: str = "UnrealEditor",
+        title_contains: str = "",
+    ) -> Dict[str, Any]:
+        """List visible Unreal/Windows dialogs that can block MCP automation."""
+        try:
+            result = _list_windows(process_name_contains=process_name_contains)
+            if not result.get("success"):
+                return result
+            if title_contains:
+                needle = title_contains.lower()
+                result["windows"] = [
+                    window for window in result["windows"]
+                    if needle in window.get("title", "").lower()
+                    or any(needle in child.get("text", "").lower() for child in window.get("children", []))
+                ]
+                result["count"] = len(result["windows"])
+            return result
+        except Exception as e:
+            logger.error(f"Error listing blocking dialogs: {e}")
+            return {"success": False, "message": str(e), "windows": []}
+
+    @mcp.tool()
+    def editor_dismiss_blocking_dialog(
+        ctx: Context,
+        button_text: str,
+        process_name_contains: str = "UnrealEditor",
+        title_contains: str = "",
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Click a named button on a visible Unreal/Windows dialog, such as Yes, OK, Replace, or Cancel."""
+        if not button_text:
+            return {"success": False, "message": "button_text is required for safety"}
+        if sys.platform != "win32":
+            return {"success": False, "message": "Dialog dismissal is only available on Windows"}
+
+        try:
+            import ctypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            BM_CLICK = 0x00F5
+
+            windows = editor_list_blocking_dialogs(
+                ctx=ctx,
+                process_name_contains=process_name_contains,
+                title_contains=title_contains,
+            )
+            if not windows.get("success"):
+                return windows
+
+            target = button_text.strip().lower()
+            candidates = []
+            for window in windows.get("windows", []):
+                for child in window.get("children", []):
+                    if child.get("class") == "Button" and child.get("text", "").strip().lower() == target:
+                        candidates.append({"window": window, "button": child})
+
+            if not candidates:
+                return {
+                    "success": False,
+                    "message": f"No matching '{button_text}' button found",
+                    "windows": windows.get("windows", []),
+                }
+
+            candidate = candidates[0]
+            if not dry_run:
+                user32.SendMessageW(candidate["button"]["hwnd"], BM_CLICK, 0, 0)
+
+            return {
+                "success": True,
+                "dry_run": dry_run,
+                "clicked_button": candidate["button"]["text"],
+                "window_title": candidate["window"]["title"],
+                "matched_count": len(candidates),
+            }
+        except Exception as e:
+            logger.error(f"Error dismissing blocking dialog: {e}")
             return {"success": False, "message": str(e)}
 
     @mcp.tool()

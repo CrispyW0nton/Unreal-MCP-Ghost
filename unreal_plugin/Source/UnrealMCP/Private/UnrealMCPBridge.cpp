@@ -1317,13 +1317,17 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
             }
             // Editor Commands (including actor manipulation)
             else if (CommandType == TEXT("get_actors_in_level") || 
+                     CommandType == TEXT("get_actor_identity") ||
                      CommandType == TEXT("find_actors_by_name") ||
+                     CommandType == TEXT("find_actors_by_class") ||
                      CommandType == TEXT("spawn_actor") ||
                      CommandType == TEXT("create_actor") ||
                      CommandType == TEXT("delete_actor") || 
                      CommandType == TEXT("set_actor_transform") ||
                      CommandType == TEXT("get_actor_properties") ||
                      CommandType == TEXT("set_actor_property") ||
+                     CommandType == TEXT("check_blueprint_generated_class") ||
+                     CommandType == TEXT("inspect_input_mapping_context") ||
                      CommandType == TEXT("spawn_blueprint_actor") ||
                      CommandType == TEXT("focus_viewport") || 
                      CommandType == TEXT("take_screenshot") ||
@@ -1414,7 +1418,11 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("add_button_to_widget") ||
                      CommandType == TEXT("bind_widget_event") ||
                      CommandType == TEXT("set_text_block_binding") ||
-                     CommandType == TEXT("add_widget_to_viewport"))
+                     CommandType == TEXT("add_widget_to_viewport") ||
+                     CommandType == TEXT("widget_add_child") ||
+                     CommandType == TEXT("widget_set_property") ||
+                     CommandType == TEXT("widget_set_anchor") ||
+                     CommandType == TEXT("widget_get_children"))
             {
                 ResultJson = UMGCommands->HandleCommand(CommandType, Params);
             }
