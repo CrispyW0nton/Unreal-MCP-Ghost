@@ -557,7 +557,7 @@ class TestToolCountAudit(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestExecSubstrateRegistration(unittest.TestCase):
-    """Verify exec_substrate registers 3 tools and the make_result helper works."""
+    """Verify exec_substrate registers safe execution tools and schema helpers."""
 
     def setUp(self):
         from tools.exec_substrate import register_exec_substrate_tools

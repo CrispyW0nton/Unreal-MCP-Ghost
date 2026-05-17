@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 492 MCP tools: 489 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 496 MCP tools: 493 Python tools under `unreal_mcp_server/tools` plus 3 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -35,7 +35,7 @@ Partially live areas:
 - Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
 - AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
 - Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, bulk instance parameter updates, ORM texture generation, texture memory audits, vertex paint automation, mesh UV-channel audits, shader graph complexity estimates, diagnostic viewmode captures, overdraw visualization, and lightweight GPU/performance snapshots.
-- Autonomous verification exists in pieces through diagnostics, screenshots, source control status, and chat, but needs a formal execution journal, risk evaluation, PIE automation, and screenshot analysis loop.
+- Autonomous verification now has a formal execution journal and risk evaluation foundation, plus existing diagnostics, screenshots, source control status, and chat. PIE automation and screenshot analysis loops remain.
 
 Missing or thin areas:
 
@@ -365,12 +365,14 @@ Lab5E smoke result, 2026-05-16:
 
 Goal: give agents a repeatable plan-execute-verify loop.
 
+Status: Slice 1 execution journal and risk-evaluation foundation is implemented and offline-tested.
+
 Slices:
 
-- `execution_journal_start`
-- `execution_journal_log`
-- `execution_journal_finish`
-- `risk_evaluate_action`
+- `execution_journal_start` - implemented as a workspace-scoped JSON journal creator with session metadata, tags, and schema versioning.
+- `execution_journal_log` - implemented for structured progress/tool/verification/error entries, artifacts, severities, risk labels, and stats.
+- `execution_journal_finish` - implemented for closeout summary, final status, final artifacts, verification evidence, and stats.
+- `risk_evaluate_action` - implemented as a heuristic risk gate returning risk level, score, reasons, recommended gate, and checklist.
 - `pie_launch_session`
 - `pie_stop_session`
 - `pie_capture_log`
@@ -386,6 +388,15 @@ Later:
 Validation:
 
 - Agent builds a small gameplay slice, launches PIE, captures log/screenshot, and returns a journal.
+- Slice 1 offline validation creates a temporary execution journal, appends evidence, finishes it, and verifies low-risk versus critical-risk action scoring.
+
+Slice 1 smoke result, 2026-05-16:
+
+- Registered 4 new execution-substrate tools, bringing the execution substrate category to 7 tools.
+- Created a temporary repo-local execution journal in unit tests.
+- Appended a verification entry with inputs, outputs, artifact path, severity, and risk label.
+- Finished the journal with final verification evidence and read the persisted JSON schema back from disk.
+- Verified read-only Blueprint inspection scores as low risk and destructive source-touching project-wide deletion scores as critical with a manual approval gate.
 
 ## Phase 7 - Performance And Distribution
 
@@ -438,7 +449,7 @@ Validation:
 4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers. Done.
 5. Phase 5 Slice 1: close montage/notify tooling gaps. Done and live-tested.
 6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling. Done and live-tested.
-7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation.
+7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation. Done and offline-tested.
 8. Phase 8 Slice 1: convert the strongest existing vertical workflows into explicit production skills after Phase 6 verification exists.
 
 ## Backlog Notes

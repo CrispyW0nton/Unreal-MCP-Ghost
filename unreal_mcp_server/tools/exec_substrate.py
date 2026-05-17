@@ -12,9 +12,12 @@ Wrappers provided:
   exec_python_capture_logs    — captures output log lines around a script
   exec_python_structured      — returns a normalised StructuredResult JSON
 
-Tool family (2 MCP tools exposed):
+Tool family (7 MCP tools exposed):
   ue_exec_safe      — send any Python snippet using the safe substrate
   ue_exec_transact  — send a Python snippet wrapped in a named transaction
+  ue_exec_progress  — send a Python snippet wrapped in a progress dialog
+  execution_journal_* — create, append, and finish repo-local journals
+  risk_evaluate_action — score planned mutations before execution
 
 Reference:
   https://dev.epicgames.com/documentation/unreal-engine/scripting-the-unreal-editor-using-python
@@ -28,12 +31,18 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 import textwrap
+import uuid
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 
 logger = logging.getLogger("UnrealMCP")
+
+_RISK_LEVELS = ("low", "medium", "high", "critical")
 
 # ── Shared result schema ──────────────────────────────────────────────────────
 # Every tool in this project should trend toward this shape.
@@ -74,6 +83,224 @@ def make_result(
     r["log_tail"] = log_tail or []
     r.update(extra)
     return r
+
+
+# ── Execution journal helpers ────────────────────────────────────────────────
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
+
+
+def _workspace_root() -> Path:
+    return Path(__file__).resolve().parents[2]
+
+
+def _resolve_workspace_path(path: str) -> Path:
+    root = _workspace_root().resolve()
+    candidate = Path(path or ".mcp_journals")
+    if not candidate.is_absolute():
+        candidate = root / candidate
+    resolved = candidate.resolve()
+    try:
+        resolved.relative_to(root)
+    except ValueError as exc:
+        raise ValueError(f"Path must stay inside workspace root: {root}") from exc
+    return resolved
+
+
+def _slugify(value: str, default: str = "journal") -> str:
+    slug = re.sub(r"[^A-Za-z0-9._-]+", "-", value.strip()).strip("-._")
+    return (slug or default)[:64]
+
+
+def _json_safe(value: Any) -> Any:
+    try:
+        json.dumps(value)
+        return value
+    except TypeError:
+        if isinstance(value, dict):
+            return {str(k): _json_safe(v) for k, v in value.items()}
+        if isinstance(value, (list, tuple, set)):
+            return [_json_safe(v) for v in value]
+        return str(value)
+
+
+def _read_journal(path: str) -> Dict[str, Any]:
+    journal_path = _resolve_workspace_path(path)
+    if not journal_path.exists():
+        raise FileNotFoundError(f"Execution journal not found: {journal_path}")
+    with journal_path.open("r", encoding="utf-8") as fh:
+        data = json.load(fh)
+    if not isinstance(data, dict) or data.get("schema") != "unreal_mcp_execution_journal.v1":
+        raise ValueError(f"Not an Unreal-MCP execution journal: {journal_path}")
+    return data
+
+
+def _write_journal(path: str, data: Dict[str, Any]) -> Path:
+    journal_path = _resolve_workspace_path(path)
+    journal_path.parent.mkdir(parents=True, exist_ok=True)
+    with journal_path.open("w", encoding="utf-8", newline="\n") as fh:
+        json.dump(_json_safe(data), fh, indent=2)
+        fh.write("\n")
+    return journal_path
+
+
+def _journal_stats(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_severity: Dict[str, int] = {}
+    by_event_type: Dict[str, int] = {}
+    failures = 0
+    for entry in entries:
+        severity = str(entry.get("severity", "info")).lower()
+        event_type = str(entry.get("event_type", "event")).lower()
+        by_severity[severity] = by_severity.get(severity, 0) + 1
+        by_event_type[event_type] = by_event_type.get(event_type, 0) + 1
+        if entry.get("success") is False or severity in {"error", "critical"}:
+            failures += 1
+    return {
+        "entry_count": len(entries),
+        "failure_count": failures,
+        "by_severity": by_severity,
+        "by_event_type": by_event_type,
+    }
+
+
+def _risk_level_from_score(score: int) -> str:
+    if score >= 85:
+        return "critical"
+    if score >= 60:
+        return "high"
+    if score >= 25:
+        return "medium"
+    return "low"
+
+
+def _risk_gate(level: str) -> str:
+    return {
+        "low": "auto_allowed",
+        "medium": "journal_required",
+        "high": "explicit_confirmation_and_checkpoint",
+        "critical": "manual_approval_required",
+    }[level]
+
+
+def evaluate_action_risk(
+    *,
+    action: str,
+    target: str = "",
+    operation_type: str = "unknown",
+    asset_paths: Optional[List[str]] = None,
+    destructive: bool = False,
+    requires_compile: bool = False,
+    affects_runtime: bool = False,
+    touches_source: bool = False,
+    estimated_scope: str = "single_asset",
+    mitigations: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    """Score an intended editor action before an agent mutates a project."""
+    action_l = (action or "").lower()
+    operation_l = (operation_type or "unknown").lower()
+    scope_l = (estimated_scope or "single_asset").lower()
+    assets = asset_paths or []
+    mitigations = mitigations or []
+    reasons: List[str] = []
+    score = 0
+
+    if operation_l in {"inspect", "read", "list", "describe", "capture"}:
+        score += 5
+        reasons.append("read-only or observational operation")
+    elif operation_l in {"create", "add", "edit", "mutate", "configure", "repair"}:
+        score += 30
+        reasons.append("mutates editor/project state")
+    elif operation_l in {"compile", "save", "build", "live_coding"}:
+        score += 35
+        reasons.append("compile/save/build operation can affect loaded editor state")
+    elif operation_l in {"delete", "remove", "overwrite", "reset", "reparent"}:
+        score += 65
+        reasons.append("destructive or structurally risky operation")
+    else:
+        score += 20
+        reasons.append("unknown operation type")
+
+    destructive_words = ("delete", "remove", "overwrite", "reset", "reparent", "migrate", "rename")
+    if destructive or any(word in action_l for word in destructive_words):
+        score += 35
+        reasons.append("destructive intent or destructive keyword detected")
+    if requires_compile:
+        score += 15
+        reasons.append("requires Blueprint/C++ compile or VM recompile")
+    if affects_runtime:
+        score += 15
+        reasons.append("affects runtime behavior")
+    if touches_source:
+        score += 25
+        reasons.append("touches source code or plugin files")
+    if scope_l in {"project", "project_wide", "all_assets", "global"}:
+        score += 25
+        reasons.append("project-wide scope")
+    elif scope_l in {"multi_asset", "folder", "level"}:
+        score += 15
+        reasons.append("multi-asset or level scope")
+    if len(assets) > 10:
+        score += 15
+        reasons.append("touches more than 10 assets")
+    elif len(assets) > 1:
+        score += 8
+        reasons.append("touches multiple assets")
+    if any(str(path).startswith("/") and not str(path).startswith("/Game") for path in assets):
+        score += 8
+        reasons.append("touches engine/plugin or non-game content")
+
+    mitigation_text = " ".join(mitigations).lower()
+    if "backup" in mitigation_text or "checkpoint" in mitigation_text:
+        score -= 10
+        reasons.append("checkpoint/backup mitigation provided")
+    if "journal" in mitigation_text:
+        score -= 5
+        reasons.append("journal mitigation provided")
+    if "dry" in mitigation_text or "preview" in mitigation_text:
+        score -= 8
+        reasons.append("dry-run or preview mitigation provided")
+
+    score = max(0, min(100, score))
+    level = _risk_level_from_score(score)
+    gate = _risk_gate(level)
+    checklist = [
+        "Discover current project state before mutation.",
+        "Record the action in an execution journal.",
+        "Return verification evidence after the action.",
+    ]
+    if level in {"high", "critical"}:
+        checklist.insert(0, "Create or confirm a checkpoint before proceeding.")
+    if destructive or level == "critical":
+        checklist.insert(0, "Get explicit human approval before proceeding.")
+    if requires_compile:
+        checklist.append("Compile or recompile affected assets and capture diagnostics.")
+
+    return make_result(
+        success=True,
+        stage="risk_evaluation",
+        message=f"Risk level: {level}",
+        inputs={
+            "action": action,
+            "target": target,
+            "operation_type": operation_type,
+            "asset_paths": assets,
+            "destructive": destructive,
+            "requires_compile": requires_compile,
+            "affects_runtime": affects_runtime,
+            "touches_source": touches_source,
+            "estimated_scope": estimated_scope,
+            "mitigations": mitigations,
+        },
+        outputs={
+            "risk_level": level,
+            "risk_score": score,
+            "recommended_gate": gate,
+            "can_autoproceed": level in {"low", "medium"} and not destructive,
+            "reasons": reasons,
+            "checklist": checklist,
+        },
+    )
 
 
 # ── Transport helper ──────────────────────────────────────────────────────────
@@ -371,4 +598,252 @@ def register_exec_substrate_tools(mcp: FastMCP):
             JSON string with StructuredResult.
         """
         result = exec_python_with_progress(code, task_name, total_work)
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def execution_journal_start(
+        ctx: Context,
+        title: str,
+        goal: str = "",
+        project_name: str = "",
+        journal_dir: str = ".mcp_journals",
+        tags: Optional[List[str]] = None,
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Start a repo-local execution journal for an autonomous work session.
+
+        The journal is a JSON file with an immutable id, timestamps, inputs,
+        entries, artifacts, and final verification data. Paths are constrained
+        to the current workspace root so agents cannot quietly write elsewhere.
+
+        Args:
+            title: Human-readable journal title
+            goal: What the agent intends to accomplish
+            project_name: Optional Unreal project or map name
+            journal_dir: Workspace-relative directory for journal files
+            tags: Optional labels for later search
+            metadata: Optional extra context such as branch, map, or project path
+
+        Returns:
+            JSON string with StructuredResult and the created journal path.
+        """
+        journal_id = uuid.uuid4().hex[:12]
+        started_at = _utc_now()
+        journal_root = _resolve_workspace_path(journal_dir)
+        file_name = f"{started_at.replace(':', '').replace('-', '')}_{_slugify(title)}_{journal_id}.json"
+        journal_path = journal_root / file_name
+        data = {
+            "schema": "unreal_mcp_execution_journal.v1",
+            "journal_id": journal_id,
+            "title": title,
+            "goal": goal,
+            "project_name": project_name,
+            "status": "in_progress",
+            "started_at": started_at,
+            "finished_at": "",
+            "tags": tags or [],
+            "metadata": metadata or {},
+            "entries": [],
+            "artifacts": [],
+            "verification": {},
+            "summary": "",
+            "stats": _journal_stats([]),
+        }
+        _write_journal(str(journal_path), data)
+        result = make_result(
+            success=True,
+            stage="execution_journal_start",
+            message="Execution journal started",
+            inputs={
+                "title": title,
+                "goal": goal,
+                "project_name": project_name,
+                "journal_dir": journal_dir,
+                "tags": tags or [],
+            },
+            outputs={
+                "journal_id": journal_id,
+                "journal_path": str(journal_path),
+                "status": "in_progress",
+                "started_at": started_at,
+            },
+        )
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def execution_journal_log(
+        ctx: Context,
+        journal_path: str,
+        message: str,
+        event_type: str = "progress",
+        tool_name: str = "",
+        success: bool = True,
+        severity: str = "info",
+        inputs: Optional[Dict[str, Any]] = None,
+        outputs: Optional[Dict[str, Any]] = None,
+        artifacts: Optional[List[str]] = None,
+        risk_level: str = "",
+        metadata: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Append a structured entry to an execution journal.
+
+        Args:
+            journal_path: Path returned by execution_journal_start
+            message: Short progress, validation, or failure note
+            event_type: progress, tool_call, verification, decision, error, etc.
+            tool_name: Optional MCP tool or Unreal command name
+            success: Whether this step succeeded
+            severity: debug, info, warning, error, or critical
+            inputs: Optional summarized inputs for the step
+            outputs: Optional summarized outputs or evidence
+            artifacts: Optional file or asset paths produced/observed
+            risk_level: Optional low/medium/high/critical risk label
+            metadata: Optional additional data for later audit
+
+        Returns:
+            JSON string with StructuredResult and updated journal stats.
+        """
+        data = _read_journal(journal_path)
+        if data.get("status") == "finished":
+            return json.dumps(make_result(
+                success=False,
+                stage="execution_journal_log",
+                message="Cannot log to a finished journal",
+                inputs={"journal_path": journal_path},
+                errors=["Journal status is finished"],
+            ))
+        entry = {
+            "entry_id": uuid.uuid4().hex[:12],
+            "timestamp": _utc_now(),
+            "event_type": event_type,
+            "severity": severity,
+            "success": success,
+            "tool_name": tool_name,
+            "message": message,
+            "risk_level": risk_level if risk_level in _RISK_LEVELS else risk_level,
+            "inputs": inputs or {},
+            "outputs": outputs or {},
+            "artifacts": artifacts or [],
+            "metadata": metadata or {},
+        }
+        data.setdefault("entries", []).append(_json_safe(entry))
+        if artifacts:
+            existing = set(data.setdefault("artifacts", []))
+            for artifact in artifacts:
+                if artifact not in existing:
+                    data["artifacts"].append(artifact)
+                    existing.add(artifact)
+        data["stats"] = _journal_stats(data["entries"])
+        _write_journal(journal_path, data)
+        result = make_result(
+            success=True,
+            stage="execution_journal_log",
+            message="Execution journal entry appended",
+            inputs={"journal_path": journal_path, "event_type": event_type, "severity": severity},
+            outputs={
+                "entry_id": entry["entry_id"],
+                "journal_id": data.get("journal_id"),
+                "entry_count": data["stats"]["entry_count"],
+                "stats": data["stats"],
+            },
+        )
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def execution_journal_finish(
+        ctx: Context,
+        journal_path: str,
+        status: str = "completed",
+        summary: str = "",
+        artifacts: Optional[List[str]] = None,
+        verification: Optional[Dict[str, Any]] = None,
+    ) -> str:
+        """Finish an execution journal and record final evidence.
+
+        Args:
+            journal_path: Path returned by execution_journal_start
+            status: completed, completed_with_warnings, failed, blocked, or cancelled
+            summary: Short human-readable closeout
+            artifacts: Optional final file, asset, screenshot, or log paths
+            verification: Optional final test/diagnostic evidence
+
+        Returns:
+            JSON string with StructuredResult and final journal stats.
+        """
+        data = _read_journal(journal_path)
+        finished_at = _utc_now()
+        data["status"] = status
+        data["finished_at"] = finished_at
+        data["summary"] = summary
+        if artifacts:
+            existing = set(data.setdefault("artifacts", []))
+            for artifact in artifacts:
+                if artifact not in existing:
+                    data["artifacts"].append(artifact)
+                    existing.add(artifact)
+        data["verification"] = verification or {}
+        data["stats"] = _journal_stats(data.get("entries", []))
+        _write_journal(journal_path, data)
+        result = make_result(
+            success=status not in {"failed", "blocked", "cancelled"},
+            stage="execution_journal_finish",
+            message="Execution journal finished",
+            inputs={"journal_path": journal_path, "status": status},
+            outputs={
+                "journal_id": data.get("journal_id"),
+                "journal_path": str(_resolve_workspace_path(journal_path)),
+                "status": status,
+                "started_at": data.get("started_at"),
+                "finished_at": finished_at,
+                "summary": summary,
+                "artifacts": data.get("artifacts", []),
+                "verification": data.get("verification", {}),
+                "stats": data["stats"],
+            },
+        )
+        return json.dumps(result)
+
+    @mcp.tool()
+    async def risk_evaluate_action(
+        ctx: Context,
+        action: str,
+        target: str = "",
+        operation_type: str = "unknown",
+        asset_paths: Optional[List[str]] = None,
+        destructive: bool = False,
+        requires_compile: bool = False,
+        affects_runtime: bool = False,
+        touches_source: bool = False,
+        estimated_scope: str = "single_asset",
+        mitigations: Optional[List[str]] = None,
+    ) -> str:
+        """Evaluate action risk before an autonomous agent mutates the project.
+
+        Args:
+            action: Natural-language action description
+            target: Actor, asset, subsystem, file, or feature target
+            operation_type: inspect/read/create/edit/delete/compile/save/build/etc.
+            asset_paths: Optional affected Unreal asset paths
+            destructive: True for deletion, overwrite, reset, or irreversible edits
+            requires_compile: True when Blueprint/C++ compile or VM recompile is needed
+            affects_runtime: True when gameplay behavior may change
+            touches_source: True when C++/Python/plugin source files are involved
+            estimated_scope: single_asset, multi_asset, folder, level, or project_wide
+            mitigations: Existing safeguards such as checkpoint, journal, dry-run, tests
+
+        Returns:
+            JSON string with risk level, score, recommended gate, reasons, and checklist.
+        """
+        result = evaluate_action_risk(
+            action=action,
+            target=target,
+            operation_type=operation_type,
+            asset_paths=asset_paths or [],
+            destructive=destructive,
+            requires_compile=requires_compile,
+            affects_runtime=affects_runtime,
+            touches_source=touches_source,
+            estimated_scope=estimated_scope,
+            mitigations=mitigations or [],
+        )
         return json.dumps(result)
