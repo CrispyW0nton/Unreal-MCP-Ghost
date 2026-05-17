@@ -312,6 +312,12 @@ Phase 7 startup/tool-discovery profiler:
 python scripts\profile_mcp_startup.py --iterations 3 --markdown-out knowledge_base\Reports\mcp_startup_profile.md --json-out knowledge_base\Reports\mcp_startup_profile.json
 ```
 
+Phase 7 bridge command metadata audit:
+
+```powershell
+python scripts\bridge_command_audit.py
+```
+
 For repeatable offline CI smoke commands, see [docs/ci-smoke.md](docs/ci-smoke.md).
 
 ## Safe Blueprint Workflow
