@@ -29,8 +29,9 @@ Every Unreal-MCP-Ghost development pass that touches project verification should
 2. `get_actor_identity(actor_name_or_label="INS_")` confirms the placed Insanitii actors, labels, full paths, and generated classes.
 3. `find_actors_by_class(class_name="BP_TestInteractable")` confirms the five placed test interactables; after the native plugin reloads, `find_actors_by_class(class_name="InsanitiiTestInteractable")` should also work through the native parent-class chain.
 4. `check_blueprint_generated_class("BP_RuntimeBootstrap")` confirms Blueprint wrappers have valid generated classes.
-5. `inspect_input_mapping_context("/Game/FirstPerson/Input/IMC_Default")` confirms the Enhanced Input mappings for Focus, Breathe, Interact, debug state controls, and HUD toggle.
+5. `inspect_input_mapping_context("/Game/Input/IMC_Default")` confirms the Enhanced Input mappings for Focus, Breathe, Interact, debug state controls, and HUD toggle. The older `/Game/FirstPerson/Input/IMC_Default` path should be treated as stale for the current Insanitii project.
 6. `editor_list_blocking_dialogs()` should run before and after long asset operations. If Unreal opens a blocking prompt, use `editor_dismiss_blocking_dialog(button_text="Yes"|"OK"|"Replace"|"Cancel", title_contains="...")` only with an explicit button choice.
+7. `insanitii_phase1_readiness_report()` should be run at the start of each development pass. It bundles the checks above, uses read-only `exec_python` fallbacks when the active editor has not reloaded new native MCP routes, and returns the manual PIE checklist that still requires human validation.
 
 ## Roadmap Structure
 
@@ -225,5 +226,6 @@ Every Unreal-MCP-Ghost development pass that touches project verification should
 Finish Phase 1 validation, then begin Phase 2 Lifestyle Framework:
 
 - Run the manual PIE checklist for WASD, mouse look, F Focus, Tab Breathe, E interactions, debug +/- state changes, HUD toggle, post-process response, and cascade behavior.
+- Run `insanitii_phase1_readiness_report()` before and after plugin changes. Current live result on 2026-05-17 is `warn`: all static readiness checks pass, but the editor is still using fallback probes because the latest native smoke routes need Live Coding reload or editor restart.
 - Once Phase 1 manual validation passes, implement the Phase 2 time-of-day, money/economy, lifestyle base, home hub, transition framework, and save/load skeleton.
 - Keep all new docs and smoke reports in `knowledge_base/Projects/Insanitii/`.

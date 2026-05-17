@@ -18,7 +18,7 @@ The target is not simply "more tools." The target is reliable end-to-end workflo
 
 ## Current Baseline
 
-Static registry audit currently finds 507 MCP tools from Git-tracked tool files: 503 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
+Static registry audit currently finds 508 MCP tools from Git-tracked tool files: 504 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
 
 Strong areas:
 
@@ -479,7 +479,7 @@ Slice 6:
 
 Goal: turn trustworthy low-level tools into repeatable, inspectable game-development workflows.
 
-Status: Slice 1 vertical slice reporting skill is implemented and offline-tested.
+Status: Slice 1 vertical slice reporting skill is implemented and offline-tested. Slice 2 Insanitii readiness reporting is implemented, offline-tested, and live-tested against the open Insanitii editor with fallbacks for an older loaded plugin binary.
 
 Why this is explicit:
 
@@ -508,6 +508,21 @@ Slice 1 smoke result, 2026-05-17:
 - Packaged a synthetic execution journal into a workspace-local Markdown report.
 - Verified the report includes project name, summary, journal entry, artifact paths, verification keys, stats, and checklist.
 
+Slice 2:
+
+- `insanitii_phase1_readiness_report` - implemented as a high-level smoke workflow that checks bridge ping, expected Insanitii actors, placed test interactables, Blueprint wrapper generated classes, Enhanced Input mappings, blocking dialogs, and the remaining manual PIE checklist.
+- The tool prefers native bridge routes from Phase 7 Slice 6 and falls back to read-only `exec_python` probes when the active editor has not reloaded the latest plugin binary.
+
+Slice 2 smoke result, 2026-05-17:
+
+- Live Insanitii bridge ping returned `pong`.
+- Found all 7 placed `INS_` actors.
+- Found 5 placed `BP_TestInteractable` actors.
+- Verified 8 Insanitii Blueprint wrappers have generated classes.
+- Resolved the active First Person input mapping context at `/Game/Input/IMC_Default` and found 18 mappings, including all 6 Insanitii actions.
+- Found 0 visible blocking dialogs.
+- Report status was `warn` rather than `pass` because the running editor still reports the new native smoke routes as unknown; the workflow used `exec_python` fallback coverage until Live Coding or editor restart reloads the plugin.
+
 ## Immediate Execution Queue
 
 1. Phase 0: reconcile tool-count docs and add drift guard test.
@@ -525,6 +540,7 @@ Slice 1 smoke result, 2026-05-17:
 13. Phase 7 Slice 4: review C++-only routes not referenced by Python and decide which should receive wrappers, remain internal aliases, or be removed. Done and offline-tested.
 14. Phase 7 Slice 5: implement the highest-priority read-only/generic C++-only wrappers first: bridge `ping`, `widget_get_children`, `widget_set_property`, `widget_add_child`, and `widget_set_anchor`. Done and offline-tested.
 15. Phase 7 Slice 6: add project smoke-test wrappers discovered during Insanitii validation: actor labels/full paths, `find_actors_by_class`, generated-class checks, and Enhanced Input mapping inspection. Done and offline-tested; native reload smoke pending.
+16. Phase 8 Slice 2: add Insanitii Phase 1 readiness workflow with native-route fallback support and blocking-dialog reporting. Done, offline-tested, and live-tested.
 
 ## Backlog Notes
 

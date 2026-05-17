@@ -5,6 +5,7 @@ Ported from: https://github.com/chongdashu/unreal-mcp
 import json
 import logging
 import sys
+import textwrap
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -55,6 +56,223 @@ def _parse_exec_python_json(response: Dict[str, Any]) -> Dict[str, Any]:
             "message": inner.get("error") or inner.get("message") or output or "exec_python failed",
         }
     return {"success": False, "message": f"Could not parse exec_python JSON output: {output!r}"}
+
+
+def _is_unknown_command(response: Dict[str, Any], command: str) -> bool:
+    if not isinstance(response, dict):
+        return False
+    message = str(response.get("error") or response.get("message") or "")
+    return response.get("status") == "error" and f"Unknown command: {command}" in message
+
+
+def _exec_python_json(code: str) -> Dict[str, Any]:
+    return _parse_exec_python_json(_send_unreal_command("exec_python", {"code": code}))
+
+
+def _native_or_python_json(command: str, params: Dict[str, Any], fallback_code: str) -> Dict[str, Any]:
+    native = _send_unreal_command(command, params)
+    if not _is_unknown_command(native, command):
+        native.setdefault("transport", "native")
+        return native
+
+    fallback = _exec_python_json(fallback_code)
+    fallback["transport"] = "exec_python_fallback"
+    fallback["native_unavailable"] = True
+    fallback["native_error"] = native.get("error") or native.get("message")
+    return fallback
+
+
+def _insanitii_actor_fallback_code(actor_name_or_label: str = "INS_") -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        def _class_chain(cls):
+            names = []
+            seen = set()
+            while cls and cls not in seen:
+                seen.add(cls)
+                try:
+                    names.append(cls.get_name())
+                    cls = cls.get_super_class()
+                except Exception:
+                    break
+            return names
+
+        needle = {json.dumps(actor_name_or_label)}.lower()
+        actors = []
+        for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+            label = actor.get_actor_label()
+            name = actor.get_name()
+            full_path = actor.get_path_name()
+            if needle and needle not in label.lower() and needle not in name.lower() and needle not in full_path.lower():
+                continue
+            cls = actor.get_class()
+            actors.append({{
+                "label": label,
+                "name": name,
+                "path": full_path,
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+                "native_class_chain": _class_chain(cls),
+            }})
+
+        print(json.dumps({{"success": True, "count": len(actors), "actors": actors}}))
+    """)
+
+
+def _insanitii_class_fallback_code(class_name: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        def _class_chain(cls):
+            names = []
+            seen = set()
+            while cls and cls not in seen:
+                seen.add(cls)
+                try:
+                    names.append(cls.get_name())
+                    cls = cls.get_super_class()
+                except Exception:
+                    break
+            return names
+
+        needle = {json.dumps(class_name)}.lower()
+        actors = []
+        for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+            cls = actor.get_class()
+            chain = _class_chain(cls)
+            haystack = [cls.get_name() if cls else "", cls.get_path_name() if cls else ""] + chain
+            if not any(needle in str(item).lower() for item in haystack):
+                continue
+            actors.append({{
+                "label": actor.get_actor_label(),
+                "name": actor.get_name(),
+                "path": actor.get_path_name(),
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+                "native_class_chain": chain,
+            }})
+
+        print(json.dumps({{"success": True, "count": len(actors), "actors": actors}}))
+    """)
+
+
+def _insanitii_blueprint_fallback_code(blueprint_path_or_name: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        query = {json.dumps(blueprint_path_or_name)}
+        known_paths = {{
+            "BP_InsanitiiGameMode": "/Game/Insanitii/Core/Blueprints/BP_InsanitiiGameMode",
+            "BP_InsanitiiPlayerController": "/Game/Insanitii/Core/Blueprints/BP_InsanitiiPlayerController",
+            "BP_RuntimeBootstrap": "/Game/Insanitii/Core/Blueprints/BP_RuntimeBootstrap",
+            "BP_MentalStateComponent": "/Game/Insanitii/Core/Components/BP_MentalStateComponent",
+            "BP_InteractionDetector": "/Game/Insanitii/Core/Components/BP_InteractionDetector",
+            "BP_TestInteractable": "/Game/Insanitii/Gameplay/Interactions/BP_TestInteractable",
+            "BP_PostProcessController": "/Game/Insanitii/VFX/PostProcess/BP_PostProcessController",
+            "BP_InsanitiiHUD": "/Game/Insanitii/UI/HUD/BP_InsanitiiHUD",
+        }}
+        candidates = []
+        if query.startswith("/"):
+            candidates.append(query)
+        if query in known_paths:
+            candidates.append(known_paths[query])
+        try:
+            for asset_path in unreal.EditorAssetLibrary.list_assets("/Game/Insanitii", recursive=True, include_folder=False):
+                asset_name = asset_path.rsplit("/", 1)[-1].split(".", 1)[0]
+                if asset_name == query:
+                    candidates.append(asset_path)
+        except Exception:
+            pass
+
+        asset = None
+        chosen = ""
+        for candidate in candidates:
+            asset = unreal.load_asset(candidate)
+            if asset:
+                chosen = candidate
+                break
+
+        generated = None
+        parent = None
+        if asset:
+            try:
+                generated_attr = getattr(asset, "generated_class", None)
+                generated = generated_attr() if callable(generated_attr) else None
+            except Exception:
+                generated = None
+            try:
+                parent = generated.get_super_class() if generated else None
+            except Exception:
+                parent = None
+
+        print(json.dumps({{
+            "success": bool(asset),
+            "asset_path": chosen,
+            "asset_name": asset.get_name() if asset else query,
+            "has_generated_class": bool(generated),
+            "generated_class": generated.get_path_name() if generated else "",
+            "parent_class": parent.get_path_name() if parent else "",
+        }}))
+    """)
+
+
+def _insanitii_imc_fallback_code(imc_path_or_name: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        query = {json.dumps(imc_path_or_name)}
+        query_name = query.rsplit("/", 1)[-1].split(".", 1)[0]
+        candidates = [query] if query.startswith("/") else []
+        if query_name == "IMC_Default":
+            candidates.append("/Game/Input/IMC_Default")
+            candidates.append("/Game/Input/IMC_Default.IMC_Default")
+        try:
+            for asset_path in unreal.EditorAssetLibrary.list_assets("/Game", recursive=True, include_folder=False):
+                asset_name = asset_path.rsplit("/", 1)[-1].split(".", 1)[0]
+                if asset_name == query_name:
+                    candidates.append(asset_path)
+        except Exception:
+            pass
+
+        asset = None
+        chosen = ""
+        for candidate in candidates:
+            asset = unreal.load_asset(candidate)
+            if asset:
+                chosen = candidate
+                break
+
+        mappings = []
+        if asset:
+            try:
+                raw_mappings = asset.get_editor_property("mappings")
+            except Exception:
+                raw_mappings = []
+            for mapping in raw_mappings:
+                action = None
+                key = None
+                try:
+                    action = mapping.get_editor_property("action")
+                except Exception:
+                    pass
+                try:
+                    key = mapping.get_editor_property("key")
+                except Exception:
+                    pass
+                mappings.append({{
+                    "action_name": action.get_name() if action else "",
+                    "action_path": action.get_path_name() if action else "",
+                    "key": str(key) if key else "",
+                }})
+
+        print(json.dumps({{
+            "success": bool(asset),
+            "asset_path": chosen,
+            "mapping_count": len(mappings),
+            "mappings": mappings,
+        }}))
+    """)
 
 
 def _list_windows(process_name_contains: str = "UnrealEditor") -> Dict[str, Any]:
@@ -291,6 +509,193 @@ def register_editor_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error dismissing blocking dialog: {e}")
             return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_phase1_readiness_report(
+        ctx: Context,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Run the Insanitii Phase 1 smoke-readiness checklist against the open editor.
+
+        The report prefers native bridge routes added for project smoke testing, then
+        falls back to read-only UE Python probes when the running editor has not yet
+        reloaded the latest UnrealMCP plugin binary.
+        """
+        expected_actor_labels = {
+            "INS_RuntimeBootstrap",
+            "INS_PostProcessController",
+            "INS_TestCube_PleasantMemory",
+            "INS_TestCube_BriefComfort",
+            "INS_TestCube_NeutralMoment",
+            "INS_TestCube_MinorSetback",
+            "INS_TestCube_BadMemory",
+        }
+        expected_actions = {
+            "IA_Focus",
+            "IA_Breathe",
+            "IA_Interact",
+            "IA_DebugDecreaseState",
+            "IA_DebugIncreaseState",
+            "IA_ToggleHUD",
+        }
+        expected_blueprints = [
+            "BP_InsanitiiGameMode",
+            "BP_InsanitiiPlayerController",
+            "BP_RuntimeBootstrap",
+            "BP_MentalStateComponent",
+            "BP_InteractionDetector",
+            "BP_TestInteractable",
+            "BP_PostProcessController",
+            "BP_InsanitiiHUD",
+        ]
+
+        warnings: List[str] = []
+        failures: List[str] = []
+        native_fallbacks: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True:
+                failures.append("Unreal bridge ping did not report success.")
+
+            identity = _native_or_python_json(
+                "get_actor_identity",
+                {"actor_name_or_label": "INS_", "include_all": False},
+                _insanitii_actor_fallback_code("INS_"),
+            )
+            if identity.get("native_unavailable"):
+                native_fallbacks.append("get_actor_identity")
+            actors = identity.get("actors", []) if identity.get("success", identity.get("status") != "error") else []
+            actor_labels = {actor.get("label") or actor.get("name") for actor in actors}
+            missing_actors = sorted(expected_actor_labels - actor_labels)
+            if missing_actors:
+                failures.append(f"Missing expected Insanitii actors: {', '.join(missing_actors)}.")
+
+            bp_class = _native_or_python_json(
+                "find_actors_by_class",
+                {"class_name": "BP_TestInteractable", "exact": False},
+                _insanitii_class_fallback_code("BP_TestInteractable"),
+            )
+            if bp_class.get("native_unavailable"):
+                native_fallbacks.append("find_actors_by_class:BP_TestInteractable")
+            bp_class_count = int(bp_class.get("count") or len(bp_class.get("actors", [])))
+            if bp_class_count < 5:
+                failures.append(f"Expected 5 BP_TestInteractable actors; found {bp_class_count}.")
+
+            native_class = _native_or_python_json(
+                "find_actors_by_class",
+                {"class_name": "InsanitiiTestInteractable", "exact": False},
+                _insanitii_class_fallback_code("InsanitiiTestInteractable"),
+            )
+            if native_class.get("native_unavailable"):
+                native_fallbacks.append("find_actors_by_class:InsanitiiTestInteractable")
+            native_class_count = int(native_class.get("count") or len(native_class.get("actors", [])))
+            if native_class_count < 5:
+                warnings.append(
+                    "Native parent-class lookup for InsanitiiTestInteractable found fewer than 5 actors. "
+                    "This is expected until the editor reloads the latest UnrealMCP native routes."
+                )
+
+            blueprint_checks = []
+            for blueprint_name in expected_blueprints:
+                result = _native_or_python_json(
+                    "check_blueprint_generated_class",
+                    {"blueprint_path_or_name": blueprint_name},
+                    _insanitii_blueprint_fallback_code(blueprint_name),
+                )
+                if result.get("native_unavailable"):
+                    native_fallbacks.append(f"check_blueprint_generated_class:{blueprint_name}")
+                blueprint_checks.append(result)
+                if not result.get("success") or not result.get("has_generated_class"):
+                    failures.append(f"{blueprint_name} does not have a valid generated class.")
+
+            imc = _native_or_python_json(
+                "inspect_input_mapping_context",
+                {"imc_path_or_name": "/Game/Input/IMC_Default"},
+                _insanitii_imc_fallback_code("/Game/Input/IMC_Default"),
+            )
+            if imc.get("native_unavailable"):
+                native_fallbacks.append("inspect_input_mapping_context")
+            mappings = imc.get("mappings", [])
+            action_names = {
+                mapping.get("action_name") or str(mapping.get("action") or "").split(".")[-1].strip("'\"")
+                for mapping in mappings
+            }
+            missing_actions = sorted(expected_actions - action_names)
+            if missing_actions:
+                failures.append(f"Missing expected Enhanced Input actions: {', '.join(missing_actions)}.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            if native_fallbacks:
+                warnings.append(
+                    "Used exec_python fallback for commands not loaded in the active editor: "
+                    + ", ".join(sorted(set(native_fallbacks)))
+                )
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Phase 1 readiness",
+                "summary": {
+                    "bridge_ping": ping,
+                    "expected_actor_count": len(expected_actor_labels),
+                    "found_insanitii_actor_count": len(actors),
+                    "bp_test_interactable_count": bp_class_count,
+                    "native_test_interactable_count": native_class_count,
+                    "blueprints_checked": len(blueprint_checks),
+                    "input_mapping_count": imc.get("mapping_count", len(mappings)),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                    "native_fallback_count": len(set(native_fallbacks)),
+                },
+                "checks": {
+                    "actors": {
+                        "missing": missing_actors,
+                        "labels": sorted(label for label in actor_labels if label),
+                        "raw": identity,
+                    },
+                    "classes": {
+                        "bp_test_interactable": bp_class,
+                        "native_test_interactable": native_class,
+                    },
+                    "blueprints": blueprint_checks,
+                    "input": {
+                        "missing_actions": missing_actions,
+                        "action_names": sorted(action for action in action_names if action),
+                        "raw": imc,
+                    },
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "WASD movement works",
+                    "Mouse look works",
+                    "F activates Focus and consumes charges",
+                    "Tab triggers Breathe and observes cooldown",
+                    "- and = adjust Mental State with visible feedback",
+                    "E interacts with focused cubes and mutates Mental State",
+                    "~ toggles the HUD",
+                    "Post-process feedback responds to Mental State",
+                    "Consecutive failures increment cascade pressure",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii readiness report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
 
     @mcp.tool()
     def get_actors_in_level(ctx: Context) -> str:

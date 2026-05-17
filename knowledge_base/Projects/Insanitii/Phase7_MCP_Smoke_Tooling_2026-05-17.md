@@ -20,7 +20,7 @@ Before the new native commands were reloaded into the editor, the Python-side sm
 - Bridge `ping` returned `pong`.
 - `get_actor_identity(actor_name_or_label="INS_")` found 7 placed Insanitii actors.
 - `check_blueprint_generated_class("BP_RuntimeBootstrap")` reported a valid generated class.
-- `inspect_input_mapping_context("/Game/FirstPerson/Input/IMC_Default")` reported 18 mappings.
+- `inspect_input_mapping_context("/Game/Input/IMC_Default")` reported 18 mappings.
 - `editor_list_blocking_dialogs()` found 0 visible blocking dialogs.
 
 ## Finding
@@ -41,7 +41,7 @@ After Live Coding successfully reloads or the editor is restarted, run:
 
 1. `find_actors_by_class(class_name="InsanitiiTestInteractable")`
 2. `find_actors_by_class(class_name="BP_TestInteractable")`
-3. `inspect_input_mapping_context("/Game/FirstPerson/Input/IMC_Default")`
+3. `inspect_input_mapping_context("/Game/Input/IMC_Default")`
 4. `editor_list_blocking_dialogs()`
 
 Expected result: five test interactables for both class queries, 18 input mappings, and no blocking dialogs.
