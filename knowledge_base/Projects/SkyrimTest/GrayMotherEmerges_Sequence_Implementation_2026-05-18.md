@@ -85,6 +85,14 @@ Verified keyframes:
 
 The final hold key keeps the Gray Mother grounded after the descent.
 
+Scale is locked on every keyframe:
+
+```text
+X=-0.25, Y=-0.25, Z=-0.25
+```
+
+The placed `GrayMother` actor is also staged at that scale so the sequence starts and ends consistently.
+
 ## Completion Mode
 
 The transform section is set to:
@@ -106,6 +114,7 @@ Bridge readback confirmed:
 - The `GrayMother` binding has one `MovieScene3DTransformTrack`.
 - The transform section is `KEEP_STATE`.
 - The transform channel values match the table above.
+- The scale channels are all `-0.25` at frames `0`, `72`, `150`, and `165`.
 
 Manual PIE check:
 
