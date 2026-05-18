@@ -177,7 +177,76 @@ SCue_GrayMother_Emerges
 
 ## Follow-Up Implementation Notes
 
-- Add sound slots to `ASkyrimSequenceTriggerBox` so each trigger can play a `USoundBase` when activated.
-- Add a sound slot to `AGragarClairvoyanceManager` for clairvoyance activation.
-- Add a small `APlayerStartAudioDirector` or extend the existing level bootstrap to play the village ambience and wake line once at BeginPlay.
 - Unreal-MCP-Ghost should gain first-class tools for trigger sound assignment to avoid one-off editor scripting for audio hookup.
+
+## Implemented Audio Wiring
+
+Added native audio hooks:
+
+```text
+ASkyrimSequenceTriggerBox
+  TriggerSounds: Array<USoundBase>
+  SequenceFinishedSound: USoundBase
+
+AGragarClairvoyanceManager
+  ActivationSound: USoundBase
+
+ASkyrimStartAudioDirector
+  AmbientMusic: USoundBase
+  PlayerWakeSound: USoundBase
+```
+
+Full rebuild after the C++ changes:
+
+```text
+Build.bat SkyrimTestEditor Win64 Development -Project="...\SkyrimTest.uproject" -WaitMutex -NoHotReloadFromIDE
+Result: Succeeded
+```
+
+Placed/assigned actor:
+
+```text
+SkyrimStartAudioDirector
+```
+
+BeginPlay audio:
+
+```text
+AmbientMusic   -> /Game/Sounds/AmbientMusic.AmbientMusic, looping enabled
+PlayerWakesup  -> /Game/Sounds/PlayerWakesup.PlayerWakesup, one play
+```
+
+Ambush trigger:
+
+```text
+Ambush_TriggerBox.TriggerSounds =
+  /Game/Sounds/Goblinattack1.Goblinattack1
+  /Game/Sounds/Goblinattack2.Goblinattack2
+  /Game/Sounds/GoblinAttack3.GoblinAttack3
+```
+
+Clairvoyance activation:
+
+```text
+Clairvoyance_Manager.ActivationSound =
+  /Game/Sounds/ClairvoyanceActivate.ClairvoyanceActivate
+```
+
+Gray Mother trigger:
+
+```text
+GrayMotherEmerges_TriggerBox.TriggerSounds =
+  /Game/Sounds/SpiderEmerges.SpiderEmerges
+
+GrayMotherEmerges_TriggerBox.SequenceFinishedSound =
+  /Game/Sounds/SpiderScreech.SpiderScreech
+```
+
+Readback confirmed:
+
+- `Ambush_TriggerBox`: `Goblinattack1`, `Goblinattack2`, `GoblinAttack3`
+- `GrayMotherEmerges_TriggerBox`: `SpiderEmerges`
+- `GrayMotherEmerges_TriggerBox.SequenceFinishedSound`: `SpiderScreech`
+- `Clairvoyance_Manager.ActivationSound`: `ClairvoyanceActivate`
+- `SkyrimStartAudioDirector`: `AmbientMusic` + `PlayerWakesup`
+- `AmbientMusic.looping`: `true`
