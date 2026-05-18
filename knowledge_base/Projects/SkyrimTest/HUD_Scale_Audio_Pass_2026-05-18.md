@@ -250,3 +250,48 @@ Readback confirmed:
 - `Clairvoyance_Manager.ActivationSound`: `ClairvoyanceActivate`
 - `SkyrimStartAudioDirector`: `AmbientMusic` + `PlayerWakesup`
 - `AmbientMusic.looping`: `true`
+
+## Windows Package Pass
+
+Packaged the project to:
+
+```text
+C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam270\Module14\JordanDelagrange_14_1
+```
+
+Executable:
+
+```text
+C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam270\Module14\JordanDelagrange_14_1\Windows\SkyrimTest.exe
+```
+
+Build command:
+
+```text
+RunUAT.bat BuildCookRun -project="...\SkyrimTest.uproject" -noP4 -platform=Win64 -clientconfig=Development -serverconfig=Development -build -cook -stage -pak -archive -archivedirectory="...\Module14\JordanDelagrange_14_1" -utf8output
+```
+
+Initial package attempt failed because Live Coding was active. Closing Unreal Editor and Live Coding resolved that blocker.
+
+Second attempt exposed a runtime target compile issue:
+
+```text
+SkyrimSequenceTriggerBox.cpp: GetActorLabel is not a member of AActor
+```
+
+Root cause:
+
+- `GetActorLabel()` is editor-only and cannot be used by the packaged game target.
+
+Fix applied in the external SkyrimTest project source:
+
+- Replaced actor-label matching with runtime-safe matching:
+  - `ActorHasTag(Target.ActorLabel)`
+  - `GetFName() == Target.ActorLabel`
+  - `GetName().StartsWith(TargetName)`
+
+Final package result:
+
+```text
+BUILD SUCCESSFUL
+```
