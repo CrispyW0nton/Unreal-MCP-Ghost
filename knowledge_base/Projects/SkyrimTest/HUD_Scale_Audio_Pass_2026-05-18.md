@@ -79,6 +79,19 @@ Log confirmation:
 LogLiveCoding: Display: Live coding succeeded
 ```
 
+Follow-up HUD visibility issue:
+
+- The first native UMG implementation relied on `WidgetTree` inside a code-only `UUserWidget`, which could result in no visible HUD in PIE.
+- The HUD was rewritten as a Slate-backed `RebuildWidget()` implementation so it creates its own visible `SConstraintCanvas` without needing a Widget Blueprint tree.
+- After closing Unreal Editor, a full rebuild succeeded:
+
+```text
+Build.bat SkyrimTestEditor Win64 Development -Project="...\SkyrimTest.uproject" -WaitMutex -NoHotReloadFromIDE
+Result: Succeeded
+```
+
+This rebuild should load the fixed HUD class on the next editor restart.
+
 ## Audio Suggestions
 
 These are implementation-ready placeholder specs for later import or sound-cue creation.
