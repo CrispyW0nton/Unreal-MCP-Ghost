@@ -24,9 +24,9 @@ The sequence has transform bindings for:
 
 Target positions:
 
-- `Ambusher1`: `X=610.0, Y=-80.0, Z=-230.0`
-- `Ambusher2`: `X=695.437881, Y=11.653525, Z=-230.0`
-- `Ambusher3`: `X=591.139137, Y=103.423739, Z=-230.0`
+- `Ambusher1`: `X=610.0, Y=-80.0, Z=-310.0`
+- `Ambusher2`: `X=695.437881, Y=11.653525, Z=-290.0`
+- `Ambusher3`: `X=591.139137, Y=103.423739, Z=-288.914053`
 
 Target yaw:
 
@@ -34,7 +34,7 @@ Target yaw:
 -252.057172 degrees
 ```
 
-The original requested Z was `-200.0`, but the mannequins visually floated slightly at the end of playback. The final/held Z keys were lowered to `-230.0` for floor fit.
+The original requested Z was `-200.0`, but the mannequins visually floated at the end of playback. The final/held Z keys were floor-fitted to the per-actor values above.
 
 ## Trigger
 
@@ -105,4 +105,4 @@ Manual PIE check still recommended:
 - Cross the trigger near the village gate.
 - Confirm all three ambushers move.
 - Confirm they remain at the ambush marks after the sequence ends.
-- Confirm `Z=-230.0` sits correctly on the floor. If still floating or sinking, adjust final Z keys in the sequence.
+- Confirm the final per-actor Z values sit correctly on the floor. If still floating or sinking, adjust final Z keys in the sequence.
