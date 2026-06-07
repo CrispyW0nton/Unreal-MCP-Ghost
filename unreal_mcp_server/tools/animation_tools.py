@@ -330,8 +330,7 @@ def register_animation_tools(mcp: FastMCP):
         parent_class: str = "AnimInstance",
         path: str = "/Game/Animations"
     ) -> Dict[str, Any]:
-        """
-        Create an Animation Blueprint (AnimBP).
+        """Create an Animation Blueprint (AnimBP).
 
         Animation Blueprints control skeletal mesh animations using an
         EventGraph (for logic) and AnimGraph (for pose blending).
@@ -341,7 +340,10 @@ def register_animation_tools(mcp: FastMCP):
             skeleton: Skeleton asset path (e.g., "/Game/Characters/SK_Character")
             parent_class: Parent class (default: "AnimInstance")
             path: Content browser path
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            create_animation_blueprint(name="ExampleName")"""
         return _send("create_animation_blueprint", {
             "name": name,
             "skeleton": skeleton,
@@ -355,8 +357,7 @@ def register_animation_tools(mcp: FastMCP):
         anim_blueprint_name: str,
         state_machine_name: str = "MainStateMachine"
     ) -> Dict[str, Any]:
-        """
-        Add a State Machine to an Animation Blueprint's AnimGraph.
+        """Add a State Machine to an Animation Blueprint's AnimGraph.
 
         State Machines define animation states (Idle, Walk, Run, Jump)
         and transitions between them.
@@ -364,7 +365,10 @@ def register_animation_tools(mcp: FastMCP):
         Args:
             anim_blueprint_name: Animation Blueprint name
             state_machine_name: Name for the state machine node
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_state_machine(anim_blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_state_machine", {
             "anim_blueprint_name": anim_blueprint_name,
             "state_machine_name": state_machine_name
@@ -378,15 +382,17 @@ def register_animation_tools(mcp: FastMCP):
         state_name: str,
         animation_asset: str = ""
     ) -> Dict[str, Any]:
-        """
-        Add an animation state to a State Machine.
+        """Add an animation state to a State Machine.
 
         Args:
             anim_blueprint_name: Animation Blueprint name
             state_machine_name: State machine name
             state_name: State name (e.g., "Idle", "Walk", "Run", "Jump", "Death")
             animation_asset: Optional animation sequence asset path
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_animation_state(anim_blueprint_name="/Game/MCP_Test/BP_Example", state_machine_name="ExampleName", state_name="ExampleName")"""
         return _send("add_animation_state", {
             "anim_blueprint_name": anim_blueprint_name,
             "state_machine_name": state_machine_name,
@@ -404,8 +410,7 @@ def register_animation_tools(mcp: FastMCP):
         condition_variable: str = "",
         condition_value: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add a transition between two animation states.
+        """Add a transition between two animation states.
 
         Args:
             anim_blueprint_name: Animation Blueprint name
@@ -414,7 +419,10 @@ def register_animation_tools(mcp: FastMCP):
             to_state: Destination state name
             condition_variable: Bool variable to use as transition condition
             condition_value: Expected value to trigger transition (True/False)
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_state_transition(anim_blueprint_name="/Game/MCP_Test/BP_Example", state_machine_name="ExampleName", from_state="ExampleName", to_state="ExampleName")"""
         return _send("add_state_transition", {
             "anim_blueprint_name": anim_blueprint_name,
             "state_machine_name": state_machine_name,
@@ -433,8 +441,7 @@ def register_animation_tools(mcp: FastMCP):
         animation_asset: str,
         loop: bool = True
     ) -> Dict[str, Any]:
-        """
-        Assign an animation sequence to a State Machine state.
+        """Assign an animation sequence to a State Machine state.
 
         Args:
             anim_blueprint_name: Animation Blueprint name
@@ -442,7 +449,10 @@ def register_animation_tools(mcp: FastMCP):
             state_name: State to assign animation to
             animation_asset: Animation Sequence asset path
             loop: Loop the animation
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            set_animation_for_state(anim_blueprint_name="/Game/MCP_Test/BP_Example", state_machine_name="ExampleName", state_name="ExampleName", animation_asset="/Game/MCP_Test/Example")"""
         return _send("set_animation_for_state", {
             "anim_blueprint_name": anim_blueprint_name,
             "state_machine_name": state_machine_name,
@@ -459,15 +469,17 @@ def register_animation_tools(mcp: FastMCP):
         variable_type: str,
         default_value: str = ""
     ) -> Dict[str, Any]:
-        """
-        Add a variable to an Animation Blueprint (for use in transitions/logic).
+        """Add a variable to an Animation Blueprint (for use in transitions/logic).
 
         Args:
             anim_blueprint_name: Animation Blueprint name
             variable_name: Variable name (e.g., "Speed", "bIsJumping", "Direction")
             variable_type: Type (Boolean, Float, Integer, Vector)
             default_value: Optional default value
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_anim_blueprint_variable(anim_blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", variable_type="ExampleName")"""
         return _send("add_blueprint_variable", {
             "blueprint_name": anim_blueprint_name,
             "variable_name": variable_name,
@@ -483,8 +495,7 @@ def register_animation_tools(mcp: FastMCP):
         blend_space_asset: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Blend Space node to an Animation Blueprint's AnimGraph.
+        """Add a Blend Space node to an Animation Blueprint's AnimGraph.
 
         Blend Spaces blend animations based on one or two float parameters
         (e.g., Speed and Direction for a locomotion blend space).
@@ -493,7 +504,10 @@ def register_animation_tools(mcp: FastMCP):
             anim_blueprint_name: Animation Blueprint name
             blend_space_asset: Blend Space asset path
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_blend_space_node(anim_blueprint_name="/Game/MCP_Test/BP_Example", blend_space_asset="/Game/MCP_Test/Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blend_space_node", {
@@ -509,8 +523,7 @@ def register_animation_tools(mcp: FastMCP):
         slot_name: str = "DefaultSlot",
         graph_name: str = ""
     ) -> Dict[str, Any]:
-        """
-        Insert a Slot node on the main AnimGraph between the current pose chain and Root.
+        """Insert a Slot node on the main AnimGraph between the current pose chain and Root.
 
         Use this so `PlaySlotAnimationAsDynamicMontage` / montages targeting the same
         slot name layer aim and fire animations over locomotion from the state machine.
@@ -519,7 +532,10 @@ def register_animation_tools(mcp: FastMCP):
             anim_blueprint_name: AnimBP asset path or name (e.g. ABP_SithSoldier or full /Game/... path)
             slot_name: Anim slot name (default DefaultSlot — must match montage slot / blueprint calls)
             graph_name: Optional graph name; defaults to AnimGraph
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            insert_anim_graph_slot(anim_blueprint_name="/Game/MCP_Test/BP_Example")"""
         params: Dict[str, Any] = {
             "anim_blueprint_name": anim_blueprint_name,
             "slot_name": slot_name,
@@ -537,8 +553,7 @@ def register_animation_tools(mcp: FastMCP):
         notify_type: str = "notify",
         notify_state_duration: float = 0.1
     ) -> Dict[str, Any]:
-        """
-        Add an Anim Notify or Notify State to an Animation Sequence or Montage.
+        """Add an Anim Notify or Notify State to an Animation Sequence or Montage.
 
         Args:
             animation_path: Full asset path (e.g. /Game/Characters/Run.Run)
@@ -546,7 +561,10 @@ def register_animation_tools(mcp: FastMCP):
             time: Time in seconds
             notify_type: "notify" or "notify_state"
             notify_state_duration: Duration for notify_state entries
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_anim_notify(animation_path="/Game/MCP_Test/Example", notify_name="ExampleName")"""
         return _send("add_anim_notify", {
             "animation_path": animation_path,
             "notify_name": notify_name,
@@ -569,8 +587,7 @@ def register_animation_tools(mcp: FastMCP):
         play_rate: float = 1.0,
         loop_count: int = 1
     ) -> Dict[str, Any]:
-        """
-        Create an Animation Montage asset from a source AnimSequence or Skeleton.
+        """Create an Animation Montage asset from a source AnimSequence or Skeleton.
 
         Args:
             montage_name: New montage asset name
@@ -583,7 +600,10 @@ def register_animation_tools(mcp: FastMCP):
             save: Save the asset after creation
             play_rate: Playback rate for the seeded segment
             loop_count: Loop count for the seeded segment
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            anim_create_montage(montage_name="ExampleName")"""
         return _send("anim_create_montage", {
             "montage_name": montage_name,
             "folder_path": folder_path,
@@ -602,12 +622,14 @@ def register_animation_tools(mcp: FastMCP):
         ctx: Context,
         montage_path: str
     ) -> Dict[str, Any]:
-        """
-        Inspect a Montage's slots, segments, sections, and notifies.
+        """Inspect a Montage's slots, segments, sections, and notifies.
 
         Args:
             montage_path: Full montage asset path
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            anim_describe_montage(montage_path="/Game/MCP_Test/Example")"""
         return _send("anim_describe_montage", {"montage_path": montage_path})
 
     @mcp.tool()
@@ -622,8 +644,7 @@ def register_animation_tools(mcp: FastMCP):
         replace_existing: bool = False,
         save: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add or update a slot on an Animation Montage, optionally adding a segment.
+        """Add or update a slot on an Animation Montage, optionally adding a segment.
 
         Args:
             montage_path: Full montage asset path
@@ -634,7 +655,10 @@ def register_animation_tools(mcp: FastMCP):
             loop_count: Segment loop count
             replace_existing: Clear existing segments on the slot before adding
             save: Save the montage after editing
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            anim_add_montage_slot(montage_path="/Game/MCP_Test/Example", slot_name="ExampleName")"""
         return _send("anim_add_montage_slot", {
             "montage_path": montage_path,
             "slot_name": slot_name,
@@ -655,8 +679,7 @@ def register_animation_tools(mcp: FastMCP):
         next_section_name: str = "",
         save: bool = True
     ) -> Dict[str, Any]:
-        """
-        Create or reposition a Montage section and optionally set its next section.
+        """Create or reposition a Montage section and optionally set its next section.
 
         Args:
             montage_path: Full montage asset path
@@ -664,7 +687,10 @@ def register_animation_tools(mcp: FastMCP):
             start_time: Section start time in seconds
             next_section_name: Optional next section for looping/chaining
             save: Save the montage after editing
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            anim_set_montage_section(montage_path="/Game/MCP_Test/Example", section_name="ExampleName")"""
         return _send("anim_set_montage_section", {
             "montage_path": montage_path,
             "section_name": section_name,
@@ -683,8 +709,7 @@ def register_animation_tools(mcp: FastMCP):
         notify_state_duration: float = 0.1,
         save: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add a Montage Branching Point backed by a branching AnimNotify event.
+        """Add a Montage Branching Point backed by a branching AnimNotify event.
 
         Args:
             montage_path: Full montage asset path
@@ -693,7 +718,10 @@ def register_animation_tools(mcp: FastMCP):
             notify_type: "notify" or "notify_state"
             notify_state_duration: Duration for notify_state entries
             save: Save the montage after editing
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            anim_add_branching_point(montage_path="/Game/MCP_Test/Example", branching_point_name="ExampleName")"""
         return _send("anim_add_branching_point", {
             "montage_path": montage_path,
             "branching_point_name": branching_point_name,
@@ -713,15 +741,17 @@ def register_animation_tools(mcp: FastMCP):
         bind_bool_variable: str = "bIsShooting",
         force_insert: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Insert **Blend List By Bool** + **Sequence Player** between locomotion and the AnimGraph **Slot**
+        """Insert **Blend List By Bool** + **Sequence Player** between locomotion and the AnimGraph **Slot**
         (requires ``insert_anim_graph_slot`` first: Root ← Slot ← …).
 
         Locomotion feeds the **false** branch; ``sequence_asset`` (e.g. fire rifle) feeds the **true** branch.
         ``bind_bool_variable`` (default ``bIsShooting``) auto-binds Active Value when the editor plugin supports it.
         ``force_insert=True`` layers a NEW BlendListByBool above an existing one (chain multiple gates,
         e.g. bIsInAir → jump on top of bIsShooting → fire).  Default rebinds the existing node instead.
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            insert_blend_bool_fire_before_slot(anim_blueprint_name="/Game/MCP_Test/BP_Example", sequence_asset="/Game/MCP_Test/Example")"""
         params: Dict[str, Any] = {
             "anim_blueprint_name": anim_blueprint_name,
             "sequence_asset": sequence_asset,
@@ -739,8 +769,7 @@ def register_animation_tools(mcp: FastMCP):
         anim_blueprint_name: str,
         skeleton: str = ""
     ) -> Dict[str, Any]:
-        """
-        Create a complete character Animation Blueprint with:
+        """Create a complete character Animation Blueprint with:
         - Speed and IsJumping variables
         - Idle, Walk, Run, and Jump states
         - Transitions based on Speed and jump state
@@ -751,7 +780,10 @@ def register_animation_tools(mcp: FastMCP):
 
         Returns:
             Dict with creation results
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            create_character_animation_setup(anim_blueprint_name="/Game/MCP_Test/BP_Example")"""
         results = {}
 
         # Create the Animation Blueprint
@@ -821,8 +853,7 @@ def register_animation_tools(mcp: FastMCP):
         overwrite: bool = False,
         save: bool = True
     ) -> Dict[str, Any]:
-        """
-        Create a Control Rig Blueprint asset, optionally seeded from a Skeletal Mesh.
+        """Create a Control Rig Blueprint asset, optionally seeded from a Skeletal Mesh.
 
         Args:
             rig_name: New Control Rig asset name
@@ -832,7 +863,10 @@ def register_animation_tools(mcp: FastMCP):
             import_bones: Import bones from the Skeletal Mesh into the rig hierarchy
             overwrite: Delete and replace an existing Control Rig asset
             save: Save the asset after creation
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            control_rig_create(rig_name="ExampleName")"""
         script = textwrap.dedent(f"""\
 import unreal
 
@@ -934,13 +968,15 @@ except Exception as exc:
         rig_path: str,
         include_names: bool = True
     ) -> Dict[str, Any]:
-        """
-        Inspect a Control Rig hierarchy, preview mesh, controls, bones, and nulls.
+        """Inspect a Control Rig hierarchy, preview mesh, controls, bones, and nulls.
 
         Args:
             rig_path: Full Control Rig asset path
             include_names: Include element name lists in the result
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            control_rig_describe(rig_path="/Game/MCP_Test/Example")"""
         script = textwrap.dedent(f"""\
 import unreal
 
@@ -1010,8 +1046,7 @@ except Exception as exc:
         default_bool: bool = False,
         save: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add an animation control to a Control Rig hierarchy.
+        """Add an animation control to a Control Rig hierarchy.
 
         Args:
             rig_path: Full Control Rig asset path
@@ -1027,7 +1062,10 @@ except Exception as exc:
             default_float: Default value for FLOAT/SCALE_FLOAT controls
             default_bool: Default value for BOOL controls
             save: Save the asset after editing
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            control_rig_add_control(rig_path="/Game/MCP_Test/Example", control_name="ExampleName")"""
         shape_color = shape_color or [1.0, 0.55, 0.05, 1.0]
         location = location or [0.0, 0.0, 0.0]
         rotation = rotation or [0.0, 0.0, 0.0]
@@ -1161,8 +1199,7 @@ except Exception as exc:
         display_label: str = "",
         save: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add a Control Rig hierarchy parent or available-space constraint.
+        """Add a Control Rig hierarchy parent or available-space constraint.
 
         Args:
             rig_path: Full Control Rig asset path
@@ -1175,7 +1212,10 @@ except Exception as exc:
             maintain_global_transform: Preserve child global transform when adding parent
             display_label: Optional label shown for a space/parent relationship
             save: Save the asset after editing
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            control_rig_add_constraint(rig_path="/Game/MCP_Test/Example", child_name="ExampleName", parent_name="ExampleName")"""
         script = textwrap.dedent(f"""\
 import unreal
 
@@ -1269,8 +1309,7 @@ except Exception as exc:
         tolerance: float = 0.001,
         reset_controls: bool = True
     ) -> Dict[str, Any]:
-        """
-        Bake a Sequencer skeletal binding to a Control Rig track when binding context exists.
+        """Bake a Sequencer skeletal binding to a Control Rig track when binding context exists.
 
         This is a guarded adapter over Unreal's ControlRigSequencerLibrary. It validates
         the Level Sequence, Control Rig, and binding name before invoking the bake call.
@@ -1282,7 +1321,10 @@ except Exception as exc:
             reduce_keys: Run key reduction during bake
             tolerance: Key reduction tolerance
             reset_controls: Reset controls to their initial value on each baked frame
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            control_rig_bake_to_sequence()"""
         script = textwrap.dedent(f"""\
 import unreal
 
@@ -1379,8 +1421,7 @@ except Exception as exc:
         path: str = "/Game/Animation/IKRigs",
         auto_generate_chains: bool = True
     ) -> Dict[str, Any]:
-        """
-        Create an IK Rig asset for a Skeletal Mesh.
+        """Create an IK Rig asset for a Skeletal Mesh.
 
         IK Rigs define retarget chains (bone chains like Spine, LeftArm, RightLeg)
         and are required by the IK Retargeter.  This tool uses the UE5 Python API
@@ -1402,7 +1443,10 @@ except Exception as exc:
 
         Returns:
             dict with keys: success, asset_path, message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            create_ik_rig(ik_rig_name="ExampleName", skeletal_mesh_path="/Game/MCP_Test/Example")"""
         return _create_ik_rig(ik_rig_name, skeletal_mesh_path, path, auto_generate_chains)
 
     @mcp.tool()
@@ -1415,8 +1459,7 @@ except Exception as exc:
         end_bone: str,
         ik_goal_name: str = ""
     ) -> Dict[str, Any]:
-        """
-        Add a named retarget chain to an existing IK Rig asset.
+        """Add a named retarget chain to an existing IK Rig asset.
 
         Retarget chains map a contiguous range of bones (e.g. "Spine" from
         pelvis → chest, or "LeftArm" from shoulder → hand) so the IK Retargeter
@@ -1435,7 +1478,10 @@ except Exception as exc:
 
         Returns:
             dict with keys: success, chain_name, message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_ik_rig_retarget_chain(ik_rig_name="ExampleName", ik_rig_path="/Game/MCP_Test/Example", chain_name="ExampleName", start_bone="Example", end_bone="Example")"""
         code = textwrap.dedent(f"""\
 import unreal
 
@@ -1473,8 +1519,7 @@ else:
         ik_rig_path: str,
         root_bone: str
     ) -> Dict[str, Any]:
-        """
-        Set the retarget root bone on an IK Rig.
+        """Set the retarget root bone on an IK Rig.
 
         The retarget root is typically the pelvis/hips bone.  It is used by the
         IK Retargeter to align the global position of source and target characters.
@@ -1486,7 +1531,10 @@ else:
 
         Returns:
             dict with keys: success, message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            set_ik_rig_retarget_root(ik_rig_name="ExampleName", ik_rig_path="/Game/MCP_Test/Example", root_bone="Example")"""
         code = textwrap.dedent(f"""\
 import unreal
 
@@ -1521,8 +1569,7 @@ else:
         auto_map_chains: bool = True,
         auto_align_bones: bool = True
     ) -> Dict[str, Any]:
-        """
-        Create an IK Retargeter asset that maps animations from a source skeleton
+        """Create an IK Retargeter asset that maps animations from a source skeleton
         to a target skeleton.
 
         Requires that both source and target IK Rig assets already exist (use
@@ -1547,7 +1594,10 @@ else:
 
         Returns:
             dict with keys: success, asset_path, message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            create_ik_retargeter(retargeter_name="ExampleName", source_ik_rig_path="/Game/MCP_Test/Example", target_ik_rig_path="/Game/MCP_Test/Example")"""
         return _create_ik_retargeter(
             retargeter_name, source_ik_rig_path, target_ik_rig_path,
             path, auto_map_chains, auto_align_bones
@@ -1562,8 +1612,7 @@ else:
         output_suffix: str = "_Retargeted",
         use_existing_if_found: bool = True
     ) -> Dict[str, Any]:
-        """
-        Retarget a list of animation sequences using an existing IK Retargeter.
+        """Retarget a list of animation sequences using an existing IK Retargeter.
 
         This is the programmatic equivalent of the UE5 editor
         "Retarget Animations → Export Animations" workflow (Method 1 / quick path).
@@ -1584,7 +1633,10 @@ else:
         Returns:
             dict with keys: success, retargeted (count), skipped (count),
                             failed (count), output (raw UE5 log)
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            batch_retarget_animations(retargeter_path="/Game/MCP_Test/Example", source_animation_paths="/Game/MCP_Test/Example", output_path="/Game/MCP_Test/Example")"""
         return _batch_retarget_animations(
             retargeter_path, source_animation_paths,
             output_path, output_suffix, use_existing_if_found
@@ -1603,8 +1655,7 @@ else:
         animations_to_retarget: List[str] = None,
         output_animation_path: str = "/Game/Animation/Retargeted"
     ) -> Dict[str, Any]:
-        """
-        One-shot pipeline: create IK Rigs for source + target, create IK Retargeter,
+        """One-shot pipeline: create IK Rigs for source + target, create IK Retargeter,
         and optionally batch-retarget a list of animations.
 
         This matches Method 2 (Manual IK Retargeting) described in the UE5 docs:
@@ -1634,7 +1685,10 @@ else:
 
         Returns:
             dict with keys: success, steps (dict of per-step results), message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            setup_full_retargeting_pipeline(source_skeletal_mesh="Example", target_skeletal_mesh="Example", source_ik_rig_name="ExampleName", target_ik_rig_name="ExampleName", retargeter_name="ExampleName")"""
         steps: Dict[str, Any] = {}
 
         # Step 1: Source IK Rig
@@ -1694,8 +1748,7 @@ else:
         ctx: Context,
         skeletal_mesh_path: str
     ) -> Dict[str, Any]:
-        """
-        List all bone names in a Skeletal Mesh's skeleton.
+        """List all bone names in a Skeletal Mesh's skeleton.
 
         Use this before setting up an IK Rig to discover the exact bone names
         required for retarget chains (start_bone / end_bone parameters).
@@ -1706,7 +1759,10 @@ else:
 
         Returns:
             dict with keys: success, bone_count, bone_names (list of strings), message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            get_skeleton_bone_names(skeletal_mesh_path="/Game/MCP_Test/Example")"""
         code = textwrap.dedent(f"""\
 import unreal
 
@@ -1760,8 +1816,7 @@ else:
         output_name: str = "",
         overwrite: bool = False
     ) -> Dict[str, Any]:
-        """
-        Retarget a single animation sequence using an existing IK Retargeter.
+        """Retarget a single animation sequence using an existing IK Retargeter.
 
         Convenience wrapper around batch_retarget_animations for single assets.
         Useful for quick tests before running the full batch.
@@ -1775,7 +1830,10 @@ else:
 
         Returns:
             dict with keys: success, output_asset_path, message
-        """
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            retarget_single_animation(retargeter_path="/Game/MCP_Test/Example", source_animation_path="/Game/MCP_Test/Example", output_path="/Game/MCP_Test/Example")"""
         src_name = source_animation_path.rstrip("/").split("/")[-1]
         out_name = output_name if output_name else f"{src_name}_Retargeted"
         out_full = f"{output_path}/{out_name}"

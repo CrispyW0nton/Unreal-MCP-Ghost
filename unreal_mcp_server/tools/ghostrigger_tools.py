@@ -157,7 +157,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
               "mcp": true
             }
             or {"error": "Cannot reach GhostRigger at http://localhost:7001: ..."}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_health()"""
         result = _http_get("/api/health")
         return json.dumps(result)
 
@@ -169,7 +172,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
 
         Returns:
             JSON string: {"status": "ok", "action": "ping", "program": "GhostRigger"}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_ping()"""
         result = _http_post("/api/ping", {})
         return json.dumps(result)
 
@@ -195,7 +201,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
         Returns:
             JSON string: {"status": "ok", "action": "open_mdl"}
             or {"error": "..."}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_open_model(resref="Example")"""
         payload: Dict[str, Any] = {"resref": resref}
         if module_dir:
             payload["module_dir"] = module_dir
@@ -221,7 +230,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
 
         Returns:
             JSON string: {"status": "ok", "action": "open_utc"}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_open_creature(resref="Example")"""
         payload: Dict[str, Any] = {"resref": resref}
         if module_dir:
             payload["module_dir"] = module_dir
@@ -240,7 +252,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
 
         Returns:
             JSON string: {"tools": [{name, description, inputSchema}, ...]}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_list_mcp_tools()"""
         result = _http_get("/mcp/tools/list")
         return json.dumps(result)
 
@@ -274,7 +289,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
 
         Returns:
             JSON string: {"result": {...}} or {"error": "..."}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_call_mcp_tool(tool_name="ExampleName")"""
         try:
             args = json.loads(arguments)
         except json.JSONDecodeError as exc:
@@ -296,7 +314,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
 
         Returns:
             JSON string: {"resources": [{uri, name, description, mimeType}, ...]}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_list_resources()"""
         result = _http_get("/mcp/resources/list")
         return json.dumps(result)
 
@@ -319,7 +340,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
 
         Returns:
             JSON string: {"content": {...}} or {"error": "..."}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_read_resource(uri="Example")"""
         result = _http_post("/mcp/resources/read", {"uri": uri})
         return json.dumps(result)
 
@@ -360,7 +384,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
               "format": "fbx"
             }
             or {"error": "..."}
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_export_model(resref="Example", export_path="/Game/MCP_Test/Example")"""
         # Use ghostrigger_call_mcp_tool to call ghostrigger_open_model
         # with export_path so GhostRigger writes the FBX to disk
         arguments: Dict[str, Any] = {"resref": resref, "export_path": export_path}
@@ -424,7 +451,10 @@ def register_ghostrigger_tools(mcp: FastMCP):
               "ghostrigger_export": {...},
               "ue5_import": {...}
             }
-        """
+
+        KB: see knowledge_base/16_ANIMATION_DEEP_DIVE.md#overview
+        Example:
+            ghostrigger_import_to_ue5(resref="Example", export_path="/Game/MCP_Test/Example")"""
         # ── Step 1: Export via GhostRigger ───────────────────────────────────
         export_arguments: Dict[str, Any] = {
             "resref": resref,

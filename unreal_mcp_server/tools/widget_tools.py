@@ -34,7 +34,10 @@ def register_widget_tools(mcp: FastMCP):
             parent_name: Optional panel widget to attach under. If omitted, the
                 child becomes the root when no root exists, or attaches to the
                 root when the root is a panel.
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            widget_add_child(widget_blueprint_path="/Game/MCP_Test/BP_Example", child_class="Actor", child_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
 
         unreal = get_unreal_connection()
@@ -64,7 +67,10 @@ def register_widget_tools(mcp: FastMCP):
         `FillColorAndOpacity`, `Visibility`, and `RenderTransformAngle`.
         Color and vector values should be comma-separated strings such as
         `1,0.2,0.1,1` or `256,64`.
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            widget_set_property(widget_blueprint_path="/Game/MCP_Test/BP_Example", widget_name="/Game/MCP_Test/WBP_Example", property_name="ExampleName", property_value="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
 
         unreal = get_unreal_connection()
@@ -96,7 +102,11 @@ def register_widget_tools(mcp: FastMCP):
         alignment_x: float = 0.0,
         alignment_y: float = 0.0,
     ) -> Dict[str, Any]:
-        """Set CanvasPanelSlot anchor, position, size, and alignment."""
+        """Set CanvasPanelSlot anchor, position, size, and alignment.
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            widget_set_anchor(widget_blueprint_path="/Game/MCP_Test/BP_Example", widget_name="/Game/MCP_Test/WBP_Example", anchor_min_x=0.0, anchor_min_y=0.0, anchor_max_x=0.0, anchor_max_y=0.0, position_x=0.0, position_y=0.0, size_x=0.0, size_y=0.0)"""
         from unreal_mcp_server import get_unreal_connection
 
         unreal = get_unreal_connection()
@@ -130,7 +140,10 @@ def register_widget_tools(mcp: FastMCP):
 
         If `parent_name` is omitted, the native route returns the root widget
         plus the root panel's immediate children.
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            widget_get_children(widget_blueprint_path="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
 
         unreal = get_unreal_connection()

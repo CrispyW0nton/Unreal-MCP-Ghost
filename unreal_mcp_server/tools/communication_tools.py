@@ -34,8 +34,7 @@ def register_communication_tools(mcp: FastMCP):
         dispatcher_name: str,
         params: List[Dict[str, str]] = None
     ) -> Dict[str, Any]:
-        """
-        Add an Event Dispatcher to a Blueprint.
+        """Add an Event Dispatcher to a Blueprint.
 
         Event Dispatchers allow Blueprints to broadcast events that other
         Blueprints can listen to and respond to.
@@ -45,7 +44,10 @@ def register_communication_tools(mcp: FastMCP):
             dispatcher_name: Name of the event dispatcher
             params: List of parameter dicts with 'name' and 'type' keys
                     e.g., [{"name": "DamageAmount", "type": "Float"}]
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_event_dispatcher(blueprint_name="/Game/MCP_Test/BP_Example", dispatcher_name="ExampleName")"""
         return _send("add_event_dispatcher", {
             "blueprint_name": blueprint_name,
             "dispatcher_name": dispatcher_name,
@@ -59,8 +61,7 @@ def register_communication_tools(mcp: FastMCP):
         dispatcher_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Call [EventDispatcher]' node to the Blueprint's Event Graph.
+        """Add a 'Call [EventDispatcher]' node to the Blueprint's Event Graph.
 
         Args:
             blueprint_name: Blueprint containing the dispatcher
@@ -69,7 +70,10 @@ def register_communication_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            call_event_dispatcher(blueprint_name="/Game/MCP_Test/BP_Example", dispatcher_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("call_event_dispatcher", {
@@ -87,8 +91,7 @@ def register_communication_tools(mcp: FastMCP):
         target_variable_name: str = "",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Bind an event to another Blueprint's Event Dispatcher.
+        """Bind an event to another Blueprint's Event Dispatcher.
         Adds a 'Bind Event to [Dispatcher]' node.
 
         Args:
@@ -97,7 +100,10 @@ def register_communication_tools(mcp: FastMCP):
             dispatcher_name: Name of the event dispatcher
             target_variable_name: Variable holding a reference to the dispatcher owner
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            bind_event_to_dispatcher(blueprint_name="/Game/MCP_Test/BP_Example", dispatcher_blueprint="/Game/MCP_Test/BP_Example", dispatcher_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("bind_event_to_dispatcher", {
@@ -115,14 +121,16 @@ def register_communication_tools(mcp: FastMCP):
         dispatcher_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Unbind Event from [Dispatcher]' node.
+        """Add an 'Unbind Event from [Dispatcher]' node.
 
         Args:
             blueprint_name: Blueprint name
             dispatcher_name: Dispatcher to unbind from
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            unbind_event_from_dispatcher(blueprint_name="/Game/MCP_Test/BP_Example", dispatcher_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("unbind_event_from_dispatcher", {
@@ -141,8 +149,7 @@ def register_communication_tools(mcp: FastMCP):
         variable_name: str,
         is_exposed: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add a variable to hold a direct reference to another Blueprint.
+        """Add a variable to hold a direct reference to another Blueprint.
 
         This is the Direct Blueprint Communication pattern - you store a reference
         to another actor and call its functions directly.
@@ -152,7 +159,10 @@ def register_communication_tools(mcp: FastMCP):
             target_blueprint: Blueprint class to reference
             variable_name: Variable name for the reference
             is_exposed: Make editable in editor (required to assign via editor)
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_direct_blueprint_reference(blueprint_name="/Game/MCP_Test/BP_Example", target_blueprint="/Game/MCP_Test/BP_Example", variable_name="ExampleName")"""
         return _send("add_blueprint_variable", {
             "blueprint_name": blueprint_name,
             "variable_name": variable_name,
@@ -167,8 +177,7 @@ def register_communication_tools(mcp: FastMCP):
         target_class: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Cast To [ClassName] node.
+        """Add a Cast To [ClassName] node.
 
         Casting is used to convert a generic object/actor reference to a specific
         type, allowing access to that Blueprint's unique variables and functions.
@@ -181,7 +190,10 @@ def register_communication_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id'; pins: 'Object' input, 'then'/'Cast Failed' outputs,
             'As [ClassName]' output for the cast result
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_cast_node(blueprint_name="/Game/MCP_Test/BP_Example", target_class="Actor")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_cast_node", {
@@ -199,8 +211,7 @@ def register_communication_tools(mcp: FastMCP):
         functions: List[Dict[str, Any]] = None,
         path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a Blueprint Interface asset.
+        """Create a Blueprint Interface asset.
 
         Blueprint Interfaces define a contract that multiple Blueprints can
         implement - useful for calling functions on actors without knowing their type.
@@ -210,7 +221,10 @@ def register_communication_tools(mcp: FastMCP):
             functions: List of function dicts:
                        [{"name": "Interact", "params": [{"name": "Caller", "type": "Actor"}]}]
             path: Content browser path
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            create_blueprint_interface(interface_name="ExampleName")"""
         return _send("create_blueprint_interface", {
             "interface_name": interface_name,
             "functions": functions or [],
@@ -223,13 +237,15 @@ def register_communication_tools(mcp: FastMCP):
         blueprint_name: str,
         interface_name: str
     ) -> Dict[str, Any]:
-        """
-        Make a Blueprint implement a Blueprint Interface.
+        """Make a Blueprint implement a Blueprint Interface.
 
         Args:
             blueprint_name: Blueprint that will implement the interface
             interface_name: Interface asset name
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            implement_blueprint_interface(blueprint_name="/Game/MCP_Test/BP_Example", interface_name="ExampleName")"""
         return _send("implement_blueprint_interface", {
             "blueprint_name": blueprint_name,
             "interface_name": interface_name
@@ -243,8 +259,7 @@ def register_communication_tools(mcp: FastMCP):
         function_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Message [FunctionName]' interface call node.
+        """Add a 'Message [FunctionName]' interface call node.
 
         Interface messages can be sent to any actor implementing the interface
         without knowing its exact class.
@@ -254,7 +269,10 @@ def register_communication_tools(mcp: FastMCP):
             interface_name: Interface name
             function_name: Interface function to call
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_interface_function_node(blueprint_name="/Game/MCP_Test/BP_Example", interface_name="ExampleName", function_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_interface_function_node", {
@@ -275,8 +293,7 @@ def register_communication_tools(mcp: FastMCP):
         outputs: List[Dict[str, str]] = None,
         is_pure: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a custom function to a Blueprint.
+        """Add a custom function to a Blueprint.
 
         Functions have their own local variable scope, can return values,
         and are reusable across the Blueprint.
@@ -287,7 +304,10 @@ def register_communication_tools(mcp: FastMCP):
             inputs: List of input params [{"name": "DamageIn", "type": "Float"}]
             outputs: List of output params [{"name": "HealthOut", "type": "Float"}]
             is_pure: Pure functions have no exec pin (like math functions)
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_custom_function(blueprint_name="/Game/MCP_Test/BP_Example", function_name="ExampleName")"""
         return _send("add_custom_function", {
             "blueprint_name": blueprint_name,
             "function_name": function_name,
@@ -304,8 +324,7 @@ def register_communication_tools(mcp: FastMCP):
         inputs: List[Dict[str, str]] = None,
         outputs: List[Dict[str, str]] = None
     ) -> Dict[str, Any]:
-        """
-        Add a custom Macro to a Blueprint.
+        """Add a custom Macro to a Blueprint.
 
         Macros are like functions but they exist within a single Blueprint,
         support latent nodes (Delay, etc.), and can have multiple exec outputs.
@@ -315,7 +334,10 @@ def register_communication_tools(mcp: FastMCP):
             macro_name: Macro name
             inputs: Input tunnel parameters
             outputs: Output tunnel parameters
-        """
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_custom_macro(blueprint_name="/Game/MCP_Test/BP_Example", macro_name="ExampleName")"""
         return _send("add_custom_macro", {
             "blueprint_name": blueprint_name,
             "macro_name": macro_name,

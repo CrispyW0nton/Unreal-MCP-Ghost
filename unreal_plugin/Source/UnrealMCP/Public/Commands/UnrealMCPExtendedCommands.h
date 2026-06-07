@@ -3,10 +3,13 @@
 #include "CoreMinimal.h"
 #include "Dom/JsonObject.h"
 
+class UBlueprint;
+class UEdGraph;
+
 /**
  * Extended MCP Commands
  * Handles all new Blueprint Visual Scripting commands beyond the base unreal-mcp.
- * 
+ *
  * NEW COMMAND CATEGORIES:
  * - Flow Control Nodes (Branch, Sequence, FlipFlop, DoOnce, DoN, Gate, WhileLoop)
  * - Variable Get/Set Nodes

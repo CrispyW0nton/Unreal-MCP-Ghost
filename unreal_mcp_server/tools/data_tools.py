@@ -38,8 +38,7 @@ def register_data_tools(mcp: FastMCP):
         fields: List[Dict[str, str]],
         path: str = "/Game/Data"
     ) -> Dict[str, Any]:
-        """
-        Create a custom Struct asset.
+        """Create a custom Struct asset.
 
         Structs group related variables together into a single data type,
         making it easy to pass multiple values as one parameter.
@@ -54,7 +53,10 @@ def register_data_tools(mcp: FastMCP):
 
         Field types: Boolean, Integer, Float, Double, String, Name, Text,
                      Vector, Rotator, Transform, Color, LinearColor
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            create_struct(struct_name="ExampleName", fields=[])"""
         return _send("create_struct", {
             "struct_name": struct_name,
             "fields": fields,
@@ -68,8 +70,7 @@ def register_data_tools(mcp: FastMCP):
         values: List[str],
         path: str = "/Game/Data"
     ) -> Dict[str, Any]:
-        """
-        Create a custom Enumeration (Enum) asset.
+        """Create a custom Enumeration (Enum) asset.
 
         Enums represent a named set of options, perfect for states, types,
         and categories. Use with Switch on Enum nodes.
@@ -79,7 +80,10 @@ def register_data_tools(mcp: FastMCP):
             values: List of enum value names:
                     ["Pistol", "Rifle", "Shotgun", "Sniper"]
             path: Content browser path
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            create_enum(enum_name="ExampleName", values=0.0)"""
         return _send("create_enum", {
             "enum_name": enum_name,
             "values": values,
@@ -93,8 +97,7 @@ def register_data_tools(mcp: FastMCP):
         row_struct: str,
         path: str = "/Game/Data"
     ) -> Dict[str, Any]:
-        """
-        Create a DataTable asset.
+        """Create a DataTable asset.
 
         DataTables are spreadsheet-like assets that store rows of structured data
         defined by a Struct. Ideal for item databases, enemy stats, level config.
@@ -103,7 +106,10 @@ def register_data_tools(mcp: FastMCP):
             table_name: DataTable asset name (e.g., "DT_WeaponStats")
             row_struct: Struct asset name defining row structure
             path: Content browser path
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            create_data_table(table_name="ExampleName", row_struct="Example")"""
         return _send("create_data_table", {
             "table_name": table_name,
             "row_struct": row_struct,
@@ -120,8 +126,7 @@ def register_data_tools(mcp: FastMCP):
         element_type: str,
         is_exposed: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add an Array variable to a Blueprint.
+        """Add an Array variable to a Blueprint.
 
         Arrays are ordered, indexed lists of elements of the same type.
 
@@ -130,7 +135,10 @@ def register_data_tools(mcp: FastMCP):
             variable_name: Variable name
             element_type: Element type (Boolean, Integer, Float, String, Vector, etc.)
             is_exposed: Expose to editor Details panel
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_array_variable(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", element_type="Example")"""
         return _send("add_blueprint_variable", {
             "blueprint_name": blueprint_name,
             "variable_name": variable_name,
@@ -147,8 +155,7 @@ def register_data_tools(mcp: FastMCP):
         value_type: str,
         is_exposed: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Map (dictionary) variable to a Blueprint.
+        """Add a Map (dictionary) variable to a Blueprint.
 
         Maps store key-value pairs with O(1) lookup by key.
 
@@ -158,7 +165,10 @@ def register_data_tools(mcp: FastMCP):
             key_type: Key type (String, Name, Integer, etc.)
             value_type: Value type (Integer, Float, String, Vector, etc.)
             is_exposed: Expose to editor Details panel
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_map_variable(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", key_type="ExampleName", value_type=0.0)"""
         return _send("add_blueprint_variable", {
             "blueprint_name": blueprint_name,
             "variable_name": variable_name,
@@ -174,8 +184,7 @@ def register_data_tools(mcp: FastMCP):
         element_type: str,
         is_exposed: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Set variable to a Blueprint.
+        """Add a Set variable to a Blueprint.
 
         Sets store unique, unordered elements - useful when you need to track
         membership without duplicates.
@@ -185,7 +194,10 @@ def register_data_tools(mcp: FastMCP):
             variable_name: Variable name
             element_type: Element type (Integer, String, Name, etc.)
             is_exposed: Expose to editor Details panel
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_set_variable(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", element_type="Example")"""
         return _send("add_blueprint_variable", {
             "blueprint_name": blueprint_name,
             "variable_name": variable_name,
@@ -202,8 +214,7 @@ def register_data_tools(mcp: FastMCP):
         cases: List[int] = None,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Switch on Int' flow control node.
+        """Add a 'Switch on Int' flow control node.
 
         Routes execution to different paths based on an integer value.
 
@@ -214,7 +225,10 @@ def register_data_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'; output pins named by case value + 'Default'
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_switch_on_int_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_switch_node", {
@@ -231,8 +245,7 @@ def register_data_tools(mcp: FastMCP):
         cases: List[str] = None,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Switch on String' flow control node.
+        """Add a 'Switch on String' flow control node.
 
         Routes execution based on a string value comparison.
 
@@ -240,7 +253,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             cases: List of string case values ["Walking", "Running", "Dead"]
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_switch_on_string_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_switch_node", {
@@ -257,8 +273,7 @@ def register_data_tools(mcp: FastMCP):
         enum_type: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Switch on [EnumType]' flow control node.
+        """Add a 'Switch on [EnumType]' flow control node.
 
         Routes execution based on an enum value - creates one output pin per enum value.
 
@@ -266,7 +281,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             enum_type: Enum class name (e.g., "EWeaponType", "EMovementState")
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_switch_on_enum_node(blueprint_name="/Game/MCP_Test/BP_Example", enum_type=1)"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_switch_node", {
@@ -285,8 +303,7 @@ def register_data_tools(mcp: FastMCP):
         loop: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a MultiGate flow control node.
+        """Add a MultiGate flow control node.
 
         MultiGate sends execution through multiple output pins in sequence
         (or randomly), optionally looping back to the start.
@@ -297,7 +314,10 @@ def register_data_tools(mcp: FastMCP):
             is_random: Randomize execution order
             loop: Loop after reaching the last output
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_multigate_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_multigate_node", {
@@ -315,8 +335,7 @@ def register_data_tools(mcp: FastMCP):
         with_break: bool = False,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'For Each Loop' node (iterates over an Array).
+        """Add a 'For Each Loop' node (iterates over an Array).
 
         Args:
             blueprint_name: Blueprint name
@@ -326,7 +345,10 @@ def register_data_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id'; pins: 'Array' input, 'Loop Body'/'Completed' outputs,
             'Array Element' and 'Array Index' loop body outputs
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_for_each_loop_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_for_each_loop_node", {
@@ -344,8 +366,7 @@ def register_data_tools(mcp: FastMCP):
         set_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Set CONTAINS node to check if an element exists in a Set.
+        """Add a Set CONTAINS node to check if an element exists in a Set.
 
         From Ch. 13: Returns True if the set contains the specified element.
 
@@ -353,7 +374,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             set_variable: Set variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_set_contains_node(blueprint_name="/Game/MCP_Test/BP_Example", set_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_set_contains_node", {
@@ -368,15 +392,17 @@ def register_data_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Set UNION node - combine two sets (removes duplicates).
+        """Add a Set UNION node - combine two sets (removes duplicates).
 
         From Ch. 13: Returns a new set containing all elements from both sets.
 
         Args:
             blueprint_name: Blueprint to add the node to
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_set_union_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_set_operation_node", {
@@ -391,15 +417,17 @@ def register_data_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Set INTERSECTION node - elements common to both sets.
+        """Add a Set INTERSECTION node - elements common to both sets.
 
         From Ch. 13: Returns elements that exist in BOTH input sets.
 
         Args:
             blueprint_name: Blueprint to add the node to
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_set_intersection_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_set_operation_node", {
@@ -414,15 +442,17 @@ def register_data_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Set DIFFERENCE node - elements in first set but not in second.
+        """Add a Set DIFFERENCE node - elements in first set but not in second.
 
         From Ch. 13: Returns elements from set A that are NOT in set B.
 
         Args:
             blueprint_name: Blueprint to add the node to
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_set_difference_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_set_operation_node", {
@@ -438,8 +468,7 @@ def register_data_tools(mcp: FastMCP):
         set_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Set TO ARRAY node - convert a Set to an Array for iteration.
+        """Add a Set TO ARRAY node - convert a Set to an Array for iteration.
 
         From Ch. 13: Sets don't have a GET element node, so convert to array
         first if you need to iterate over elements. Note: copying large object
@@ -449,7 +478,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             set_variable: Set variable name to convert
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_set_to_array_node(blueprint_name="/Game/MCP_Test/BP_Example", set_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_set_to_array_node", {
@@ -466,8 +498,7 @@ def register_data_tools(mcp: FastMCP):
         num_pins: int = 3,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Make Set node to create a Set from individual variables.
+        """Add a Make Set node to create a Set from individual variables.
 
         From Ch. 13: Similar to Make Array but creates a Set (no duplicates).
 
@@ -476,7 +507,10 @@ def register_data_tools(mcp: FastMCP):
             element_type: Element type for the Set
             num_pins: Number of input element pins
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_make_set_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_make_set_node", {
@@ -495,8 +529,7 @@ def register_data_tools(mcp: FastMCP):
         map_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Map FIND node - get a value by key (also checks key existence).
+        """Add a Map FIND node - get a value by key (also checks key existence).
 
         From Ch. 13: The FIND node is like CONTAINS but also returns the value.
         Returns the Value associated with the key, and a bool indicating if the key was found.
@@ -505,7 +538,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             map_variable: Map variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_map_find_node(blueprint_name="/Game/MCP_Test/BP_Example", map_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_map_find_node", {
@@ -521,8 +557,7 @@ def register_data_tools(mcp: FastMCP):
         map_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Map CONTAINS node - check if a key exists in a Map.
+        """Add a Map CONTAINS node - check if a key exists in a Map.
 
         From Ch. 13: Returns True if the Map contains an element with the given key.
         Does NOT return the value (use FIND for that).
@@ -531,7 +566,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             map_variable: Map variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_map_contains_node(blueprint_name="/Game/MCP_Test/BP_Example", map_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_map_contains_node", {
@@ -547,8 +585,7 @@ def register_data_tools(mcp: FastMCP):
         map_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Map KEYS node - copy all Map keys to an Array.
+        """Add a Map KEYS node - copy all Map keys to an Array.
 
         From Ch. 13: Returns an array of all keys in the map.
         Used to iterate over all entries in the map.
@@ -557,7 +594,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             map_variable: Map variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_map_keys_node(blueprint_name="/Game/MCP_Test/BP_Example", map_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_map_keys_node", {
@@ -573,8 +613,7 @@ def register_data_tools(mcp: FastMCP):
         map_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Map VALUES node - copy all Map values to an Array.
+        """Add a Map VALUES node - copy all Map values to an Array.
 
         From Ch. 13: Returns an array of all values in the map.
 
@@ -582,7 +621,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             map_variable: Map variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_map_values_node(blueprint_name="/Game/MCP_Test/BP_Example", map_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_map_values_node", {
@@ -600,8 +642,7 @@ def register_data_tools(mcp: FastMCP):
         num_pairs: int = 3,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Make Map node to create a Map from key-value pairs.
+        """Add a Make Map node to create a Map from key-value pairs.
 
         From Ch. 13: Creates a Map literal from individual key-value pin inputs.
 
@@ -611,7 +652,10 @@ def register_data_tools(mcp: FastMCP):
             value_type: Value type
             num_pairs: Number of key-value pair input pins
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_make_map_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_make_map_node", {
@@ -632,8 +676,7 @@ def register_data_tools(mcp: FastMCP):
         num_pins: int = 3,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Make Array node to create an Array from individual variables.
+        """Add a Make Array node to create an Array from individual variables.
 
         From Ch. 13: Used to create point light arrays in Level Blueprints,
         spawn point lists, or any array built from known variables.
@@ -643,7 +686,10 @@ def register_data_tools(mcp: FastMCP):
             element_type: Array element type
             num_pins: Number of input element pins
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_make_array_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_make_array_node", {
@@ -659,8 +705,7 @@ def register_data_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a real K2Node_MakeArray node typed as EObjectTypeQuery (byte enum).
+        """Add a real K2Node_MakeArray node typed as EObjectTypeQuery (byte enum).
         This is used to provide a valid 'Object Types' array input to
         SphereOverlapActors / SphereOverlapComponents nodes.
         Defaults to ObjectTypeQuery3 (WorldDynamic) on the first pin.
@@ -668,7 +713,10 @@ def register_data_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint to add the node to
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_object_type_make_array_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_object_type_make_array_node", {
@@ -683,8 +731,7 @@ def register_data_tools(mcp: FastMCP):
         array_variable: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Random Array Item node to get a random element from an Array.
+        """Add a Random Array Item node to get a random element from an Array.
 
         From Ch. 13 (BP_RandomSpawner): Returns a random element from the array.
         Used to randomly select a spawn point from an array of Target Points.
@@ -693,7 +740,10 @@ def register_data_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             array_variable: Array variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_random_array_item_node(blueprint_name="/Game/MCP_Test/BP_Example", array_variable="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_random_array_item_node", {
@@ -708,8 +758,7 @@ def register_data_tools(mcp: FastMCP):
         name: str = "BP_RandomSpawner",
         folder_path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create the BP_RandomSpawner Blueprint from Ch. 13.
+        """Create the BP_RandomSpawner Blueprint from Ch. 13.
 
         Creates a Blueprint that:
         - Has a TargetPoints array (Actor Object Reference, Instance Editable)
@@ -720,7 +769,10 @@ def register_data_tools(mcp: FastMCP):
         Args:
             name: Blueprint name
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            create_random_spawner_blueprint()"""
         return _send("create_random_spawner_blueprint", {
             "name": name,
             "folder_path": folder_path
@@ -735,8 +787,7 @@ def register_data_tools(mcp: FastMCP):
         struct_type: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Break [StructType] node to extract individual member values.
+        """Add a Break [StructType] node to extract individual member values.
 
         From Ch. 13: Break Struct takes a struct as input and exposes all
         member variables as output pins. Used to read individual fields.
@@ -745,9 +796,12 @@ def register_data_tools(mcp: FastMCP):
 
         Args:
             blueprint_name: Blueprint to add the node to
-            struct_type: Struct type name (e.g., \"FVector\", \"FEnemyData\", \"FHitResult\")
+            struct_type: Struct type name (e.g., "FVector", "FEnemyData", "FHitResult")
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_break_struct_node(blueprint_name="/Game/MCP_Test/BP_Example", struct_type="Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_break_struct_node", {
@@ -763,8 +817,7 @@ def register_data_tools(mcp: FastMCP):
         struct_type: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Make [StructType] node to construct a struct from member values.
+        """Add a Make [StructType] node to construct a struct from member values.
 
         From Ch. 13: Make Struct takes all member variables as input pins
         and outputs the assembled struct. Used to construct FTransform,
@@ -772,9 +825,12 @@ def register_data_tools(mcp: FastMCP):
 
         Args:
             blueprint_name: Blueprint to add the node to
-            struct_type: Struct type name (e.g., \"FVector\", \"FTransform\", \"FEnemyData\")
+            struct_type: Struct type name (e.g., "FVector", "FTransform", "FEnemyData")
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_make_struct_node(blueprint_name="/Game/MCP_Test/BP_Example", struct_type="Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_make_struct_node", {
@@ -791,8 +847,7 @@ def register_data_tools(mcp: FastMCP):
         row_name: str = "",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a GetDataTableRow node to look up a row in a Data Table.
+        """Add a GetDataTableRow node to look up a row in a Data Table.
 
         From Ch. 13: Retrieves a struct of data by row name from a Data Table.
         Returns the row struct and a bool indicating if the row was found.
@@ -802,7 +857,10 @@ def register_data_tools(mcp: FastMCP):
             data_table_variable: Data Table asset variable name or path
             row_name: Default row name to look up
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            add_get_data_table_row_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_get_data_table_row_node", {
@@ -822,8 +880,7 @@ def register_data_tools(mcp: FastMCP):
         destination_path: str = "/Game/Audio",
         loop: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Import an audio file that lives on the sandbox (Linux side) into the UE5
+        """Import an audio file that lives on the sandbox (Linux side) into the UE5
         Content Browser as a SoundWave asset.
 
         The file at `local_file_path` is read, base64-encoded, embedded in a Python
@@ -850,7 +907,10 @@ def register_data_tools(mcp: FastMCP):
         Returns:
             Dict with 'asset_path' (e.g. "/Game/Audio/SFX_TurretFire.SFX_TurretFire")
             on success, or 'error' on failure.
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            import_sound_asset_from_sandbox(local_file_path="/Game/MCP_Test/Example", asset_name="/Game/MCP_Test/Example")"""
         if not os.path.isfile(local_file_path):
             return {"error": f"File not found on sandbox: {local_file_path}"}
 
@@ -935,8 +995,7 @@ else:
         node_position: List[float] = None,
         use_play_at_location: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Add a PlaySound2D (or PlaySoundAtLocation) node to a Blueprint wired after
+        """Add a PlaySound2D (or PlaySoundAtLocation) node to a Blueprint wired after
         a specific node. Used to attach imported sound assets to Blueprint events.
 
         Args:
@@ -947,7 +1006,10 @@ else:
                                   to the new PlaySound node's 'execute' pin
             node_position:        [X, Y] graph position for the new node
             use_play_at_location: If True, use PlaySoundAtLocation (3D); otherwise PlaySound2D (2D/UI)
-        """
+
+        KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
+        Example:
+            wire_play_sound_to_blueprint(blueprint_name="/Game/MCP_Test/BP_Example", sound_asset_path="/Game/MCP_Test/Example", after_node_id="Example")"""
         if node_position is None:
             node_position = [0, 0]
 

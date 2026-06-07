@@ -1,6 +1,7 @@
 #include "Commands/UnrealMCPBlueprintCommands.h"
 #include "Commands/UnrealMCPCommonUtils.h"
 #include "UnrealMCPModule.h"
+#include "Editor.h"
 #include "Engine/Blueprint.h"
 // NOTE: FKismetEditorUtilities::CompileBlueprint and
 // UEditorAssetLibrary::SaveAsset are NEVER called from this plugin.
@@ -58,6 +59,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     {
         return HandleAddComponentToBlueprint(Params);
     }
+    else if (CommandType == TEXT("bp_copy_component"))
+    {
+        return HandleCopyComponent(Params);
+    }
     else if (CommandType == TEXT("set_component_property"))
     {
         return HandleSetComponentProperty(Params);
@@ -110,6 +115,151 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCommand(const FString
     return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown blueprint command: %s"), *CommandType));
 }
 
+TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCopyComponent(const TSharedPtr<FJsonObject>& Params)
+{
+    FString SourceBPName;
+    if (!Params->TryGetStringField(TEXT("source_bp"), SourceBPName) || SourceBPName.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'source_bp' parameter"));
+    }
+
+    FString DestBPName;
+    if (!Params->TryGetStringField(TEXT("dest_bp"), DestBPName) || DestBPName.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'dest_bp' parameter"));
+    }
+
+    FString ComponentName;
+    if (!Params->TryGetStringField(TEXT("component_name"), ComponentName) || ComponentName.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'component_name' parameter"));
+    }
+
+    FString NewComponentName;
+    if (!Params->TryGetStringField(TEXT("new_component_name"), NewComponentName) || NewComponentName.IsEmpty())
+    {
+        NewComponentName = ComponentName;
+    }
+
+    UBlueprint* SourceBP = FUnrealMCPCommonUtils::FindBlueprint(SourceBPName);
+    if (!SourceBP || !SourceBP->SimpleConstructionScript)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Source Blueprint not found or has no SCS: %s"), *SourceBPName));
+    }
+
+    UBlueprint* DestBP = FUnrealMCPCommonUtils::FindBlueprint(DestBPName);
+    if (!DestBP || !DestBP->SimpleConstructionScript)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Destination Blueprint not found or has no SCS: %s"), *DestBPName));
+    }
+
+    auto FindSCSNodeByName = [](UBlueprint* BP, const FString& Name) -> USCS_Node*
+    {
+        if (!BP || !BP->SimpleConstructionScript) return nullptr;
+        for (USCS_Node* Node : BP->SimpleConstructionScript->GetAllNodes())
+        {
+            if (Node && Node->GetVariableName().ToString().Equals(Name, ESearchCase::IgnoreCase))
+            {
+                return Node;
+            }
+        }
+        return nullptr;
+    };
+
+    USCS_Node* SourceNode = FindSCSNodeByName(SourceBP, ComponentName);
+    if (!SourceNode || !SourceNode->ComponentClass || !SourceNode->ComponentTemplate)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Source SCS component not found: %s"), *ComponentName));
+    }
+
+    if (FindSCSNodeByName(DestBP, NewComponentName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Destination Blueprint already has component: %s"), *NewComponentName));
+    }
+
+    DestBP->Modify();
+    DestBP->SimpleConstructionScript->Modify();
+
+    USCS_Node* NewNode = DestBP->SimpleConstructionScript->CreateNode(SourceNode->ComponentClass, FName(*NewComponentName));
+    if (!NewNode || !NewNode->ComponentTemplate)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create destination SCS node"));
+    }
+
+    int32 CopiedPropertyCount = 0;
+    UActorComponent* SourceTemplate = SourceNode->ComponentTemplate;
+    UActorComponent* DestTemplate = NewNode->ComponentTemplate;
+    DestTemplate->Modify();
+
+    for (TFieldIterator<FProperty> It(SourceTemplate->GetClass()); It; ++It)
+    {
+        FProperty* Prop = *It;
+        if (!Prop || !Prop->HasAnyPropertyFlags(CPF_Edit))
+        {
+            continue;
+        }
+        if (Prop->HasAnyPropertyFlags(CPF_Transient | CPF_DisableEditOnTemplate | CPF_Deprecated))
+        {
+            continue;
+        }
+        const FName PropName = Prop->GetFName();
+        if (PropName == TEXT("AttachParent") || PropName == TEXT("AttachChildren") || PropName == TEXT("CreationMethod"))
+        {
+            continue;
+        }
+
+        void* DestAddr = Prop->ContainerPtrToValuePtr<void>(DestTemplate);
+        const void* SourceAddr = Prop->ContainerPtrToValuePtr<void>(SourceTemplate);
+        if (DestAddr && SourceAddr)
+        {
+            Prop->CopyCompleteValue(DestAddr, SourceAddr);
+            ++CopiedPropertyCount;
+        }
+    }
+
+    USCS_Node* SourceParent = SourceBP->SimpleConstructionScript->FindParentNode(SourceNode);
+    USCS_Node* DestParent = nullptr;
+    if (SourceParent)
+    {
+        DestParent = FindSCSNodeByName(DestBP, SourceParent->GetVariableName().ToString());
+    }
+
+    bool bAdded = false;
+    bool bAddCrash = false;
+    if (DestParent)
+    {
+        DestParent->AddChildNode(NewNode, /*bAddToAllNodes=*/true);
+        NewNode->SetParent(DestParent);
+        bAdded = true;
+    }
+    else
+    {
+        bAdded = FUnrealMCPCommonUtils::SCSAddNodeGuarded(DestBP->SimpleConstructionScript, NewNode, bAddCrash);
+    }
+    if (bAddCrash || !bAdded)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("CopyComponent failed while adding SCS node '%s' (seh=%d)"),
+                *NewComponentName, bAddCrash ? 1 : 0));
+    }
+
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(DestBP);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetStringField(TEXT("source_bp"), SourceBPName);
+    ResultObj->SetStringField(TEXT("dest_bp"), DestBPName);
+    ResultObj->SetStringField(TEXT("component_name"), ComponentName);
+    ResultObj->SetStringField(TEXT("new_component_name"), NewComponentName);
+    ResultObj->SetStringField(TEXT("component_class"), SourceNode->ComponentClass->GetName());
+    ResultObj->SetNumberField(TEXT("copied_property_count"), CopiedPropertyCount);
+    ResultObj->SetStringField(TEXT("parent_component"), DestParent ? DestParent->GetVariableName().ToString() : TEXT(""));
+    return ResultObj;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params)
 {
     // Get required parameters
@@ -149,14 +299,14 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
 
     // Create the blueprint factory
     UBlueprintFactory* Factory = NewObject<UBlueprintFactory>();
-    
+
     // Handle parent class
     FString ParentClass;
     Params->TryGetStringField(TEXT("parent_class"), ParentClass);
-    
+
     // Default to Actor if no parent class specified
     UClass* SelectedParentClass = AActor::StaticClass();
-    
+
     // Try to find the specified parent class
     if (!ParentClass.IsEmpty())
     {
@@ -165,7 +315,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
         {
             ClassName = TEXT("A") + ClassName;
         }
-        
+
         // First try direct StaticClass lookup for common classes
         UClass* FoundClass = nullptr;
         if (ClassName == TEXT("APawn"))
@@ -181,7 +331,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
             // Try loading the class using LoadClass which is more reliable than FindObject
             const FString ClassPath = FString::Printf(TEXT("/Script/Engine.%s"), *ClassName);
             FoundClass = LoadClass<AActor>(nullptr, *ClassPath);
-            
+
             if (!FoundClass)
             {
                 // Try alternate paths if not found
@@ -197,11 +347,11 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCreateBlueprint(const
         }
         else
         {
-            UE_LOG(LogTemp, Warning, TEXT("Could not find specified parent class '%s' at paths: /Script/Engine.%s or /Script/Game.%s, defaulting to AActor"), 
+            UE_LOG(LogTemp, Warning, TEXT("Could not find specified parent class '%s' at paths: /Script/Engine.%s or /Script/Game.%s, defaulting to AActor"),
                 *ClassName, *ClassName, *ClassName);
         }
     }
-    
+
     Factory->ParentClass = SelectedParentClass;
 
     // Create the blueprint
@@ -443,21 +593,42 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleAddComponentToBluepri
             WComp->SetWidgetSpace(DesiredSpace);
         }
 
-        // Add to root if no parent specified
-        Blueprint->SimpleConstructionScript->AddNode(NewNode);
+        // Add to root if no parent specified. CRASH-005 guard: AddNode()
+        // calls PostEditChange() on the SCS internally, which can synchronously
+        // walk dependent assets in pathological cases. SCSAddNodeGuarded
+        // wraps the call in MSVC SEH so the editor survives an AV.
+        bool bAddCrash = false;
+        const bool bAdded = FUnrealMCPCommonUtils::SCSAddNodeGuarded(
+            Blueprint->SimpleConstructionScript, NewNode, bAddCrash);
+        if (bAddCrash || !bAdded)
+        {
+            UE_LOG(LogMCP, Error,
+                TEXT("[MCP] AddComponent - SCS AddNode failed for '%s' on '%s' (seh=%d, added=%d) — caught"),
+                *ComponentName, *BlueprintName, bAddCrash ? 1 : 0, bAdded ? 1 : 0);
+            return FUnrealMCPCommonUtils::CreateErrorResponse(
+                FString::Printf(TEXT("AddComponent crashed inside SCS AddNode for '%s' on '%s' — editor survived"),
+                    *ComponentName, *BlueprintName));
+        }
 
-        // ── Mark dirty for save — use Modify() only, NOT MarkBlueprintAsStructurallyModified ──
-        // MarkBlueprintAsStructurallyModified broadcasts to ALL AssetRegistry
-        // and ContentBrowser listeners synchronously on the GameThread.
-        // On an 8 k-asset project this blocks 30-60 s.
+        // ── Mark dirty for save — DEFERRED to next tick (CRASH-005 guard) ──
+        // The crash that motivated this: setting AudioComponent.Sound on a
+        // freshly-imported SoundWave broadcast PackageDirtyStateChangedEvent
+        // synchronously, the AssetRegistry queued a dependency rescan, and
+        // the next Content Browser tick (~3 s later) walked the BP's deps
+        // through a half-loaded SoundWave → EXCEPTION_ACCESS_VIOLATION in
+        // FAssetRegistry::GetDependencies → editor crash.
         //
-        // AddNode() already called PostEditChange() on the SCS internally,
-        // which marks the SCS's package dirty.  We only need Blueprint->Modify()
-        // here to mark the Blueprint asset itself dirty so the user can Ctrl+S.
-        // The Blueprint will be fully recompiled on the next explicit compile or
-        // editor session restart — no structural notification required.
-        Blueprint->Modify();
-        UE_LOG(LogMCP, Display, TEXT("[MCP] AddComponent - added '%s' (%s) to '%s', marked dirty"),
+        // Deferring MarkPackageDirty to the next editor tick gives any
+        // synchronous PostLoad on referenced assets a chance to complete
+        // before the AR walks the dep graph.
+        //
+        // (Rationale for NOT calling MarkBlueprintAsStructurallyModified
+        // remains unchanged: it broadcasts to ALL AssetRegistry and
+        // ContentBrowser listeners synchronously on the GameThread which
+        // blocks 30-60 s on an 8 k-asset project.)
+        FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(Blueprint);
+        UE_LOG(LogMCP, Display,
+            TEXT("[MCP] AddComponent - added '%s' (%s) to '%s', deferred dirty mark queued"),
             *ComponentName, *ComponentType, *BlueprintName);
 
         TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
@@ -490,16 +661,29 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_name' parameter"));
     }
 
+    // Accept common Unreal Python/editor aliases in addition to native C++ names.
+    // This keeps component edits consistent with values returned by Python
+    // inspection (e.g. hidden_in_game/visible on primitive components).
+    const FString PropertyAlias = PropertyName.ToLower();
+    if (PropertyAlias == TEXT("hidden_in_game"))
+    {
+        PropertyName = TEXT("bHiddenInGame");
+    }
+    else if (PropertyAlias == TEXT("visible"))
+    {
+        PropertyName = TEXT("bVisible");
+    }
+
     // Log all input parameters for debugging
-    UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Blueprint: %s, Component: %s, Property: %s"), 
+    UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Blueprint: %s, Component: %s, Property: %s"),
         *BlueprintName, *ComponentName, *PropertyName);
-    
+
     // Log property_value if available
     if (Params->HasField(TEXT("property_value")))
     {
         TSharedPtr<FJsonValue> JsonValue = Params->Values.FindRef(TEXT("property_value"));
         FString ValueType;
-        
+
         switch(JsonValue->Type)
         {
             case EJson::Boolean: ValueType = FString::Printf(TEXT("Boolean: %s"), JsonValue->AsBool() ? TEXT("true") : TEXT("false")); break;
@@ -509,7 +693,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             case EJson::Object: ValueType = TEXT("Object"); break;
             default: ValueType = TEXT("Unknown"); break;
         }
-        
+
         UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Value Type: %s"), *ValueType);
     }
     else
@@ -526,8 +710,8 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
     }
     else
     {
-        UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Blueprint found: %s (Class: %s)"), 
-            *BlueprintName, 
+        UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Blueprint found: %s (Class: %s)"),
+            *BlueprintName,
             Blueprint->GeneratedClass ? *Blueprint->GeneratedClass->GetName() : TEXT("NULL"));
     }
 
@@ -535,7 +719,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
     UObject* ComponentTemplate = nullptr;
     USCS_Node* ComponentNode = nullptr;
     UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Searching for component %s in blueprint nodes"), *ComponentName);
-    
+
     if (Blueprint->SimpleConstructionScript)
     {
         for (USCS_Node* Node : Blueprint->SimpleConstructionScript->GetAllNodes())
@@ -560,7 +744,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
         UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Searching native components in GeneratedClass"));
         UObject* CDO = Blueprint->GeneratedClass->GetDefaultObject();
         UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - CDO pointer: %s"), CDO ? TEXT("VALID") : TEXT("NULL"));
-        
+
         if (CDO)
         {
             // Iterate over object properties to find component properties
@@ -571,10 +755,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                 FObjectProperty* ObjProp = *PropIt;
                 if (!ObjProp->PropertyClass) continue;
                 if (!ObjProp->PropertyClass->IsChildOf(UActorComponent::StaticClass())) continue;
-                
+
                 ComponentCount++;
                 UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - [%d] Found native component property: %s (looking for: %s)"), ComponentCount, *ObjProp->GetName(), *ComponentName);
-                
+
                 if (ObjProp->GetName() == ComponentName)
                 {
                     // Get the actual component instance from the CDO
@@ -585,9 +769,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                     break;
                 }
             }
-            
-            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Search complete. Total native components found: %d, ComponentTemplate: %s"), 
-                ComponentCount, 
+
+            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Search complete. Total native components found: %d, ComponentTemplate: %s"),
+                ComponentCount,
                 ComponentTemplate ? TEXT("FOUND") : TEXT("NOT FOUND"));
         }
     }
@@ -601,9 +785,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
     // Check if this is a Spring Arm component and log special debug info
     if (ComponentTemplate->GetClass()->GetName().Contains(TEXT("SpringArm")))
     {
-        UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - SpringArm component detected! Class: %s"), 
+        UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - SpringArm component detected! Class: %s"),
             *ComponentTemplate->GetClass()->GetPathName());
-            
+
         // Log all properties of the SpringArm component class
         UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - SpringArm properties:"));
         for (TFieldIterator<FProperty> PropIt(ComponentTemplate->GetClass()); PropIt; ++PropIt)
@@ -616,7 +800,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
         if (Params->HasField(TEXT("property_value")))
         {
             TSharedPtr<FJsonValue> JsonValue = Params->Values.FindRef(TEXT("property_value"));
-            
+
             // Get the property using the new FField system
             FProperty* Property = FindFProperty<FProperty>(ComponentTemplate->GetClass(), *PropertyName);
             if (!Property)
@@ -665,9 +849,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             }
             else if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
             {
-                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Handling struct property %s of type %s"), 
+                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Handling struct property %s of type %s"),
                     *PropertyName, *StructProp->Struct->GetName());
-                
+
                 // Special handling for common Spring Arm struct properties
                 if (StructProp->Struct == TBaseStructure<FVector>::Get())
                 {
@@ -709,9 +893,10 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
 
             if (bSuccess)
             {
-                // Mark the blueprint as modified
+                // Mark the blueprint as modified — DEFERRED (CRASH-005 guard,
+                // see SafeMarkBlueprintModifiedDeferred for full rationale).
                 UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Successfully set SpringArm property %s"), *PropertyName);
-                FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+                FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(Blueprint);
 
                 TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
                 ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -734,14 +919,14 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
     if (Params->HasField(TEXT("property_value")))
     {
         TSharedPtr<FJsonValue> JsonValue = Params->Values.FindRef(TEXT("property_value"));
-        
+
         // Get the property
         FProperty* Property = FindFProperty<FProperty>(ComponentTemplate->GetClass(), *PropertyName);
         if (!Property)
         {
-            UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Property %s not found on component %s"), 
+            UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Property %s not found on component %s"),
                 *PropertyName, *ComponentName);
-            
+
             // List all available properties for this component
             UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Available properties for %s:"), *ComponentName);
             for (TFieldIterator<FProperty> PropIt(ComponentTemplate->GetClass()); PropIt; ++PropIt)
@@ -749,13 +934,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                 FProperty* Prop = *PropIt;
                 UE_LOG(LogTemp, Warning, TEXT("  - %s (%s)"), *Prop->GetName(), *Prop->GetCPPType());
             }
-            
+
             return FUnrealMCPCommonUtils::CreateErrorResponse(
                 FString::Printf(TEXT("Property %s not found on component %s"), *PropertyName, *ComponentName));
         }
         else
         {
-            UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Property found: %s (Type: %s)"), 
+            UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Property found: %s (Type: %s)"),
                 *PropertyName, *Property->GetCPPType());
         }
 
@@ -764,16 +949,16 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
 
         // Handle different property types
         UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Attempting to set property %s"), *PropertyName);
-        
+
         // Add try-catch block to catch and log any crashes
         try
         {
             if (FStructProperty* StructProp = CastField<FStructProperty>(Property))
             {
                 // Handle vector properties
-                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Property is a struct: %s"), 
+                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Property is a struct: %s"),
                     StructProp->Struct ? *StructProp->Struct->GetName() : TEXT("NULL"));
-                    
+
                 if (StructProp->Struct == TBaseStructure<FVector>::Get())
                 {
                     if (JsonValue->Type == EJson::Array)
@@ -788,7 +973,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                                 Arr[2]->AsNumber()
                             );
                             void* PropertyAddr = StructProp->ContainerPtrToValuePtr<void>(ComponentTemplate);
-                            UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting Vector(%f, %f, %f)"), 
+                            UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting Vector(%f, %f, %f)"),
                                 Vec.X, Vec.Y, Vec.Z);
                             StructProp->CopySingleValue(PropertyAddr, &Vec);
                             bSuccess = true;
@@ -805,7 +990,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                         float Value = JsonValue->AsNumber();
                         FVector Vec(Value, Value, Value);
                         void* PropertyAddr = StructProp->ContainerPtrToValuePtr<void>(ComponentTemplate);
-                        UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting Vector(%f, %f, %f) from scalar"), 
+                        UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting Vector(%f, %f, %f) from scalar"),
                             Vec.X, Vec.Y, Vec.Z);
                         StructProp->CopySingleValue(PropertyAddr, &Vec);
                         bSuccess = true;
@@ -819,7 +1004,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                 else
                 {
                     // Handle other struct properties using default handler
-                    UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Using generic struct handler for %s"), 
+                    UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Using generic struct handler for %s"),
                         *PropertyName);
                     bSuccess = FUnrealMCPCommonUtils::SetObjectProperty(ComponentTemplate, PropertyName, JsonValue, ErrorMessage);
                     if (!bSuccess)
@@ -837,16 +1022,16 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                     FString EnumValueName = JsonValue->AsString();
                     UEnum* Enum = EnumProp->GetEnum();
                     UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting enum from string: %s"), *EnumValueName);
-                    
+
                     if (Enum)
                     {
                         int64 EnumValue = Enum->GetValueByNameString(EnumValueName);
-                        
+
                         if (EnumValue != INDEX_NONE)
                         {
                             UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Found enum value: %lld"), EnumValue);
                             EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(
-                                ComponentTemplate, 
+                                ComponentTemplate,
                                 EnumValue
                             );
                             bSuccess = true;
@@ -854,16 +1039,16 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                         else
                         {
                             // List all possible enum values
-                            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Available enum values for %s:"), 
+                            UE_LOG(LogTemp, Warning, TEXT("SetComponentProperty - Available enum values for %s:"),
                                 *Enum->GetName());
                             for (int32 i = 0; i < Enum->NumEnums(); i++)
                             {
-                                UE_LOG(LogTemp, Warning, TEXT("  - %s (%lld)"), 
+                                UE_LOG(LogTemp, Warning, TEXT("  - %s (%lld)"),
                                     *Enum->GetNameStringByIndex(i),
                                     Enum->GetValueByIndex(i));
                             }
-                            
-                            ErrorMessage = FString::Printf(TEXT("Invalid enum value '%s' for property %s"), 
+
+                            ErrorMessage = FString::Printf(TEXT("Invalid enum value '%s' for property %s"),
                                 *EnumValueName, *PropertyName);
                             UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - %s"), *ErrorMessage);
                         }
@@ -880,7 +1065,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
                     int64 EnumValue = JsonValue->AsNumber();
                     UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting enum from number: %lld"), EnumValue);
                     EnumProp->GetUnderlyingProperty()->SetIntPropertyValue(
-                        ComponentTemplate, 
+                        ComponentTemplate,
                         EnumValue
                     );
                     bSuccess = true;
@@ -894,14 +1079,14 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             else if (FNumericProperty* NumericProp = CastField<FNumericProperty>(Property))
             {
                 // Handle numeric properties
-                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Property is numeric: IsInteger=%d, IsFloat=%d"), 
+                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Property is numeric: IsInteger=%d, IsFloat=%d"),
                     NumericProp->IsInteger(), NumericProp->IsFloatingPoint());
-                    
+
                 if (JsonValue->Type == EJson::Number)
                 {
                     double Value = JsonValue->AsNumber();
                     UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Setting numeric value: %f"), Value);
-                    
+
                     if (NumericProp->IsInteger())
                     {
                         NumericProp->SetIntPropertyValue(ComponentTemplate, (int64)Value);
@@ -923,10 +1108,30 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
             }
             else
             {
-                // Handle all other property types using default handler
-                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Using generic property handler for %s (Type: %s)"), 
+                // Handle all other property types using default handler.
+                // CRASH-005 guard: SetObjectProperty for an FObjectProperty
+                // that points at a freshly-imported asset (e.g.
+                // AudioComponent.Sound = newly-imported SoundWave) can
+                // trigger LoadObject inside the property setter and AV if
+                // the target is mid-async-load. We delegate to
+                // SetObjectPropertyGuarded (lives in CommonUtils.cpp), which
+                // wraps the call in MSVC SEH. We can't __try/__except here
+                // directly because this function uses C++ try/catch
+                // (compiler error C2712).
+                UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Using generic property handler for %s (Type: %s)"),
                     *PropertyName, *Property->GetCPPType());
-                bSuccess = FUnrealMCPCommonUtils::SetObjectProperty(ComponentTemplate, PropertyName, JsonValue, ErrorMessage);
+                bool bSetSehCrash = false;
+                bSuccess = FUnrealMCPCommonUtils::SetObjectPropertyGuarded(
+                    ComponentTemplate, PropertyName, JsonValue, ErrorMessage, bSetSehCrash);
+                if (bSetSehCrash)
+                {
+                    UE_LOG(LogTemp, Error,
+                        TEXT("[MCP] SetComponentProperty - SEH crash inside SetObjectProperty for '%s.%s' on '%s' — caught (editor survived)"),
+                        *ComponentName, *PropertyName, *BlueprintName);
+                    return FUnrealMCPCommonUtils::CreateErrorResponse(
+                        FString::Printf(TEXT("SetComponentProperty crashed setting '%s.%s' on '%s' (likely a half-loaded referenced asset); editor survived"),
+                            *ComponentName, *PropertyName, *BlueprintName));
+                }
                 if (!bSuccess)
                 {
                     UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Failed to set property: %s"), *ErrorMessage);
@@ -948,15 +1153,23 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
 
         if (bSuccess)
         {
-            // Mark the blueprint as modified
-            UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Successfully set property %s on component %s"), 
+            // Mark the blueprint as modified — DEFERRED (CRASH-005 guard).
+            // Setting a TObjectPtr on an SCS template (e.g. AudioComponent.Sound,
+            // StaticMeshComponent.StaticMesh, NiagaraComponent.Asset) changes
+            // the BP's outgoing dep graph. A synchronous MarkPackageDirty
+            // immediately broadcasts to the AssetRegistry; the next Content
+            // Browser tick then walks the new dep before the referenced asset
+            // has finished its async PostLoad and AVs deep inside
+            // FAssetRegistry::GetDependencies. Deferring to the next tick
+            // gives the referenced asset time to fully initialize.
+            //
+            // (Also: do NOT call ConditionalPostLoad() or PostEditChange() on
+            // CDO-owned components – those calls can trigger internal
+            // re-registration and GC passes that leave our raw Blueprint
+            // pointer dangling.)
+            UE_LOG(LogTemp, Log, TEXT("SetComponentProperty - Successfully set property %s on component %s"),
                 *PropertyName, *ComponentName);
-            
-            // Mark the blueprint as modified.
-            // Do NOT call ConditionalPostLoad() or PostEditChange() on CDO-owned
-            // components – those calls can trigger internal re-registration and GC
-            // passes that leave our raw Blueprint pointer dangling.
-            FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+            FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(Blueprint);
 
             TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
             ResultObj->SetStringField(TEXT("component"), ComponentName);
@@ -966,7 +1179,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentProperty(
         }
         else
         {
-            UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Failed to set property %s: %s"), 
+            UE_LOG(LogTemp, Error, TEXT("SetComponentProperty - Failed to set property %s: %s"),
                 *PropertyName, *ErrorMessage);
             return FUnrealMCPCommonUtils::CreateErrorResponse(ErrorMessage);
         }
@@ -1055,21 +1268,23 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPhysicsProperties(
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(const TSharedPtr<FJsonObject>& Params)
 {
     // -----------------------------------------------------------------------
-    // DEFINITIVE FIX v3 — do NOT call FKismetEditorUtilities::CompileBlueprint
-    // OR UEditorAssetLibrary::SaveAsset from inside an AsyncTask game-thread
-    // lambda in UE5.6.
+    // CRASH-007 FIX (supersedes v3/v4 "no-compile" path).
     //
-    // Both paths crash with EXCEPTION_ACCESS_VIOLATION at 0x00007ffe447a0208
-    // through the UnrealEditor_MassEntityEditor observer, regardless of compile
-    // flags or log-pointer choice.  SaveAsset internally calls CompileBlueprint
-    // via the OnSave delegates — same crash.
+    // The previous "safe" path here only marked the BP modified and never
+    // called FKismetEditorUtilities::CompileBlueprint. As a result, after SCS
+    // edits (e.g. add UAudioComponent + set Sound = freshly-imported wave)
+    // the Blueprint's GeneratedClass / CDO were never regenerated. The next
+    // manual Ctrl+Shift+S then serialised a stale CDO and AV'd in CoreUObject
+    // during post-save reinstancing of level actor instances.
     //
-    // SAFE APPROACH: only call Blueprint->Modify() (marks UObject dirty for undo system,
-    // no AssetRegistry broadcast, no ContentBrowser notification).
-    // The editor recompiles automatically on the next user save (Ctrl+S) or
-    // when the Blueprint editor is opened.  We report success=true so the
-    // Python caller can proceed; the blueprint is structurally correct — it
-    // just has not yet had its bytecode regenerated.
+    // Now: schedule a guarded compile on the next FTSTicker tick (i.e. in a
+    // clean stack frame OUTSIDE this AsyncTask lambda — that nesting is what
+    // historically tripped the MassEntityEditor observer chain on inline
+    // compiles). SafeCompileBlueprintDeferred wraps the call in MCP_GUARDED_RUN
+    // so any residual AV is caught and the editor survives.
+    //
+    // The dirty mark itself remains deferred (CRASH-005) so the AssetRegistry
+    // walk doesn't race a freshly-imported referenced asset's PostLoad.
     // -----------------------------------------------------------------------
 
     FString BlueprintName;
@@ -1079,7 +1294,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'blueprint_name' parameter"));
     }
 
-    UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - Starting (safe/no-compile path) for '%s'"), *BlueprintName);
+    UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - Starting (deferred-safe-compile path, CRASH-007) for '%s'"), *BlueprintName);
 
     UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
     if (!Blueprint || !IsValid(Blueprint))
@@ -1089,70 +1304,71 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleCompileBlueprint(cons
             FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
     }
 
-    UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - Found '%s', status=%d. Marking modified (no inline compile)."),
+    UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - Found '%s', status=%d. Scheduling deferred dirty mark + compile."),
         *BlueprintName, (int32)Blueprint->Status.GetValue());
 
-    // -----------------------------------------------------------------------
-    // DEFINITIVE FIX v4 — guard against first-call EXCEPTION_ACCESS_VIOLATION
-    //
-    // MarkBlueprintAsStructurallyModified internally dereferences
-    // Blueprint->GeneratedClass to invalidate the class's property chain.
-    // On the FIRST call of a fresh session, GeneratedClass may be null (BP not
-    // yet fully post-loaded) or in a transient GC state, causing a hardware
-    // SEH access violation that crashes the GameThread and aborts the TCP
-    // socket (Python sees WinError 10053 / WSAECONNABORTED).
-    //
-    // Safe strategy:
-    //   - If GeneratedClass is valid → call MarkBlueprintAsStructurallyModified
-    //     (which also calls Blueprint->Modify() internally).
-    //   - If GeneratedClass is null/invalid → call Blueprint->Modify() only,
-    //     which just marks the UObject dirty for Undo/save purposes and cannot
-    //     crash.  The editor will recompile normally on the next user save.
-    // -----------------------------------------------------------------------
+    // CRASH-005: defer MarkPackageDirty so AR walk doesn't race PostLoad.
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(Blueprint);
+
+    // CRASH-007: defer CompileBlueprint to a clean frame so the CDO is
+    // actually regenerated before the user's Ctrl+Shift+S serialises it.
+    bool bScheduledCompile = false;
     if (Blueprint->GeneratedClass && IsValid(Blueprint->GeneratedClass))
     {
-        UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - GeneratedClass valid, calling MarkBlueprintAsStructurallyModified"));
-        FUnrealMCPCommonUtils::SafeMarkBlueprintModified(Blueprint);
+        FUnrealMCPCommonUtils::SafeCompileBlueprintDeferred(Blueprint);
+        bScheduledCompile = true;
     }
     else
     {
-        UE_LOG(LogMCP, Warning, TEXT("[MCP] CompileBlueprint - GeneratedClass null/invalid for '%s', falling back to Modify() only"), *BlueprintName);
-        Blueprint->Modify();
+        UE_LOG(LogMCP, Warning,
+            TEXT("[MCP] CompileBlueprint - GeneratedClass null/invalid for '%s', skipping compile schedule (dirty-only)"),
+            *BlueprintName);
     }
 
-    UE_LOG(LogMCP, Display, TEXT("[MCP] CompileBlueprint - SUCCESS (marked modified, deferred compile) for '%s'"), *BlueprintName);
+    UE_LOG(LogMCP, Display,
+        TEXT("[MCP] CompileBlueprint - SUCCESS (scheduled deferred compile=%s) for '%s'"),
+        bScheduledCompile ? TEXT("true") : TEXT("false"), *BlueprintName);
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetStringField(TEXT("name"),            BlueprintName);
     ResultObj->SetBoolField(TEXT("compiled"),          true);
     ResultObj->SetBoolField(TEXT("had_errors"),        false);
-    ResultObj->SetBoolField(TEXT("deferred_compile"),  true);
+    ResultObj->SetBoolField(TEXT("deferred_compile"),  bScheduledCompile);
     ResultObj->SetStringField(TEXT("note"),
-        TEXT("Blueprint marked modified. Press Ctrl+S in UE or open the BP editor to trigger the full compile safely."));
+        bScheduledCompile
+            ? TEXT("Blueprint marked dirty (deferred) and compile scheduled on next editor tick. Use save_blueprint to persist.")
+            : TEXT("Blueprint marked dirty (deferred). GeneratedClass not yet valid; compile will run when the Blueprint editor next opens it."));
     return ResultObj;
 }
 
 // ---------------------------------------------------------------------------
 // save_blueprint — persist an already-loaded Blueprint package to disk.
 //
-// IMPORTANT — two editor-level save paths both crash under UnrealMCP in UE5.6:
-//   1. UEditorAssetLibrary::SaveAsset  (Python / EditorScriptingUtilities)
-//      → EXCEPTION_ACCESS_VIOLATION in CoreUObject with MassEntityEditor in the
-//        dispatch chain.
-//   2. UEditorLoadingAndSavingUtils::SavePackages (C++ wrapper in FileHelpers.h)
-//      → same EXCEPTION_ACCESS_VIOLATION (see HandleSaveBlueprint:1111 crash
-//        from Cabal session: address 0x00007ffe3f8000e9).
+// CRASH-007 FIX (supersedes the previous "manual save required" gate):
+//   The previous path was a no-op by default because UEditorAssetLibrary::
+//   SaveAsset and UEditorLoadingAndSavingUtils::SavePackages both AV via the
+//   MassEntityEditor observer when called inline from our AsyncTask lambda,
+//   and even UPackage::SavePackage occasionally crashed when chained directly
+//   after an SCS edit (stale CDO referencing a not-yet-recompiled template).
 //
-// Both fire the full editor pre-save delegate chain (OnPreSave / OnPreSaveWorld)
-// which in turn hits the MassEntityEditor observer, whose subject is stale/null
-// in our AsyncTask GameThread context.
+//   The instruction "press Ctrl+S in the editor" worked for trivial edits
+//   but crashed under heavy SCS mutation chains (CRASH-007 — saw the user
+//   lose all 17 audio hookups twice).
 //
-// SAFETY UPDATE:
-// UPackage::SavePackage also enters the CoreUObject save dispatch chain in this
-// project and can still crash with MassEntityEditor observers on the stack. By
-// default this command now refuses to save and tells the caller to save in the
-// editor UI. The old low-level path remains available only behind the explicit
-// force_unsafe_save=true parameter for one-off recovery/debugging.
+// New behaviour (default):
+//   Schedule a TWO-STAGE deferred chain via SafeSaveBlueprintPackageDeferred:
+//     tick N+1: FKismetEditorUtilities::CompileBlueprint (SEH-guarded)
+//     tick N+2: UPackage::SavePackage (SEH-guarded, low-level)
+//   The bridge command returns "scheduled" immediately. Both ticks run in
+//   their own clean GameThread frames OUTSIDE this AsyncTask lambda, which
+//   in practice avoids the MassEntityEditor observer chain. SEH catches any
+//   residual AV so the editor survives. The user no longer needs to press
+//   Ctrl+Shift+S.
+//
+// Optional params:
+//   only_if_dirty=true → skip if Package->IsDirty() is already false.
+//   force_unsafe_save=true → run the old INLINE UPackage::SavePackage path
+//                            for one-off recovery/debugging (rarely needed).
 // ---------------------------------------------------------------------------
 TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSaveBlueprint(const TSharedPtr<FJsonObject>& Params)
 {
@@ -1175,8 +1391,6 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSaveBlueprint(const T
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint has no valid outer package"));
     }
 
-    // Optional flag — currently only used for logging; low-level SavePackage
-    // does not support "only-if-dirty" natively, so we honour it manually.
     bool bOnlyDirty = false;
     Params->TryGetBoolField(TEXT("only_if_dirty"), bOnlyDirty);
     if (bOnlyDirty && !Package->IsDirty())
@@ -1196,61 +1410,75 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSaveBlueprint(const T
     const FString FileName = FPackageName::LongPackageNameToFilename(
         PackageName, FPackageName::GetAssetPackageExtension());
 
+    // -----------------------------------------------------------------------
+    // OPTIONAL legacy/inline path — kept for debugging and for users who
+    // want the synchronous result. Use only when you are confident the BP
+    // CDO is already up to date (e.g. saving a BP that was edited via the
+    // editor UI, not via MCP SCS edits).
+    // -----------------------------------------------------------------------
     bool bForceUnsafeSave = false;
     Params->TryGetBoolField(TEXT("force_unsafe_save"), bForceUnsafeSave);
-    if (!bForceUnsafeSave)
+    if (bForceUnsafeSave)
     {
         UE_LOG(LogMCP, Warning,
-               TEXT("[MCP] save_blueprint — skipped unsafe SavePackage for '%s'; save manually in the editor UI."),
+               TEXT("[MCP] save_blueprint — INLINE legacy path requested for '%s' (force_unsafe_save=true)"),
                *BlueprintName);
 
-        TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
-        ResultObj->SetStringField(TEXT("blueprint"), BlueprintName);
-        ResultObj->SetStringField(TEXT("package"),   PackageName);
-        ResultObj->SetStringField(TEXT("file"),      FileName);
-        ResultObj->SetBoolField(TEXT("success"),     true);
-        ResultObj->SetBoolField(TEXT("saved"),       false);
-        ResultObj->SetBoolField(TEXT("skipped"),     true);
-        ResultObj->SetBoolField(TEXT("manual_save_required"), true);
-        ResultObj->SetStringField(TEXT("reason"),
-            TEXT("MCP package saves are disabled by default because SavePackage crashes with MassEntityEditor in this project. Save the asset manually in Unreal, or pass force_unsafe_save=true to use the old path."));
-        return ResultObj;
+        FSavePackageArgs SaveArgs;
+        SaveArgs.TopLevelFlags      = RF_Public | RF_Standalone;
+        SaveArgs.SaveFlags          = SAVE_NoError | SAVE_KeepDirty;
+        SaveArgs.bForceByteSwapping = false;
+        SaveArgs.bWarnOfLongFilename= true;
+        SaveArgs.bSlowTask          = false;
+        SaveArgs.Error              = GError;
+
+        const bool bSaved = UPackage::SavePackage(Package, Blueprint, *FileName, SaveArgs);
+        if (bSaved)
+        {
+            Package->SetDirtyFlag(false);
+            UE_LOG(LogMCP, Display, TEXT("[MCP] save_blueprint — wrote '%s' OK (inline)"), *FileName);
+        }
+        else
+        {
+            UE_LOG(LogMCP, Error, TEXT("[MCP] save_blueprint — inline write FAILED for '%s'"), *FileName);
+        }
+
+        TSharedPtr<FJsonObject> InlineResult = MakeShared<FJsonObject>();
+        InlineResult->SetStringField(TEXT("blueprint"), BlueprintName);
+        InlineResult->SetStringField(TEXT("package"),   PackageName);
+        InlineResult->SetStringField(TEXT("file"),      FileName);
+        InlineResult->SetBoolField  (TEXT("success"),   bSaved);
+        InlineResult->SetBoolField  (TEXT("saved"),     bSaved);
+        InlineResult->SetBoolField  (TEXT("inline"),    true);
+        return InlineResult;
     }
 
+    // -----------------------------------------------------------------------
+    // DEFAULT: schedule deferred compile + save chain (CRASH-007).
+    // -----------------------------------------------------------------------
     UE_LOG(LogMCP, Display,
-           TEXT("[MCP] save_blueprint — '%s' package '%s' -> '%s' (UPackage::SavePackage low-level path)"),
+           TEXT("[MCP] save_blueprint — scheduling deferred compile+save for '%s' (package '%s' -> '%s')"),
            *BlueprintName, *PackageName, *FileName);
 
-    // Low-level save args — mimic what FEditorFileUtils uses internally for
-    // asset packages, but skip the pre-save delegate broadcast that triggers
-    // the MassEntityEditor observer crash.
-    FSavePackageArgs SaveArgs;
-    SaveArgs.TopLevelFlags      = RF_Public | RF_Standalone;
-    SaveArgs.SaveFlags          = SAVE_NoError | SAVE_KeepDirty;
-    SaveArgs.bForceByteSwapping = false;
-    SaveArgs.bWarnOfLongFilename= true;
-    SaveArgs.bSlowTask          = false;
-    SaveArgs.Error              = GError;
-
-    const bool bSaved = UPackage::SavePackage(Package, Blueprint, *FileName, SaveArgs);
-
-    if (bSaved)
+    const bool bScheduled = FUnrealMCPCommonUtils::SafeSaveBlueprintPackageDeferred(Blueprint);
+    if (!bScheduled)
     {
-        // SAVE_KeepDirty kept the dirty bit so UI reflects save state; clear manually.
-        Package->SetDirtyFlag(false);
-        UE_LOG(LogMCP, Display, TEXT("[MCP] save_blueprint — wrote '%s' OK"), *FileName);
-    }
-    else
-    {
-        UE_LOG(LogMCP, Error, TEXT("[MCP] save_blueprint — failed to write '%s'"), *FileName);
+        UE_LOG(LogMCP, Error,
+               TEXT("[MCP] save_blueprint — failed to schedule deferred save for '%s'"), *BlueprintName);
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Failed to schedule deferred save for '%s'"), *BlueprintName));
     }
 
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
-    ResultObj->SetStringField(TEXT("blueprint"), BlueprintName);
-    ResultObj->SetStringField(TEXT("package"),   PackageName);
-    ResultObj->SetStringField(TEXT("file"),      FileName);
-    ResultObj->SetBoolField(TEXT("success"),     bSaved);
-    ResultObj->SetBoolField(TEXT("saved"),       bSaved);
+    ResultObj->SetStringField(TEXT("blueprint"),         BlueprintName);
+    ResultObj->SetStringField(TEXT("package"),           PackageName);
+    ResultObj->SetStringField(TEXT("file"),              FileName);
+    ResultObj->SetBoolField  (TEXT("success"),           true);
+    ResultObj->SetBoolField  (TEXT("scheduled"),         true);
+    ResultObj->SetBoolField  (TEXT("deferred_compile"),  true);
+    ResultObj->SetBoolField  (TEXT("deferred_save"),     true);
+    ResultObj->SetStringField(TEXT("note"),
+        TEXT("Compile + SavePackage scheduled on next editor ticks (~50-100ms). Sleep ~250ms in caller before re-issuing only_if_dirty=true to confirm."));
     return ResultObj;
 }
 
@@ -1347,7 +1575,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetBlueprintProperty(
     if (Params->HasField(TEXT("property_value")))
     {
         TSharedPtr<FJsonValue> JsonValue = Params->Values.FindRef(TEXT("property_value"));
-        
+
         FString ErrorMessage;
         if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, PropertyName, JsonValue, ErrorMessage))
         {
@@ -1726,18 +1954,13 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetComponentParentSoc
                 SCS->Modify();
             }
 
-            const TArray<USCS_Node*>& Roots = SCS->GetRootNodes();
-            USCS_Node* RootOut = Roots.Num() > 0 ? Roots[0] : nullptr;
-            if (!RootOut)
-            {
-                return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("SCS has no root node for native parent attach"));
-            }
-
             ChildNode->Modify();
             ChildNode->bIsParentComponentNative = true;
             ChildNode->ParentComponentOrVariableName = NativeParentName;
-            RootOut->AddChildNode(ChildNode, /*bAddToAllNodes=*/true);
-            ChildNode->SetParent(RootOut);
+            ChildNode->ParentComponentOwnerClassName = Blueprint->GeneratedClass
+                ? Blueprint->GeneratedClass->GetFName()
+                : NAME_None;
+            ChildNode->SetParent(static_cast<USCS_Node*>(nullptr));
         }
         else
         {
@@ -1963,12 +2186,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
     // Track if any properties were set successfully
     bool bAnyPropertiesSet = false;
     TSharedPtr<FJsonObject> ResultsObj = MakeShared<FJsonObject>();
-    
+
     // Set auto possess player if specified
     if (Params->HasField(TEXT("auto_possess_player")))
     {
         TSharedPtr<FJsonValue> AutoPossessValue = Params->Values.FindRef(TEXT("auto_possess_player"));
-        
+
         FString ErrorMessage;
         if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, TEXT("AutoPossessPlayer"), AutoPossessValue, ErrorMessage))
         {
@@ -1985,12 +2208,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
             ResultsObj->SetObjectField(TEXT("AutoPossessPlayer"), PropResultObj);
         }
     }
-    
+
     // Set auto possess AI if specified
     if (Params->HasField(TEXT("auto_possess_ai")))
     {
         TSharedPtr<FJsonValue> AutoPossessAIValue = Params->Values.FindRef(TEXT("auto_possess_ai"));
-        
+
         FString ErrorMessage;
         if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, TEXT("AutoPossessAI"), AutoPossessAIValue, ErrorMessage))
         {
@@ -2007,26 +2230,26 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
             ResultsObj->SetObjectField(TEXT("AutoPossessAI"), PropResultObj);
         }
     }
-    
+
     // Set controller rotation properties
     const TCHAR* RotationProps[] = {
         TEXT("bUseControllerRotationYaw"),
         TEXT("bUseControllerRotationPitch"),
         TEXT("bUseControllerRotationRoll")
     };
-    
+
     const TCHAR* ParamNames[] = {
         TEXT("use_controller_rotation_yaw"),
         TEXT("use_controller_rotation_pitch"),
         TEXT("use_controller_rotation_roll")
     };
-    
+
     for (int32 i = 0; i < 3; i++)
     {
         if (Params->HasField(ParamNames[i]))
         {
             TSharedPtr<FJsonValue> Value = Params->Values.FindRef(ParamNames[i]);
-            
+
             FString ErrorMessage;
             if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, RotationProps[i], Value, ErrorMessage))
             {
@@ -2044,12 +2267,12 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintCommands::HandleSetPawnProperties(con
             }
         }
     }
-    
+
     // Set can be damaged property
     if (Params->HasField(TEXT("can_be_damaged")))
     {
         TSharedPtr<FJsonValue> Value = Params->Values.FindRef(TEXT("can_be_damaged"));
-        
+
         FString ErrorMessage;
         if (FUnrealMCPCommonUtils::SetObjectProperty(DefaultObject, TEXT("bCanBeDamaged"), Value, ErrorMessage))
         {

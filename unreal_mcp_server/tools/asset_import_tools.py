@@ -80,7 +80,10 @@ def register_asset_import_tools(mcp: FastMCP):
               }
             failure:
               {"success": false, "stage": "import_texture", "errors": ["<reason>"]}
-        """
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#overview
+        Example:
+            import_texture(file_path="/Game/MCP_Test/Example")"""
         user_code = f"""
 import os
 
@@ -222,7 +225,10 @@ _result["compression"]   = str(comp).split(".")[-1]
                 },
                 "warnings": [], "errors": [], "log_tail": []
               }
-        """
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#overview
+        Example:
+            import_static_mesh(file_path="/Game/MCP_Test/Example")"""
         user_code = f"""
 import os
 
@@ -326,7 +332,10 @@ _result["poly_count"] = poly_count
                 },
                 "warnings": [], "errors": [], "log_tail": []
               }
-        """
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#overview
+        Example:
+            import_skeletal_mesh(file_path="/Game/MCP_Test/Example")"""
         user_code = f"""
 import os
 

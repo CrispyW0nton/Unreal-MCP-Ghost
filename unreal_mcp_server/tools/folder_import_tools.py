@@ -95,7 +95,10 @@ def register_folder_import_tools(mcp: FastMCP):
               },
               "subdirs": ["textures", "meshes"]
             }
-        """
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#overview
+        Example:
+            scan_export_folder(folder_path="/Game/MCP_Test/Example")"""
         result: Dict[str, Any] = {
             "success": True,
             "folder": folder_path,
@@ -195,7 +198,10 @@ def register_folder_import_tools(mcp: FastMCP):
                 ...
               ]
             }
-        """
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#overview
+        Example:
+            batch_import_folder(folder_path="/Game/MCP_Test/Example")"""
         # ── 1. Local scan ─────────────────────────────────────────────────────
         if not os.path.isdir(folder_path):
             return json.dumps({
@@ -388,7 +394,10 @@ _result["results"]  = per_file_results
               "reused_skeleton": false,
               "errors": []
             }
-        """
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#overview
+        Example:
+            import_folder_as_character(folder_path="/Game/MCP_Test/Example", character_name="ExampleName")"""
         if not os.path.isdir(folder_path):
             return json.dumps({
                 "success": False,

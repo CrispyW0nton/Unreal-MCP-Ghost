@@ -45,6 +45,7 @@ import functools
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
+from chat.routes import register_chat_routes
 
 # ─── Async thread-offload patch ─────────────────────────────────────────────
 # Problem: FastMCP calls sync tool functions with a plain `return fn(**args)`,
@@ -651,8 +652,14 @@ from skills.audit_blueprint_health.skill import register_audit_blueprint_health_
 from tools.diagnostics_tools import register_diagnostics_tools
 # V6 Repair Atomics — bp_repair_exec_chain, bp_remove_orphaned_nodes, bp_set_pin_default
 from tools.repair_tools import register_repair_tools
+# Niagara-first VFX inspection and authoring recipes
+from tools.niagara_tools import register_niagara_tools
 # V6 Skills — skill_repair_broken_blueprint
 from skills.repair_broken_blueprint.skill import register_repair_broken_blueprint_skill
+# UE editor chat bridge — HTTP routes + MCP tools
+from tools.chat_tools import register_chat_tools
+
+register_chat_routes(mcp)
 
 register_editor_tools(mcp)
 register_blueprint_tools(mcp)
@@ -704,8 +711,12 @@ register_audit_blueprint_health_skill(mcp)
 register_diagnostics_tools(mcp)
 # V6 Repair atomics — deterministic repair helpers
 register_repair_tools(mcp)
+# Niagara-first VFX tools
+register_niagara_tools(mcp)
 # V6 Skills — skill_repair_broken_blueprint
 register_repair_broken_blueprint_skill(mcp)
+# UE editor chat bridge
+register_chat_tools(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
@@ -1028,7 +1039,7 @@ def info():
 - `add_make_struct_node(blueprint_name, struct_type)` - Make struct from members
 - `add_get_data_table_row_node(blueprint_name, data_table_variable, row_name)` - DataTable lookup
 
-## COMMON COMPONENT TYPES  
+## COMMON COMPONENT TYPES
 - StaticMeshComponent, SkeletalMeshComponent, CameraComponent
 - SpringArmComponent, BoxComponent, SphereComponent, CapsuleComponent
 - PointLightComponent, SpotLightComponent, AudioComponent
@@ -1156,6 +1167,7 @@ Environment variable equivalents:
     )
 
     args = parser.parse_args()
+    os.environ["UNREAL_MCP_TRANSPORT"] = args.transport
 
     # ── Apply CLI overrides ─────────────────────────────────────────────────
     if args.unreal_host is not None:
@@ -1257,6 +1269,7 @@ Environment variable equivalents:
 
         starlette_app = Starlette(
             routes=[
+                *mcp._custom_starlette_routes,
                 Route("/sse", endpoint=SseEndpoint(), methods=["GET"]),
                 Mount("/messages/", app=sse.handle_post_message),
             ]

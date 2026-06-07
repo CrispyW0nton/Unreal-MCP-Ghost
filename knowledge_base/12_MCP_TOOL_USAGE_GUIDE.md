@@ -224,6 +224,23 @@ python3 sandbox_ue5cli.py set_static_mesh_properties '{
 }'
 ```
 
+#### `bp_copy_component`
+Copy an existing Blueprint SCS component, including editable template properties, from one Blueprint to another.
+```bash
+python3 sandbox_ue5cli.py bp_copy_component '{
+  "source_bp": "BP_SourceActor",
+  "dest_bp": "BP_DestActor",
+  "component_name": "WorkbenchMesh",
+  "new_component_name": "CopiedWorkbenchMesh"
+}'
+```
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `source_bp` | string | ✅ | Source Blueprint asset name or path |
+| `dest_bp` | string | ✅ | Destination Blueprint asset name or path |
+| `component_name` | string | ✅ | Source component variable name |
+| `new_component_name` | string | ❌ | Defaults to `component_name` |
+
 ---
 
 ### 4. Blueprint Node Read Commands
@@ -427,6 +444,9 @@ python3 sandbox_ue5cli.py add_blueprint_for_each_loop_node '{"blueprint_name": "
 
 # For Loop node — pins: execute, First Index, Last Index, Index, Loop Body, Completed
 python3 sandbox_ue5cli.py add_blueprint_for_loop_node '{"blueprint_name": "BP_X", "graph_name": "EventGraph", "node_position": {"x": 200, "y": 0}}'
+
+# For Loop With Break node — pins: execute, First Index, Last Index, Break, Index, Loop Body, Completed
+python3 sandbox_ue5cli.py add_blueprint_for_loop_with_break_node '{"blueprint_name": "BP_X", "graph_name": "EventGraph", "first_index": 0, "last_index": 9, "node_position": {"x": 200, "y": 0}}'
 
 # While Loop node — pins: execute, Condition, Loop Body, Completed
 python3 sandbox_ue5cli.py add_blueprint_while_loop_node '{"blueprint_name": "BP_X", "graph_name": "EventGraph", "node_position": {"x": 200, "y": 0}}'
@@ -864,6 +884,18 @@ python3 sandbox_ue5cli.py add_interface_function_node '{
 }'
 ```
 
+#### `bp_add_call_interface_function`
+Preferred Python wrapper for Blueprint Interface message calls.
+```bash
+python3 sandbox_ue5cli.py add_call_interface_function_node '{
+  "blueprint_name": "BP_PlayerJediCharacter",
+  "interface_name": "BPI_Interactable",
+  "function_name": "Interact",
+  "node_position": {"x": 400, "y": 0}
+}'
+```
+> FastMCP tool name: `bp_add_call_interface_function`. Native bridge route: `add_call_interface_function_node`.
+
 #### `create_struct`
 Create a Blueprint Struct asset.
 ```bash
@@ -1059,6 +1091,23 @@ python3 sandbox_ue5cli.py bind_widget_event '{
   "function_name": "HandleRestartClicked"
 }'
 ```
+
+#### `umg_add_widget_binding`
+Bind a widget property path to a Widget Blueprint function or property.
+```bash
+python3 sandbox_ue5cli.py umg_add_widget_binding '{
+  "widget_blueprint_path": "/Game/Dantooine/Widgets/WBP_HUD",
+  "property_path": "HealthText.Text",
+  "binding_target": "GetHealthText",
+  "binding_kind": "function"
+}'
+```
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `widget_blueprint_path` | string | ✅ | Widget Blueprint path or name |
+| `property_path` | string | ✅ | `WidgetName.PropertyName` |
+| `binding_target` | string | ✅ | Function or property to bind |
+| `binding_kind` | string | ❌ | `function` or `property`; default `function` |
 
 ---
 
@@ -1488,8 +1537,8 @@ for name, path, parent in assets_to_create:
 
 ## ASSET IMPORT PIPELINE — CATEGORY C (single-asset imports)
 
-> Module: `asset_import_tools.py`  
-> All three tools use the `exec_python` + JSON-return pattern.  
+> Module: `asset_import_tools.py`
+> All three tools use the `exec_python` + JSON-return pattern.
 > Files must exist on the **UE5 Windows host machine** (not the sandbox).
 
 ---
@@ -1527,7 +1576,7 @@ Imports a PNG/JPG/TGA/EXR/HDR/BMP file as a `Texture2D`, automatically setting t
 
 ### `import_static_mesh`
 
-Imports an FBX, OBJ, glTF, or GLB file as a `StaticMesh`.  
+Imports an FBX, OBJ, glTF, or GLB file as a `StaticMesh`.
 FBX import options are configured via `FbxImportUI`; glTF/GLB uses UE5's Interchange Framework automatically.
 
 **Parameters:**
@@ -2074,6 +2123,95 @@ Take a snapshot of the Content Browser before/after to see what changed.
 
 ---
 
+### B.2 Graph-Aware Diagnostics (`diagnostics_tools.py`)
+
+Use these report tools after Blueprint graph edits, material graph edits, and
+asset imports. They return the standard StructuredResult shape and are designed
+for higher-order skills that need evidence before continuing.
+
+#### compile_blueprint_and_report
+```
+compile_blueprint_and_report(
+  blueprint_path: str,
+  include_graphs: bool = True,
+  graph_names: list[str] | None = None
+) → StructuredResult JSON
+```
+Returns compile status, graph summaries, structured errors/warnings, and
+`safe_to_continue`.
+
+```python
+compile_blueprint_and_report(
+    blueprint_path="/Game/MCP_Test/BP_Example",
+    graph_names=["EventGraph"]
+)
+```
+
+#### compile_material_and_report
+```
+compile_material_and_report(
+  material_path: str,
+  include_expressions: bool = True
+) → StructuredResult JSON
+```
+Returns compile status, expression count, optional expression summaries, and
+material warnings such as empty graphs.
+
+```python
+compile_material_and_report(material_path="/Game/MCP_Test/M_Example")
+```
+
+#### validate_import_result
+```
+validate_import_result(
+  expected_asset_path: str,
+  expected_class: str = "",
+  source_file: str = "",
+  require_saved: bool = True
+) → StructuredResult JSON
+```
+Use after import tools or generative imports. Returns existence, class match,
+dirty state, source-file presence, dependency count, and `valid`.
+
+```python
+validate_import_result(
+    expected_asset_path="/Game/MCP_Test/SM_Example",
+    expected_class="StaticMesh",
+    source_file="C:/Imports/SM_Example.fbx"
+)
+```
+
+#### get_changed_assets_since
+```
+get_changed_assets_since(
+  timestamp: str,
+  path: str = "/Game",
+  include_dirty: bool = True,
+  include_unreal_generated: bool = False,
+  limit: int = 200
+) → StructuredResult JSON
+```
+Accepts epoch seconds or ISO-8601 timestamps. Returns changed package files and
+unsaved dirty packages so agents can produce asset-diff evidence.
+
+```python
+get_changed_assets_since(
+    timestamp="2026-06-07T00:00:00Z",
+    path="/Game/MCP_Test"
+)
+```
+
+Recommended post-mutation sequence:
+
+```text
+1. Run get_changed_assets_since(timestamp=before_edit).
+2. Run compile_blueprint_and_report or compile_material_and_report.
+3. For imports, run validate_import_result on every expected asset path.
+4. Continue only when safe_to_continue or valid is true.
+```
+
+---
+
 ### StructuredResult Schema
 
 All substrate + import tools return this schema:
@@ -2088,4 +2226,3 @@ All substrate + import tools return this schema:
 | `warnings` | list[str] | Non-fatal warnings |
 | `errors` | list[str] | Error messages (also in exception if `success=false`) |
 | `log_tail` | list[str] | Last 10 lines of the traceback if an exception occurred |
-

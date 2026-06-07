@@ -1,6 +1,6 @@
 # KNOWLEDGE BASE — MASTER INDEX
 > Unreal-MCP-Ghost Plugin | UE 5.6
-> Version: 2026-05-16
+> Version: 2026-06-07
 > **START HERE** if you need to find anything quickly.
 
 ---
@@ -36,13 +36,30 @@ What do you need?
 ├─ "I need to work with data (arrays/structs)" → Read 07_DATA_STRUCTURES.md
 ├─ "I need to add new MCP commands"         → Read 13_TOOL_EXPANSION_ROADMAP.md + v4/GRAPH_SCRIPTING_SPEC_V4.md
 ├─ "I need current tool counts/categories"  → Run scripts/tool_inventory.py
+├─ "I need Insanitii project context"       → Read Projects/Insanitii/INDEX.md
+├─ "I need active MCP/plugin limitations"  → Read Limitation log/ACTIVE_LIMITATIONS.md
 ├─ "I need CI smoke/profile commands"       → Read ../docs/ci-smoke.md + run scripts/profile_mcp_startup.py
 ├─ "I need Python/C++ route drift status"   → Run scripts/bridge_command_audit.py
+├─ "I need recent KB changes"               → Read v5/CHANGELOG.md
 ├─ "I need to edit a Blueprint graph (V4)" → Use bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile
 ├─ "I need to remove a node / break a pin" → Use bp_remove_node, bp_disconnect_pin
 ├─ "I need a new function in a Blueprint"   → Use bp_add_function, then bp_add_node with graph_name=<fn>
 ├─ "I need to create/edit a Material"       → Use mat_create_material, mat_add_expression, mat_connect_expressions, mat_compile
 ├─ "I need to ship/package the game"        → Read 18_PACKAGING_AND_OPTIMIZATION.md
+├─ "I need Gameplay Ability System"         → Read 19_GAMEPLAY_ABILITY_SYSTEM.md
+├─ "I need multiplayer/replication"         → Read 20_NETWORKING_AND_REPLICATION.md
+├─ "I need MetaSounds/audio DSP"            → Read 21_METASOUNDS_AND_AUDIO_DSP.md
+├─ "I need Geometry Script/modeling tools"  → Read 22_GEOMETRY_SCRIPT_AND_MODELING.md
+├─ "I need Mass/StateTree/Smart Objects"    → Read 23_MASS_ENTITY_AND_STATETREE.md
+├─ "I need Motion Matching/Choosers"        → Read 24_MOTION_MATCHING_AND_CHOOSERS.md
+├─ "I need World Partition/HLOD"            → Read 25_WORLD_PARTITION_AND_HLOD.md
+├─ "I need Chaos physics/destruction"       → Read 26_CHAOS_PHYSICS_AND_DESTRUCTION.md
+├─ "I need MetaHuman pipeline guidance"     → Read 27_METAHUMAN_PIPELINE.md
+├─ "I need Sequencer/Movie Render Queue"    → Read 28_MOVIE_RENDER_QUEUE_AND_SEQUENCER.md
+├─ "I need Pixel Streaming/remote demo"     → Read 29_PIXEL_STREAMING_AND_REMOTE.md
+├─ "I need Online Subsystem/EOS"            → Read 30_ONLINE_SUBSYSTEM_AND_EOS.md
+├─ "I need generated asset pipeline"        → Read 31_GENERATIVE_CONTENT_PIPELINE.md
+├─ "I need an agent playable slice"         → Read 32_AGENT_PLAYABLE_SLICE_RECIPE.md
 ├─ "I need to understand the architecture"  → Read v4/ARCHITECTURE_BLUEPRINT.md
 ├─ "I need UE Python API references"        → Read v4/API_REFERENCE_CHEATSHEET.md
 └─ "I need everything"                      → Read 00_AGENT_KNOWLEDGE_BASE.md
@@ -86,6 +103,14 @@ What do you need?
 
 ---
 
+## V5 CHANGELOG
+
+| File | Purpose |
+|------|---------|
+| `v5/CHANGELOG.md` | Append-only log of KB edits and related Workstream A documentation gates |
+
+---
+
 ## COMPLETE FILE LISTING
 
 ### 🔴 TIER 1 — ALWAYS READ FIRST
@@ -126,6 +151,20 @@ What do you need?
 | 16 | `16_ANIMATION_DEEP_DIVE.md` | Root Motion, advanced IK, montage callbacks, performance tips |
 | 17 | `17_GAME_SYSTEMS_COOKBOOK.md` | 11 step-by-step recipes (health, interaction, dialogue, AI, save/load, etc.) |
 | 18 | `18_PACKAGING_AND_OPTIMIZATION.md` | Build configs, packaging steps, stat commands, Blueprint/rendering/memory optimization |
+| 19 | `19_GAMEPLAY_ABILITY_SYSTEM.md` | GAS architecture, attributes, tags, effects, ability slices |
+| 20 | `20_NETWORKING_AND_REPLICATION.md` | Server authority, replicated state, RPCs, PIE validation |
+| 21 | `21_METASOUNDS_AND_AUDIO_DSP.md` | MetaSounds, DSP graphs, attenuation, runtime audio parameters |
+| 22 | `22_GEOMETRY_SCRIPT_AND_MODELING.md` | Dynamic mesh workflows, editor modeling automation, generated meshes |
+| 23 | `23_MASS_ENTITY_AND_STATETREE.md` | Mass fragments/processors, StateTree, Smart Objects |
+| 24 | `24_MOTION_MATCHING_AND_CHOOSERS.md` | Pose Search, Motion Matching databases, Chooser tables |
+| 25 | `25_WORLD_PARTITION_AND_HLOD.md` | Streaming grids, Data Layers, HLOD workflow and validation |
+| 26 | `26_CHAOS_PHYSICS_AND_DESTRUCTION.md` | Chaos simulation, Geometry Collections, fields, destruction events |
+| 27 | `27_METAHUMAN_PIPELINE.md` | MetaHuman 5.6 asset flow, assembly, wrappers, animation/performance checks |
+| 28 | `28_MOVIE_RENDER_QUEUE_AND_SEQUENCER.md` | Level Sequences, cameras, MRQ jobs, render validation |
+| 29 | `29_PIXEL_STREAMING_AND_REMOTE.md` | Pixel Streaming, WebRTC infrastructure, standalone/packaged validation |
+| 30 | `30_ONLINE_SUBSYSTEM_AND_EOS.md` | OSS, Online Services, EOS auth/session configuration |
+| 31 | `31_GENERATIVE_CONTENT_PIPELINE.md` | Generated asset provenance, import, materialization, audits |
+| 32 | `32_AGENT_PLAYABLE_SLICE_RECIPE.md` | End-to-end MCP playable slice workflow and evidence checklist |
 
 ### 🟣 V4 RESEARCH DOCS
 
@@ -198,8 +237,8 @@ What do you need?
 | Property | Value |
 |----------|-------|
 | Engine | UE 5.6 |
-| MCP Tools | 503 |
-| Tool Modules | 37 categorized modules/skills |
+| MCP Tools | 529 |
+| Tool Modules | 36 categorized modules/skills |
 | C++ Commands | 168 |
 | Transports | stdio, SSE, streamable-HTTP |
 | Plugin Port | 55557 |
@@ -219,7 +258,7 @@ What do you need?
 
 ---
 
-*Updated: 2026-05-16 | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
+*Updated: 2026-06-07 | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
 
 ---
 
@@ -228,6 +267,14 @@ What do you need?
 | Project | Location | Description |
 |---------|----------|-------------|
 | Endar Spire | `Projects/EndarSpire/INDEX.md` | Star Wars KotOR-inspired FPS: Sith troopers, Republic soldiers, force powers, Dark Jedi boss |
+| Insanitii | `Projects/Insanitii/INDEX.md` | First-person psychosis simulation and lifestyle sandbox using native C++ plus Blueprint wrappers |
+
+## LIMITATION LOG
+
+| Location | Purpose |
+|----------|---------|
+| `Limitation log/ACTIVE_LIMITATIONS.md` | Active Unreal-MCP-Ghost plugin/server/workflow limitations discovered during real project work |
+| `Limitation log/RESOLVED_LIMITATIONS.md` | Limitations that have been fixed and verified |
 
 ### BP_SithTrooperFramework (moved)
 The `BP_SithTrooperFramework/` folder that was previously at the repo root has been relocated to `knowledge_base/Projects/EndarSpire/Blueprints/`. See:

@@ -677,7 +677,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
               "errors": [],
               "log_tail": []
             }
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            ue_exec_safe(code="Example")"""
         result = exec_python_structured(code, stage_name)
         return json.dumps(result)
 
@@ -709,7 +712,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with StructuredResult.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            ue_exec_transact(code="Example")"""
         result = exec_python_transactional(code, transaction_name)
         return json.dumps(result)
 
@@ -736,7 +742,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with StructuredResult.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            ue_exec_progress(code="Example")"""
         result = exec_python_with_progress(code, task_name, total_work)
         return json.dumps(result)
 
@@ -766,7 +775,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with StructuredResult and the created journal path.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            execution_journal_start(title="Example")"""
         journal_id = uuid.uuid4().hex[:12]
         started_at = _utc_now()
         journal_root = _resolve_workspace_path(journal_dir)
@@ -842,7 +854,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with StructuredResult and updated journal stats.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            execution_journal_log(journal_path="/Game/MCP_Test/Example", message="Example")"""
         data = _read_journal(journal_path)
         if data.get("status") == "finished":
             return json.dumps(make_result(
@@ -909,7 +924,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with StructuredResult and final journal stats.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            execution_journal_finish(journal_path="/Game/MCP_Test/Example")"""
         data = _read_journal(journal_path)
         finished_at = _utc_now()
         data["status"] = status
@@ -973,7 +991,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with risk level, score, recommended gate, reasons, and checklist.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            risk_evaluate_action(action="Example")"""
         result = evaluate_action_risk(
             action=action,
             target=target,
@@ -1002,7 +1023,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with requested mode, prior state, current state, and PIE world count.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            pie_launch_session()"""
         code = textwrap.dedent(f"""\
             import time
             subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -1040,7 +1064,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with prior and current PIE state.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            pie_stop_session()"""
         code = textwrap.dedent(f"""\
             import time
             subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
@@ -1081,7 +1108,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with log file path, captured lines, and optional artifact path.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            pie_capture_log()"""
         artifact_path = str(_artifact_path("logs", artifact_name, "log")) if save_artifact else ""
         code = textwrap.dedent(f"""\
             import pathlib
@@ -1131,7 +1161,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with command dispatch details.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            pie_simulate_input(console_command="Example")"""
         code = textwrap.dedent(f"""\
             subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
             in_pie = bool(subsystem.is_in_play_in_editor())
@@ -1174,7 +1207,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with filepath, dimensions, size, and hash.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            viewport_capture_screenshot()"""
         out_dir = _resolve_workspace_path(screenshot_dir)
         out_dir.mkdir(parents=True, exist_ok=True)
         filepath = out_dir / f"{_utc_now().replace(':', '').replace('-', '')}_{_slugify(artifact_name, 'viewport')}.png"
@@ -1228,7 +1264,10 @@ def register_exec_substrate_tools(mcp: FastMCP):
 
         Returns:
             JSON string with similarity and artifact metadata.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            viewport_compare_screenshot(baseline_path="/Game/MCP_Test/Example", candidate_path="/Game/MCP_Test/Example")"""
         try:
             result = compare_screenshot_files(baseline_path, candidate_path, pass_threshold)
         except Exception as exc:

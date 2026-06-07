@@ -46,8 +46,7 @@ def register_procedural_tools(mcp: FastMCP):
         default_space_between_rows: float = 150.0,
         folder_path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a procedural mesh placement Blueprint using Construction Script.
+        """Create a procedural mesh placement Blueprint using Construction Script.
 
         From Ch. 19: Creates BP_ProceduralMeshes that uses an Instanced Static Mesh
         component and nested For Loops in the Construction Script to place rows of
@@ -58,14 +57,17 @@ def register_procedural_tools(mcp: FastMCP):
         a grid of mesh instances (e.g., rows of chairs, plants, lights).
 
         Args:
-            name: Blueprint name (e.g., \"BP_ProceduralMeshes\")
+            name: Blueprint name (e.g., "BP_ProceduralMeshes")
             static_mesh_path: Default Static Mesh asset path
             default_instances_per_row: Number of instances per row
             default_number_of_rows: Number of rows
             default_space_between_instances: Spacing between instances in a row (UE units)
             default_space_between_rows: Spacing between rows (UE units)
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            create_procedural_mesh_blueprint()"""
         return _send("create_procedural_mesh_blueprint", {
             "name": name,
             "static_mesh_path": static_mesh_path,
@@ -84,8 +86,7 @@ def register_procedural_tools(mcp: FastMCP):
         default_space_between_instances: float = 100.0,
         folder_path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a Blueprint that places Static Mesh instances along a Spline component.
+        """Create a Blueprint that places Static Mesh instances along a Spline component.
 
         From Ch. 19: Creates BP_SplinePlacement with:
         - Spline component (editable in Level Editor by dragging spline points)
@@ -100,7 +101,10 @@ def register_procedural_tools(mcp: FastMCP):
             static_mesh_path: Default Static Mesh asset path for instances
             default_space_between_instances: Distance between instances along the spline
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            create_spline_placement_blueprint()"""
         return _send("create_spline_placement_blueprint", {
             "name": name,
             "static_mesh_path": static_mesh_path,
@@ -116,8 +120,7 @@ def register_procedural_tools(mcp: FastMCP):
         static_mesh_path: str = "",
         attach_to_root: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add an Instanced Static Mesh component to a Blueprint.
+        """Add an Instanced Static Mesh component to a Blueprint.
 
         From Ch. 19: The Instanced Static Mesh (ISM) component is optimized to render
         many copies of the same mesh efficiently. It's the core tool for procedural
@@ -130,7 +133,10 @@ def register_procedural_tools(mcp: FastMCP):
             component_name: Component name in the Components panel
             static_mesh_path: Static Mesh asset to assign (can be set later)
             attach_to_root: Attach to root component (True) or as child
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_instanced_static_mesh_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "InstancedStaticMeshComponent",
@@ -150,8 +156,7 @@ def register_procedural_tools(mcp: FastMCP):
         component_name: str = "Spline",
         num_points: int = 2
     ) -> Dict[str, Any]:
-        """
-        Add a Spline component to a Blueprint.
+        """Add a Spline component to a Blueprint.
 
         From Ch. 19: The Spline component defines a curved path in 3D space.
         Its points can be edited in the Level Editor (Add Spline Point Here,
@@ -162,7 +167,10 @@ def register_procedural_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the Spline component to
             component_name: Component name
             num_points: Initial number of spline points (minimum 2)
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_spline_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "SplineComponent",
@@ -182,8 +190,7 @@ def register_procedural_tools(mcp: FastMCP):
         start_pos: List[float] = [0.0, 0.0, 0.0],
         end_pos: List[float] = [100.0, 0.0, 0.0]
     ) -> Dict[str, Any]:
-        """
-        Add a Spline Mesh component to deform a Static Mesh along a two-point spline.
+        """Add a Spline Mesh component to deform a Static Mesh along a two-point spline.
 
         From Ch. 19: The Spline Mesh component deforms a Static Mesh between two
         control points. Use SetStartAndEnd in the Construction Script to define the
@@ -195,7 +202,10 @@ def register_procedural_tools(mcp: FastMCP):
             static_mesh_path: Static Mesh asset to deform
             start_pos: Start point world position
             end_pos: End point world position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_spline_mesh_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "SplineMeshComponent",
@@ -218,19 +228,18 @@ def register_procedural_tools(mcp: FastMCP):
         functions: List[Dict[str, Any]] = None,
         folder_path: str = "/Game/EditorUtilities"
     ) -> Dict[str, Any]:
-        """
-        Create an Editor Utility Blueprint that runs in the Unreal Editor.
+        """Create an Editor Utility Blueprint that runs in the Unreal Editor.
 
         From Ch. 19: Editor Utility Blueprints can manipulate Assets and Actors
         in Edit Mode (not during Play). They appear as right-click context menu
         options in the Level Editor or Content Browser.
 
         Types:
-        - \"ActorActionUtility\": manipulate selected Actors in the Level Editor.
+        - "ActorActionUtility": manipulate selected Actors in the Level Editor.
           Functions appear under Right-click > Scripted Actor Actions.
-        - \"AssetActionUtility\": manipulate Assets in the Content Browser.
+        - "AssetActionUtility": manipulate Assets in the Content Browser.
           Functions appear under Right-click > Scripted Asset Actions.
-        - \"EditorUtilityBlueprint\": general editor scripting.
+        - "EditorUtilityBlueprint": general editor scripting.
 
         Available editor scripting nodes include:
         - GetSelectionSet: get selected Actors
@@ -238,11 +247,14 @@ def register_procedural_tools(mcp: FastMCP):
         - EditorScripting category functions
 
         Args:
-            name: Blueprint name (e.g., \"BPU_ActorAction\")
-            utility_type: \"ActorActionUtility\", \"AssetActionUtility\", or \"EditorUtilityBlueprint\"
-            functions: Function definitions [{\"name\", \"inputs\", \"outputs\"}]
+            name: Blueprint name (e.g., "BPU_ActorAction")
+            utility_type: "ActorActionUtility", "AssetActionUtility", or "EditorUtilityBlueprint"
+            functions: Function definitions [{"name", "inputs", "outputs"}]
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            create_editor_utility_blueprint(name="ExampleName")"""
         if functions is None:
             functions = []
 
@@ -272,8 +284,7 @@ def register_procedural_tools(mcp: FastMCP):
         name: str = "BPU_AlignActors",
         folder_path: str = "/Game/EditorUtilities"
     ) -> Dict[str, Any]:
-        """
-        Create the AlignOnXAxis Editor Utility Blueprint from Ch. 19.
+        """Create the AlignOnXAxis Editor Utility Blueprint from Ch. 19.
 
         Creates BPU_AlignActors (ActorActionUtility) with an AlignOnXAxis function:
         1. GetSelectionSet -> get array of selected actors
@@ -285,7 +296,10 @@ def register_procedural_tools(mcp: FastMCP):
         Args:
             name: Blueprint name
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            create_align_actors_utility()"""
         return _send("create_align_actors_utility", {
             "name": name,
             "folder_path": folder_path
@@ -298,8 +312,7 @@ def register_procedural_tools(mcp: FastMCP):
         spline_component_variable: str = "Spline",
         node_position: List[int] = [300, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a GetSplineLength node to get the total length of a Spline.
+        """Add a GetSplineLength node to get the total length of a Spline.
 
         From Ch. 19: Used in the CalculateNumberOfInstances macro to determine
         how many instances fit along the spline at a given spacing.
@@ -308,7 +321,10 @@ def register_procedural_tools(mcp: FastMCP):
             blueprint_name: Blueprint containing the Spline component
             spline_component_variable: Spline component reference name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_get_spline_length_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": spline_component_variable,
@@ -325,8 +341,7 @@ def register_procedural_tools(mcp: FastMCP):
         coordinate_space: str = "Local",
         node_position: List[int] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a GetLocationAtDistanceAlongSpline node.
+        """Add a GetLocationAtDistanceAlongSpline node.
 
         From Ch. 19: Returns the world or local location at a specified distance
         along the spline. Used in Construction Script to position instances
@@ -335,9 +350,12 @@ def register_procedural_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint to add the node to
             spline_component_variable: Spline component reference name
-            coordinate_space: \"Local\" or \"World\"
+            coordinate_space: "Local" or "World"
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_get_location_at_distance_along_spline_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": spline_component_variable,
@@ -354,8 +372,7 @@ def register_procedural_tools(mcp: FastMCP):
         coordinate_space: str = "Local",
         node_position: List[int] = [400, 100]
     ) -> Dict[str, Any]:
-        """
-        Add a GetRotationAtDistanceAlongSpline node.
+        """Add a GetRotationAtDistanceAlongSpline node.
 
         From Ch. 19: Returns the rotation at a specified distance along the spline.
         Paired with GetLocationAtDistanceAlongSpline to orient instances so they
@@ -364,9 +381,12 @@ def register_procedural_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint to add the node to
             spline_component_variable: Spline component reference name
-            coordinate_space: \"Local\" or \"World\"
+            coordinate_space: "Local" or "World"
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_get_rotation_at_distance_along_spline_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": spline_component_variable,
@@ -382,8 +402,7 @@ def register_procedural_tools(mcp: FastMCP):
         instanced_mesh_variable: str = "InstancedStaticMesh",
         node_position: List[int] = [500, 0]
     ) -> Dict[str, Any]:
-        """
-        Add an AddInstance node for an Instanced Static Mesh component.
+        """Add an AddInstance node for an Instanced Static Mesh component.
 
         From Ch. 19: The core of procedural generation. AddInstance takes an
         Instance Transform (Location, Rotation, Scale) and adds a new mesh
@@ -393,7 +412,10 @@ def register_procedural_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             instanced_mesh_variable: Instanced Static Mesh component variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_instanced_mesh_add_instance_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": instanced_mesh_variable,
@@ -408,8 +430,7 @@ def register_procedural_tools(mcp: FastMCP):
         location: List[float] = [0.0, 0.0, 460.0],
         scale: List[float] = [20.0, 44.0, 7.0]
     ) -> Dict[str, Any]:
-        """
-        Place a NavMesh Bounds Volume in the current level.
+        """Place a NavMesh Bounds Volume in the current level.
 
         From Ch. 9: The NavMesh Bounds Volume defines the navigable area for AI.
         The editor automatically generates the navigation mesh within this volume.
@@ -421,7 +442,10 @@ def register_procedural_tools(mcp: FastMCP):
         Args:
             location: [X, Y, Z] world location for the volume center
             scale: [X, Y, Z] scale to cover the navigable area
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            place_navmesh_bounds_volume()"""
         return _send("spawn_actor", {
             "name": "NavMeshBoundsVolume",
             "type": "NavMeshBoundsVolume",
@@ -438,8 +462,7 @@ def register_procedural_tools(mcp: FastMCP):
         nested: bool = False,
         node_position: List[int] = [300, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a For Loop node in a Blueprint's Construction Script.
+        """Add a For Loop node in a Blueprint's Construction Script.
 
         From Ch. 19: Used in BP_ProceduralMeshes Construction Script to iterate
         over rows and instances. Nested For Loops create 2D grids of instances.
@@ -453,7 +476,10 @@ def register_procedural_tools(mcp: FastMCP):
             last_index_variable: Variable providing the max loop count
             nested: Whether this is a nested (inner) loop
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_construction_script_for_loop(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetSystemLibrary",

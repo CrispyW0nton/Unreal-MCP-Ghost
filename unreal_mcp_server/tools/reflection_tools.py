@@ -101,7 +101,10 @@ def register_reflection_tools(mcp: FastMCP):
               "category": "Mesh",
               "found": true
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_reflect_class(class_name="Actor")"""
         code = f"""
 import unreal, json, sys
 
@@ -198,7 +201,10 @@ sys.stdout.flush()
               ],
               "count": 42
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_list_uclass_properties(class_name="Actor")"""
         code = f"""
 import unreal, json, sys, inspect
 
@@ -269,7 +275,10 @@ else:
               "methods": ["consolidate_assets", "delete_asset", "does_asset_exist", ...],
               "count": 52
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_list_uclass_methods(class_name="Actor")"""
         code = f"""
 import unreal, json, sys, inspect
 
@@ -323,7 +332,10 @@ sys.stdout.flush()
               "object_path": "/Game/.../BP_Player.BP_Player",
               "metadata": {...}
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_describe_asset(asset_path="/Game/MCP_Test/Example")"""
         code = f"""
 import unreal, json, sys
 
@@ -398,7 +410,10 @@ sys.stdout.flush()
               "count": 12,
               "truncated": false
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_find_assets_by_class(class_name="Actor")"""
         code = f"""
 import unreal, json, sys
 
@@ -449,7 +464,10 @@ sys.stdout.flush()
               ],
               "count": 1
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_list_editor_selection()"""
         code = """
 import unreal, json, sys
 
@@ -500,7 +518,10 @@ sys.stdout.flush()
               "count": 45,
               "filter": "Error"
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            get_recent_output_log()"""
         lines = min(lines, 1000)
         code = f"""
 import unreal, json, sys
@@ -592,7 +613,10 @@ sys.stdout.flush()
                 ...
               }
             }
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            ue_summarize_operation_effects()"""
         code = f"""
 import unreal, json, sys
 from collections import Counter

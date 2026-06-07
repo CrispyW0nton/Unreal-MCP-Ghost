@@ -348,7 +348,10 @@ def register_repair_broken_blueprint_skill(mcp: FastMCP) -> None:
               health_delta        — int (after.health_score - before.health_score)
               safe_to_continue    — bool
               repair_summary      — human-readable string
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            skill_repair_broken_blueprint(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "skill_repair_broken_blueprint"
         t0 = time.monotonic()
 

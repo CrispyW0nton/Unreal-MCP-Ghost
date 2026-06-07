@@ -328,7 +328,10 @@ def register_cpp_bridge_tools(mcp: FastMCP):  # noqa: C901
               path          — resolved absolute path
               files_indexed — number of .h/.cpp files found
               parser        — 'tree-sitter-cpp' or 'regex-fallback'
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            cpp_set_codebase_path()"""
         global _CODEBASE_PATH, _INDEXED_FILES, _INDEX_TS
         t0 = time.monotonic()
 
@@ -413,7 +416,10 @@ def register_cpp_bridge_tools(mcp: FastMCP):  # noqa: C901
               properties [{name, type, uproperty_flags}],
               methods [{name, return, params, ufunction_flags}],
               header_file, line
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            cpp_analyze_class(class_name="Actor")"""
         t0 = time.monotonic()
 
         if not _CODEBASE_PATH:
@@ -475,7 +481,10 @@ def register_cpp_bridge_tools(mcp: FastMCP):  # noqa: C901
         Returns:
             JSON StructuredResult with outputs:
               identifier, hits [{file, line, snippet}], total, truncated
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            cpp_find_references(identifier="Example")"""
         t0 = time.monotonic()
 
         if not _CODEBASE_PATH:

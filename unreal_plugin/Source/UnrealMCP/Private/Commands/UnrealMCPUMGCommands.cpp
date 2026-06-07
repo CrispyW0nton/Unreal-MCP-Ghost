@@ -13,6 +13,7 @@
 // #include "WidgetBlueprintFactory.h"
 #include "WidgetBlueprintEditor.h"
 #include "Blueprint/WidgetTree.h"
+#include "Blueprint/WidgetBlueprintGeneratedClass.h"
 #include "Components/CanvasPanel.h"
 #include "Components/CanvasPanelSlot.h"
 #include "JsonObjectConverter.h"
@@ -245,8 +246,98 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleCommand(const FString& Comm
 	{
 		return HandleWidgetGetChildren(Params);
 	}
+	else if (CommandName == TEXT("umg_add_widget_binding"))
+	{
+		return HandleAddWidgetBinding(Params);
+	}
 
 	return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Unknown UMG command: %s"), *CommandName));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleAddWidgetBinding(const TSharedPtr<FJsonObject>& Params)
+{
+	FString BlueprintPath;
+	FString Error;
+	UWidgetBlueprint* WidgetBlueprint = LoadWidgetBlueprintFromParams(Params, BlueprintPath, Error);
+	if (!WidgetBlueprint)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(Error);
+	}
+
+	FString PropertyPath;
+	if (!Params->TryGetStringField(TEXT("property_path"), PropertyPath) || PropertyPath.IsEmpty())
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'property_path' parameter"));
+	}
+
+	FString BindingTarget;
+	if (!Params->TryGetStringField(TEXT("binding_target"), BindingTarget) || BindingTarget.IsEmpty())
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'binding_target' parameter"));
+	}
+
+	FString ObjectName;
+	FString PropertyName;
+	if (!PropertyPath.Split(TEXT("."), &ObjectName, &PropertyName, ESearchCase::CaseSensitive, ESearchDir::FromEnd))
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(
+			TEXT("property_path must be '<WidgetName>.<PropertyName>' (for example 'HealthText.Text')"));
+	}
+
+	if (!WidgetBlueprint->WidgetTree || !WidgetBlueprint->WidgetTree->FindWidget(FName(*ObjectName)))
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(
+			FString::Printf(TEXT("Widget not found in WidgetTree: %s"), *ObjectName));
+	}
+
+	FString BindingKindString = TEXT("function");
+	Params->TryGetStringField(TEXT("binding_kind"), BindingKindString);
+
+	FDelegateEditorBinding Binding;
+	Binding.ObjectName = ObjectName;
+	Binding.PropertyName = FName(*PropertyName);
+	if (BindingKindString.Equals(TEXT("property"), ESearchCase::IgnoreCase))
+	{
+		Binding.SourceProperty = FName(*BindingTarget);
+		Binding.Kind = EBindingKind::Property;
+	}
+	else
+	{
+		Binding.FunctionName = FName(*BindingTarget);
+		Binding.Kind = EBindingKind::Function;
+		if (WidgetBlueprint->SkeletonGeneratedClass)
+		{
+			UBlueprint::GetGuidFromClassByFieldName<UFunction>(
+				WidgetBlueprint->SkeletonGeneratedClass,
+				Binding.FunctionName,
+				Binding.MemberGuid);
+		}
+	}
+
+	WidgetBlueprint->Modify();
+	for (int32 Index = WidgetBlueprint->Bindings.Num() - 1; Index >= 0; --Index)
+	{
+		const FDelegateEditorBinding& Existing = WidgetBlueprint->Bindings[Index];
+		if (Existing.ObjectName == Binding.ObjectName && Existing.PropertyName == Binding.PropertyName)
+		{
+			WidgetBlueprint->Bindings.RemoveAt(Index);
+		}
+	}
+	WidgetBlueprint->Bindings.Add(Binding);
+
+	MarkWidgetBlueprintModified(WidgetBlueprint);
+	FKismetEditorUtilities::CompileBlueprint(WidgetBlueprint);
+
+	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
+	Response->SetBoolField(TEXT("success"), true);
+	Response->SetStringField(TEXT("widget_blueprint_path"), BlueprintPath);
+	Response->SetStringField(TEXT("property_path"), PropertyPath);
+	Response->SetStringField(TEXT("widget_name"), ObjectName);
+	Response->SetStringField(TEXT("property_name"), PropertyName);
+	Response->SetStringField(TEXT("binding_target"), BindingTarget);
+	Response->SetStringField(TEXT("binding_kind"), Binding.Kind == EBindingKind::Property ? TEXT("property") : TEXT("function"));
+	Response->SetNumberField(TEXT("binding_count"), WidgetBlueprint->Bindings.Num());
+	return Response;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleCreateUMGWidgetBlueprint(const TSharedPtr<FJsonObject>& Params)
@@ -561,11 +652,11 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleBindWidgetEvent(const TShar
 
 	// Create the event node (e.g., OnClicked for buttons)
 	UK2Node_Event* EventNode = nullptr;
-	
+
 	// Find existing nodes first
 	TArray<UK2Node_Event*> AllEventNodes;
 	FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_Event>(WidgetBlueprint, AllEventNodes);
-	
+
 	for (UK2Node_Event* Node : AllEventNodes)
 	{
 		if (Node->CustomFunctionName == FName(*EventName) && Node->EventReference.GetMemberParentClass() == Widget->GetClass())
@@ -584,7 +675,7 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleBindWidgetEvent(const TShar
 		{
 			MaxHeight = FMath::Max(MaxHeight, Node->NodePosY);
 		}
-		
+
 		const FVector2D NodePos(200, MaxHeight + 200);
 
 		// Call CreateNewBoundEventForClass, which returns void, so we can't capture the return value directly
@@ -599,17 +690,17 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleBindWidgetEvent(const TShar
 		// Now find the newly created node
 		TArray<UK2Node_Event*> UpdatedEventNodes;
 		FBlueprintEditorUtils::GetAllNodesOfClass<UK2Node_Event>(WidgetBlueprint, UpdatedEventNodes);
-		
+
 		for (UK2Node_Event* Node : UpdatedEventNodes)
 		{
 			if (Node->CustomFunctionName == FName(*EventName) && Node->EventReference.GetMemberParentClass() == Widget->GetClass())
 			{
 				EventNode = Node;
-				
+
 				// Set position of the node
 				EventNode->NodePosX = NodePos.X;
 				EventNode->NodePosY = NodePos.Y;
-				
+
 				break;
 			}
 		}
@@ -697,7 +788,7 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleSetTextBlockBinding(const T
 
 		// Create entry node
 		UK2Node_FunctionEntry* EntryNode = nullptr;
-		
+
 		// Create entry node - use the API that exists in UE 5.5
 		EntryNode = NewObject<UK2Node_FunctionEntry>(FuncGraph);
 		FuncGraph->AddNode(EntryNode, false, false);

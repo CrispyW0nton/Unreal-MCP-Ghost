@@ -34,7 +34,7 @@ Name with `FL_` or `BFL_` prefix (e.g., `BFL_MathUtilities`, `BFL_DantooineHelpe
 [Function: GetNPCDialoguePriority]
   Input: NPCState (E_NPCDialogueMode), PlayerQuestStage (E_QuestStage)
   Output: Priority (int)
-  
+
 [Function: IsPlayerInRange]
   Input: PlayerLocation (Vector), TargetLocation (Vector), Range (float)
   Output: InRange (bool)
@@ -121,11 +121,11 @@ Functions:
     Call OnHealthChanged (CurrentHealth, MaxHealth)
     Branch (CurrentHealth <= 0.0 AND NOT IsDead):
       → IsDead = true → Call OnDeath
-      
+
   Heal(Amount: float):
     CurrentHealth = Clamp(CurrentHealth + Amount, 0, MaxHealth)
     Call OnHealthChanged (CurrentHealth, MaxHealth)
-    
+
   GetHealthPercent() → float:
     Return CurrentHealth / MaxHealth (Pure function)
 ```
@@ -137,7 +137,7 @@ BeginPlay:
   Get AC_HealthSystem component
   Bind to OnHealthChanged → Update WBP_HUD health bar
   Bind to OnDeath → Trigger death sequence
-  
+
 On damage received:
   Get AC_HealthSystem → TakeDamage(DamageAmount)
 ```
@@ -162,13 +162,13 @@ This Scene Component represents the lightsaber attachment point.
 Variables:
   EquippedLightsaber (BP_Lightsaber object ref)
   IsEquipped (bool)
-  
+
 Functions:
   EquipLightsaber(Lightsaber: BP_Lightsaber):
     EquippedLightsaber = Lightsaber
     AttachActorToComponent(Lightsaber, this component, Socket="LightsaberGrip")
     IsEquipped = true
-    
+
   UnequipLightsaber():
     DetachFromComponent(EquippedLightsaber)
     IsEquipped = false
@@ -214,7 +214,7 @@ Construction Script:
     EndPoint = GetLocationAtSplinePoint(i+1, Local)
     StartTangent = GetTangentAtSplinePoint(i, Local)
     EndTangent = GetTangentAtSplinePoint(i+1, Local)
-    
+
     SplineMeshComp = Add Spline Mesh Component
     SplineMeshComp.SetStartAndEnd(StartPoint, StartTangent, EndPoint, EndTangent)
     SplineMeshComp.SetStaticMesh(RoadMeshAsset)
@@ -309,10 +309,37 @@ On Grip Button Pressed (right controller):
   Get Overlapping Actors (MotionControllerRight sphere)
   For Each → Does Implement Interface (GrabbableInterface)?
     → True → Call Grab on Actor → break loop
-    
+
 On Grip Button Released:
   GrabbedObject ref → Call Drop
   Clear GrabbedObject ref
 ```
 
 ---
+
+## 9. MCP B.1 Component Copy Tool
+
+Use `bp_copy_component` when a reusable SCS component setup already exists in
+one Blueprint and should be duplicated into another Blueprint.
+
+```
+bp_copy_component(
+  source_bp="/Game/Blueprints/BP_SourceDoor",
+  dest_bp="/Game/Blueprints/BP_TargetDoor",
+  component_name="InteractionSphere",
+  new_component_name="InteractionSphere"
+)
+```
+
+The native route:
+
+- Creates the destination component with the same component class.
+- Copies editable template properties from the source component.
+- Preserves the parent component when the destination Blueprint has a matching
+  parent component name.
+- Marks the destination Blueprint dirty through the plugin's deferred
+  SCS-safe path.
+
+After copying, inspect the destination component and compile the Blueprint.
+Socket attachments, project-specific object references, and runtime bindings
+may still need a deliberate follow-up pass.

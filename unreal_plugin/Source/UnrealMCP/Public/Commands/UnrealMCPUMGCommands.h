@@ -91,4 +91,7 @@ private:
 
     /** List widget tree children and slot information. */
     TSharedPtr<FJsonObject> HandleWidgetGetChildren(const TSharedPtr<FJsonObject>& Params);
+
+    /** Add or replace a Widget Blueprint delegate runtime binding. */
+    TSharedPtr<FJsonObject> HandleAddWidgetBinding(const TSharedPtr<FJsonObject>& Params);
 };

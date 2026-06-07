@@ -217,7 +217,10 @@ def register_audit_blueprint_health_skill(mcp: FastMCP):
               compiles_clean, variable_count, function_graph_count, node_count_total,
               disconnected_exec_pins, disconnected_input_pins, unused_variables,
               incoming_references, warnings, health_score
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            skill_audit_blueprint_health(blueprint_name="/Game/MCP_Test/BP_Example")"""
         t0 = time.monotonic()
         steps_completed = []
         steps_failed    = []

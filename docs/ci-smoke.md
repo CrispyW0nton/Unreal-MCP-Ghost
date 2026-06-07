@@ -9,14 +9,16 @@ Run from the repository root:
 
 ```powershell
 python scripts\tool_inventory.py --markdown
+python scripts\lint_tool_docstrings.py
 python scripts\profile_mcp_startup.py --iterations 3 --markdown-out knowledge_base\Reports\mcp_startup_profile.md --json-out knowledge_base\Reports\mcp_startup_profile.json
 python scripts\bridge_command_audit.py
-python -m unittest unreal_mcp_server.tests.test_tool_count unreal_mcp_server.tests.test_phase7_profile unreal_mcp_server.tests.test_phase7_bridge_command_audit
+python -m unittest unreal_mcp_server.tests.test_tool_count unreal_mcp_server.tests.test_tool_docstrings unreal_mcp_server.tests.test_phase7_profile unreal_mcp_server.tests.test_phase7_bridge_command_audit
 ```
 
 Expected results:
 
 - `tool_inventory.py` exits with code `0`, scans Git-tracked tool files by default, and reports no uncategorized modules.
+- `lint_tool_docstrings.py` exits with code `0` and verifies every Git-tracked FastMCP tool docstring has a `KB: see knowledge_base/...#anchor` line plus an `Example:` section.
 - `profile_mcp_startup.py` exits with code `0`, prints a Markdown timing table, and writes optional JSON/Markdown artifacts when output paths are provided.
 - `bridge_command_audit.py` prints the Python/C++ bridge command metadata summary; `Python missing C++ routes` should remain `0`, and the C++-only route review should keep every unwrapped C++ command classified.
 - The unittest command passes without requiring Unreal Editor or the TCP bridge.

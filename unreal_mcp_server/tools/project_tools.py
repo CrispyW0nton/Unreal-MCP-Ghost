@@ -60,15 +60,17 @@ def register_project_tools(mcp: FastMCP):
         key: str,
         input_type: str = "Action"
     ) -> Dict[str, Any]:
-        """
-        Create an input mapping in the project settings (legacy input system).
+        """Create an input mapping in the project settings (legacy input system).
 
         Args:
             action_name: Name of the input action (e.g., "Jump", "Fire", "MoveForward")
             key: Key binding (SpaceBar, LeftMouseButton, W, A, S, D,
                  Gamepad_FaceButton_Bottom, etc.)
             input_type: "Action" (button press) or "Axis" (analog/continuous)
-        """
+
+        KB: see knowledge_base/15_INPUT_SYSTEM_AND_UMG.md#overview
+        Example:
+            create_input_mapping(action_name="ExampleName", key="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -89,14 +91,16 @@ def register_project_tools(mcp: FastMCP):
         value_type: str = "Digital",
         path: str = "/Game/Input"
     ) -> Dict[str, Any]:
-        """
-        Create an Enhanced Input Action asset (UE5 modern input system).
+        """Create an Enhanced Input Action asset (UE5 modern input system).
 
         Args:
             action_name: Name of the input action asset
             value_type: "Digital" (bool), "Axis1D" (float), "Axis2D" (Vector2D), "Axis3D"
             path: Content browser path
-        """
+
+        KB: see knowledge_base/15_INPUT_SYSTEM_AND_UMG.md#overview
+        Example:
+            create_enhanced_input_action(action_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -117,8 +121,7 @@ def register_project_tools(mcp: FastMCP):
         mappings: List[Dict[str, str]] = None,
         path: str = "/Game/Input"
     ) -> Dict[str, Any]:
-        """
-        Create an Input Mapping Context for Enhanced Input system.
+        """Create an Input Mapping Context for Enhanced Input system.
 
         Args:
             context_name: Name of the IMC asset
@@ -128,7 +131,10 @@ def register_project_tools(mcp: FastMCP):
         Example mappings:
             [{"action": "IA_Jump", "key": "SpaceBar"},
              {"action": "IA_Move", "key": "W"}]
-        """
+
+        KB: see knowledge_base/15_INPUT_SYSTEM_AND_UMG.md#overview
+        Example:
+            create_input_mapping_context(context_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -144,20 +150,20 @@ def register_project_tools(mcp: FastMCP):
 
     @mcp.tool()
     def add_input_mapping(imc_name: str, action_name: str, key: str) -> dict:
-        """
-        Add an input mapping to an existing Input Mapping Context (IMC).
-        
+        """Add an input mapping to an existing Input Mapping Context (IMC).
+
         Args:
             imc_name: Name of the Input Mapping Context (e.g., "IMC_Default")
             action_name: Name of the Input Action (e.g., "IA_Jump", "IA_WormholeTP")
             key: Key name to bind (e.g., "SpaceBar", "V", "T", "LeftMouseButton")
-        
+
         Returns:
             dict with success status, imc_name, action_name, key, and mapping_index
-        
+
         Example:
-            add_input_mapping("IMC_Default", "IA_WormholeTP", "V")
-        """
+            add_input_mapping(imc_name="ExampleName", action_name="ExampleName", key="ExampleName")
+
+        KB: see knowledge_base/15_INPUT_SYSTEM_AND_UMG.md#overview"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -176,7 +182,11 @@ def register_project_tools(mcp: FastMCP):
         ctx: Context,
         imc_path_or_name: str,
     ) -> Dict[str, Any]:
-        """Inspect an Enhanced Input Mapping Context and return action/key mappings."""
+        """Inspect an Enhanced Input Mapping Context and return action/key mappings.
+
+        KB: see knowledge_base/15_INPUT_SYSTEM_AND_UMG.md#overview
+        Example:
+            inspect_input_mapping_context(imc_path_or_name="/Game/MCP_Test/Example")"""
         try:
             return _send_unreal_command("inspect_input_mapping_context", {
                 "imc_path_or_name": imc_path_or_name,
@@ -190,7 +200,11 @@ def register_project_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_path_or_name: str,
     ) -> Dict[str, Any]:
-        """Verify that a Blueprint asset has a valid generated class and report parent/native class data."""
+        """Verify that a Blueprint asset has a valid generated class and report parent/native class data.
+
+        KB: see knowledge_base/15_INPUT_SYSTEM_AND_UMG.md#overview
+        Example:
+            check_blueprint_generated_class(blueprint_path_or_name="/Game/MCP_Test/BP_Example")"""
         try:
             return _send_unreal_command("check_blueprint_generated_class", {
                 "blueprint_path_or_name": blueprint_path_or_name,

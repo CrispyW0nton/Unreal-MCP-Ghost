@@ -325,11 +325,11 @@ class TestRepairSkillHelpers(unittest.TestCase):
 class TestPhase4ToolCount(unittest.TestCase):
     """E3: Verify Phase 4 tool and module counts meet minimum targets."""
 
-    def test_diagnostics_tools_registers_10_tools(self):
+    def test_diagnostics_tools_registers_14_tools(self):
         from tools.diagnostics_tools import register_diagnostics_tools
         tools = _make_tool_registry(register_diagnostics_tools)
-        self.assertEqual(len(tools), 10,
-            f"Expected 10 diagnostic tools, got {len(tools)}: {list(tools)}")
+        self.assertEqual(len(tools), 14,
+            f"Expected 14 diagnostic tools, got {len(tools)}: {list(tools)}")
 
     def test_repair_tools_registers_3_tools(self):
         from tools.repair_tools import register_repair_tools
@@ -349,6 +349,10 @@ class TestPhase4ToolCount(unittest.TestCase):
         from tools.diagnostics_tools import register_diagnostics_tools
         tools = _make_tool_registry(register_diagnostics_tools)
         expected = {
+            "compile_blueprint_and_report",
+            "compile_material_and_report",
+            "validate_import_result",
+            "get_changed_assets_since",
             "bp_get_compile_diagnostics",
             "bp_validate_blueprint",
             "bp_validate_graph",

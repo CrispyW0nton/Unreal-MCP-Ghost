@@ -129,7 +129,11 @@ BLACKHOLE_INFLOW_SPEC: Dict[str, Any] = {
 def register_niagara_tools(mcp: FastMCP):
     @mcp.tool()
     async def niagara_validate_authoring_support(ctx: Context) -> Dict[str, Any]:
-        """Probe available Niagara Python/editor APIs before native authoring work."""
+        """Probe available Niagara Python/editor APIs before native authoring work.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_validate_authoring_support()"""
         t0 = time.monotonic()
         code = """
 import unreal, json, traceback
@@ -214,7 +218,11 @@ print(json.dumps(out))
         limit: int = 50,
         page: int = 1,
     ) -> Dict[str, Any]:
-        """Find Niagara System and Emitter assets through the Asset Registry."""
+        """Find Niagara System and Emitter assets through the Asset Registry.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_find_systems()"""
         t0 = time.monotonic()
         code = f"""
 import unreal, json
@@ -257,7 +265,11 @@ print(json.dumps({{
         overwrite: bool = False,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Create an empty Niagara System asset when the UE editor factory is available."""
+        """Create an empty Niagara System asset when the UE editor factory is available.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_create_system(system_name="ExampleName")"""
         t0 = time.monotonic()
         safe_folder = folder_path.rstrip("/") or "/Game/VFX"
         package_path = f"{safe_folder}/{system_name}"
@@ -353,7 +365,11 @@ print(json.dumps(out))
         add_default_modules: bool = False,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Add a native empty emitter handle to a Niagara System asset."""
+        """Add a native empty emitter handle to a Niagara System asset.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_add_empty_emitter(system_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         native = _send(
             "niagara_add_empty_emitter",
@@ -392,7 +408,11 @@ print(json.dumps(out))
         value: Any = 0.0,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Add or update a Niagara System exposed user parameter."""
+        """Add or update a Niagara System exposed user parameter.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_set_system_user_parameter(system_path="/Game/MCP_Test/Example", parameter_name="ExampleName")"""
         t0 = time.monotonic()
         native = _send(
             "niagara_set_system_user_parameter",
@@ -432,7 +452,11 @@ print(json.dumps(out))
         emitter_id: str = "",
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Add or update an emitter SpawnRate module and set its particles-per-second value."""
+        """Add or update an emitter SpawnRate module and set its particles-per-second value.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_set_spawn_rate(system_path="/Game/MCP_Test/Example", spawn_rate=0.0)"""
         t0 = time.monotonic()
         native = _send(
             "niagara_set_spawn_rate",
@@ -472,7 +496,11 @@ print(json.dumps(out))
         material_path: str = "",
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Add a Sprite Renderer to an existing Niagara emitter handle."""
+        """Add a Sprite Renderer to an existing Niagara emitter handle.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_add_sprite_renderer(system_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         native = _send(
             "niagara_add_sprite_renderer",
@@ -513,7 +541,11 @@ print(json.dumps(out))
         material_path: str = "",
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Add a Mesh Renderer to an existing Niagara emitter handle."""
+        """Add a Mesh Renderer to an existing Niagara emitter handle.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_add_mesh_renderer(system_path="/Game/MCP_Test/Example", static_mesh_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         native = _send(
             "niagara_add_mesh_renderer",
@@ -547,7 +579,11 @@ print(json.dumps(out))
 
     @mcp.tool()
     async def niagara_describe_system(ctx: Context, system_path: str) -> Dict[str, Any]:
-        """Describe a Niagara System asset and report what Python can safely inspect."""
+        """Describe a Niagara System asset and report what Python can safely inspect.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_describe_system(system_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         native = _send("niagara_describe_system", {"system_path": system_path})
         if native.get("status") == "success":
@@ -607,7 +643,11 @@ print(json.dumps(out))
         fixed_bounds_max: List[float] = [500.0, 500.0, 500.0],
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Apply safe Niagara System-level settings such as warmup and fixed bounds."""
+        """Apply safe Niagara System-level settings such as warmup and fixed bounds.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_apply_system_settings(system_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         object_path = _asset_object_path(system_path)
         code = f"""
@@ -663,7 +703,11 @@ print(json.dumps(out))
         fixed_bounds_max: List[float] = [500.0, 500.0, 500.0],
         save: bool = True,
     ) -> Dict[str, Any]:
-        """Set Niagara System fixed bounds without changing unrelated system settings."""
+        """Set Niagara System fixed bounds without changing unrelated system settings.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_set_fixed_bounds(system_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         object_path = _asset_object_path(system_path)
         code = f"""
@@ -710,7 +754,11 @@ print(json.dumps(out))
 
     @mcp.tool()
     async def niagara_profile_system(ctx: Context, system_path: str) -> Dict[str, Any]:
-        """Return lightweight asset-level Niagara profiling data and authoring hints."""
+        """Return lightweight asset-level Niagara profiling data and authoring hints.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_profile_system(system_path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
         object_path = _asset_object_path(system_path)
         code = f"""
@@ -770,7 +818,11 @@ print(json.dumps(out))
 
     @mcp.tool()
     async def niagara_get_effect_recipe(ctx: Context, recipe_name: str = "blackhole_orb_inflow") -> Dict[str, Any]:
-        """Return an original Niagara module-stack recipe for a named effect."""
+        """Return an original Niagara module-stack recipe for a named effect.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#overview
+        Example:
+            niagara_get_effect_recipe()"""
         t0 = time.monotonic()
         if recipe_name != "blackhole_orb_inflow":
             return _result(

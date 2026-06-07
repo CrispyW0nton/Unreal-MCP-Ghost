@@ -18,6 +18,7 @@ private:
     // Specific blueprint command handlers
     TSharedPtr<FJsonObject> HandleCreateBlueprint(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddComponentToBlueprint(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCopyComponent(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetComponentProperty(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetPhysicsProperties(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleCompileBlueprint(const TSharedPtr<FJsonObject>& Params);
@@ -34,8 +35,8 @@ private:
     TSharedPtr<FJsonObject> HandleSetBlueprintAIController(const TSharedPtr<FJsonObject>& Params);
 
     // Helper functions
-    TSharedPtr<FJsonObject> AddComponentToBlueprint(const FString& BlueprintName, const FString& ComponentType, 
+    TSharedPtr<FJsonObject> AddComponentToBlueprint(const FString& BlueprintName, const FString& ComponentType,
                                                    const FString& ComponentName, const FString& MeshType,
                                                    const TArray<float>& Location, const TArray<float>& Rotation,
                                                    const TArray<float>& Scale, const TSharedPtr<FJsonObject>& ComponentProperties);
-}; 
+};

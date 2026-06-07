@@ -22,6 +22,30 @@ def _retired_umg_route(tool_name: str, replacement: str) -> Dict[str, Any]:
 
 
 def register_umg_tools(mcp: FastMCP):
+    def _structured_umg_result(
+        raw: Dict[str, Any],
+        *,
+        stage: str,
+        message: str,
+        inputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw = raw or {}
+        error_message = raw.get("error") or raw.get("message") or ""
+        success = raw.get("success") is not False and raw.get("status") != "error" and not raw.get("error")
+        return {
+            "success": success,
+            "stage": stage,
+            "message": message if success else (error_message or f"{stage} failed"),
+            "inputs": inputs,
+            "outputs": {
+                key: value
+                for key, value in raw.items()
+                if key not in {"success", "status", "message", "error"}
+            } if success else {},
+            "warnings": [],
+            "errors": [] if success else [error_message or f"{stage} failed"],
+            "log_tail": [],
+        }
 
     @mcp.tool()
     def create_umg_widget_blueprint(
@@ -30,14 +54,16 @@ def register_umg_tools(mcp: FastMCP):
         parent_class: str = "UserWidget",
         path: str = "/Game/UI"
     ) -> Dict[str, Any]:
-        """
-        Create a new UMG Widget Blueprint.
+        """Create a new UMG Widget Blueprint.
 
         Args:
             widget_name: Widget asset name (e.g., "WBP_HUD", "WBP_MainMenu")
             parent_class: Parent class (default: "UserWidget")
             path: Content browser path (default: "/Game/UI")
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            create_umg_widget_blueprint(widget_name="/Game/MCP_Test/WBP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -62,8 +88,7 @@ def register_umg_tools(mcp: FastMCP):
         font_size: int = 12,
         color: List[float] = [1.0, 1.0, 1.0, 1.0]
     ) -> Dict[str, Any]:
-        """
-        Add a Text Block to a Widget Blueprint.
+        """Add a Text Block to a Widget Blueprint.
 
         Args:
             widget_name: Widget Blueprint name
@@ -73,7 +98,10 @@ def register_umg_tools(mcp: FastMCP):
             size: [Width, Height]
             font_size: Font size in points
             color: [R, G, B, A] (0.0-1.0)
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_text_block_to_widget(widget_name="/Game/MCP_Test/WBP_Example", text_block_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -103,8 +131,7 @@ def register_umg_tools(mcp: FastMCP):
         color: List[float] = [1.0, 1.0, 1.0, 1.0],
         background_color: List[float] = [0.1, 0.1, 0.1, 1.0]
     ) -> Dict[str, Any]:
-        """
-        Add a Button to a Widget Blueprint.
+        """Add a Button to a Widget Blueprint.
 
         Args:
             widget_name: Widget Blueprint name
@@ -115,7 +142,10 @@ def register_umg_tools(mcp: FastMCP):
             font_size: Font size
             color: [R,G,B,A] text color
             background_color: [R,G,B,A] button background color
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_button_to_widget(widget_name="/Game/MCP_Test/WBP_Example", button_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -135,6 +165,74 @@ def register_umg_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def umg_add_widget_binding(
+        ctx: Context,
+        widget: str,
+        property_path: str,
+        binding_target: str,
+        binding_kind: str = "function",
+    ) -> Dict[str, Any]:
+        """Add or replace a Widget Blueprint property binding.
+
+        property_path uses '<WidgetName>.<PropertyName>' such as
+        'HealthText.Text' or 'HealthBar.Percent'. binding_target is the
+        Blueprint function or property name that should drive the binding.
+
+        Args:
+            widget: Widget Blueprint asset name or path.
+            property_path: Widget tree property path, '<WidgetName>.<PropertyName>'.
+            binding_target: Blueprint function/property that supplies the value.
+            binding_kind: 'function' or 'property'. Default 'function'.
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            umg_add_widget_binding(widget="/Game/MCP_Test/WBP_Example", property_path="HealthText.Text", binding_target="GetHealthText")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs = {
+            "widget": widget,
+            "property_path": property_path,
+            "binding_target": binding_target,
+            "binding_kind": binding_kind,
+        }
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "umg_add_widget_binding",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("umg_add_widget_binding", {
+                "widget_blueprint_path": widget,
+                "property_path": property_path,
+                "binding_target": binding_target,
+                "binding_kind": binding_kind,
+            }) or {}
+            return _structured_umg_result(
+                raw,
+                stage="umg_add_widget_binding",
+                message=f"Bound '{property_path}' on '{widget}' to '{binding_target}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "umg_add_widget_binding",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
+    @mcp.tool()
     def bind_widget_event(
         ctx: Context,
         widget_name: str,
@@ -142,8 +240,7 @@ def register_umg_tools(mcp: FastMCP):
         event_name: str,
         function_name: str = ""
     ) -> Dict[str, Any]:
-        """
-        Bind a widget event (e.g., OnClicked) to a function.
+        """Bind a widget event (e.g., OnClicked) to a function.
 
         Args:
             widget_name: Widget Blueprint name
@@ -151,7 +248,10 @@ def register_umg_tools(mcp: FastMCP):
             event_name: Event to bind ("OnClicked", "OnHovered", "OnUnhovered",
                         "OnPressed", "OnReleased")
             function_name: Target function name (auto-generated if empty)
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            bind_widget_event(widget_name="/Game/MCP_Test/WBP_Example", widget_component_name="/Game/MCP_Test/WBP_Example", event_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -174,13 +274,15 @@ def register_umg_tools(mcp: FastMCP):
         widget_name: str,
         z_order: int = 0
     ) -> Dict[str, Any]:
-        """
-        Instantiate a Widget Blueprint and add it to the game viewport.
+        """Instantiate a Widget Blueprint and add it to the game viewport.
 
         Args:
             widget_name: Widget Blueprint name
             z_order: Rendering order (higher = on top)
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_widget_to_viewport(widget_name="/Game/MCP_Test/WBP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -201,15 +303,17 @@ def register_umg_tools(mcp: FastMCP):
         binding_property: str,
         binding_type: str = "Text"
     ) -> Dict[str, Any]:
-        """
-        Set up a dynamic property binding on a Text Block widget.
+        """Set up a dynamic property binding on a Text Block widget.
 
         Args:
             widget_name: Widget Blueprint name
             text_block_name: Text Block component name
             binding_property: Blueprint variable to bind to
             binding_type: "Text", "Visibility", "ColorAndOpacity"
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            set_text_block_binding(widget_name="/Game/MCP_Test/WBP_Example", text_block_name="ExampleName", binding_property="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -235,8 +339,7 @@ def register_umg_tools(mcp: FastMCP):
         background_color: List[float] = [0.2, 0.2, 0.2, 1.0],
         percent: float = 1.0
     ) -> Dict[str, Any]:
-        """
-        Add a Progress Bar widget (useful for health/ammo bars).
+        """Add a Progress Bar widget (useful for health/ammo bars).
 
         Args:
             widget_name: Widget Blueprint name
@@ -246,7 +349,10 @@ def register_umg_tools(mcp: FastMCP):
             fill_color: [R,G,B,A] fill color
             background_color: [R,G,B,A] background
             percent: Initial fill (0.0-1.0)
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_progress_bar_to_widget(widget_name="/Game/MCP_Test/WBP_Example", progress_bar_name="ExampleName")"""
         return _retired_umg_route(
             "add_progress_bar_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -262,8 +368,7 @@ def register_umg_tools(mcp: FastMCP):
         size: List[float] = [100.0, 100.0],
         color: List[float] = [1.0, 1.0, 1.0, 1.0]
     ) -> Dict[str, Any]:
-        """
-        Add an Image widget to a Widget Blueprint.
+        """Add an Image widget to a Widget Blueprint.
 
         Args:
             widget_name: Widget Blueprint name
@@ -272,7 +377,10 @@ def register_umg_tools(mcp: FastMCP):
             position: [X, Y] position
             size: [Width, Height]
             color: [R,G,B,A] tint color
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_image_to_widget(widget_name="/Game/MCP_Test/WBP_Example", image_name="ExampleName")"""
         return _retired_umg_route(
             "add_image_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -290,8 +398,7 @@ def register_umg_tools(mcp: FastMCP):
         anchor_preset: str = "TopCenter",
         size_to_content: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Horizontal Box layout container to a Widget Blueprint.
+        """Add a Horizontal Box layout container to a Widget Blueprint.
 
         From Ch. 11 (Round Transition screen): Horizontal Box arranges child widgets
         horizontally (left to right). Used for side-by-side text + values.
@@ -301,9 +408,12 @@ def register_umg_tools(mcp: FastMCP):
             box_name: Component name for the Horizontal Box
             position: [X, Y] position
             size: [Width, Height]
-            anchor_preset: UMG anchor preset (\"TopLeft\", \"TopCenter\", \"Center\", etc.)
+            anchor_preset: UMG anchor preset ("TopLeft", "TopCenter", "Center", etc.)
             size_to_content: Auto-size to fit children
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_horizontal_box_to_widget(widget_name="/Game/MCP_Test/WBP_Example", box_name="ExampleName")"""
         return _retired_umg_route(
             "add_horizontal_box_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -319,8 +429,7 @@ def register_umg_tools(mcp: FastMCP):
         anchor_preset: str = "TopLeft",
         size_to_content: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Vertical Box layout container to a Widget Blueprint.
+        """Add a Vertical Box layout container to a Widget Blueprint.
 
         Vertical Box arranges child widgets vertically (top to bottom).
         Perfect for stacking buttons, labels, and stats in a menu.
@@ -332,7 +441,10 @@ def register_umg_tools(mcp: FastMCP):
             size: [Width, Height]
             anchor_preset: UMG anchor preset
             size_to_content: Auto-size to fit children
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_vertical_box_to_widget(widget_name="/Game/MCP_Test/WBP_Example", box_name="ExampleName")"""
         return _retired_umg_route(
             "add_vertical_box_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -344,8 +456,7 @@ def register_umg_tools(mcp: FastMCP):
         widget_name: str,
         panel_name: str = "CanvasPanel"
     ) -> Dict[str, Any]:
-        """
-        Add a Canvas Panel to a Widget Blueprint (free-placement layout).
+        """Add a Canvas Panel to a Widget Blueprint (free-placement layout).
 
         From Ch. 7: Canvas Panel allows absolute positioning of child widgets
         (drag and drop anywhere). It's the default root panel for most UMG widgets.
@@ -353,7 +464,10 @@ def register_umg_tools(mcp: FastMCP):
         Args:
             widget_name: Widget Blueprint name
             panel_name: Component name for the Canvas Panel
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_canvas_panel_to_widget(widget_name="/Game/MCP_Test/WBP_Example")"""
         return _retired_umg_route(
             "add_canvas_panel_to_widget",
             "Use create_umg_widget_blueprint for the default root canvas, or the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -371,8 +485,7 @@ def register_umg_tools(mcp: FastMCP):
         default_value: float = 0.5,
         step_size: float = 0.01
     ) -> Dict[str, Any]:
-        """
-        Add a Slider widget for adjustable values (audio volume, sensitivity, etc.).
+        """Add a Slider widget for adjustable values (audio volume, sensitivity, etc.).
 
         Args:
             widget_name: Widget Blueprint name
@@ -383,7 +496,10 @@ def register_umg_tools(mcp: FastMCP):
             max_value: Maximum slider value
             default_value: Initial slider value
             step_size: Increment step
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_slider_to_widget(widget_name="/Game/MCP_Test/WBP_Example", slider_name="ExampleName")"""
         return _retired_umg_route(
             "add_slider_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -398,8 +514,7 @@ def register_umg_tools(mcp: FastMCP):
         position: List[float] = [0.0, 0.0],
         is_checked: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Checkbox widget for boolean toggles in menus.
+        """Add a Checkbox widget for boolean toggles in menus.
 
         Args:
             widget_name: Widget Blueprint name
@@ -407,7 +522,10 @@ def register_umg_tools(mcp: FastMCP):
             label_text: Optional label text next to the checkbox
             position: [X, Y] position
             is_checked: Initial checked state
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_checkbox_to_widget(widget_name="/Game/MCP_Test/WBP_Example", checkbox_name="ExampleName")"""
         return _retired_umg_route(
             "add_checkbox_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -421,8 +539,7 @@ def register_umg_tools(mcp: FastMCP):
         position: List[float] = [0.0, 0.0],
         size: List[float] = [200.0, 200.0]
     ) -> Dict[str, Any]:
-        """
-        Add a Named Slot placeholder to a Widget Blueprint.
+        """Add a Named Slot placeholder to a Widget Blueprint.
 
         Named Slots allow child widget content injection when the widget is
         used as a parent. Essential for reusable frame/container widgets.
@@ -432,7 +549,10 @@ def register_umg_tools(mcp: FastMCP):
             slot_name: Named slot identifier
             position: [X, Y] position
             size: [Width, Height]
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_named_slot_to_widget(widget_name="/Game/MCP_Test/WBP_Example", slot_name="ExampleName")"""
         return _retired_umg_route(
             "add_named_slot_to_widget",
             "Use create_umg_widget_blueprint plus the generic widget tree tools once widget_add_child is part of the committed plugin route set.",
@@ -450,8 +570,7 @@ def register_umg_tools(mcp: FastMCP):
         round_display: bool = False,
         folder_path: str = "/Game/UI"
     ) -> Dict[str, Any]:
-        """
-        Create a complete HUD Widget Blueprint from Ch. 7.
+        """Create a complete HUD Widget Blueprint from Ch. 7.
 
         Builds a full first-person HUD with health bar, stamina bar, ammo counter,
         and targets-eliminated counter. Each element uses bindings to display
@@ -471,7 +590,10 @@ def register_umg_tools(mcp: FastMCP):
             target_goal_display: Include a target goal counter
             round_display: Include a round number display
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            create_hud_widget()"""
         return _retired_umg_route(
             "create_hud_widget",
             "Use create_umg_widget_blueprint with add_text_block_to_widget and add_button_to_widget, then add progress/image controls after a committed widget tree route lands.",
@@ -488,21 +610,23 @@ def register_umg_tools(mcp: FastMCP):
         show_round_info: bool = False,
         folder_path: str = "/Game/UI"
     ) -> Dict[str, Any]:
-        """
-        Create a Win/Victory screen Widget Blueprint as described in Ch. 8.
+        """Create a Win/Victory screen Widget Blueprint as described in Ch. 8.
 
         Creates a UMG Widget with a centered win message and buttons.
-        From the book: \"You Win!\" message, Restart and Quit buttons.
+        From the book: "You Win!" message, Restart and Quit buttons.
 
         Args:
             widget_name: Widget Blueprint name
-            title_text: Main message (e.g., \"You Win!\", \"Victory!\")
+            title_text: Main message (e.g., "You Win!", "Victory!")
             title_color: RGBA color for the title text
             show_restart_button: Include a Restart (reload level) button
             show_quit_button: Include a Quit Game button
             show_round_info: Include current round number display
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            create_win_menu_widget()"""
         return _retired_umg_route(
             "create_win_menu_widget",
             "Use create_umg_widget_blueprint, add_text_block_to_widget, and add_button_to_widget to build the screen with currently routed commands.",
@@ -519,21 +643,23 @@ def register_umg_tools(mcp: FastMCP):
         duration: float = 0.5,
         loop: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a UMG Widget Animation to animate widget properties over time.
+        """Add a UMG Widget Animation to animate widget properties over time.
 
         Widget Animations allow smooth fades, slides, and scale effects in UI.
         Use PlayAnimation / StopAnimation nodes in Blueprint to trigger them.
 
         Args:
             widget_name: Widget Blueprint name
-            animation_name: Name for the animation (e.g., \"FadeIn\", \"SlideOut\")
-            animated_property: Property to animate (\"Opacity\", \"Scale\", \"Position\")
+            animation_name: Name for the animation (e.g., "FadeIn", "SlideOut")
+            animated_property: Property to animate ("Opacity", "Scale", "Position")
             start_value: Starting value
             end_value: Ending value
             duration: Animation duration in seconds
             loop: Whether the animation loops
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_widget_animation(widget_name="/Game/MCP_Test/WBP_Example", animation_name="ExampleName")"""
         return _retired_umg_route(
             "add_widget_animation",
             "Use exec_python for a project-specific UMG animation script until a native animation route is added.",
@@ -546,17 +672,19 @@ def register_umg_tools(mcp: FastMCP):
         widget_variable: str = "",
         node_position: List[float] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a RemoveFromParent node to hide/remove a widget from the viewport.
+        """Add a RemoveFromParent node to hide/remove a widget from the viewport.
 
         From Ch. 8 and Ch. 11: Used to close menus. When a player clicks
-        \"Resume\" on the pause menu, RemoveFromParent removes the widget.
+        "Resume" on the pause menu, RemoveFromParent removes the widget.
 
         Args:
             blueprint_name: Blueprint to add the node to
             widget_variable: Variable holding the widget reference (empty = self)
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_remove_from_parent_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -581,8 +709,7 @@ def register_umg_tools(mcp: FastMCP):
         store_in_variable: str = "",
         node_position: List[float] = [300, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a CreateWidget node to instantiate a Widget Blueprint at runtime.
+        """Add a CreateWidget node to instantiate a Widget Blueprint at runtime.
 
         From Ch. 7 (Displaying HUD), Ch. 8 (Win menu), Ch. 11 (Lose/Pause menus):
         Creates a widget instance and optionally adds it to the viewport.
@@ -593,7 +720,10 @@ def register_umg_tools(mcp: FastMCP):
             owning_player_variable: PlayerController variable (empty = Get Player Controller)
             store_in_variable: Variable to store the widget reference (for later use)
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#overview
+        Example:
+            add_create_widget_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()

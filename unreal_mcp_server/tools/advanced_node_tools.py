@@ -32,8 +32,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Branch (if/else) node to a Blueprint.
+        """Add a Branch (if/else) node to a Blueprint.
 
         The Branch node takes a boolean condition and routes execution
         to either the 'True' or 'False' output pin.
@@ -44,7 +43,10 @@ def register_advanced_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'; pins: 'Condition' input, 'True'/'False' outputs
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_branch_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_branch_node", {
@@ -59,8 +61,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         num_outputs: int = 3,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Sequence node that executes outputs in order.
+        """Add a Sequence node that executes outputs in order.
 
         Sequence nodes execute 'Then 0', 'Then 1', 'Then 2', etc. in sequence.
         Useful for organizing multiple sequential actions.
@@ -69,7 +70,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             num_outputs: Number of output execution pins (2-10)
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_sequence_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_sequence_node", {
@@ -84,8 +88,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Flip Flop node that alternates between A and B outputs.
+        """Add a Flip Flop node that alternates between A and B outputs.
 
         On the first call it executes 'A', on the second call 'B',
         then back to 'A', etc. Also provides 'IsA' boolean output.
@@ -93,7 +96,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_flipflop_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_flipflop_node", {
@@ -107,8 +113,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Do Once node that executes exactly one time.
+        """Add a Do Once node that executes exactly one time.
 
         After the first execution, subsequent calls are ignored
         until the 'Reset' input is triggered.
@@ -116,7 +121,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_do_once_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_do_once_node", {
@@ -131,8 +139,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         n: int = 3,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Do N node that executes a specified number of times.
+        """Add a Do N node that executes a specified number of times.
 
         After N executions, subsequent calls are blocked until Reset.
 
@@ -140,7 +147,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             n: Maximum number of executions (default: 3)
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_do_n_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_do_n_node", {
@@ -156,17 +166,19 @@ def register_advanced_node_tools(mcp: FastMCP):
         start_closed: bool = False,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Gate node that controls execution flow.
+        """Add a Gate node that controls execution flow.
 
-        When open, the 'Exit' pin fires on each 'Enter'. 
+        When open, the 'Exit' pin fires on each 'Enter'.
         Use 'Open', 'Close', and 'Toggle' inputs to control state.
 
         Args:
             blueprint_name: Blueprint name
             start_closed: Whether the gate starts closed
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_gate_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_gate_node", {
@@ -181,15 +193,17 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a While Loop node.
+        """Add a While Loop node.
 
         Executes 'Loop Body' while condition is true, then fires 'Completed'.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_while_loop_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_while_loop_node", {
@@ -206,8 +220,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         variable_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get [VariableName]' node to read a variable's value.
+        """Add a 'Get [VariableName]' node to read a variable's value.
 
         Args:
             blueprint_name: Blueprint name
@@ -216,7 +229,10 @@ def register_advanced_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'; output pin named same as variable
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_variable_node(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_variable_get_node", {
@@ -232,8 +248,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         variable_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set [VariableName]' node to write to a variable.
+        """Add a 'Set [VariableName]' node to write to a variable.
 
         Args:
             blueprint_name: Blueprint name
@@ -242,7 +257,10 @@ def register_advanced_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'; has exec pins + value input pin
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_set_variable_node(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_variable_set_node", {
@@ -262,8 +280,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         color: List[float] = [0.0, 0.66, 1.0],
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Print String node (shows debug message on screen).
+        """Add a Print String node (shows debug message on screen).
 
         Args:
             blueprint_name: Blueprint name
@@ -271,7 +288,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             duration: How long message stays on screen
             color: [R, G, B] text color
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_print_string_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -293,8 +313,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         duration: float = 1.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Delay node (latent - waits before continuing).
+        """Add a Delay node (latent - waits before continuing).
 
         Delay is a latent node - it allows the Blueprint to pause execution
         for a specified duration without blocking the game thread.
@@ -303,7 +322,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             duration: Delay in seconds
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_delay_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -323,8 +345,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         length: float = 1.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Timeline node for smooth interpolation animations.
+        """Add a Timeline node for smooth interpolation animations.
 
         Timelines play float/vector curves over time - great for
         doors opening, lights fading, etc.
@@ -339,7 +360,10 @@ def register_advanced_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'; pins: 'Play', 'Reverse', 'Stop', 'Update', 'Finished'
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_timeline_node(blueprint_name="/Game/MCP_Test/BP_Example", timeline_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_timeline_node", {
@@ -359,8 +383,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operation: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a math operation node.
+        """Add a math operation node.
 
         Args:
             blueprint_name: Blueprint name
@@ -376,7 +399,10 @@ def register_advanced_node_tools(mcp: FastMCP):
                        "Max_Float", "Min_Float", "Abs_Float",
                        "Sin", "Cos", "Sqrt", "Power"
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_math_node(blueprint_name="/Game/MCP_Test/BP_Example", operation="Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -394,8 +420,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         trace_type: str = "LineTraceSingleByChannel",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Line Trace node (raycast from point A to point B).
+        """Add a Line Trace node (raycast from point A to point B).
 
         Line traces check for physics collision along a line.
         Useful for hit detection, visibility checks, etc.
@@ -409,7 +434,10 @@ def register_advanced_node_tools(mcp: FastMCP):
                         "BoxTraceSingleByChannel" - box sweep
                         "MultiLineTraceSingleByChannel" - all hits
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_line_trace_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -427,14 +455,16 @@ def register_advanced_node_tools(mcp: FastMCP):
         macro_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a macro call node to a Blueprint.
+        """Add a macro call node to a Blueprint.
 
         Args:
             blueprint_name: Blueprint containing the macro
             macro_name: Name of the macro to call
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_macro_node(blueprint_name="/Game/MCP_Test/BP_Example", macro_name="ExampleName")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_macro_node", {
@@ -452,8 +482,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         size: List[float] = [400.0, 200.0],
         color: List[float] = [0.2, 0.2, 0.2, 0.5]
     ) -> Dict[str, Any]:
-        """
-        Add a comment box to a Blueprint graph (for documentation).
+        """Add a comment box to a Blueprint graph (for documentation).
 
         Args:
             blueprint_name: Blueprint name
@@ -461,7 +490,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             position: [X, Y] graph position
             size: [Width, Height] of the comment box
             color: [R, G, B, A] box color
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_comment_box(blueprint_name="/Game/MCP_Test/BP_Example", comment_text="Example")"""
         if position is None:
             position = [0, 0]
         return _send("add_comment_box", {
@@ -479,8 +511,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         object_class: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Construct Object from Class' node.
+        """Add a 'Construct Object from Class' node.
 
         Used to create UObject instances at runtime (non-Actor objects).
 
@@ -488,7 +519,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             object_class: Class to construct
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_construct_object_node(blueprint_name="/Game/MCP_Test/BP_Example", object_class="Actor")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -506,8 +540,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         actor_class: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Spawn Actor from Class' node (SpawnActor).
+        """Add a 'Spawn Actor from Class' node (SpawnActor).
 
         Creates a new actor in the world at runtime.
 
@@ -515,7 +548,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             actor_class: Actor class to spawn (e.g., "BP_Projectile")
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_spawn_actor_node(blueprint_name="/Game/MCP_Test/BP_Example", actor_class="Actor")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -532,13 +568,15 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Destroy Actor' node.
+        """Add a 'Destroy Actor' node.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_destroy_actor_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -556,14 +594,16 @@ def register_advanced_node_tools(mcp: FastMCP):
         player_index: int = 0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Player Character' node.
+        """Add a 'Get Player Character' node.
 
         Args:
             blueprint_name: Blueprint name
             player_index: Player index (usually 0)
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_player_character_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -581,14 +621,16 @@ def register_advanced_node_tools(mcp: FastMCP):
         player_index: int = 0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Player Controller' node.
+        """Add a 'Get Player Controller' node.
 
         Args:
             blueprint_name: Blueprint name
             player_index: Player index (usually 0)
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_player_controller_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -606,14 +648,16 @@ def register_advanced_node_tools(mcp: FastMCP):
         level_name: str = "",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Open Level (by Name)' node for level loading/switching.
+        """Add an 'Open Level (by Name)' node for level loading/switching.
 
         Args:
             blueprint_name: Blueprint name
             level_name: Default level to open (can be connected via pin)
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_open_level_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -630,13 +674,15 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Apply Damage' node.
+        """Add an 'Apply Damage' node.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_apply_damage_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -654,14 +700,16 @@ def register_advanced_node_tools(mcp: FastMCP):
         sound_asset: str = "",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Play Sound at Location' node.
+        """Add a 'Play Sound at Location' node.
 
         Args:
             blueprint_name: Blueprint name
             sound_asset: Sound asset path
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_play_sound_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -678,8 +726,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         graph_definition: Dict[str, Any]
     ) -> Dict[str, Any]:
-        """
-        Build an entire Blueprint graph from a definition dict.
+        """Build an entire Blueprint graph from a definition dict.
 
         This is a high-level helper that creates nodes and connects them
         based on a declarative definition.
@@ -700,7 +747,10 @@ def register_advanced_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with results for each node and connection
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            build_complete_blueprint_graph(blueprint_name="/Game/MCP_Test/BP_Example", graph_definition="EventGraph")"""
         results = {"nodes": {}, "connections": []}
         node_ids = {}  # local_id -> actual UE node_id
 
@@ -802,8 +852,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         num_options: int = 2,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Select node to choose a value based on an index.
+        """Add a Select node to choose a value based on an index.
 
         From Ch. 15: The Select node returns the value matching the index input.
         It's a cleaner alternative to chains of Branch nodes for multi-way selection.
@@ -816,11 +865,14 @@ def register_advanced_node_tools(mcp: FastMCP):
 
         Args:
             blueprint_name: Blueprint to add the node to
-            index_type: Type for the Index input (\"Integer\", \"Enum\", \"Boolean\", \"Byte\")
+            index_type: Type for the Index input ("Integer", "Enum", "Boolean", "Byte")
             option_type: Type for the Option inputs and Return Value
             num_options: Number of option pins to create
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_select_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_select_node", {
@@ -838,8 +890,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         use_self: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Teleport node to safely move an actor to a new location.
+        """Add a Teleport node to safely move an actor to a new location.
 
         From Ch. 15: The Teleport node moves an actor to a specified location,
         but unlike SetActorLocation, if there's an obstacle at the destination,
@@ -852,7 +903,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             use_self: If True, teleport self; if False, pass an Actor input
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_teleport_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -870,20 +924,22 @@ def register_advanced_node_tools(mcp: FastMCP):
         format_string: str = "{Name} wins with {Score} points",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Format Text node to build text from a template with parameters.
+        """Add a Format Text node to build text from a template with parameters.
 
         From Ch. 15: Format Text uses {ParameterName} delimiters in the format
         string to create input pins dynamically. Each {Name} becomes an input pin.
 
-        Example: format=\"{Name} wins the round with {Score} points\"
+        Example: format="{Name} wins the round with {Score} points"
         Creates input pins for Name and Score; output is the formatted text.
 
         Args:
             blueprint_name: Blueprint to add the node to
             format_string: Template with {parameter_name} placeholders
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_format_text_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_format_text_node", {
@@ -899,8 +955,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         expression: str = "(A + B) * C",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Math Expression node (collapsed graph from a math formula string).
+        """Add a Math Expression node (collapsed graph from a math formula string).
 
         From Ch. 15: The Math Expression node creates a collapsed graph based on
         a typed expression. Variable names in the expression become input pins,
@@ -913,7 +968,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             expression: Mathematical expression string (variables become input pins)
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_math_expression_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_math_expression_node", {
@@ -931,8 +989,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blend_exp: float = 0.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a SetViewTargetWithBlend node to switch cameras smoothly.
+        """Add a SetViewTargetWithBlend node to switch cameras smoothly.
 
         From Ch. 15: Used to switch the player's view between different cameras
         (e.g., entering a treasure room activates a security camera, or switching
@@ -942,11 +999,14 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint to add the node to (PlayerController)
             blend_time: Duration of the camera transition in seconds
-            blend_func: Blend function (\"VTBlend_Linear\", \"VTBlend_Cubic\",
-                       \"VTBlend_EaseIn\", \"VTBlend_EaseOut\", \"VTBlend_EaseInOut\")
+            blend_func: Blend function ("VTBlend_Linear", "VTBlend_Cubic",
+                       "VTBlend_EaseIn", "VTBlend_EaseOut", "VTBlend_EaseInOut")
             blend_exp: Exponent for cubic/ease blend functions
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_set_view_target_with_blend_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -971,16 +1031,15 @@ def register_advanced_node_tools(mcp: FastMCP):
         weld_simulated_bodies: bool = False,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an AttachActorToComponent node.
+        """Add an AttachActorToComponent node.
 
         From Ch. 15: Attaches an actor to a component at runtime. Used for
         dynamic attachment (e.g., weapon pickup, mounting to vehicles).
 
         Attachment rules:
-        - \"KeepRelative\": Maintain current relative transform
-        - \"KeepWorld\": Maintain current world transform (recalculate relative)
-        - \"SnapToTarget\": Reset to component's origin
+        - "KeepRelative": Maintain current relative transform
+        - "KeepWorld": Maintain current world transform (recalculate relative)
+        - "SnapToTarget": Reset to component's origin
 
         Args:
             blueprint_name: Blueprint to add the node to
@@ -989,7 +1048,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             scale_rule: Scale attachment rule
             weld_simulated_bodies: Weld physics bodies together
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_attach_actor_to_component_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1012,8 +1074,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         enable: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an Enable Input or Disable Input node to control actor input reception.
+        """Add an Enable Input or Disable Input node to control actor input reception.
 
         From Ch. 15: Enable Input allows an actor to receive player input events.
         Disable Input removes input handling. Requires passing a PlayerController reference.
@@ -1027,7 +1088,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             enable: True = EnableInput, False = DisableInput
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_enable_disable_input_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         func_name = "EnableInput" if enable else "DisableInput"
@@ -1048,27 +1112,29 @@ def register_advanced_node_tools(mcp: FastMCP):
         flush_input: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Set Input Mode node to control where player input goes.
+        """Add a Set Input Mode node to control where player input goes.
 
         From Ch. 15: Controls whether input goes to the game, UI, or both.
         Essential for pause menus and interactive UI screens.
 
         Input modes:
-        - \"GameOnly\": Input handled only by game (no UI interaction)
-        - \"UIOnly\": Input handled only by UI (game inputs blocked)
-        - \"GameAndUI\": Both game and UI handle input (most flexible)
+        - "GameOnly": Input handled only by game (no UI interaction)
+        - "UIOnly": Input handled only by UI (game inputs blocked)
+        - "GameAndUI": Both game and UI handle input (most flexible)
 
         Example from the book: Show Win/Pause menu -> SetInputModeUIOnly,
         Resume game -> SetInputModeGameOnly
 
         Args:
             blueprint_name: Blueprint to add the node to
-            input_mode: \"GameOnly\", \"UIOnly\", or \"GameAndUI\"
-            mouse_lock_mode: \"DoNotLock\", \"LockOnCapture\", \"LockAlways\", \"LockInFullscreen\"
+            input_mode: "GameOnly", "UIOnly", or "GameAndUI"
+            mouse_lock_mode: "DoNotLock", "LockOnCapture", "LockAlways", "LockInFullscreen"
             flush_input: Clear all pending input when mode changes
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_set_input_mode_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         func_map = {
@@ -1095,8 +1161,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         tolerance: float = 0.0001,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a NearlyEqual (float) node to compare floats with tolerance.
+        """Add a NearlyEqual (float) node to compare floats with tolerance.
 
         From Ch. 11: Used to check if PlayerHealth is approximately 0 (player dies).
         Float comparison with == can fail due to floating-point precision,
@@ -1106,7 +1171,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             tolerance: Maximum allowed difference for equality check
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_nearly_equal_float_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1124,8 +1192,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         duration: float = 2.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Print Text node (used in Ch. 18 with Format Text output).
+        """Add a Print Text node (used in Ch. 18 with Format Text output).
 
         Like Print String but works with Text type values (localizable text).
         Used with the Format Text node output in the dice roll library example.
@@ -1134,7 +1201,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             duration: Display duration on screen
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_print_text_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1153,18 +1223,20 @@ def register_advanced_node_tools(mcp: FastMCP):
         string_b: str = "",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an Append (string concatenation) node.
+        """Add an Append (string concatenation) node.
 
         From Ch. 18 (Actor Component test): Combines two strings into one.
-        Used to build \"Levelled up to \" + CurrentLevel display string.
+        Used to build "Levelled up to " + CurrentLevel display string.
 
         Args:
             blueprint_name: Blueprint to add the node to
             string_a: First string (A pin default value)
             string_b: Second string (B pin default value)
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_append_string_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1182,8 +1254,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         actor_class: str = "",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a SpawnActorFromClass node to instantiate an Actor at runtime.
+        """Add a SpawnActorFromClass node to instantiate an Actor at runtime.
 
         From Ch. 3 and Ch. 10: Core node for spawning Blueprints at runtime.
         Used to spawn enemies, projectiles, pickups, particles, effects.
@@ -1195,7 +1266,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             actor_class: Default Actor class to spawn (can be set via pin)
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_spawn_actor_from_class_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1212,8 +1286,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an IsValid macro node to check if an object reference is valid (non-null).
+        """Add an IsValid macro node to check if an object reference is valid (non-null).
 
         From Ch. 3, 4, 11, 13: Used before accessing object references to prevent
         crashes from accessing null/destroyed actors. Returns Is Valid and Is Not Valid
@@ -1222,7 +1295,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint to add the node to
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_is_valid_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1239,8 +1315,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an IsValidClass node to check if a class reference is valid.
+        """Add an IsValidClass node to check if a class reference is valid.
 
         From Ch. 13 (BP_RandomSpawner): Used to validate a Class Reference variable
         before passing it to SpawnActorFromClass. Returns True if the class is valid.
@@ -1248,7 +1323,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint to add the node to
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_is_valid_class_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1269,8 +1347,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operand_type: str = "Float",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an arithmetic operator node (Add, Subtract, Multiply, Divide, Modulo).
+        """Add an arithmetic operator node (Add, Subtract, Multiply, Divide, Modulo).
 
         Ch.2: Arithmetic operators create expressions in Blueprints:
         - Add (+): Sum two values
@@ -1284,7 +1361,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             operator: "Add", "Subtract", "Multiply", "Divide", "Modulo", "Power"
             operand_type: "Float", "Integer", "Vector", "Int64"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_arithmetic_operator_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         # Map operator + type to the actual KismetMathLibrary function name
@@ -1315,8 +1395,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operand_type: str = "Float",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a relational (comparison) operator node returning a Boolean.
+        """Add a relational (comparison) operator node returning a Boolean.
 
         Ch.2: Relational operators compare two values and return True/False:
         - Equal (==): Both values are the same
@@ -1331,7 +1410,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             operator: "Equal", "NotEqual", "Greater", "GreaterEqual", "Less", "LessEqual"
             operand_type: "Float", "Integer", "String", "Name", "Vector", "Object"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_relational_operator_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         _rel_map = {
@@ -1359,8 +1441,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operator: str = "AND",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a logical (boolean) operator node.
+        """Add a logical (boolean) operator node.
 
         Ch.2: Logical operators combine boolean conditions:
         - AND: True only if BOTH inputs are true
@@ -1372,7 +1453,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             operator: "AND", "OR", "NOT", "XOR"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_logical_operator_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_logical_operator_node", {
@@ -1389,8 +1473,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Construction Script event node to a Blueprint.
+        """Add a Construction Script event node to a Blueprint.
 
         Ch.3: The Construction Script runs both in-editor and at runtime before
         BeginPlay. Used for procedural setup based on exposed variables,
@@ -1399,7 +1482,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_construction_script_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_event_node", {
@@ -1415,8 +1501,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         actor_class: str = "Actor",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get All Actors Of Class' node.
+        """Add a 'Get All Actors Of Class' node.
 
         Ch.3: Returns an array of all actors of the specified class in the level.
         Used to find patrol points (TargetPoint actors) or iterate over enemies.
@@ -1426,7 +1511,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             actor_class: Class to search for (e.g., "TargetPoint", "BP_Enemy")
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_all_actors_of_class_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_get_all_actors_of_class_node", {
@@ -1442,8 +1530,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         actor_class: str = "Actor",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Of Class' node - returns the first actor found.
+        """Add a 'Get Actor Of Class' node - returns the first actor found.
 
         Ch.3/4: Finds the first actor of the specified class in the level.
         Useful for getting a reference to a unique actor like GameMode or PlayerController.
@@ -1452,7 +1539,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             actor_class: Class to search for
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_actor_of_class_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_get_actor_of_class_node", {
@@ -1467,8 +1557,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Game Mode' node.
+        """Add a 'Get Game Mode' node.
 
         Ch.3: Returns the current GameMode. Cast the result to your custom
         GameMode class (e.g., BP_FPSGameMode) to access its properties/functions.
@@ -1476,7 +1565,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_game_mode_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_get_game_mode_node", {
@@ -1490,8 +1582,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Game Instance' node.
+        """Add a 'Get Game Instance' node.
 
         Ch.3: Returns the Game Instance, which persists across level loads.
         Cast to your custom GameInstance class to access persistent data.
@@ -1499,7 +1590,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_game_instance_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_get_game_instance_node", {
@@ -1513,8 +1607,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Reroute node to organize wire routing in the graph.
+        """Add a Reroute node to organize wire routing in the graph.
 
         Ch.4: Reroute nodes are dot-shaped nodes used to bend wires and improve
         readability of complex Blueprint graphs without changing logic.
@@ -1522,7 +1615,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_reroute_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_reroute_node", {
@@ -1539,8 +1635,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         max_value: float = 1.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Clamp' node to constrain a value within a range.
+        """Add a 'Clamp' node to constrain a value within a range.
 
         Used throughout the book (Ch.6, 8): Clamps health, stamina, ammo values
         between min and max so they never exceed valid ranges.
@@ -1551,7 +1646,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             min_value: Minimum allowed value
             max_value: Maximum allowed value
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_clamp_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_clamp_node", {
@@ -1569,8 +1667,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operand_type: str = "Float",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Lerp' (Linear Interpolation) node.
+        """Add a 'Lerp' (Linear Interpolation) node.
 
         Ch.6: Used for smooth transitions like FOV zoom and stamina drain.
         Lerp(A, B, Alpha) = A + Alpha * (B - A). Alpha ranges 0.0-1.0.
@@ -1579,7 +1676,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             operand_type: "Float", "Vector", "Rotator", "LinearColor"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_lerp_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_lerp_node", {
@@ -1596,8 +1696,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         max_value: float = 1.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Random Float In Range' node.
+        """Add a 'Random Float In Range' node.
 
         Ch.13: Used in BP_RandomSpawner and procedural generation to get random values.
         Returns a random float between Min and Max (inclusive).
@@ -1607,7 +1706,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             min_value: Minimum float value
             max_value: Maximum float value
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_random_float_in_range_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_random_float_in_range_node", {
@@ -1625,8 +1727,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         max_value: int = 10,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Random Integer In Range' node.
+        """Add a 'Random Integer In Range' node.
 
         Ch.13, Ch.18: Used for dice roll library and random spawning.
         Returns a random integer between Min and Max (inclusive).
@@ -1636,7 +1737,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             min_value: Minimum integer value
             max_value: Maximum integer value
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_random_integer_in_range_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_random_integer_in_range_node", {
@@ -1653,8 +1757,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operand_type: str = "Float",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Abs' (Absolute Value) node.
+        """Add an 'Abs' (Absolute Value) node.
 
         Returns the absolute (always-positive) value of a number.
         Useful for computing distances and speeds without sign.
@@ -1663,7 +1766,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             operand_type: "Float" or "Integer"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_abs_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_abs_node", {
@@ -1680,8 +1786,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         operand_type: str = "Float",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Min' or 'Max' node returning the smaller/larger of two values.
+        """Add a 'Min' or 'Max' node returning the smaller/larger of two values.
 
         Used in health/stamina clamping and scoring systems throughout the book.
 
@@ -1690,7 +1795,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             operation: "Min" or "Max"
             operand_type: "Float" or "Integer"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_min_max_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_min_max_node", {
@@ -1709,8 +1817,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         looping: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Timer By Function Name' node for recurring callbacks.
+        """Add a 'Set Timer By Function Name' node for recurring callbacks.
 
         Ch.10: Used in enemy spawner to periodically call SpawnEnemy.
         Ch.8: Used for stamina regeneration over time.
@@ -1722,7 +1829,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             timer_rate: Time in seconds between calls
             looping: If True, repeats indefinitely
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_set_timer_by_function_name_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_set_timer_by_function_name_node", {
@@ -1739,15 +1849,17 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Clear Timer By Handle' or 'Clear and Invalidate Timer By Handle' node.
+        """Add a 'Clear Timer By Handle' or 'Clear and Invalidate Timer By Handle' node.
 
         Used to stop a running timer (e.g., stop stamina drain when sprinting ends).
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_clear_timer_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -1763,8 +1875,7 @@ def register_advanced_node_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get World Delta Seconds' node.
+        """Add a 'Get World Delta Seconds' node.
 
         Ch.5: Delta time is the time elapsed since the last frame.
         Used to make movement frame-rate independent: Speed = Distance * DeltaSeconds.
@@ -1773,7 +1884,10 @@ def register_advanced_node_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_get_delta_seconds_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_get_delta_seconds_node", {

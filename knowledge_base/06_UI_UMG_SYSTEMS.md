@@ -249,7 +249,7 @@ OnChoiceClicked(ChoiceIndex: int):
 
 ### Quest Tracker Pattern (WBP_QuestTracker)
 ```
-Contains: 
+Contains:
   QuestTitle: Text
   ObjectiveList: Scroll Box of Text entries
   CompletedCount: Text
@@ -304,3 +304,36 @@ Event ActorEndOverlap:
   PlayerControllerRef → Get HUDRef → Cast To WBP_HUD →
   Hide InteractPrompt
 ```
+
+---
+
+## 12. MCP B.1 Widget Binding Tool
+
+Use `umg_add_widget_binding` to add or replace a Widget Blueprint runtime
+binding for a widget property.
+
+```
+umg_add_widget_binding(
+  widget="/Game/UI/WBP_HUD",
+  property_path="HealthText.Text",
+  binding_target="GetHealthText"
+)
+```
+
+`property_path` must use:
+
+```
+<WidgetName>.<PropertyName>
+```
+
+Common examples:
+
+| property_path | binding_target |
+|---|---|
+| `HealthText.Text` | `GetHealthText` |
+| `HealthBar.Percent` | `GetHealthPercent` |
+| `ObjectiveText.Visibility` | `GetObjectiveVisibility` |
+
+Keep binding functions small and side-effect free. For high-frequency gameplay
+HUD updates, prefer event-driven variable updates when possible; use bindings
+for simple read-only display values.

@@ -160,7 +160,10 @@ def skill_package_vertical_slice_report(
     This skill is intentionally file/report oriented: it does not mutate Unreal
     assets. It takes evidence produced by lower-level Phase 6 tools and turns it
     into a compact artifact a solo developer can review, share, or archive.
-    """
+
+    KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+    Example:
+        skill_package_vertical_slice_report()"""
     artifacts = artifacts or []
     verification = verification or {}
     generated_at = _utc_now()
@@ -295,7 +298,10 @@ def skill_create_health_system(
       outputs.exec_python_steps  — list of steps that used exec_python fallback
       outputs.steps_completed    — list of completed steps
       outputs.steps_failed       — list of failed steps (empty on full success)
-    """
+
+    KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+    Example:
+        skill_create_health_system()"""
     steps_completed: List[str] = []
     steps_failed: List[str] = []
     warnings: List[str] = []
@@ -551,8 +557,8 @@ def skill_create_health_system(
         if health_get:
             nodes_added.append('Health_GET')
 
-        # Add: Subtract (Health - DamageAmount)  
-        subtract_node = lib.add_function_node(bp, graph, 
+        # Add: Subtract (Health - DamageAmount)
+        subtract_node = lib.add_function_node(bp, graph,
             unreal.load_class(None, '/Script/Engine.KismetMathLibrary'),
             'Subtract_FloatFloat', unreal.Vector2D(100, 100))
         if subtract_node:
@@ -789,7 +795,10 @@ def register_health_system_skill(mcp):
               outputs.exec_python_steps  — steps that used exec_python fallback
               outputs.steps_completed    — ordered list of completed steps
               outputs.steps_failed       — non-empty if any step failed
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            skill_create_health_system()"""
         result = _impl(
             blueprint_name=blueprint_name,
             blueprint_path=blueprint_path,
@@ -830,7 +839,10 @@ def register_health_system_skill(mcp):
 
         Returns:
             JSON StructuredResult with outputs.report_path and evidence counts.
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            skill_package_vertical_slice_report()"""
         result = _report_impl(
             title=title,
             summary=summary,

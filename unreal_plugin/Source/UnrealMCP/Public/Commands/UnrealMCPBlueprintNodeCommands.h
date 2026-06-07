@@ -3,6 +3,12 @@
 #include "CoreMinimal.h"
 #include "Json.h"
 
+class UBlueprint;
+class UEdGraph;
+class UEdGraphNode;
+class UEdGraphPin;
+class UFunction;
+
 /**
  * Handler class for Blueprint Node-related MCP commands.
  *
@@ -22,6 +28,7 @@
  *   set_node_pin_value                     - set a literal default value on an unconnected pin
  *   set_blueprint_variable_default         - write a variable default value (L-013)
  *   move_blueprint_node                    - reposition a node on the canvas (L-019)
+ *   rename_blueprint_comment_node          - set the visible title text on a comment box
  *
  * Node creation commands:
  *   add_blueprint_event_node               - add a K2Node_Event
@@ -37,6 +44,7 @@
  *   add_blueprint_branch_node              - add a K2Node_IfThenElse (Branch)
  *   add_blueprint_cast_node                - add a K2Node_DynamicCast
  *   add_blueprint_for_loop_node            - add a ForLoop macro node (L-012)
+ *   add_blueprint_for_loop_with_break_node - add a ForLoopWithBreak macro node (B.1)
  *   add_blueprint_for_each_loop_node       - add a ForEachLoop macro node (L-012)
  *   add_blueprint_sequence_node            - add a Sequence macro node (L-012)
  *   add_blueprint_do_once_node             - add a DoOnce macro node (L-012)
@@ -45,6 +53,7 @@
  *   add_blueprint_switch_on_int_node       - add a K2Node_SwitchInteger (L-012)
  *   add_blueprint_spawn_actor_node         - add a K2Node_SpawnActorFromClass (L-012)
  *   add_blueprint_comment_node             - add a comment box node (L-018)
+ *   create_comment_box                     - standards-friendly alias for comment boxes
  *   setup_navmesh                          - spawn/resize a NavMeshBoundsVolume (L-014)
  *   get_blueprint_variables                - list all member variables with type/default/category
  *   get_blueprint_functions                - list all function graphs with input/output pin info
@@ -64,15 +73,19 @@ private:
     TSharedPtr<FJsonObject> HandleFindBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetBlueprintGraphs(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetNodeById(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleBPInspectNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleBPGetGraphSummary(const TSharedPtr<FJsonObject>& Params);
 
     // ---------- graph editing ----------
     TSharedPtr<FJsonObject> HandleConnectBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleBPConnectPins(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleDisconnectBlueprintNodes(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleDeleteBlueprintNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetNodePinValue(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleReconstructBlueprintNode(const TSharedPtr<FJsonObject>& Params);
 
     // ---------- node creation ----------
+    TSharedPtr<FJsonObject> HandleBPAddNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintEvent(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintCustomEventNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetSpawnActorClass(const TSharedPtr<FJsonObject>& Params);
@@ -91,6 +104,7 @@ private:
 
     // ---------- Phase 2: structural nodes (L-012) ----------
     TSharedPtr<FJsonObject> HandleAddBlueprintForLoopNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleAddBlueprintForLoopWithBreakNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintForEachLoopNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintSequenceNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAddBlueprintDoOnceNode(const TSharedPtr<FJsonObject>& Params);
@@ -101,6 +115,7 @@ private:
 
     // ---------- Phase 2: comment + reposition (L-018, L-019) ----------
     TSharedPtr<FJsonObject> HandleAddBlueprintCommentNode(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleRenameBlueprintCommentNode(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleMoveBlueprintNode(const TSharedPtr<FJsonObject>& Params);
 
     // ---------- Phase 3: variable defaults (L-013) ----------

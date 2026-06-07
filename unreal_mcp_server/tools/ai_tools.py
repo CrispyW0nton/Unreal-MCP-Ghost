@@ -30,8 +30,7 @@ def register_ai_tools(mcp: FastMCP):
         name: str,
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Behavior Tree asset.
+        """Create a Behavior Tree asset.
 
         Behavior Trees define AI decision-making using a tree of Tasks,
         Composites (Sequence/Selector), Decorators, and Services.
@@ -39,7 +38,10 @@ def register_ai_tools(mcp: FastMCP):
         Args:
             name: Behavior Tree asset name (e.g., "BT_EnemyAI")
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_behavior_tree(name="ExampleName")"""
         return _send("create_behavior_tree", {
             "name": name,
             "path": path
@@ -52,8 +54,7 @@ def register_ai_tools(mcp: FastMCP):
         keys: List[Dict[str, str]] = None,
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Blackboard asset.
+        """Create a Blackboard asset.
 
         The Blackboard is the AI's shared memory - it stores data that
         the Behavior Tree reads and writes during execution.
@@ -69,7 +70,10 @@ def register_ai_tools(mcp: FastMCP):
 
         Key types: Object, Actor, Class, Enum, Float, Int, Bool (Boolean),
                    String, Name, Vector, Rotator
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_blackboard(name="ExampleName")"""
         return _send("create_blackboard", {
             "name": name,
             "keys": keys or [],
@@ -83,8 +87,7 @@ def register_ai_tools(mcp: FastMCP):
         behavior_tree: str = "",
         auto_run_bt: bool = True
     ) -> Dict[str, Any]:
-        """
-        Create an AIController Blueprint.
+        """Create an AIController Blueprint.
 
         The AIController possesses an AI Pawn and runs its Behavior Tree.
 
@@ -92,7 +95,10 @@ def register_ai_tools(mcp: FastMCP):
             name: Blueprint name (e.g., "BP_EnemyAIController")
             behavior_tree: Behavior Tree asset name to run automatically
             auto_run_bt: Automatically run the behavior tree on possession
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_ai_controller(name="ExampleName")"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "AIController"
@@ -123,8 +129,7 @@ def register_ai_tools(mcp: FastMCP):
         task_description: str = "",
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Behavior Tree Task Blueprint.
+        """Create a Behavior Tree Task Blueprint.
 
         BT Tasks are the leaf nodes of the Behavior Tree - they perform
         actual actions (move to location, attack, play animation, etc.).
@@ -134,7 +139,10 @@ def register_ai_tools(mcp: FastMCP):
             name: Task Blueprint name (e.g., "BTT_AttackPlayer")
             task_description: Description for the task node
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_bt_task(name="ExampleName")"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTTask_BlueprintBase"
@@ -157,8 +165,7 @@ def register_ai_tools(mcp: FastMCP):
         name: str,
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Behavior Tree Decorator Blueprint.
+        """Create a Behavior Tree Decorator Blueprint.
 
         Decorators are conditions attached to BT nodes - they control whether
         a branch can execute or abort. Override PerformConditionCheck.
@@ -166,7 +173,10 @@ def register_ai_tools(mcp: FastMCP):
         Args:
             name: Decorator Blueprint name (e.g., "BTD_CanSeePlayer")
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_bt_decorator(name="ExampleName")"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTDecorator_BlueprintBase"
@@ -181,8 +191,7 @@ def register_ai_tools(mcp: FastMCP):
         tick_interval: float = 0.5,
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Behavior Tree Service Blueprint.
+        """Create a Behavior Tree Service Blueprint.
 
         Services run on a tick while their parent node is active - used to
         update Blackboard values (perception, distance checks, etc.).
@@ -192,7 +201,10 @@ def register_ai_tools(mcp: FastMCP):
             name: Service Blueprint name (e.g., "BTS_UpdateTarget")
             tick_interval: How often the service ticks in seconds
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_bt_service(name="ExampleName")"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTService_BlueprintBase"
@@ -214,12 +226,14 @@ def register_ai_tools(mcp: FastMCP):
         overwrite: bool = False,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Create an Environment Query System (EQS) query asset.
+        """Create an Environment Query System (EQS) query asset.
 
         Use follow-up `eqs_add_generator` and `eqs_add_test` calls to define
         what locations or actors the query considers and how it scores them.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            eqs_create_query(query_name="ExampleName")"""
         return _send("eqs_create_query", {
             "query_name": query_name,
             "folder_path": folder_path,
@@ -232,12 +246,14 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         query_path: str,
     ) -> Dict[str, Any]:
-        """
-        Describe an EQS query's options, generator classes, and tests.
+        """Describe an EQS query's options, generator classes, and tests.
 
         `query_path` may be a content path such as `/Game/AI/EQS_FindCover` or
         a query asset name when it is unique in the project.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            eqs_describe_query(query_path="/Game/MCP_Test/Example")"""
         return _send("eqs_describe_query", {
             "query_path": query_path,
         })
@@ -250,13 +266,15 @@ def register_ai_tools(mcp: FastMCP):
         option_index: int = -1,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Add or replace an EQS option generator.
+        """Add or replace an EQS option generator.
 
         Supported generator_type values: `simple_grid`, `circle`, `donut`,
         `current_location`, and `actors_of_class`. Passing `option_index=-1`
         creates a new option.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            eqs_add_generator(query_path="/Game/MCP_Test/Example")"""
         return _send("eqs_add_generator", {
             "query_path": query_path,
             "generator_type": generator_type,
@@ -272,12 +290,14 @@ def register_ai_tools(mcp: FastMCP):
         option_index: int = 0,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Add an EQS test to an existing option.
+        """Add an EQS test to an existing option.
 
         Supported test_type values: `distance`, `pathfinding`, `dot`, and
         `trace`. Create or choose an option with `eqs_add_generator` first.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            eqs_add_test(query_path="/Game/MCP_Test/Example")"""
         return _send("eqs_add_test", {
             "query_path": query_path,
             "test_type": test_type,
@@ -297,8 +317,7 @@ def register_ai_tools(mcp: FastMCP):
         interval: float = 0.5,
         update_existing: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Attach or update a built-in Run EQS service on a Behavior Tree node.
+        """Attach or update a built-in Run EQS service on a Behavior Tree node.
 
         The service runs an EQS query while its parent branch is active and
         writes the selected result into a Blackboard key.
@@ -312,7 +331,10 @@ def register_ai_tools(mcp: FastMCP):
             update_bb_on_fail: Whether failed queries also update the Blackboard
             interval: Service tick interval in seconds
             update_existing: Update an existing Run EQS service on the parent if present
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            bt_add_run_eqs_service(behavior_tree_name="ExampleName", query_path="/Game/MCP_Test/Example", result_key="ExampleName")"""
         return _send("bt_add_run_eqs_service", {
             "behavior_tree_name": behavior_tree_name,
             "query_path": query_path,
@@ -332,12 +354,14 @@ def register_ai_tools(mcp: FastMCP):
         save: bool = True,
         compile: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Add or find an AIPerceptionComponent on a Blueprint.
+        """Add or find an AIPerceptionComponent on a Blueprint.
 
         This is usually placed on an AIController Blueprint so the controller
         can sense actors and feed Blackboard/Behavior Tree state.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            perception_add_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("perception_add_component", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -359,9 +383,11 @@ def register_ai_tools(mcp: FastMCP):
         dominant: bool = True,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Add or update the Sight sense config on an AIPerceptionComponent.
-        """
+        """Add or update the Sight sense config on an AIPerceptionComponent.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            perception_configure_sight(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("perception_configure_sight", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -387,9 +413,11 @@ def register_ai_tools(mcp: FastMCP):
         dominant: bool = False,
         save: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Add or update the Hearing sense config on an AIPerceptionComponent.
-        """
+        """Add or update the Hearing sense config on an AIPerceptionComponent.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            perception_configure_hearing(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("perception_configure_hearing", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -411,11 +439,13 @@ def register_ai_tools(mcp: FastMCP):
         save: bool = True,
         compile: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Add or configure an AIPerceptionStimuliSourceComponent on a Blueprint.
+        """Add or configure an AIPerceptionStimuliSourceComponent on a Blueprint.
 
         Typical senses are `sight` and `hearing`.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            perception_create_stimulus_source(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("perception_create_stimulus_source", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -433,12 +463,14 @@ def register_ai_tools(mcp: FastMCP):
         event_name: str = "OnTargetPerceptionUpdated",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add a component-bound AI Perception update event node to a Blueprint.
+        """Add a component-bound AI Perception update event node to a Blueprint.
 
         Common event_name values are `OnTargetPerceptionUpdated`,
         `OnPerceptionUpdated`, and `OnTargetPerceptionForgotten`.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            perception_bind_updated_event(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_component_event_node", {
@@ -453,9 +485,11 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
     ) -> Dict[str, Any]:
-        """
-        Describe AI Perception and stimuli source components on a Blueprint.
-        """
+        """Describe AI Perception and stimuli source components on a Blueprint.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            perception_describe_blueprint(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("perception_describe_blueprint", {
             "blueprint_name": blueprint_name,
         })
@@ -473,8 +507,7 @@ def register_ai_tools(mcp: FastMCP):
         smart_link_enabled: bool = False,
         rebuild: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Spawn a NavLinkProxy and configure its point link endpoints.
+        """Spawn a NavLinkProxy and configure its point link endpoints.
 
         Args:
             actor_name: Actor label/name for the proxy
@@ -486,7 +519,10 @@ def register_ai_tools(mcp: FastMCP):
             area_class: Nav area class name/path, e.g. default, NavArea_Null, NavArea_Obstacle
             smart_link_enabled: Enable the proxy smart link component
             rebuild: Rebuild navigation after spawning
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            nav_create_link_proxy()"""
         return _send("nav_create_link_proxy", {
             "actor_name": actor_name,
             "left": left or [-150.0, 0.0, 0.0],
@@ -508,12 +544,14 @@ def register_ai_tools(mcp: FastMCP):
         area_class: str = "NavArea_Null",
         rebuild: bool = True,
     ) -> Dict[str, Any]:
-        """
-        Spawn a NavModifierVolume with the requested nav area class.
+        """Spawn a NavModifierVolume with the requested nav area class.
 
         Use `NavArea_Null` to block navigation, `NavArea_Obstacle` for high
         traversal cost, or a custom UNavArea path/name from the project.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            nav_add_modifier_volume()"""
         return _send("nav_add_modifier_volume", {
             "actor_name": actor_name,
             "location": location or [0.0, 0.0, 100.0],
@@ -524,9 +562,11 @@ def register_ai_tools(mcp: FastMCP):
 
     @mcp.tool()
     def nav_describe_agent_settings(ctx: Context) -> Dict[str, Any]:
-        """
-        Describe supported navigation agents, nav data actors, and nav helper counts.
-        """
+        """Describe supported navigation agents, nav data actors, and nav helper counts.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            nav_describe_agent_settings()"""
         return _send("nav_describe_agent_settings", {})
 
     @mcp.tool()
@@ -542,9 +582,11 @@ def register_ai_tools(mcp: FastMCP):
         save: bool = True,
         compile: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Configure CharacterMovement RVO avoidance defaults on a Character Blueprint.
-        """
+        """Configure CharacterMovement RVO avoidance defaults on a Character Blueprint.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            crowd_configure_rvo(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("crowd_configure_rvo", {
             "blueprint_name": blueprint_name,
             "enabled": enabled,
@@ -574,13 +616,15 @@ def register_ai_tools(mcp: FastMCP):
         save: bool = True,
         compile: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Configure Detour crowd options when an AIController already uses UCrowdFollowingComponent.
+        """Configure Detour crowd options when an AIController already uses UCrowdFollowingComponent.
 
         If the Blueprint still uses the default PathFollowingComponent, the
         native command returns structured guidance because that inherited
         subobject must be selected in a native AIController constructor.
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            crowd_configure_detour()"""
         return _send("crowd_configure_detour", {
             "blueprint_name": blueprint_name,
             "obstacle_avoidance": obstacle_avoidance,
@@ -599,9 +643,11 @@ def register_ai_tools(mcp: FastMCP):
 
     @mcp.tool()
     def gameplay_debugger_capture_ai(ctx: Context) -> Dict[str, Any]:
-        """
-        Capture an AI/navigation debug snapshot from the current editor world.
-        """
+        """Capture an AI/navigation debug snapshot from the current editor world.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            gameplay_debugger_capture_ai()"""
         return _send("gameplay_debugger_capture_ai", {})
 
     @mcp.tool()
@@ -611,14 +657,16 @@ def register_ai_tools(mcp: FastMCP):
         acceptance_radius: float = 50.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'AI Move To' function call node.
+        """Add a 'AI Move To' function call node.
 
         Args:
             blueprint_name: Blueprint (usually AIController or BTTask)
             acceptance_radius: How close AI needs to get to destination
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_move_to_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
         return _send("add_blueprint_function_node", {
@@ -637,15 +685,17 @@ def register_ai_tools(mcp: FastMCP):
         value_type: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Blackboard Value as [Type]' node.
+        """Add a 'Set Blackboard Value as [Type]' node.
 
         Args:
             blueprint_name: Blueprint name (usually AIController or BTTask)
             key_name: Blackboard key name
             value_type: Value type ("Object", "Vector", "Bool", "Float", "Int", "String")
             node_position: Optional graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            set_blackboard_value(blueprint_name="/Game/MCP_Test/BP_Example", key_name="ExampleName", value_type=0.0)"""
         if node_position is None:
             node_position = [0, 0]
         function_map = {
@@ -679,8 +729,7 @@ def register_ai_tools(mcp: FastMCP):
         has_chase: bool = True,
         has_attack: bool = True
     ) -> Dict[str, Any]:
-        """
-        Create a complete enemy AI setup including:
+        """Create a complete enemy AI setup including:
         - Enemy Character Blueprint
         - AIController Blueprint
         - Blackboard with appropriate keys
@@ -692,7 +741,10 @@ def register_ai_tools(mcp: FastMCP):
             has_patrol: Include patrol behavior
             has_chase: Include chase player behavior
             has_attack: Include attack behavior
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_full_enemy_ai(enemy_name="ExampleName")"""
         results = {}
 
         # Create Blackboard with keys
@@ -802,8 +854,7 @@ def register_ai_tools(mcp: FastMCP):
         target_key_variable: str = "TargetActorKey",
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Behavior Tree Attack Task Blueprint.
+        """Create a Behavior Tree Attack Task Blueprint.
 
         Ch.10: BTTask_DoAttack that deals damage to the player.
         - TargetActorKey (BlackboardKeySelector) - instance editable
@@ -817,7 +868,10 @@ def register_ai_tools(mcp: FastMCP):
             default_damage: Default damage amount (0.0-1.0 normalized or raw)
             target_key_variable: Name of the BlackboardKeySelector variable
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_bt_attack_task()"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTTask_BlueprintBase"
@@ -855,8 +909,7 @@ def register_ai_tools(mcp: FastMCP):
         sight_radius: float = 2000.0,
         peripheral_vision_angle: float = 45.0
     ) -> Dict[str, Any]:
-        """
-        Add a PawnSensing component to a Blueprint for AI perception.
+        """Add a PawnSensing component to a Blueprint for AI perception.
 
         Ch.10: PawnSensing enables enemies to both see and hear the player.
         - OnSeePawn and OnHearNoise events fire when player is detected.
@@ -870,7 +923,10 @@ def register_ai_tools(mcp: FastMCP):
             see_pawns_in_dark: Whether to detect pawns in dark areas
             sight_radius: Max sight detection radius
             peripheral_vision_angle: Half-angle of sight cone in degrees
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_pawn_sensing_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         result = _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "PawnSensingComponent",
@@ -910,8 +966,7 @@ def register_ai_tools(mcp: FastMCP):
         pawn_sensing_component: str = "PawnSensing",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Bind the 'On See Pawn' event from a PawnSensing component.
+        """Bind the 'On See Pawn' event from a PawnSensing component.
 
         Ch.10: OnSeePawn fires when the AI spots the player in its sight cone.
         Wire this to set the PlayerCharacter blackboard key and update chase state.
@@ -920,7 +975,10 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: Enemy Blueprint name
             pawn_sensing_component: Name of PawnSensing component
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_on_see_pawn_event(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_event_node", {
             "blueprint_name": blueprint_name,
             "component_name": pawn_sensing_component,
@@ -935,8 +993,7 @@ def register_ai_tools(mcp: FastMCP):
         pawn_sensing_component: str = "PawnSensing",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Bind the 'On Hear Noise' event from a PawnSensing component.
+        """Bind the 'On Hear Noise' event from a PawnSensing component.
 
         Ch.10: OnHearNoise fires when the AI detects a sound within HearingThreshold.
         Event provides: PawnInstigator (who made the sound), Location (where), Loudness.
@@ -946,7 +1003,10 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: Enemy AI Controller Blueprint
             pawn_sensing_component: Name of PawnSensing component
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_on_hear_noise_event(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_event_node", {
             "blueprint_name": blueprint_name,
             "component_name": pawn_sensing_component,
@@ -962,8 +1022,7 @@ def register_ai_tools(mcp: FastMCP):
         max_range: float = 0.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Report Noise Event' node (UAISense_Hearing).
+        """Add a 'Report Noise Event' node (UAISense_Hearing).
 
         Ch.10: Reports a noise to the AI perception system so PawnSensing can detect it.
         Used to make the player's actions (shooting, footsteps) audible to AI.
@@ -973,7 +1032,10 @@ def register_ai_tools(mcp: FastMCP):
             loudness: How loud the noise is (0.0-1.0)
             max_range: Max range the noise can be heard (0 = use PawnSensing threshold)
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_report_noise_event_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UGameplayStatics",
@@ -995,8 +1057,7 @@ def register_ai_tools(mcp: FastMCP):
         spawn_radius: float = 500.0,
         path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create an Enemy Spawner Blueprint.
+        """Create an Enemy Spawner Blueprint.
 
         Ch.10: BP_EnemySpawner periodically spawns enemies in the level.
         - EnemyClass variable (class reference, instance editable)
@@ -1012,7 +1073,10 @@ def register_ai_tools(mcp: FastMCP):
             spawn_interval: Seconds between each spawn
             spawn_radius: Random placement radius around spawner
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_enemy_spawner_blueprint()"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "Actor"
@@ -1061,8 +1125,7 @@ def register_ai_tools(mcp: FastMCP):
         wander_radius: float = 1000.0,
         path: str = "/Game/AI"
     ) -> Dict[str, Any]:
-        """
-        Create a Behavior Tree Task for random wandering.
+        """Create a Behavior Tree Task for random wandering.
 
         Ch.10: BTTask_FindWanderPoint uses the Navigation system to find a random
         reachable location within a radius for enemy wandering behavior.
@@ -1074,7 +1137,10 @@ def register_ai_tools(mcp: FastMCP):
             name: Task Blueprint name
             wander_radius: Radius to search for random wander points
             path: Content browser path
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_bt_wander_task()"""
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTTask_BlueprintBase"
@@ -1107,8 +1173,7 @@ def register_ai_tools(mcp: FastMCP):
         radius: float = 1000.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Random Reachable Point In Radius' node.
+        """Add a 'Get Random Reachable Point In Radius' node.
 
         Ch.10: Used in wandering BT task to find a valid NavMesh location.
         Returns bReachable (bool) and RandomLocation (Vector).
@@ -1118,7 +1183,10 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: Blueprint name (usually BTTask Blueprint)
             radius: Search radius for random point
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_get_random_reachable_point_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UNavigationSystemV1",
@@ -1134,8 +1202,7 @@ def register_ai_tools(mcp: FastMCP):
         success: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Finish Execute' node to a Behavior Tree Task Blueprint.
+        """Add a 'Finish Execute' node to a Behavior Tree Task Blueprint.
 
         Ch.10: BTTask Blueprints must call FinishExecute to report success or failure
         back to the Behavior Tree. Call this at the end of ReceiveExecute.
@@ -1144,7 +1211,10 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: BT Task Blueprint name
             success: True = task succeeded, False = task failed
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_finish_execute_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -1161,8 +1231,7 @@ def register_ai_tools(mcp: FastMCP):
         value_type: str = "Object",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Blackboard Value as [Type]' node.
+        """Add a 'Get Blackboard Value as [Type]' node.
 
         Ch.10: Used in BT Tasks to read data from the Blackboard.
         e.g., Get Blackboard Value as Actor to get the Target Actor reference.
@@ -1172,7 +1241,10 @@ def register_ai_tools(mcp: FastMCP):
             key_name: Blackboard key name to read
             value_type: "Object", "Actor", "Vector", "Bool", "Float", "Int", "String"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_get_blackboard_value_node(blueprint_name="/Game/MCP_Test/BP_Example", key_name="ExampleName")"""
         function_map = {
             "Object": "GetValueAsObject",
             "Actor": "GetValueAsObject",
@@ -1203,8 +1275,7 @@ def register_ai_tools(mcp: FastMCP):
         key_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Clear Blackboard Value' node (BTTask_ClearBBValue).
+        """Add a 'Clear Blackboard Value' node (BTTask_ClearBBValue).
 
         Ch.10: Used to reset blackboard keys like HasHeardSound after investigation
         is complete. Resets the value to its default (false/null/zero).
@@ -1213,7 +1284,10 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: Blueprint or BT Task name
             key_name: Blackboard key to clear
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_clear_blackboard_value_node(blueprint_name="/Game/MCP_Test/BP_Example", key_name="ExampleName")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UBlackboardComponent",
@@ -1231,8 +1305,7 @@ def register_ai_tools(mcp: FastMCP):
         observer_aborts: str = "LowerPriority",
         node_name: str = ""
     ) -> Dict[str, Any]:
-        """
-        Add a Blackboard Decorator to a Behavior Tree sequence/task node.
+        """Add a Blackboard Decorator to a Behavior Tree sequence/task node.
 
         Ch.10: Decorators are conditions that control whether a BT branch can execute.
         A Blackboard Decorator checks a key's value to allow or abort execution.
@@ -1243,7 +1316,10 @@ def register_ai_tools(mcp: FastMCP):
             blackboard_key: Blackboard key to monitor (e.g., "HasHeardSound", "bCanSeePlayer")
             observer_aborts: "None", "Self", "LowerPriority", "Both"
             node_name: Display name for the decorator node
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_bt_blackboard_decorator(behavior_tree_name="ExampleName", sequence_name="ExampleName", blackboard_key="ExampleName")"""
         return _send("add_bt_blackboard_decorator", {
             "behavior_tree_name": behavior_tree_name,
             "sequence_name": sequence_name,
@@ -1264,8 +1340,7 @@ def register_ai_tools(mcp: FastMCP):
         attack_damage: float = 0.25,
         hearing_distance: float = 1600.0
     ) -> Dict[str, Any]:
-        """
-        Create a complete upgraded enemy AI setup from Ch.9-10.
+        """Create a complete upgraded enemy AI setup from Ch.9-10.
 
         Builds:
         - Enemy Character Blueprint (with PawnSensing, health variables)
@@ -1286,7 +1361,10 @@ def register_ai_tools(mcp: FastMCP):
             has_wandering: Include random wandering behavior
             attack_damage: Damage dealt per attack (0.25 = 25% of health)
             hearing_distance: PawnSensing hearing radius in cm
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            create_full_upgraded_enemy_ai(enemy_name="ExampleName")"""
         results = {}
 
         # Create Blackboard with all keys
@@ -1459,8 +1537,7 @@ def register_ai_tools(mcp: FastMCP):
         behavior_tree_name: str,
         fix_guids_only: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Repair a corrupted Behavior Tree asset so it can be opened in the UE5 BT editor.
+        """Repair a corrupted Behavior Tree asset so it can be opened in the UE5 BT editor.
 
         Two modes:
 
@@ -1487,7 +1564,10 @@ def register_ai_tools(mcp: FastMCP):
             Dict with 'success', 'behavior_tree', 'mode', plus
               • fix_guids_only: 'guids_fixed', 'guids_already_valid', 'node_count'
               • destructive:    'node_count_after_repair'
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            repair_behavior_tree(behavior_tree_name="ExampleName")"""
         return _send("repair_behavior_tree", {
             "behavior_tree_name": behavior_tree_name,
             "fix_guids_only": fix_guids_only,
@@ -1500,8 +1580,7 @@ def register_ai_tools(mcp: FastMCP):
         tree: Dict[str, Any],
         clear_existing: bool = True
     ) -> Dict[str, Any]:
-        """
-        Build an entire Behavior Tree graph from a JSON description in one call.
+        """Build an entire Behavior Tree graph from a JSON description in one call.
 
         This is the primary tool for creating BT logic. Pass the full tree as a
         nested JSON object and the C++ plugin will build every node, link pins,
@@ -1535,7 +1614,10 @@ def register_ai_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'success', 'behavior_tree', 'nodes_created', 'nodes' list
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            build_behavior_tree(behavior_tree_name="ExampleName", tree=[])"""
         return _send("build_behavior_tree", {
             "behavior_tree_name": behavior_tree_name,
             "tree": tree,
@@ -1554,8 +1636,7 @@ def register_ai_tools(mcp: FastMCP):
         decorators: List[Dict[str, Any]] = [],
         services: List[Dict[str, Any]] = []
     ) -> Dict[str, Any]:
-        """
-        Add a single node to an existing Behavior Tree graph.
+        """Add a single node to an existing Behavior Tree graph.
 
         Use this for incremental edits — add one node at a time after the
         initial tree is built with build_behavior_tree.
@@ -1578,7 +1659,10 @@ def register_ai_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'success', 'node_type', 'node_index'
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            add_bt_node(behavior_tree_name="ExampleName", node_type="Example")"""
         params: Dict[str, Any] = {
             "behavior_tree_name": behavior_tree_name,
             "node_type": node_type,
@@ -1601,8 +1685,7 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         behavior_tree_name: str
     ) -> Dict[str, Any]:
-        """
-        Inspect the current state of a Behavior Tree graph.
+        """Inspect the current state of a Behavior Tree graph.
 
         Returns every node in the BT graph with its type, position, instance class,
         pin connections, and sub-nodes (decorators/services). Use this to verify
@@ -1618,7 +1701,10 @@ def register_ai_tools(mcp: FastMCP):
               - 'x', 'y':  graph position
               - 'pins':     pin names and connections
               - 'subnodes': decorator/service sub-nodes
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            get_bt_graph_info(behavior_tree_name="ExampleName")"""
         return _send("get_bt_graph_info", {
             "behavior_tree_name": behavior_tree_name,
         })
@@ -1629,8 +1715,7 @@ def register_ai_tools(mcp: FastMCP):
         behavior_tree_name: str,
         wait_time: float = 1.0
     ) -> Dict[str, Any]:
-        """
-        Quick-build: add a root Selector with a single Wait task.
+        """Quick-build: add a root Selector with a single Wait task.
 
         This is a shortcut for the most basic "idle" behavior tree structure:
           Root → Selector → Wait(wait_time)
@@ -1644,7 +1729,10 @@ def register_ai_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'success', 'behavior_tree'
-        """
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            bt_add_selector_wait(behavior_tree_name="ExampleName")"""
         return _send("bt_add_selector_wait", {
             "behavior_tree_name": behavior_tree_name,
             "wait_time": wait_time,

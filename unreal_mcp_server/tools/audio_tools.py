@@ -72,7 +72,10 @@ def register_audio_tools(mcp: FastMCP):
                 destination_path="/Game/Audio/SFX/",
                 auto_create_cue=True
             )
-        """
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#overview
+        Example:
+            import_sound_asset(file_path="/Game/MCP_Test/Example")"""
         # Build the Unreal Python code to run inside UE5 via exec_python
         code = f"""
 import unreal
@@ -135,18 +138,27 @@ try:
             "asset_type": asset_type,
         }}
 
-        # Optionally create a companion SoundCue
+        # Optionally create a companion SoundCue. UE 5.6 can expose
+        # SoundCueFactoryNew.initial_sound_wave as a protected property; keep
+        # the SoundWave import successful if cue prewiring is unavailable.
         if auto_create_cue and asset_obj and isinstance(asset_obj, unreal.SoundWave):
             cue_name    = asset_name + "_Cue"
             cue_factory = unreal.SoundCueFactoryNew()
-            cue_factory.set_editor_property("initial_sound_wave", asset_obj)
-            cue_asset   = asset_tools.create_asset(cue_name, dest, unreal.SoundCue, cue_factory)
+            try:
+                cue_factory.set_editor_property("initial_sound_wave", asset_obj)
+                cue_asset = asset_tools.create_asset(cue_name, dest, unreal.SoundCue, cue_factory)
+            except Exception as cue_exc:
+                cue_asset = None
+                result["cue_warning"] = (
+                    "SoundCue prewire unavailable; SoundWave imported successfully. "
+                    + str(cue_exc)
+                )
             if cue_asset:
                 cue_path = f"{{dest}}/{{cue_name}}"
                 unreal.EditorAssetLibrary.save_asset(f"{{dest}}/{{cue_name}}.{{cue_name}}")
                 result["cue_path"] = cue_path
                 sys.stdout.write(f"[MCP] Created SoundCue: {{cue_path}}\\n")
-            else:
+            elif "cue_warning" not in result:
                 result["cue_warning"] = "SoundCue creation failed (SoundWave imported successfully)"
             sys.stdout.flush()
 

@@ -529,3 +529,31 @@ BAD: Giant monolithic Event Graph with 200 nodes
 GOOD: Functions named clearly; each doing one thing
 ```
 
+---
+
+## 20. MCP B.1 Graph Gap Tools
+
+### Breakable Loop Node
+
+Use `bp_add_for_loop_with_break_node` when generated graph logic needs an early
+exit path.
+
+```
+bp_add_for_loop_with_break_node(
+  blueprint_name="/Game/Blueprints/BP_Searcher",
+  graph_name="EventGraph",
+  first_index=0,
+  last_index=9
+)
+```
+
+Expected follow-up:
+
+1. Connect the incoming exec pin.
+2. Connect `Loop Body` to the repeated work.
+3. Connect a Branch or condition to the `Break` exec pin.
+4. Connect `Completed` to cleanup or success/failure reporting.
+
+Prefer `ForLoopWithBreak` over a plain `ForLoop` for searches, nearest-target
+selection, validation passes, or any loop that should stop once a result is
+found.

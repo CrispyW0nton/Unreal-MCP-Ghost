@@ -11,8 +11,9 @@ one of the four post-mutation trust questions:
   4. Can Ghost automatically repair a small, deterministic subset and prove
      the result improved?
 
-Tools (10 total):
+Tools (14 total):
   Blueprint diagnostics —
+    compile_blueprint_and_report — compile Blueprint and return graph-aware report
     bp_get_compile_diagnostics    — compiler errors/warnings as structured items
     bp_validate_blueprint         — top-level health score + issue aggregate
     bp_validate_graph             — one graph: exec chains, orphans, unreachable
@@ -23,8 +24,12 @@ Tools (10 total):
     bp_run_post_mutation_verify   — single-call evidence block after mutation
 
   Material diagnostics —
+    compile_material_and_report   — compile Material and return expression-aware report
     mat_get_compile_diagnostics   — material compiler errors/warnings
     mat_validate_material         — expression count, disconnects, health score
+  Import/change diagnostics —
+    validate_import_result        — verify imported asset existence/class/save state
+    get_changed_assets_since      — list changed/dirty assets since a timestamp
 
 Every diagnostic item carries:
   severity, category, code, message, asset_path,
@@ -104,17 +109,28 @@ def _meta(tool: str, t0: float) -> Dict[str, Any]:
     return {"tool": tool, "duration_ms": int((time.monotonic() - t0) * 1000)}
 
 
-def _ok(outputs: Dict, warnings: List, meta: Dict, message: str = "OK") -> Dict:
+def _ok(
+    outputs: Dict,
+    warnings: List,
+    meta: Dict,
+    message: str = "OK",
+    *,
+    inputs: Optional[Dict] = None,
+    stage: str = "complete",
+    log_tail: Optional[List[str]] = None,
+) -> Dict:
     return {
-        "success": True, "stage": "complete", "message": message,
-        "outputs": outputs, "warnings": warnings, "errors": [], "meta": meta,
+        "success": True, "stage": stage, "message": message,
+        "inputs": inputs or {}, "outputs": outputs, "warnings": warnings,
+        "errors": [], "log_tail": log_tail or [], "meta": meta,
     }
 
 
-def _err(msg: str, meta: Dict) -> Dict:
+def _err(msg: str, meta: Dict, *, inputs: Optional[Dict] = None, log_tail: Optional[List[str]] = None) -> Dict:
     return {
         "success": False, "stage": "error", "message": msg,
-        "outputs": {}, "warnings": [], "errors": [msg], "meta": meta,
+        "inputs": inputs or {}, "outputs": {}, "warnings": [],
+        "errors": [msg], "log_tail": log_tail or [], "meta": meta,
     }
 
 
@@ -466,6 +482,334 @@ except Exception as _e:
 print(json.dumps(_result))
 '''
 
+_COMPILE_BLUEPRINT_REPORT_CODE = '''\
+import unreal, json, traceback as _tb
+
+def _find_bp(name):
+    if name.startswith("/"):
+        asset = unreal.load_asset(name)
+        if asset:
+            return asset
+    reg = unreal.AssetRegistryHelpers.get_asset_registry()
+    flt = unreal.ARFilter()
+    flt.class_names = ["Blueprint"]
+    flt.recursive_paths = True
+    flt.package_paths = ["/Game"]
+    target = name.split("/")[-1]
+    for data in reg.get_assets(flt):
+        if str(data.asset_name) == target:
+            return unreal.load_asset(str(data.object_path))
+    return None
+
+def _bp_status_name(bp):
+    try:
+        return str(bp.status).split(".")[-1]
+    except Exception:
+        return "UNKNOWN"
+
+_result = {
+    "compile_status": "unknown",
+    "compile_clean": False,
+    "had_errors": False,
+    "had_warnings": False,
+    "errors": [],
+    "warnings": [],
+    "graph_summaries": [],
+    "graph_count": 0,
+    "blueprint_path": __BP_PATH__,
+}
+try:
+    bp = _find_bp(__BP_PATH__)
+    if not bp:
+        _result["compile_status"] = "asset_missing"
+        _result["had_errors"] = True
+        _result["errors"].append({
+            "severity": "error", "category": "compile", "code": "BP_NOT_FOUND",
+            "message": "Blueprint not found", "asset_path": __BP_PATH__,
+            "graph_name": "", "node_guid": "", "node_title": "", "pin_name": "",
+            "suggested_fix": "Verify Blueprint asset path or name", "auto_repairable": False,
+        })
+    else:
+        with unreal.ScopedSlowTask(2.0, "MCP compile_blueprint_and_report") as task:
+            task.make_dialog(False)
+            task.enter_progress_frame(1.0, "Compiling Blueprint")
+            with unreal.ScopedEditorTransaction("MCP compile Blueprint report"):
+                if hasattr(unreal, "BlueprintEditorLibrary"):
+                    unreal.BlueprintEditorLibrary.compile_blueprint(bp)
+            task.enter_progress_frame(1.0, "Collecting graph summary")
+            status_name = _bp_status_name(bp)
+            had_errors = "ERROR" in status_name.upper()
+            _result["compile_status"] = "errors" if had_errors else "clean"
+            _result["compile_clean"] = not had_errors
+            _result["had_errors"] = had_errors
+            if had_errors:
+                _result["errors"].append({
+                    "severity": "error", "category": "compile", "code": status_name,
+                    "message": "Blueprint reports compile error status",
+                    "asset_path": __BP_PATH__, "graph_name": "", "node_guid": "",
+                    "node_title": "", "pin_name": "",
+                    "suggested_fix": "Run bp_get_compile_diagnostics and inspect red nodes",
+                    "auto_repairable": False,
+                })
+            graphs = bp.get_all_graphs() if hasattr(bp, "get_all_graphs") else []
+            include_graphs = __INCLUDE_GRAPHS__
+            requested = set(__GRAPH_NAMES__)
+            for graph in graphs:
+                name = graph.get_name()
+                if requested and name not in requested:
+                    continue
+                nodes = graph.nodes if hasattr(graph, "nodes") else []
+                summary = {
+                    "graph_name": name,
+                    "node_count": len(nodes),
+                    "orphaned_node_count": 0,
+                    "exec_node_count": 0,
+                }
+                if include_graphs:
+                    for node in nodes:
+                        pins = node.get_all_pins() if hasattr(node, "get_all_pins") else []
+                        has_link = False
+                        has_exec = False
+                        for pin in pins:
+                            if getattr(pin, "linked_to", None):
+                                has_link = True
+                            pin_type = str(getattr(pin, "pin_type", "")).lower()
+                            if "exec" in pin_type:
+                                has_exec = True
+                        if has_exec:
+                            summary["exec_node_count"] += 1
+                        if not has_link and "event" not in node.get_name().lower():
+                            summary["orphaned_node_count"] += 1
+                    if summary["orphaned_node_count"]:
+                        _result["warnings"].append({
+                            "severity": "warning", "category": "graph_structure",
+                            "code": "ORPHANED_NODES_PRESENT",
+                            "message": f"{summary['orphaned_node_count']} orphaned node(s) in {name}",
+                            "asset_path": __BP_PATH__, "graph_name": name,
+                            "node_guid": "", "node_title": "", "pin_name": "",
+                            "suggested_fix": "Run bp_find_orphaned_nodes for details",
+                            "auto_repairable": True,
+                        })
+                _result["graph_summaries"].append(summary)
+            _result["graph_count"] = len(_result["graph_summaries"])
+            _result["had_warnings"] = bool(_result["warnings"])
+            if _result["had_warnings"] and _result["compile_status"] == "clean":
+                _result["compile_status"] = "warnings_only"
+except Exception as _e:
+    _result["compile_status"] = "exception"
+    _result["had_errors"] = True
+    _result["errors"].append({
+        "severity": "error", "category": "compile", "code": "EXEC_EXCEPTION",
+        "message": str(_e), "asset_path": __BP_PATH__, "graph_name": "",
+        "node_guid": "", "node_title": "", "pin_name": "",
+        "suggested_fix": "Check Unreal Python compile path and Output Log",
+        "auto_repairable": False,
+    })
+    _result["log_tail"] = _tb.format_exc().splitlines()[-10:]
+print(json.dumps(_result))
+'''
+
+_COMPILE_MATERIAL_REPORT_CODE = '''\
+import unreal, json, traceback as _tb
+
+_result = {
+    "compile_status": "unknown",
+    "compile_clean": False,
+    "had_errors": False,
+    "errors": [],
+    "warnings": [],
+    "expression_count": 0,
+    "expression_summaries": [],
+    "material_path": __MAT_PATH__,
+}
+try:
+    mat = unreal.load_asset(__MAT_PATH__)
+    if not mat:
+        _result["compile_status"] = "asset_missing"
+        _result["had_errors"] = True
+        _result["errors"].append({
+            "severity": "error", "category": "material", "code": "MAT_NOT_FOUND",
+            "message": "Material not found", "asset_path": __MAT_PATH__,
+            "graph_name": "", "node_guid": "", "node_title": "", "pin_name": "",
+            "suggested_fix": "Verify material path", "auto_repairable": False,
+        })
+    else:
+        with unreal.ScopedSlowTask(2.0, "MCP compile_material_and_report") as task:
+            task.make_dialog(False)
+            task.enter_progress_frame(1.0, "Compiling Material")
+            with unreal.ScopedEditorTransaction("MCP compile Material report"):
+                if hasattr(unreal, "MaterialEditingLibrary"):
+                    unreal.MaterialEditingLibrary.recompile_material(mat)
+            task.enter_progress_frame(1.0, "Collecting expression summary")
+            exprs = mat.get_editor_property("expressions") if hasattr(mat, "get_editor_property") else []
+            _result["expression_count"] = len(exprs) if exprs else 0
+            if __INCLUDE_EXPRESSIONS__:
+                for expr in exprs or []:
+                    _result["expression_summaries"].append({
+                        "name": expr.get_name(),
+                        "class": expr.get_class().get_name() if expr.get_class() else "",
+                        "x": int(getattr(expr, "material_expression_editor_x", 0)),
+                        "y": int(getattr(expr, "material_expression_editor_y", 0)),
+                    })
+            _result["compile_status"] = "clean"
+            _result["compile_clean"] = True
+            if _result["expression_count"] == 0:
+                _result["warnings"].append({
+                    "severity": "warning", "category": "material", "code": "MAT_NO_EXPRESSIONS",
+                    "message": "Material has no graph expressions",
+                    "asset_path": __MAT_PATH__, "graph_name": "", "node_guid": "",
+                    "node_title": "", "pin_name": "",
+                    "suggested_fix": "Add expressions or verify this is an intentionally empty material",
+                    "auto_repairable": False,
+                })
+                _result["compile_status"] = "warnings_only"
+except Exception as _e:
+    _result["compile_status"] = "exception"
+    _result["had_errors"] = True
+    _result["errors"].append({
+        "severity": "error", "category": "material", "code": "EXEC_EXCEPTION",
+        "message": str(_e), "asset_path": __MAT_PATH__, "graph_name": "",
+        "node_guid": "", "node_title": "", "pin_name": "",
+        "suggested_fix": "Check Unreal Python material compile path and Output Log",
+        "auto_repairable": False,
+    })
+    _result["log_tail"] = _tb.format_exc().splitlines()[-10:]
+print(json.dumps(_result))
+'''
+
+_VALIDATE_IMPORT_RESULT_CODE = '''\
+import unreal, json, os, traceback as _tb
+
+_result = {
+    "asset_path": __ASSET_PATH__,
+    "exists": False,
+    "class_name": "",
+    "expected_class": __EXPECTED_CLASS__,
+    "class_matches": True,
+    "package_name": "",
+    "object_path": "",
+    "dirty": False,
+    "source_file_exists": None,
+    "referencer_count": 0,
+    "dependency_count": 0,
+    "warnings": [],
+    "errors": [],
+}
+try:
+    asset = unreal.load_asset(__ASSET_PATH__)
+    if not asset:
+        _result["errors"].append("Asset not found")
+    else:
+        _result["exists"] = True
+        cls = asset.get_class().get_name() if asset.get_class() else ""
+        _result["class_name"] = cls
+        _result["object_path"] = asset.get_path_name()
+        package = asset.get_outermost()
+        package_name = package.get_name() if package else ""
+        _result["package_name"] = package_name
+        _result["dirty"] = bool(package.is_dirty()) if package else False
+        expected = __EXPECTED_CLASS__
+        if expected:
+            _result["class_matches"] = expected.lower() in cls.lower()
+            if not _result["class_matches"]:
+                _result["warnings"].append(f"Expected class '{expected}', got '{cls}'")
+        if __REQUIRE_SAVED__ and _result["dirty"]:
+            _result["warnings"].append("Asset package is dirty; save before treating import as final")
+        reg = unreal.AssetRegistryHelpers.get_asset_registry()
+        try:
+            deps = reg.get_dependencies(package_name, unreal.AssetRegistryDependencyType.ALL) or []
+            refs = reg.get_referencers(package_name, unreal.AssetRegistryDependencyType.ALL) or []
+            _result["dependency_count"] = len(deps)
+            _result["referencer_count"] = len(refs)
+        except Exception:
+            pass
+    source = __SOURCE_FILE__
+    if source:
+        _result["source_file_exists"] = os.path.exists(source)
+        if not _result["source_file_exists"]:
+            _result["warnings"].append("Source file path no longer exists on disk")
+except Exception as _e:
+    _result["errors"].append(str(_e))
+    _result["log_tail"] = _tb.format_exc().splitlines()[-10:]
+print(json.dumps(_result))
+'''
+
+_GET_CHANGED_ASSETS_SINCE_CODE = '''\
+import unreal, json, os, datetime as _dt, traceback as _tb
+
+def _parse_ts(value):
+    if isinstance(value, (int, float)):
+        return float(value)
+    s = str(value).strip()
+    try:
+        return float(s)
+    except Exception:
+        pass
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    return _dt.datetime.fromisoformat(s).timestamp()
+
+_result = {
+    "timestamp": __TIMESTAMP__,
+    "path": __PATH__,
+    "changed_assets": [],
+    "dirty_assets": [],
+    "changed_count": 0,
+    "dirty_count": 0,
+    "errors": [],
+}
+try:
+    cutoff = _parse_ts(__TIMESTAMP__)
+    root = (__PATH__ or "/Game").rstrip("/") or "/Game"
+    assets = unreal.EditorAssetLibrary.list_assets(root, recursive=True, include_folder=False)
+    limit = int(__LIMIT__)
+    for asset_path in assets:
+        if limit > 0 and len(_result["changed_assets"]) >= limit:
+            break
+        if (not __INCLUDE_UNREAL_GENERATED__) and (
+            asset_path.startswith("/Engine/") or asset_path.startswith("/Script/")
+        ):
+            continue
+        package_name = asset_path.split(".")[0]
+        filename = ""
+        try:
+            filename = unreal.PackageName.long_package_name_to_filename(package_name)
+        except Exception:
+            filename = ""
+        candidates = [filename, filename + ".uasset", filename + ".umap"]
+        existing = next((p for p in candidates if p and os.path.exists(p)), "")
+        if existing:
+            mtime = os.path.getmtime(existing)
+            if mtime >= cutoff:
+                _result["changed_assets"].append({
+                    "asset_path": package_name,
+                    "object_path": asset_path,
+                    "package_file": existing,
+                    "modified_time": _dt.datetime.fromtimestamp(mtime, _dt.timezone.utc).isoformat().replace("+00:00", "Z"),
+                    "modified_epoch": mtime,
+                })
+    if __INCLUDE_DIRTY__:
+        dirty = []
+        for func_name in ("get_dirty_content_packages", "get_dirty_map_packages"):
+            func = getattr(unreal.EditorLoadingAndSavingUtils, func_name, None)
+            if not func:
+                continue
+            try:
+                for package in func() or []:
+                    name = package.get_name() if hasattr(package, "get_name") else str(package)
+                    if name.startswith(root):
+                        dirty.append(name)
+            except Exception:
+                pass
+        _result["dirty_assets"] = sorted(set(dirty))
+    _result["changed_count"] = len(_result["changed_assets"])
+    _result["dirty_count"] = len(_result["dirty_assets"])
+except Exception as _e:
+    _result["errors"].append(str(_e))
+    _result["log_tail"] = _tb.format_exc().splitlines()[-10:]
+print(json.dumps(_result))
+'''
+
 _GET_BP_NODES_CODE = '''\
 import unreal, json
 
@@ -609,6 +953,356 @@ def _analyze_nodes_offline(nodes: List[Dict]) -> Dict[str, Any]:
 
 def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
 
+    # ── compile_blueprint_and_report ─────────────────────────────────────────
+    @mcp.tool()
+    async def compile_blueprint_and_report(
+        ctx: Context,
+        blueprint_path: str,
+        include_graphs: bool = True,
+        graph_names: Optional[List[str]] = None,
+    ) -> str:
+        """Compile a Blueprint and return graph-aware diagnostic evidence.
+
+        This B.2 report tool wraps the compile in Unreal editor progress and a
+        transaction, then returns compile status, structured issues, graph
+        summaries, and a safe_to_continue flag for higher-order workflows.
+
+        Args:
+            blueprint_path: Full asset path or plain Blueprint asset name.
+            include_graphs: Include graph node/orphan summaries when True.
+            graph_names: Optional graph-name allowlist; empty checks all graphs.
+
+        Returns:
+            StructuredResult JSON with outputs:
+              compile_status, compile_clean, had_errors, had_warnings,
+              errors[], warnings[], graph_summaries[], graph_count,
+              safe_to_continue.
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#b2-graph-aware-diagnostics-diagnosticstoolspy
+        Example:
+            compile_blueprint_and_report(blueprint_path="/Game/MCP_Test/BP_Example")"""
+        tool_name = "compile_blueprint_and_report"
+        t0 = time.monotonic()
+        inputs = {
+            "blueprint_path": blueprint_path,
+            "include_graphs": include_graphs,
+            "graph_names": graph_names or [],
+        }
+        code = (
+            _COMPILE_BLUEPRINT_REPORT_CODE
+            .replace("__BP_PATH__", repr(blueprint_path))
+            .replace("__INCLUDE_GRAPHS__", repr(include_graphs))
+            .replace("__GRAPH_NAMES__", repr(graph_names or []))
+        )
+        raw = _exec_python(code)
+        out = _parse_exec_output(raw)
+        if out:
+            errors = out.get("errors", [])
+            warnings = out.get("warnings", [])
+            outputs = {
+                "compile_status": out.get("compile_status", "unknown"),
+                "compile_clean": out.get("compile_clean", False),
+                "had_errors": out.get("had_errors", bool(errors)),
+                "had_warnings": out.get("had_warnings", bool(warnings)),
+                "errors": errors,
+                "warnings": warnings,
+                "graph_summaries": out.get("graph_summaries", []),
+                "graph_count": out.get("graph_count", 0),
+                "blueprint_path": blueprint_path,
+                "safe_to_continue": not bool(errors),
+            }
+            meta = _meta(tool_name, t0)
+            return json.dumps(_ok(
+                outputs,
+                [],
+                meta,
+                f"Blueprint compile report: {outputs['compile_status']}",
+                inputs=inputs,
+                stage=tool_name,
+                log_tail=out.get("log_tail", []),
+            ))
+
+        meta = _meta(tool_name, t0)
+        return json.dumps(_ok({
+            "compile_status": "offline_stub",
+            "compile_clean": False,
+            "had_errors": False,
+            "had_warnings": True,
+            "errors": [],
+            "warnings": [],
+            "graph_summaries": [],
+            "graph_count": 0,
+            "blueprint_path": blueprint_path,
+            "safe_to_continue": False,
+            "mode": "offline_stub",
+        }, ["UE5 not connected; returning offline compile report stub"], meta,
+        inputs=inputs, stage=tool_name))
+
+
+    # ── compile_material_and_report ──────────────────────────────────────────
+    @mcp.tool()
+    async def compile_material_and_report(
+        ctx: Context,
+        material_path: str,
+        include_expressions: bool = True,
+    ) -> str:
+        """Compile a Material and return expression-aware diagnostic evidence.
+
+        The tool invokes Unreal's material recompile path under a progress scope
+        and returns compile status, issue arrays, expression count, and optional
+        expression summaries for graph-aware material verification.
+
+        Args:
+            material_path: Full Material asset path.
+            include_expressions: Include expression class/name/position summaries.
+
+        Returns:
+            StructuredResult JSON with outputs:
+              compile_status, compile_clean, had_errors, errors[], warnings[],
+              expression_count, expression_summaries[], safe_to_continue.
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#b2-graph-aware-diagnostics-diagnosticstoolspy
+        Example:
+            compile_material_and_report(material_path="/Game/MCP_Test/M_Example")"""
+        tool_name = "compile_material_and_report"
+        t0 = time.monotonic()
+        inputs = {
+            "material_path": material_path,
+            "include_expressions": include_expressions,
+        }
+        code = (
+            _COMPILE_MATERIAL_REPORT_CODE
+            .replace("__MAT_PATH__", repr(material_path))
+            .replace("__INCLUDE_EXPRESSIONS__", repr(include_expressions))
+        )
+        raw = _exec_python(code)
+        out = _parse_exec_output(raw)
+        if out:
+            errors = out.get("errors", [])
+            warnings = out.get("warnings", [])
+            outputs = {
+                "compile_status": out.get("compile_status", "unknown"),
+                "compile_clean": out.get("compile_clean", False),
+                "had_errors": out.get("had_errors", bool(errors)),
+                "errors": errors,
+                "warnings": warnings,
+                "expression_count": out.get("expression_count", 0),
+                "expression_summaries": out.get("expression_summaries", []),
+                "material_path": material_path,
+                "safe_to_continue": not bool(errors),
+            }
+            meta = _meta(tool_name, t0)
+            return json.dumps(_ok(
+                outputs,
+                [],
+                meta,
+                f"Material compile report: {outputs['compile_status']}",
+                inputs=inputs,
+                stage=tool_name,
+                log_tail=out.get("log_tail", []),
+            ))
+
+        meta = _meta(tool_name, t0)
+        return json.dumps(_ok({
+            "compile_status": "offline_stub",
+            "compile_clean": False,
+            "had_errors": False,
+            "errors": [],
+            "warnings": [],
+            "expression_count": 0,
+            "expression_summaries": [],
+            "material_path": material_path,
+            "safe_to_continue": False,
+            "mode": "offline_stub",
+        }, ["UE5 not connected; returning offline material report stub"], meta,
+        inputs=inputs, stage=tool_name))
+
+
+    # ── validate_import_result ────────────────────────────────────────────────
+    @mcp.tool()
+    async def validate_import_result(
+        ctx: Context,
+        expected_asset_path: str,
+        expected_class: str = "",
+        source_file: str = "",
+        require_saved: bool = True,
+    ) -> str:
+        """Validate that an imported asset exists and matches expectations.
+
+        Use immediately after import_texture, import_static_mesh,
+        import_skeletal_mesh, or generative imports to prove the asset loaded,
+        has the expected class, has dependency/reference metadata, and is not
+        still dirty when saved output is required.
+
+        Args:
+            expected_asset_path: Imported asset path, e.g. "/Game/Meshes/SM_Table".
+            expected_class: Optional expected class substring, e.g. "StaticMesh".
+            source_file: Optional original OS file path to verify still exists.
+            require_saved: Warn when the package is still dirty.
+
+        Returns:
+            StructuredResult JSON with outputs:
+              exists, class_name, class_matches, dirty, source_file_exists,
+              dependency_count, referencer_count, valid.
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#b2-graph-aware-diagnostics-diagnosticstoolspy
+        Example:
+            validate_import_result(expected_asset_path="/Game/MCP_Test/SM_Example", expected_class="StaticMesh")"""
+        tool_name = "validate_import_result"
+        t0 = time.monotonic()
+        inputs = {
+            "expected_asset_path": expected_asset_path,
+            "expected_class": expected_class,
+            "source_file": source_file,
+            "require_saved": require_saved,
+        }
+        code = (
+            _VALIDATE_IMPORT_RESULT_CODE
+            .replace("__ASSET_PATH__", repr(expected_asset_path))
+            .replace("__EXPECTED_CLASS__", repr(expected_class))
+            .replace("__SOURCE_FILE__", repr(source_file))
+            .replace("__REQUIRE_SAVED__", repr(require_saved))
+        )
+        raw = _exec_python(code)
+        out = _parse_exec_output(raw)
+        if out:
+            warning_items = out.get("warnings", [])
+            error_items = out.get("errors", [])
+            valid = bool(out.get("exists")) and bool(out.get("class_matches", True)) and not error_items
+            if require_saved and out.get("dirty"):
+                valid = False
+            outputs = {
+                "asset_path": expected_asset_path,
+                "exists": bool(out.get("exists")),
+                "class_name": out.get("class_name", ""),
+                "expected_class": expected_class,
+                "class_matches": bool(out.get("class_matches", True)),
+                "package_name": out.get("package_name", ""),
+                "object_path": out.get("object_path", ""),
+                "dirty": bool(out.get("dirty", False)),
+                "source_file_exists": out.get("source_file_exists"),
+                "referencer_count": out.get("referencer_count", 0),
+                "dependency_count": out.get("dependency_count", 0),
+                "valid": valid,
+            }
+            meta = _meta(tool_name, t0)
+            return json.dumps(_ok(
+                outputs,
+                warning_items,
+                meta,
+                "Import validation passed" if valid else "Import validation found issues",
+                inputs=inputs,
+                stage=tool_name,
+                log_tail=out.get("log_tail", []),
+            ) if not error_items else _err(
+                "; ".join(str(e) for e in error_items),
+                meta,
+                inputs=inputs,
+                log_tail=out.get("log_tail", []),
+            ))
+
+        meta = _meta(tool_name, t0)
+        return json.dumps(_ok({
+            "asset_path": expected_asset_path,
+            "exists": False,
+            "class_name": "",
+            "expected_class": expected_class,
+            "class_matches": False,
+            "dirty": False,
+            "valid": False,
+            "mode": "offline_stub",
+        }, ["UE5 not connected; returning offline import validation stub"], meta,
+        inputs=inputs, stage=tool_name))
+
+
+    # ── get_changed_assets_since ─────────────────────────────────────────────
+    @mcp.tool()
+    async def get_changed_assets_since(
+        ctx: Context,
+        timestamp: str,
+        path: str = "/Game",
+        include_dirty: bool = True,
+        include_unreal_generated: bool = False,
+        limit: int = 200,
+    ) -> str:
+        """List Content Browser assets changed since a timestamp.
+
+        Compares package file modification times and optionally includes dirty
+        in-editor packages.  Accepts Unix epoch seconds or ISO-8601 timestamps.
+
+        Args:
+            timestamp: Epoch seconds or ISO-8601 timestamp, e.g. "2026-06-07T00:00:00Z".
+            path: Content root to scan, default "/Game".
+            include_dirty: Include unsaved dirty content/map packages.
+            include_unreal_generated: Include /Engine and /Script paths if encountered.
+            limit: Maximum changed assets to return; 0 means no explicit cap.
+
+        Returns:
+            StructuredResult JSON with outputs:
+              changed_assets[], dirty_assets[], changed_count, dirty_count.
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#b2-graph-aware-diagnostics-diagnosticstoolspy
+        Example:
+            get_changed_assets_since(timestamp="2026-06-07T00:00:00Z", path="/Game")"""
+        tool_name = "get_changed_assets_since"
+        t0 = time.monotonic()
+        inputs = {
+            "timestamp": timestamp,
+            "path": path,
+            "include_dirty": include_dirty,
+            "include_unreal_generated": include_unreal_generated,
+            "limit": limit,
+        }
+        code = (
+            _GET_CHANGED_ASSETS_SINCE_CODE
+            .replace("__TIMESTAMP__", repr(timestamp))
+            .replace("__PATH__", repr(path))
+            .replace("__INCLUDE_DIRTY__", repr(include_dirty))
+            .replace("__INCLUDE_UNREAL_GENERATED__", repr(include_unreal_generated))
+            .replace("__LIMIT__", repr(limit))
+        )
+        raw = _exec_python(code)
+        out = _parse_exec_output(raw)
+        if out:
+            errors = out.get("errors", [])
+            outputs = {
+                "timestamp": timestamp,
+                "path": path,
+                "changed_assets": out.get("changed_assets", []),
+                "dirty_assets": out.get("dirty_assets", []),
+                "changed_count": out.get("changed_count", 0),
+                "dirty_count": out.get("dirty_count", 0),
+            }
+            meta = _meta(tool_name, t0)
+            if errors:
+                return json.dumps(_err(
+                    "; ".join(str(e) for e in errors),
+                    meta,
+                    inputs=inputs,
+                    log_tail=out.get("log_tail", []),
+                ))
+            return json.dumps(_ok(
+                outputs,
+                [],
+                meta,
+                f"{outputs['changed_count']} changed asset(s), {outputs['dirty_count']} dirty package(s)",
+                inputs=inputs,
+                stage=tool_name,
+                log_tail=out.get("log_tail", []),
+            ))
+
+        meta = _meta(tool_name, t0)
+        return json.dumps(_ok({
+            "timestamp": timestamp,
+            "path": path,
+            "changed_assets": [],
+            "dirty_assets": [],
+            "changed_count": 0,
+            "dirty_count": 0,
+            "mode": "offline_stub",
+        }, ["UE5 not connected; returning offline changed-assets stub"], meta,
+        inputs=inputs, stage=tool_name))
+
     # ── bp_get_compile_diagnostics ────────────────────────────────────────────
     @mcp.tool()
     async def bp_get_compile_diagnostics(
@@ -639,7 +1333,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               warnings[]          — structured warning items
               compile_time_ms     — int
               compiler_summary    — human-readable one-line summary
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_get_compile_diagnostics(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_get_compile_diagnostics"
         t0 = time.monotonic()
         meta = _meta(tool_name, t0)
@@ -749,7 +1446,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               issue_count         — int
               issues[]            — structured issue items
               nodes_checked       — int
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_validate_graph(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_validate_graph"
         t0 = time.monotonic()
 
@@ -839,7 +1539,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               warning_count       — int
               issues[]            — all issues combined
               recommended_actions[] — actionable strings
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_validate_blueprint(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_validate_blueprint"
         t0 = time.monotonic()
 
@@ -963,7 +1666,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               disconnected_pins[] — list of {node_guid, node_title, pin_name,
                                              pin_type, direction, severity}
               total_disconnected  — int
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_find_disconnected_pins(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_find_disconnected_pins"
         t0 = time.monotonic()
         bp_name = blueprint_path.split("/")[-1]
@@ -1039,7 +1745,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
             StructuredResult with outputs:
               unreachable_nodes[] — {node_guid, node_title, reason}
               total_unreachable   — int
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_find_unreachable_nodes(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_find_unreachable_nodes"
         t0 = time.monotonic()
         bp_name = blueprint_path.split("/")[-1]
@@ -1112,7 +1821,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               unused_variables[]    — list of variable issue items
               all_variables[]       — all declared variable names
               variables_checked     — int
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_find_unused_variables(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_find_unused_variables"
         t0 = time.monotonic()
 
@@ -1163,7 +1875,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
             StructuredResult with outputs:
               orphaned_nodes[]  — {node_guid, node_title, reason, auto_repairable}
               total_orphaned    — int
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_find_orphaned_nodes(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_find_orphaned_nodes"
         t0 = time.monotonic()
         bp_name = blueprint_path.split("/")[-1]
@@ -1228,7 +1943,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               safe_to_continue  — bool (no compile errors)
               auto_repair_recommended — bool (auto_repairable issues exist)
               full_issues[]     — all issues
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_run_post_mutation_verify(blueprint_path="/Game/MCP_Test/BP_Example")"""
         tool_name = "bp_run_post_mutation_verify"
         t0 = time.monotonic()
         if changed_graphs is None:
@@ -1322,7 +2040,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               expression_count  — int
               compiler_summary  — str
               had_errors        — bool
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            mat_get_compile_diagnostics(material_path="/Game/MCP_Test/M_Example")"""
         tool_name = "mat_get_compile_diagnostics"
         t0 = time.monotonic()
         code = _MAT_COMPILE_DIAG_CODE.replace("__MAT_PATH__", repr(material_path))
@@ -1379,7 +2100,10 @@ def register_diagnostics_tools(mcp: FastMCP) -> None:  # noqa: C901
               disconnected_count     — int (expressions not connected to output)
               issues[]               — structured issue items
               recommended_actions[]  — actionable strings
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            mat_validate_material(material_path="/Game/MCP_Test/M_Example")"""
         tool_name = "mat_validate_material"
         t0 = time.monotonic()
         issues:      List[Dict] = []
