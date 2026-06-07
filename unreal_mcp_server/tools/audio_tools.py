@@ -11,7 +11,8 @@ machine, use import_sound_asset_from_sandbox in data_tools.py instead.
 import json
 import logging
 import os
-from typing import Any, Dict
+import time
+from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -30,6 +31,67 @@ def _send(command: str, params: dict) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in {command}: {e}")
         return {"success": False, "message": str(e)}
+
+
+def _make_result(
+    *,
+    success: bool,
+    stage: str,
+    message: str,
+    inputs: Dict[str, Any],
+    outputs: Optional[Dict[str, Any]] = None,
+    warnings: Optional[List[str]] = None,
+    errors: Optional[List[str]] = None,
+    t0: float,
+) -> Dict[str, Any]:
+    return {
+        "success": success,
+        "stage": stage,
+        "message": message,
+        "inputs": inputs,
+        "outputs": outputs or {},
+        "warnings": warnings or [],
+        "errors": errors or [],
+        "log_tail": [],
+        "meta": {"tool": stage, "duration_ms": int((time.monotonic() - t0) * 1000)},
+    }
+
+
+def _bridge_result(
+    *,
+    stage: str,
+    raw: Dict[str, Any],
+    inputs: Dict[str, Any],
+    message: str,
+    t0: float,
+    warnings: Optional[List[str]] = None,
+) -> str:
+    raw = raw or {}
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    if failed:
+        msg = raw.get("error") or raw.get("message") or f"{stage} failed"
+        return json.dumps(_make_result(
+            success=False,
+            stage="error",
+            message=msg,
+            inputs=inputs,
+            errors=[msg],
+            t0=t0,
+        ))
+
+    outputs = {
+        key: value for key, value in raw.items()
+        if key not in {"success", "status", "message", "error"}
+    }
+    return json.dumps(_make_result(
+        success=True,
+        stage=stage,
+        message=message,
+        inputs=inputs,
+        outputs=outputs,
+        warnings=warnings,
+        t0=t0,
+    ))
 
 
 def register_audio_tools(mcp: FastMCP):
@@ -197,3 +259,317 @@ sys.stdout.flush()
                 parsed = {"success": False, "error": f"Could not parse UE output: {output!r}"}
 
         return json.dumps(parsed)
+
+    @mcp.tool()
+    async def metasound_create_source(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Audio/MetaSounds",
+        one_shot: bool = True,
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a MetaSound Source asset for playable procedural audio.
+
+        Args:
+            name: Asset name such as MS_GeneratorHum.
+            path: Content Browser folder under /Game.
+            one_shot: Metadata hint for source intent; true for one-shot sources.
+            overwrite: Delete an existing asset with the same name first.
+            save: Save the package after creation.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            metasound_create_source(name="MS_GeneratorHum", path="/Game/Audio/MetaSounds")
+        """
+        t0 = time.monotonic()
+        params = {
+            "name": name,
+            "path": path,
+            "one_shot": bool(one_shot),
+            "overwrite": bool(overwrite),
+            "save": bool(save),
+        }
+        raw = _send("metasound_create_source", params)
+        return _bridge_result(
+            stage="metasound_create_source",
+            raw=raw,
+            inputs=params,
+            message=f"Created MetaSound Source '{name}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def metasound_create_patch(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Audio/MetaSounds/Patches",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a reusable MetaSound Patch asset for shared DSP logic.
+
+        Args:
+            name: Asset name such as MSP_DamageCrackle.
+            path: Content Browser folder under /Game.
+            overwrite: Delete an existing asset with the same name first.
+            save: Save the package after creation.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            metasound_create_patch(name="MSP_DamageCrackle", path="/Game/Audio/MetaSounds/Patches")
+        """
+        t0 = time.monotonic()
+        params = {"name": name, "path": path, "overwrite": bool(overwrite), "save": bool(save)}
+        raw = _send("metasound_create_patch", params)
+        return _bridge_result(
+            stage="metasound_create_patch",
+            raw=raw,
+            inputs=params,
+            message=f"Created MetaSound Patch '{name}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def metasound_add_node(
+        ctx: Context,
+        metasound: str,
+        class_name: str,
+        class_namespace: str = "",
+        class_variant: str = "",
+        major_version: int = 1,
+        node_position: Optional[List[float]] = None,
+    ) -> str:
+        """Add a native MetaSound node by registered class name.
+
+        Args:
+            metasound: MetaSound Source/Patch asset path.
+            class_name: Registered MetaSound node class name.
+            class_namespace: Optional registered class namespace.
+            class_variant: Optional registered class variant.
+            major_version: Native class major version.
+            node_position: Optional [X, Y] editor graph location.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            metasound_add_node(metasound="/Game/Audio/MetaSounds/MS_GeneratorHum", class_name="Sine", class_namespace="UE")
+        """
+        t0 = time.monotonic()
+        params: Dict[str, Any] = {
+            "metasound": metasound,
+            "class_name": class_name,
+            "class_namespace": class_namespace,
+            "class_variant": class_variant,
+            "major_version": int(major_version),
+        }
+        if node_position:
+            params["node_position"] = node_position
+        raw = _send("metasound_add_node", params)
+        return _bridge_result(
+            stage="metasound_add_node",
+            raw=raw,
+            inputs=params,
+            message=f"Added MetaSound node '{class_name}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def metasound_connect_pins(
+        ctx: Context,
+        metasound: str,
+        from_node_id: str,
+        from_output_id: str,
+        to_node_id: str,
+        to_input_id: str,
+    ) -> str:
+        """Connect a MetaSound node output vertex to a node input vertex.
+
+        Args:
+            metasound: MetaSound Source/Patch asset path.
+            from_node_id: Source node GUID returned by metasound_add_node or inspection.
+            from_output_id: Source output vertex GUID.
+            to_node_id: Destination node GUID.
+            to_input_id: Destination input vertex GUID.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            metasound_connect_pins(metasound="/Game/Audio/MetaSounds/MS_GeneratorHum", from_node_id="...", from_output_id="...", to_node_id="...", to_input_id="...")
+        """
+        t0 = time.monotonic()
+        params = {
+            "metasound": metasound,
+            "from_node_id": from_node_id,
+            "from_output_id": from_output_id,
+            "to_node_id": to_node_id,
+            "to_input_id": to_input_id,
+        }
+        raw = _send("metasound_connect_pins", params)
+        return _bridge_result(
+            stage="metasound_connect_pins",
+            raw=raw,
+            inputs=params,
+            message="Connected MetaSound pins",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def metasound_compile(
+        ctx: Context,
+        metasound: str,
+        save: bool = True,
+    ) -> str:
+        """Build, conform, and optionally save a MetaSound Source/Patch asset.
+
+        Args:
+            metasound: MetaSound Source/Patch asset path.
+            save: Save the package after compile/build.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            metasound_compile(metasound="/Game/Audio/MetaSounds/MS_GeneratorHum")
+        """
+        t0 = time.monotonic()
+        params = {"metasound": metasound, "save": bool(save)}
+        raw = _send("metasound_compile", params)
+        return _bridge_result(
+            stage="metasound_compile",
+            raw=raw,
+            inputs=params,
+            message=f"Compiled MetaSound '{metasound}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def audio_create_soundcue(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Audio/Cues",
+        sound_wave: str = "",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a SoundCue asset, optionally prewired to a SoundWave.
+
+        Args:
+            name: Asset name such as SC_Footstep_Dirt.
+            path: Content Browser folder under /Game.
+            sound_wave: Optional SoundWave asset path to seed the cue.
+            overwrite: Delete an existing asset with the same name first.
+            save: Save the package after creation.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            audio_create_soundcue(name="SC_Footstep_Dirt", sound_wave="/Game/Audio/SFX/SW_Footstep_Dirt")
+        """
+        t0 = time.monotonic()
+        params = {
+            "name": name,
+            "path": path,
+            "sound_wave": sound_wave,
+            "overwrite": bool(overwrite),
+            "save": bool(save),
+        }
+        raw = _send("audio_create_soundcue", params)
+        return _bridge_result(
+            stage="audio_create_soundcue",
+            raw=raw,
+            inputs=params,
+            message=f"Created SoundCue '{name}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def audio_create_attenuation(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Audio/Attenuation",
+        radius: float = 400.0,
+        falloff_distance: float = 3600.0,
+        spatialize: bool = True,
+        attenuate: bool = True,
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a Sound Attenuation asset with common 3D falloff defaults.
+
+        Args:
+            name: Asset name such as SA_RoomTone.
+            path: Content Browser folder under /Game.
+            radius: Inner sphere radius.
+            falloff_distance: Distance after radius over which volume falls off.
+            spatialize: Enable 3D spatialization.
+            attenuate: Enable distance attenuation.
+            overwrite: Delete an existing asset with the same name first.
+            save: Save the package after creation.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            audio_create_attenuation(name="SA_RoomTone", radius=500.0, falloff_distance=3000.0)
+        """
+        t0 = time.monotonic()
+        params = {
+            "name": name,
+            "path": path,
+            "radius": float(radius),
+            "falloff_distance": float(falloff_distance),
+            "spatialize": bool(spatialize),
+            "attenuate": bool(attenuate),
+            "overwrite": bool(overwrite),
+            "save": bool(save),
+        }
+        raw = _send("audio_create_attenuation", params)
+        return _bridge_result(
+            stage="audio_create_attenuation",
+            raw=raw,
+            inputs=params,
+            message=f"Created Sound Attenuation '{name}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def audio_create_concurrency(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Audio/Concurrency",
+        max_count: int = 8,
+        resolution_rule: str = "stop_farthest_then_oldest",
+        limit_to_owner: bool = False,
+        retrigger_time: float = 0.0,
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a Sound Concurrency asset for voice limiting.
+
+        Args:
+            name: Asset name such as SCN_Impacts.
+            path: Content Browser folder under /Game.
+            max_count: Maximum active voices in the group.
+            resolution_rule: prevent_new, stop_oldest, stop_quietest, stop_lowest_priority, or stop_farthest_then_oldest.
+            limit_to_owner: Limit concurrency per owning actor.
+            retrigger_time: Minimum seconds between accepted plays.
+            overwrite: Delete an existing asset with the same name first.
+            save: Save the package after creation.
+
+        KB: see knowledge_base/21_METASOUNDS_AND_AUDIO_DSP.md#mcp-audio-tools
+        Example:
+            audio_create_concurrency(name="SCN_Impacts", max_count=6, resolution_rule="stop_quietest")
+        """
+        t0 = time.monotonic()
+        params = {
+            "name": name,
+            "path": path,
+            "max_count": int(max_count),
+            "resolution_rule": resolution_rule,
+            "limit_to_owner": bool(limit_to_owner),
+            "retrigger_time": float(retrigger_time),
+            "overwrite": bool(overwrite),
+            "save": bool(save),
+        }
+        raw = _send("audio_create_concurrency", params)
+        return _bridge_result(
+            stage="audio_create_concurrency",
+            raw=raw,
+            inputs=params,
+            message=f"Created Sound Concurrency '{name}'",
+            t0=t0,
+        )

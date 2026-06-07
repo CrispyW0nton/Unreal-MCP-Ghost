@@ -36,7 +36,7 @@
   },
   "tools.audio_tools": {
     "category": "audio",
-    "roadmap_phase": "baseline",
+    "roadmap_phase": "phase_3_metasounds_audio",
     "status": "live"
   },
   "tools.blueprint_tools": {

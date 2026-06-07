@@ -1725,6 +1725,54 @@ python3 sandbox_ue5cli.py wire_play_sound_to_blueprint '{
 
 ---
 
+### B.5 MetaSounds and audio asset authoring
+
+Use these `audio_tools.py` additions when the audio pass needs created assets,
+MetaSound graph edits, 3D attenuation, or concurrency policy.
+
+#### MetaSound sources, patches, and graph edits
+```python
+metasound_create_source(name="MS_GeneratorHum", path="/Game/Audio/MetaSounds")
+metasound_create_patch(name="MSP_DamageCrackle")
+metasound_add_node(
+    metasound="/Game/Audio/MetaSounds/MS_GeneratorHum",
+    class_namespace="UE",
+    class_name="Sine",
+    node_position=[200, 80]
+)
+metasound_connect_pins(
+    metasound="/Game/Audio/MetaSounds/MS_GeneratorHum",
+    from_node_id="<node-guid>",
+    from_output_id="<output-guid>",
+    to_node_id="<node-guid>",
+    to_input_id="<input-guid>"
+)
+metasound_compile(metasound="/Game/Audio/MetaSounds/MS_GeneratorHum")
+```
+
+#### SoundCue, attenuation, and concurrency assets
+```python
+audio_create_soundcue(
+    name="SC_Footstep_Dirt",
+    sound_wave="/Game/Audio/SFX/SW_Footstep_Dirt"
+)
+audio_create_attenuation(
+    name="SA_RoomTone",
+    radius=500.0,
+    falloff_distance=3000.0
+)
+audio_create_concurrency(
+    name="SCN_Impacts",
+    max_count=6,
+    resolution_rule="stop_quietest"
+)
+```
+
+After B.5 edits, run `metasound_compile`, verify the created assets with
+`scan_project_assets`, and run a PIE/log pass for gameplay playback evidence.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

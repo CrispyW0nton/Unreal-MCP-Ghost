@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### B.5 - MetaSounds and audio asset authoring tools
+
+- Added `metasound_create_source`, `metasound_create_patch`, `metasound_add_node`, `metasound_connect_pins`, and `metasound_compile` for MetaSound asset and graph authoring.
+- Added `audio_create_soundcue`, `audio_create_attenuation`, and `audio_create_concurrency` for cue routing, 3D falloff, and voice-limit policy assets.
+- Added native audio bridge routes, MetaSound plugin/module dependencies, usage guide notes, KB cross-links, and B.5 offline smoke tests.
+
 ### B.4 - Networking and replication authoring tools
 
 - Added `net_set_property_replicated`, `net_set_function_rpc`, and `net_set_replication_condition` for replicated Blueprint state and RPC authoring.

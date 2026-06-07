@@ -103,6 +103,13 @@ public class UnrealMCP : ModuleRules
                 "Niagara",
                 "NiagaraEditor",
 
+                // Audio / MetaSound authoring - required for B.5 audio tools
+                "AudioEditor",
+                "MetasoundEngine",
+                "MetasoundEditor",
+                "MetasoundFrontend",
+                "MetasoundGraphCore",
+
                 // Sequencer / Level Sequence - required for set_sequencer_track
                 "MovieScene",
                 "MovieSceneTracks",

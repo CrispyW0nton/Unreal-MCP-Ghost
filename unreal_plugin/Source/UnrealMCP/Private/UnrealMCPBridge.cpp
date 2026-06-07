@@ -89,6 +89,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPExtendedCommands.h"
 #include "Commands/UnrealMCPGASCommands.h"
 #include "Commands/UnrealMCPNetworkCommands.h"
+#include "Commands/UnrealMCPAudioCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
 
@@ -2700,6 +2701,23 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     NetworkCommands = MakeShared<FUnrealMCPNetworkCommands>();
                 }
                 ResultJson = NetworkCommands->HandleCommand(CommandType, Params);
+            }
+            // MetaSounds & Audio Commands
+            else if (CommandType == TEXT("metasound_create_source") ||
+                     CommandType == TEXT("metasound_create_patch") ||
+                     CommandType == TEXT("metasound_add_node") ||
+                     CommandType == TEXT("metasound_connect_pins") ||
+                     CommandType == TEXT("metasound_compile") ||
+                     CommandType == TEXT("audio_create_soundcue") ||
+                     CommandType == TEXT("audio_create_attenuation") ||
+                     CommandType == TEXT("audio_create_concurrency"))
+            {
+                static TSharedPtr<FUnrealMCPAudioCommands> AudioCommands;
+                if (!AudioCommands.IsValid())
+                {
+                    AudioCommands = MakeShared<FUnrealMCPAudioCommands>();
+                }
+                ResultJson = AudioCommands->HandleCommand(CommandType, Params);
             }
             // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())

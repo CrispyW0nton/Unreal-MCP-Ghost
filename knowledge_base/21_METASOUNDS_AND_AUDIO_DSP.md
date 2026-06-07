@@ -48,6 +48,51 @@ the final Blueprint node.
 | Verify runtime | PIE tools, log capture, viewport/audio-adjacent evidence notes |
 | Package evidence | execution journal and vertical slice report tools |
 
+Workstream B.5 extends `audio_tools.py` with a first-class MetaSound/audio
+authoring surface:
+
+| B.5 Task | Preferred MCP tool |
+| --- | --- |
+| Create playable MetaSound assets | `metasound_create_source` |
+| Create reusable DSP patches | `metasound_create_patch` |
+| Add a native MetaSound graph node | `metasound_add_node` |
+| Connect MetaSound vertex handles | `metasound_connect_pins` |
+| Build/conform/save a MetaSound | `metasound_compile` |
+| Create legacy cue routing | `audio_create_soundcue` |
+| Create 3D falloff settings | `audio_create_attenuation` |
+| Create voice-limit policy | `audio_create_concurrency` |
+
+## MCP Audio Tools
+
+Use these B.5 tools when an audio pass needs authored assets rather than only
+imported SoundWaves:
+
+```python
+metasound_create_source(name="MS_GeneratorHum", path="/Game/Audio/MetaSounds")
+metasound_create_patch(name="MSP_DamageCrackle")
+metasound_add_node(
+    metasound="/Game/Audio/MetaSounds/MS_GeneratorHum",
+    class_namespace="UE",
+    class_name="Sine",
+    node_position=[200, 80]
+)
+metasound_connect_pins(
+    metasound="/Game/Audio/MetaSounds/MS_GeneratorHum",
+    from_node_id="<node-guid>",
+    from_output_id="<output-guid>",
+    to_node_id="<node-guid>",
+    to_input_id="<input-guid>"
+)
+metasound_compile(metasound="/Game/Audio/MetaSounds/MS_GeneratorHum")
+audio_create_soundcue(name="SC_Footstep_Dirt", sound_wave="/Game/Audio/SFX/SW_Footstep_Dirt")
+audio_create_attenuation(name="SA_RoomTone", radius=500.0, falloff_distance=3000.0)
+audio_create_concurrency(name="SCN_Impacts", max_count=6, resolution_rule="stop_quietest")
+```
+
+For MetaSound node wiring, inspect or capture returned node/vertex GUIDs before
+calling `metasound_connect_pins`. Follow any graph mutation with
+`metasound_compile` and a PIE/log validation pass.
+
 ## Working Example
 
 Goal: create a reactive generator hum.
