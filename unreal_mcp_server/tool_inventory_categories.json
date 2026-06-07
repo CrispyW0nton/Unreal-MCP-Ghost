@@ -27,7 +27,8 @@
   "tools.animation_tools": {
     "category": "animation",
     "roadmap_phase": "phase_5_animation_closure",
-    "status": "partial"
+    "status": "partial",
+    "coverage_note": "Includes B.8 Motion Matching/Chooser and B.14 MetaHuman package registration/linkage tools."
   },
   "tools.asset_import_tools": {
     "category": "asset_import",

@@ -2189,6 +2189,51 @@ firewall/port readiness.
 
 ---
 
+### B.14 MetaHuman Pipeline (`animation_tools.py`)
+
+Use these tools after creating or assembling a MetaHuman package through the
+UE/Fab/MetaHuman workflow. They register the multi-asset package, persist the
+important animation references, and make later wrapper/retargeting automation
+repeatable.
+
+#### Register imported package
+```python
+metahuman_import(
+    character_name="Ada",
+    metahuman_root="/Game/MetaHumans/Ada",
+    expected_blueprint="/Game/MetaHumans/Ada/BP_Ada",
+    body_skeletal_mesh="/Game/MetaHumans/Ada/Body/SK_Ada_Body",
+    face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face"
+)
+```
+
+#### Link skeleton and animation assets
+```python
+metahuman_link_to_skeleton(
+    character_name="Ada",
+    body_skeletal_mesh="/Game/MetaHumans/Ada/Body/SK_Ada_Body",
+    target_skeleton="/Game/MetaHumans/Ada/Body/SKEL_Ada",
+    ik_rig="/Game/Animation/IK/IK_Ada",
+    retargeter="/Game/Animation/Retargeters/RTG_Ada",
+    anim_blueprint="/Game/MetaHumans/Ada/ABP_Ada"
+)
+```
+
+#### Assign DNA metadata
+```python
+metahuman_assign_dna(
+    character_name="Ada",
+    dna_asset="/Game/MetaHumans/Ada/Face/Ada_DNA",
+    face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face",
+    rig_logic_asset="/Game/MetaHumans/Ada/Face/CR_Ada_Face"
+)
+```
+
+Keep gameplay logic in wrapper/base Blueprints and use these manifest entries
+as references for retargeting, animation validation, and performance audits.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

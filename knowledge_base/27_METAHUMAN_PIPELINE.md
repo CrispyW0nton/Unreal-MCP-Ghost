@@ -48,6 +48,14 @@ Control Rig, materials, and gameplay components separated.
 | Audit materials/performance | material/texture/mesh audit tools |
 | Verify runtime | PIE, viewport screenshots, execution journal |
 
+## MCP MetaHuman Tools
+
+| Tool | Use |
+| --- | --- |
+| `metahuman_import` | Register an assembled/imported MetaHuman asset root, scan its package tree, and write a manifest section for later tools. |
+| `metahuman_link_to_skeleton` | Link the body skeletal mesh to skeleton, IK Rig, retargeter, AnimBP, and post-process AnimBP references. |
+| `metahuman_assign_dna` | Record DNA asset/file, face mesh, and rig logic metadata for face/body rig validation. |
+
 ## Working Example
 
 Goal: integrate a MetaHuman NPC into a gameplay slice.

@@ -96,6 +96,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPPixelStreamingCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
 #include "Commands/UnrealMCPMassCommands.h"
+#include "Commands/UnrealMCPMetaHumanCommands.h"
 #include "Commands/UnrealMCPMotionCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
@@ -2816,6 +2817,18 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     PixelStreamingCommands = MakeShared<FUnrealMCPPixelStreamingCommands>();
                 }
                 ResultJson = PixelStreamingCommands->HandleCommand(CommandType, Params);
+            }
+            // MetaHuman package / animation linkage Commands
+            else if (CommandType == TEXT("metahuman_import") ||
+                     CommandType == TEXT("metahuman_link_to_skeleton") ||
+                     CommandType == TEXT("metahuman_assign_dna"))
+            {
+                static TSharedPtr<FUnrealMCPMetaHumanCommands> MetaHumanCommands;
+                if (!MetaHumanCommands.IsValid())
+                {
+                    MetaHumanCommands = MakeShared<FUnrealMCPMetaHumanCommands>();
+                }
+                ResultJson = MetaHumanCommands->HandleCommand(CommandType, Params);
             }
             // Motion Matching / Pose Search / Chooser Commands
             else if (CommandType == TEXT("motion_create_pose_search_schema") ||

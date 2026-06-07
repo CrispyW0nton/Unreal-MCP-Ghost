@@ -2187,4 +2187,85 @@ else:
         raw = _send("chooser_inspect_table", inputs)
         return _bridge_result(stage="chooser_inspect_table", raw=raw, inputs=inputs, message="Inspected Chooser table", t0=t0)
 
+    @mcp.tool()
+    def metahuman_import(
+        ctx: Context,
+        character_name: str,
+        metahuman_root: str = "",
+        expected_blueprint: str = "",
+        body_skeletal_mesh: str = "",
+        face_skeletal_mesh: str = "",
+        create_manifest: bool = True,
+    ) -> str:
+        """Register an assembled MetaHuman package and scan its imported asset tree.
+
+        KB: see knowledge_base/27_METAHUMAN_PIPELINE.md#mcp-metahuman-tools
+        Example:
+            metahuman_import(character_name="Ada", metahuman_root="/Game/MetaHumans/Ada")"""
+        t0 = time.monotonic()
+        inputs = {
+            "character_name": character_name,
+            "metahuman_root": metahuman_root or f"/Game/MetaHumans/{character_name}",
+            "expected_blueprint": expected_blueprint,
+            "body_skeletal_mesh": body_skeletal_mesh,
+            "face_skeletal_mesh": face_skeletal_mesh,
+            "create_manifest": create_manifest,
+        }
+        raw = _send("metahuman_import", inputs)
+        return _bridge_result(stage="metahuman_import", raw=raw, inputs=inputs, message="Registered MetaHuman package", t0=t0)
+
+    @mcp.tool()
+    def metahuman_link_to_skeleton(
+        ctx: Context,
+        character_name: str,
+        body_skeletal_mesh: str,
+        target_skeleton: str = "",
+        ik_rig: str = "",
+        retargeter: str = "",
+        anim_blueprint: str = "",
+        post_process_anim_blueprint: str = "",
+    ) -> str:
+        """Link a MetaHuman package to body skeleton, IK, retargeting, and animation assets.
+
+        KB: see knowledge_base/27_METAHUMAN_PIPELINE.md#mcp-metahuman-tools
+        Example:
+            metahuman_link_to_skeleton(character_name="Ada", body_skeletal_mesh="/Game/MetaHumans/Ada/Body/SK_Ada_Body")"""
+        t0 = time.monotonic()
+        inputs = {
+            "character_name": character_name,
+            "body_skeletal_mesh": body_skeletal_mesh,
+            "target_skeleton": target_skeleton,
+            "ik_rig": ik_rig,
+            "retargeter": retargeter,
+            "anim_blueprint": anim_blueprint,
+            "post_process_anim_blueprint": post_process_anim_blueprint,
+        }
+        raw = _send("metahuman_link_to_skeleton", inputs)
+        return _bridge_result(stage="metahuman_link_to_skeleton", raw=raw, inputs=inputs, message="Linked MetaHuman skeleton and animation assets", t0=t0)
+
+    @mcp.tool()
+    def metahuman_assign_dna(
+        ctx: Context,
+        character_name: str,
+        dna_asset: str = "",
+        dna_file: str = "",
+        face_skeletal_mesh: str = "",
+        rig_logic_asset: str = "",
+    ) -> str:
+        """Assign DNA, face mesh, and rig logic metadata for a MetaHuman package.
+
+        KB: see knowledge_base/27_METAHUMAN_PIPELINE.md#mcp-metahuman-tools
+        Example:
+            metahuman_assign_dna(character_name="Ada", dna_asset="/Game/MetaHumans/Ada/Face/Ada_DNA")"""
+        t0 = time.monotonic()
+        inputs = {
+            "character_name": character_name,
+            "dna_asset": dna_asset,
+            "dna_file": dna_file,
+            "face_skeletal_mesh": face_skeletal_mesh,
+            "rig_logic_asset": rig_logic_asset,
+        }
+        raw = _send("metahuman_assign_dna", inputs)
+        return _bridge_result(stage="metahuman_assign_dna", raw=raw, inputs=inputs, message="Assigned MetaHuman DNA metadata", t0=t0)
+
     logger.info("Animation tools registered (including IK Rig / IK Retargeter)")
