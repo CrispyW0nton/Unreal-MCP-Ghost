@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.10 - Accessibility and polish
+
+- Added config-backed splitter persistence for the MCP Chat session rail, tool palette, conversation, and composer regions.
+- Kept the panel on editor style tokens and subdued foreground colors so light/dark theme parity follows Unreal editor styling.
+- Added a status footer that reports server latency, loaded tool count, KB doc count, request queue depth, and metrics state.
+- Added an opt-in metrics toggle that records local chat panel telemetry snapshots to `Saved/MCPChat/metrics.json`.
+- Added C.10 static tests guarding persisted layout, status footer fields, local opt-in telemetry, editor theming tokens, and this changelog entry.
+
 ### C.9 - Command palette
 
 - Added a Ctrl+K command palette to `SMCPChatPanel` with a header button and in-panel search surface.

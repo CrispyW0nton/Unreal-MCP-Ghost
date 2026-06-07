@@ -82,6 +82,7 @@ private:
 	FReply HandleOpenCommandPaletteClicked();
 	void HandleCommandPaletteTextChanged(const FText& Text);
 	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
+	FReply HandleToggleTelemetryClicked();
 	FReply HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
 	FReply HandleCopyClicked(FString Message) const;
 	FReply HandleRerunClicked(FString Message, FString Sender);
@@ -102,6 +103,13 @@ private:
 	void LoadSessions();
 	void SendSessionAction(const FString& Path, const TSharedPtr<class FJsonObject>& Payload, const FText& StatusOnSuccess);
 
+	void LoadLayoutSettings();
+	void SaveLayoutSettings() const;
+	void RecordHorizontalSplitterResize(float Size, int32 SlotIndex);
+	void RecordVerticalSplitterResize(float Size, int32 SlotIndex);
+	void RecordServerLatency(double RequestStartSeconds);
+	void RecordTelemetryEvent(const FString& EventName);
+	FString GetMetricsFilePath() const;
 	void AddMessage(const FChatMessage& ChatMessage);
 	void RebuildMessageList();
 	void RebuildToolPaletteList();
@@ -158,6 +166,8 @@ private:
 	EVisibility GetToolPaletteVisibility() const;
 	EVisibility GetCommandPaletteVisibility() const;
 	FText GetToolPaletteToggleText() const;
+	FText GetStatusFooterText() const;
+	FText GetTelemetryToggleText() const;
 	FString BuildSessionQueryParam() const;
 	FString BuildNewSessionName() const;
 	FString BuildRenamedSessionName() const;
@@ -183,7 +193,17 @@ private:
 	bool bToolPaletteVisible = true;
 	bool bToolPaletteLoaded = false;
 	bool bCommandPaletteVisible = false;
+	bool bTelemetryEnabled = false;
 	FString CommandPaletteFilter;
+	float SessionSidebarSize = 0.18f;
+	float ToolPaletteSize = 0.22f;
+	float ChatWorkspaceSize = 0.60f;
+	float ConversationSize = 0.78f;
+	float ComposerSize = 0.22f;
+	int32 LastServerLatencyMs = 0;
+	int32 ToolCount = 0;
+	int32 KbDocCount = 5;
+	int32 TelemetryEventCount = 0;
 	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
 	TArray<FChatSessionEntry> ChatSessions;
 	TArray<FCommandPaletteItem> CommandPaletteItems;

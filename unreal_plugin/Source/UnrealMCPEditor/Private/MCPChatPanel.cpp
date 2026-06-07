@@ -10,6 +10,8 @@
 #include "Engine/World.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
+#include "HAL/FileManager.h"
+#include "HAL/PlatformTime.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "IContentBrowserSingleton.h"
 #include "Input/DragAndDrop.h"
@@ -20,6 +22,8 @@
 #include "Dom/JsonObject.h"
 #include "GameFramework/Actor.h"
 #include "GenericPlatform/GenericPlatformHttp.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/FileHelper.h"
 #include "Misc/Guid.h"
 #include "Misc/PackageName.h"
 #include "Misc/Paths.h"
@@ -60,6 +64,8 @@ namespace
 	const FSlateColor ErrorStatusColor(FLinearColor(0.9f, 0.18f, 0.12f, 1.0f));
 	const FSlateColor OkStatusColor(FLinearColor(0.2f, 0.75f, 0.28f, 1.0f));
 	const FSlateColor PendingStatusColor(FLinearColor(0.75f, 0.62f, 0.22f, 1.0f));
+	constexpr int32 CoreCommandPaletteKbDocCount = 5;
+	const TCHAR* ChatPanelConfigSection = TEXT("UnrealMCP.ChatPanel");
 
 	FString GetStringField(const TSharedPtr<FJsonObject>& Object, const FString& FieldName)
 	{
@@ -74,6 +80,8 @@ namespace
 
 void SMCPChatPanel::Construct(const FArguments& InArgs)
 {
+	LoadLayoutSettings();
+
 	ChildSlot
 	[
 		SNew(SVerticalBox)
@@ -175,15 +183,18 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 		[
 			SNew(SSplitter)
 			.Orientation(Orient_Horizontal)
+			.ResizeMode(ESplitterResizeMode::Fill)
 
 			+ SSplitter::Slot()
-			.Value(0.18f)
+			.Value(SessionSidebarSize)
+			.OnSlotResized(SSplitter::FOnSlotResized::CreateSP(this, &SMCPChatPanel::RecordHorizontalSplitterResize, 0))
 			[
 				BuildSessionSidebar()
 			]
 
 			+ SSplitter::Slot()
-			.Value(0.22f)
+			.Value(ToolPaletteSize)
+			.OnSlotResized(SSplitter::FOnSlotResized::CreateSP(this, &SMCPChatPanel::RecordHorizontalSplitterResize, 1))
 			[
 				SNew(SBox)
 				.Visibility(this, &SMCPChatPanel::GetToolPaletteVisibility)
@@ -193,13 +204,16 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			]
 
 			+ SSplitter::Slot()
-			.Value(0.60f)
+			.Value(ChatWorkspaceSize)
+			.OnSlotResized(SSplitter::FOnSlotResized::CreateSP(this, &SMCPChatPanel::RecordHorizontalSplitterResize, 2))
 			[
 				SNew(SSplitter)
 				.Orientation(Orient_Vertical)
+				.ResizeMode(ESplitterResizeMode::Fill)
 
 				+ SSplitter::Slot()
-				.Value(0.78f)
+				.Value(ConversationSize)
+				.OnSlotResized(SSplitter::FOnSlotResized::CreateSP(this, &SMCPChatPanel::RecordVerticalSplitterResize, 0))
 				[
 					SNew(SVerticalBox)
 
@@ -227,7 +241,8 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 				]
 
 			+ SSplitter::Slot()
-			.Value(0.22f)
+			.Value(ComposerSize)
+			.OnSlotResized(SSplitter::FOnSlotResized::CreateSP(this, &SMCPChatPanel::RecordVerticalSplitterResize, 1))
 			[
 				SNew(SBorder)
 				.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
@@ -287,6 +302,37 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			]
 			]
 		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 8.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+			.Padding(6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetStatusFooterText)
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.AutoWrapText(true)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SButton)
+					.Text(this, &SMCPChatPanel::GetTelemetryToggleText)
+					.OnClicked(this, &SMCPChatPanel::HandleToggleTelemetryClicked)
+				]
+			]
+		]
 	];
 
 	LoadSessions();
@@ -301,6 +347,8 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 
 SMCPChatPanel::~SMCPChatPanel()
 {
+	SaveLayoutSettings();
+
 	if (PollTickerHandle.IsValid())
 	{
 		FTSTicker::GetCoreTicker().RemoveTicker(PollTickerHandle);
@@ -421,10 +469,12 @@ FReply SMCPChatPanel::HandleExportSessionClicked()
 {
 	const FString Path = TEXT("/chat/session/export?name=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName);
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("GET"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
 			SetStatus(LOCTEXT("StatusSessionExportFailed", "Export failed"), ErrorStatusColor);
@@ -478,6 +528,7 @@ FReply SMCPChatPanel::HandleOpenCommandPaletteClicked()
 	CommandPaletteFilter.Empty();
 	RefreshCommandPaletteItems();
 	RebuildCommandPaletteResults();
+	RecordTelemetryEvent(TEXT("command_palette_opened"));
 	if (CommandPaletteInput.IsValid())
 	{
 		CommandPaletteInput->SetText(FText::GetEmpty());
@@ -507,6 +558,22 @@ FReply SMCPChatPanel::HandleCommandPaletteItemClicked(FCommandPaletteItem Item)
 
 	bCommandPaletteVisible = false;
 	CommandPaletteFilter.Empty();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleToggleTelemetryClicked()
+{
+	bTelemetryEnabled = !bTelemetryEnabled;
+	SaveLayoutSettings();
+	if (bTelemetryEnabled)
+	{
+		RecordTelemetryEvent(TEXT("telemetry_enabled"));
+		SetStatus(LOCTEXT("StatusTelemetryEnabled", "Metrics enabled"), OkStatusColor);
+	}
+	else
+	{
+		SetStatus(LOCTEXT("StatusTelemetryDisabled", "Metrics disabled"), PendingStatusColor);
+	}
 	return FReply::Handled();
 }
 
@@ -681,10 +748,12 @@ void SMCPChatPanel::LoadHistory()
 {
 	const FString Path = TEXT("/chat/history?limit=50") + BuildSessionQueryParam();
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("GET"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
@@ -723,10 +792,12 @@ void SMCPChatPanel::PollAgentMessages()
 	}
 
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("GET"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
@@ -770,6 +841,7 @@ void SMCPChatPanel::SendHumanMessage(const FString& Message)
 {
 	const FString Path = TEXT("/chat/send?session=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName);
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("POST"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 
 	const TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
 	Payload->SetStringField(TEXT("sender"), TEXT("human"));
@@ -784,9 +856,10 @@ void SMCPChatPanel::SendHumanMessage(const FString& Message)
 	Request->SetContentAsString(Body);
 
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
@@ -795,6 +868,7 @@ void SMCPChatPanel::SendHumanMessage(const FString& Message)
 		}
 
 		SetStatus(LOCTEXT("StatusSendOk", "Connected"), OkStatusColor);
+		RecordTelemetryEvent(TEXT("message_sent"));
 		LoadSessions();
 	});
 	Request->ProcessRequest();
@@ -804,10 +878,12 @@ void SMCPChatPanel::ClearHistoryOnServer()
 {
 	const FString Path = TEXT("/chat/clear?session=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName);
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("POST"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 		const bool bClearSucceeded = bWasSuccessful && Response.IsValid() && Response->GetResponseCode() >= 200 && Response->GetResponseCode() < 300;
 		SetStatus(
 			bClearSucceeded
@@ -822,10 +898,12 @@ void SMCPChatPanel::ClearHistoryOnServer()
 void SMCPChatPanel::LoadToolPalette()
 {
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/tools/list?domain=all")), TEXT("GET"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
@@ -842,6 +920,12 @@ void SMCPChatPanel::LoadToolPalette()
 
 		ToolPaletteByCategory = MoveTemp(ParsedTools);
 		bToolPaletteLoaded = true;
+		ToolCount = 0;
+		for (const TPair<FString, TArray<FToolPaletteEntry>>& CategoryTools : ToolPaletteByCategory)
+		{
+			ToolCount += CategoryTools.Value.Num();
+		}
+		KbDocCount = CoreCommandPaletteKbDocCount;
 		RebuildToolPaletteList();
 		if (bCommandPaletteVisible)
 		{
@@ -856,10 +940,12 @@ void SMCPChatPanel::LoadToolPalette()
 void SMCPChatPanel::LoadSessions()
 {
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/chat/sessions")), TEXT("GET"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
 			SetStatus(LOCTEXT("StatusSessionsUnavailable", "Sessions unavailable"), ErrorStatusColor);
@@ -888,15 +974,17 @@ void SMCPChatPanel::LoadSessions()
 void SMCPChatPanel::SendSessionAction(const FString& Path, const TSharedPtr<FJsonObject>& Payload, const FText& StatusOnSuccess)
 {
 	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("POST"));
+	const double RequestStartSeconds = FPlatformTime::Seconds();
 	FString Body;
 	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
 	FJsonSerializer::Serialize(Payload.ToSharedRef(), Writer);
 	Request->SetContentAsString(Body);
 
 	ActiveRequests.Add(Request);
-	Request->OnProcessRequestComplete().BindLambda([this, StatusOnSuccess](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	Request->OnProcessRequestComplete().BindLambda([this, StatusOnSuccess, RequestStartSeconds](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
 		ActiveRequests.Remove(RequestPtr);
+		RecordServerLatency(RequestStartSeconds);
 		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
 		{
 			SetStatus(LOCTEXT("StatusSessionActionFailed", "Session action failed"), ErrorStatusColor);
@@ -907,6 +995,111 @@ void SMCPChatPanel::SendSessionAction(const FString& Path, const TSharedPtr<FJso
 		LoadSessions();
 	});
 	Request->ProcessRequest();
+}
+
+void SMCPChatPanel::LoadLayoutSettings()
+{
+	KbDocCount = CoreCommandPaletteKbDocCount;
+	if (!GConfig)
+	{
+		return;
+	}
+
+	GConfig->GetFloat(ChatPanelConfigSection, TEXT("SessionSidebarSize"), SessionSidebarSize, GEditorPerProjectIni);
+	GConfig->GetFloat(ChatPanelConfigSection, TEXT("ToolPaletteSize"), ToolPaletteSize, GEditorPerProjectIni);
+	GConfig->GetFloat(ChatPanelConfigSection, TEXT("ChatWorkspaceSize"), ChatWorkspaceSize, GEditorPerProjectIni);
+	GConfig->GetFloat(ChatPanelConfigSection, TEXT("ConversationSize"), ConversationSize, GEditorPerProjectIni);
+	GConfig->GetFloat(ChatPanelConfigSection, TEXT("ComposerSize"), ComposerSize, GEditorPerProjectIni);
+	GConfig->GetBool(ChatPanelConfigSection, TEXT("TelemetryEnabled"), bTelemetryEnabled, GEditorPerProjectIni);
+
+	SessionSidebarSize = FMath::Clamp(SessionSidebarSize, 0.10f, 0.45f);
+	ToolPaletteSize = FMath::Clamp(ToolPaletteSize, 0.0f, 0.45f);
+	ChatWorkspaceSize = FMath::Clamp(ChatWorkspaceSize, 0.35f, 0.85f);
+	ConversationSize = FMath::Clamp(ConversationSize, 0.35f, 0.90f);
+	ComposerSize = FMath::Clamp(ComposerSize, 0.10f, 0.65f);
+}
+
+void SMCPChatPanel::SaveLayoutSettings() const
+{
+	if (!GConfig)
+	{
+		return;
+	}
+
+	GConfig->SetFloat(ChatPanelConfigSection, TEXT("SessionSidebarSize"), SessionSidebarSize, GEditorPerProjectIni);
+	GConfig->SetFloat(ChatPanelConfigSection, TEXT("ToolPaletteSize"), ToolPaletteSize, GEditorPerProjectIni);
+	GConfig->SetFloat(ChatPanelConfigSection, TEXT("ChatWorkspaceSize"), ChatWorkspaceSize, GEditorPerProjectIni);
+	GConfig->SetFloat(ChatPanelConfigSection, TEXT("ConversationSize"), ConversationSize, GEditorPerProjectIni);
+	GConfig->SetFloat(ChatPanelConfigSection, TEXT("ComposerSize"), ComposerSize, GEditorPerProjectIni);
+	GConfig->SetBool(ChatPanelConfigSection, TEXT("TelemetryEnabled"), bTelemetryEnabled, GEditorPerProjectIni);
+	GConfig->Flush(false, GEditorPerProjectIni);
+}
+
+void SMCPChatPanel::RecordHorizontalSplitterResize(float Size, int32 SlotIndex)
+{
+	const float ClampedSize = FMath::Clamp(Size, 0.0f, 1.0f);
+	if (SlotIndex == 0)
+	{
+		SessionSidebarSize = ClampedSize;
+	}
+	else if (SlotIndex == 1)
+	{
+		ToolPaletteSize = ClampedSize;
+	}
+	else if (SlotIndex == 2)
+	{
+		ChatWorkspaceSize = ClampedSize;
+	}
+	SaveLayoutSettings();
+}
+
+void SMCPChatPanel::RecordVerticalSplitterResize(float Size, int32 SlotIndex)
+{
+	const float ClampedSize = FMath::Clamp(Size, 0.0f, 1.0f);
+	if (SlotIndex == 0)
+	{
+		ConversationSize = ClampedSize;
+	}
+	else if (SlotIndex == 1)
+	{
+		ComposerSize = ClampedSize;
+	}
+	SaveLayoutSettings();
+}
+
+void SMCPChatPanel::RecordServerLatency(double RequestStartSeconds)
+{
+	LastServerLatencyMs = FMath::Max(0, FMath::RoundToInt((FPlatformTime::Seconds() - RequestStartSeconds) * 1000.0));
+	RecordTelemetryEvent(TEXT("server_response"));
+}
+
+void SMCPChatPanel::RecordTelemetryEvent(const FString& EventName)
+{
+	if (!bTelemetryEnabled)
+	{
+		return;
+	}
+
+	++TelemetryEventCount;
+	const FString MetricsPath = GetMetricsFilePath();
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(MetricsPath), true);
+
+	const FString JsonText = FString::Printf(
+		TEXT("{\n  \"last_event\": \"%s\",\n  \"last_timestamp\": \"%s\",\n  \"event_count\": %d,\n  \"last_latency_ms\": %d,\n  \"tool_count\": %d,\n  \"kb_doc_count\": %d,\n  \"queue_depth\": %d\n}\n"),
+		*EventName,
+		*MakeCurrentTimestamp(),
+		TelemetryEventCount,
+		LastServerLatencyMs,
+		ToolCount,
+		KbDocCount,
+		ActiveRequests.Num()
+	);
+	FFileHelper::SaveStringToFile(JsonText, *MetricsPath);
+}
+
+FString SMCPChatPanel::GetMetricsFilePath() const
+{
+	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("MCPChat"), TEXT("metrics.json"));
 }
 
 void SMCPChatPanel::AddMessage(const FChatMessage& ChatMessage)
@@ -2612,6 +2805,23 @@ EVisibility SMCPChatPanel::GetCommandPaletteVisibility() const
 FText SMCPChatPanel::GetToolPaletteToggleText() const
 {
 	return bToolPaletteVisible ? LOCTEXT("HideToolPalette", "Hide Tools") : LOCTEXT("ShowToolPalette", "Show Tools");
+}
+
+FText SMCPChatPanel::GetStatusFooterText() const
+{
+	return FText::Format(
+		LOCTEXT("StatusFooter", "Latency: {0} ms | Tools: {1} | KB docs: {2} | Queue: {3} | Metrics: {4}"),
+		FText::AsNumber(LastServerLatencyMs),
+		FText::AsNumber(ToolCount),
+		FText::AsNumber(KbDocCount),
+		FText::AsNumber(ActiveRequests.Num()),
+		bTelemetryEnabled ? LOCTEXT("MetricsOn", "On") : LOCTEXT("MetricsOff", "Off")
+	);
+}
+
+FText SMCPChatPanel::GetTelemetryToggleText() const
+{
+	return bTelemetryEnabled ? LOCTEXT("DisableMetrics", "Disable Metrics") : LOCTEXT("EnableMetrics", "Enable Metrics");
 }
 
 FString SMCPChatPanel::BuildSessionQueryParam() const
