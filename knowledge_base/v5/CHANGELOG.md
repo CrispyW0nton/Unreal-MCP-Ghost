@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.11 - Onboarding
+
+- Added a config-backed first-launch MCP Chat tour with four steps: connect server, ask a question, drag an asset, and run a workflow.
+- Added persistent onboarding completion state with Tour and Done controls so users can dismiss or reopen the guided overlay.
+- Added a Sample Prompts surface with six curated demos: Health System, Build Slime Enemy, Dungeon Starter, HUD Health Bar, Repair Blueprint, and Asset Import Pass.
+- Wired sample prompt clicks to insert real tool-chain requests into the composer without terminal copy-paste.
+- Added C.11 static tests guarding first-launch state, tour steps, six sample demos, prompt insertion, and this changelog entry.
+
 ### C.10 - Accessibility and polish
 
 - Added config-backed splitter persistence for the MCP Chat session rail, tool palette, conversation, and composer regions.

@@ -131,6 +131,24 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(this, &SMCPChatPanel::GetSamplePromptsToggleText)
+				.OnClicked(this, &SMCPChatPanel::HandleToggleSamplePromptsClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("ShowTour", "Tour"))
+				.OnClicked(this, &SMCPChatPanel::HandleOnboardingNextClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
 				SNew(SButton)
 				.Text(LOCTEXT("ClearHistory", "Clear History"))
@@ -145,6 +163,28 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			SNew(STextBlock)
 			.Text(FText::Format(LOCTEXT("Endpoint", "Endpoint: {0}"), FText::FromString(ServerBaseUrl)))
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBox)
+			.Visibility(this, &SMCPChatPanel::GetOnboardingVisibility)
+			[
+				BuildOnboardingOverlay()
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBox)
+			.Visibility(this, &SMCPChatPanel::GetSamplePromptsVisibility)
+			[
+				BuildSamplePrompts()
+			]
 		]
 
 		+ SVerticalBox::Slot()
@@ -574,6 +614,55 @@ FReply SMCPChatPanel::HandleToggleTelemetryClicked()
 	{
 		SetStatus(LOCTEXT("StatusTelemetryDisabled", "Metrics disabled"), PendingStatusColor);
 	}
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleOnboardingNextClicked()
+{
+	bOnboardingVisible = true;
+	if (bOnboardingCompleted)
+	{
+		bOnboardingCompleted = false;
+		OnboardingStepIndex = 0;
+	}
+	else if (OnboardingStepIndex < 3)
+	{
+		++OnboardingStepIndex;
+	}
+	else
+	{
+		bOnboardingCompleted = true;
+		bOnboardingVisible = false;
+	}
+	SaveLayoutSettings();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleOnboardingDismissClicked()
+{
+	bOnboardingCompleted = true;
+	bOnboardingVisible = false;
+	SaveLayoutSettings();
+	SetStatus(LOCTEXT("StatusOnboardingDone", "Onboarding complete"), OkStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleToggleSamplePromptsClicked()
+{
+	bSamplePromptsVisible = !bSamplePromptsVisible;
+	SetStatus(
+		bSamplePromptsVisible ? LOCTEXT("StatusSamplePromptsOpen", "Sample prompts open") : LOCTEXT("StatusSamplePromptsClosed", "Sample prompts hidden"),
+		PendingStatusColor
+	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleSamplePromptClicked(FSamplePromptItem Item)
+{
+	InsertComposerText(Item.Prompt);
+	bSamplePromptsVisible = false;
+	RecordTelemetryEvent(TEXT("sample_prompt_inserted"));
+	SetStatus(FText::Format(LOCTEXT("StatusSamplePromptInserted", "Inserted sample: {0}"), FText::FromString(Item.Label)), OkStatusColor);
 	return FReply::Handled();
 }
 
@@ -1011,12 +1100,15 @@ void SMCPChatPanel::LoadLayoutSettings()
 	GConfig->GetFloat(ChatPanelConfigSection, TEXT("ConversationSize"), ConversationSize, GEditorPerProjectIni);
 	GConfig->GetFloat(ChatPanelConfigSection, TEXT("ComposerSize"), ComposerSize, GEditorPerProjectIni);
 	GConfig->GetBool(ChatPanelConfigSection, TEXT("TelemetryEnabled"), bTelemetryEnabled, GEditorPerProjectIni);
+	GConfig->GetBool(ChatPanelConfigSection, TEXT("OnboardingCompleted"), bOnboardingCompleted, GEditorPerProjectIni);
 
 	SessionSidebarSize = FMath::Clamp(SessionSidebarSize, 0.10f, 0.45f);
 	ToolPaletteSize = FMath::Clamp(ToolPaletteSize, 0.0f, 0.45f);
 	ChatWorkspaceSize = FMath::Clamp(ChatWorkspaceSize, 0.35f, 0.85f);
 	ConversationSize = FMath::Clamp(ConversationSize, 0.35f, 0.90f);
 	ComposerSize = FMath::Clamp(ComposerSize, 0.10f, 0.65f);
+	bOnboardingVisible = !bOnboardingCompleted;
+	OnboardingStepIndex = FMath::Clamp(OnboardingStepIndex, 0, 3);
 }
 
 void SMCPChatPanel::SaveLayoutSettings() const
@@ -1032,6 +1124,7 @@ void SMCPChatPanel::SaveLayoutSettings() const
 	GConfig->SetFloat(ChatPanelConfigSection, TEXT("ConversationSize"), ConversationSize, GEditorPerProjectIni);
 	GConfig->SetFloat(ChatPanelConfigSection, TEXT("ComposerSize"), ComposerSize, GEditorPerProjectIni);
 	GConfig->SetBool(ChatPanelConfigSection, TEXT("TelemetryEnabled"), bTelemetryEnabled, GEditorPerProjectIni);
+	GConfig->SetBool(ChatPanelConfigSection, TEXT("OnboardingCompleted"), bOnboardingCompleted, GEditorPerProjectIni);
 	GConfig->Flush(false, GEditorPerProjectIni);
 }
 
@@ -1991,6 +2084,145 @@ void SMCPChatPanel::AddCommandPaletteItem(const FString& Label, const FString& D
 	CommandPaletteItems.Add(Item);
 }
 
+TArray<SMCPChatPanel::FSamplePromptItem> SMCPChatPanel::GetSamplePromptItems() const
+{
+	TArray<FSamplePromptItem> Items;
+
+	auto AddSample = [&Items](const FString& Label, const FString& Prompt)
+	{
+		FSamplePromptItem Item;
+		Item.Label = Label;
+		Item.Prompt = Prompt;
+		Items.Add(Item);
+	};
+
+	AddSample(
+		TEXT("Health System"),
+		TEXT("Create a health system Blueprint and add it to my selected player character. Use the health_system skill plus Blueprint component tools, compile the Blueprint, report warnings, and include the asset paths you changed.")
+	);
+	AddSample(
+		TEXT("Build Slime Enemy"),
+		TEXT("Build me a slime enemy demo chain inside the current level: create the enemy Blueprint, add simple movement/chase AI with Blackboard and Behavior Tree tools, place one instance, compile assets, run a PIE/log smoke check, and show evidence.")
+	);
+	AddSample(
+		TEXT("Dungeon Starter"),
+		TEXT("Create a small third-person dungeon starter using editor placement tools: block out a room, add a player start, add lighting, create a nav-ready enemy patrol path, save changed assets, and return a vertical-slice checklist.")
+	);
+	AddSample(
+		TEXT("HUD Health Bar"),
+		TEXT("Create a UMG HUD with a health bar bound to the selected player health component, add it to the player flow, compile the widget Blueprint, and report any binding or runtime risks.")
+	);
+	AddSample(
+		TEXT("Repair Blueprint"),
+		TEXT("Audit the selected Blueprint for compile/runtime issues, run the repair_broken_blueprint skill where needed, recompile, and summarize every fixed node or unresolved warning.")
+	);
+	AddSample(
+		TEXT("Asset Import Pass"),
+		TEXT("Import or validate a dropped @file mesh or texture, create material instances with material tools, place the asset in the current level, capture viewport evidence, and list the generated Content Browser paths.")
+	);
+
+	return Items;
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildOnboardingOverlay()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			[
+				SNew(STextBlock)
+				.Text(this, &SMCPChatPanel::GetOnboardingStepTitle)
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 8.0f)
+			[
+				SNew(STextBlock)
+				.Text(this, &SMCPChatPanel::GetOnboardingStepText)
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.AutoWrapText(true)
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(this, &SMCPChatPanel::GetSamplePromptsToggleText)
+					.OnClicked(this, &SMCPChatPanel::HandleToggleSamplePromptsClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(this, &SMCPChatPanel::GetOnboardingNextText)
+					.OnClicked(this, &SMCPChatPanel::HandleOnboardingNextClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("OnboardingDismiss", "Done"))
+					.OnClicked(this, &SMCPChatPanel::HandleOnboardingDismissClicked)
+				]
+			]
+		];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildSamplePrompts()
+{
+	TSharedRef<SWrapBox> PromptButtons = SNew(SWrapBox);
+	for (const FSamplePromptItem& Item : GetSamplePromptItems())
+	{
+		PromptButtons->AddSlot()
+		.Padding(0.0f, 0.0f, 6.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(FText::FromString(Item.Label))
+			.ToolTipText(FText::FromString(Item.Prompt))
+			.OnClicked(this, &SMCPChatPanel::HandleSamplePromptClicked, Item)
+		];
+	}
+
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("SamplePromptsTitle", "Sample Prompts"))
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				PromptButtons
+			]
+		];
+}
+
 TSharedRef<SWidget> SMCPChatPanel::BuildContextChips()
 {
 	return SNew(SWrapBox)
@@ -2802,9 +3034,49 @@ EVisibility SMCPChatPanel::GetCommandPaletteVisibility() const
 	return bCommandPaletteVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
+EVisibility SMCPChatPanel::GetOnboardingVisibility() const
+{
+	return bOnboardingVisible ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
+EVisibility SMCPChatPanel::GetSamplePromptsVisibility() const
+{
+	return bSamplePromptsVisible ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
 FText SMCPChatPanel::GetToolPaletteToggleText() const
 {
 	return bToolPaletteVisible ? LOCTEXT("HideToolPalette", "Hide Tools") : LOCTEXT("ShowToolPalette", "Show Tools");
+}
+
+FText SMCPChatPanel::GetOnboardingStepTitle() const
+{
+	return FText::Format(LOCTEXT("OnboardingStepTitle", "MCP Chat Tour {0}/4"), FText::AsNumber(OnboardingStepIndex + 1));
+}
+
+FText SMCPChatPanel::GetOnboardingStepText() const
+{
+	switch (OnboardingStepIndex)
+	{
+	case 0:
+		return LOCTEXT("OnboardingConnectServer", "Connect server: confirm the endpoint is reachable and the footer reports latency, tool count, KB docs, and queue depth.");
+	case 1:
+		return LOCTEXT("OnboardingAskQuestion", "Ask a question: type a short request in the composer or insert a sample prompt, then send it to the agent.");
+	case 2:
+		return LOCTEXT("OnboardingDragAsset", "Drag an asset: drop Content Browser assets, Outliner actors, or files into the composer to create typed references.");
+	default:
+		return LOCTEXT("OnboardingRunWorkflow", "Run a workflow: choose a sample such as Health System or Build Slime Enemy, then let the tool cards and inline evidence show progress.");
+	}
+}
+
+FText SMCPChatPanel::GetOnboardingNextText() const
+{
+	return OnboardingStepIndex >= 3 ? LOCTEXT("FinishOnboarding", "Finish") : LOCTEXT("NextOnboarding", "Next");
+}
+
+FText SMCPChatPanel::GetSamplePromptsToggleText() const
+{
+	return bSamplePromptsVisible ? LOCTEXT("HideSamplePrompts", "Hide Samples") : LOCTEXT("ShowSamplePrompts", "Sample Prompts");
 }
 
 FText SMCPChatPanel::GetStatusFooterText() const

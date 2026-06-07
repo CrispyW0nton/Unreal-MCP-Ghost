@@ -67,6 +67,12 @@ private:
 		FString Kind;
 	};
 
+	struct FSamplePromptItem
+	{
+		FString Label;
+		FString Prompt;
+	};
+
 	FReply HandleSendClicked();
 	FReply HandleClearClicked();
 	FReply HandleNewSessionClicked();
@@ -83,6 +89,10 @@ private:
 	void HandleCommandPaletteTextChanged(const FText& Text);
 	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
 	FReply HandleToggleTelemetryClicked();
+	FReply HandleOnboardingNextClicked();
+	FReply HandleOnboardingDismissClicked();
+	FReply HandleToggleSamplePromptsClicked();
+	FReply HandleSamplePromptClicked(FSamplePromptItem Item);
 	FReply HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
 	FReply HandleCopyClicked(FString Message) const;
 	FReply HandleRerunClicked(FString Message, FString Sender);
@@ -117,6 +127,7 @@ private:
 	void RefreshCommandPaletteItems();
 	void RebuildCommandPaletteResults();
 	void AddCommandPaletteItem(const FString& Label, const FString& Detail, const FString& InsertText, const FString& Kind);
+	TArray<FSamplePromptItem> GetSamplePromptItems() const;
 	TSharedRef<SWidget> BuildMessageWidget(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
@@ -127,6 +138,8 @@ private:
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildCommandPalette();
+	TSharedRef<SWidget> BuildOnboardingOverlay();
+	TSharedRef<SWidget> BuildSamplePrompts();
 	TSharedRef<SWidget> BuildContextChips();
 	void AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox);
 	void AppendStreamingDelta(const FString& MessageId, const FString& Sender, const FString& Delta, bool bDone);
@@ -165,7 +178,13 @@ private:
 	FSlateColor GetMessageColor(const FString& Sender) const;
 	EVisibility GetToolPaletteVisibility() const;
 	EVisibility GetCommandPaletteVisibility() const;
+	EVisibility GetOnboardingVisibility() const;
+	EVisibility GetSamplePromptsVisibility() const;
 	FText GetToolPaletteToggleText() const;
+	FText GetOnboardingStepText() const;
+	FText GetOnboardingStepTitle() const;
+	FText GetOnboardingNextText() const;
+	FText GetSamplePromptsToggleText() const;
 	FText GetStatusFooterText() const;
 	FText GetTelemetryToggleText() const;
 	FString BuildSessionQueryParam() const;
@@ -194,7 +213,11 @@ private:
 	bool bToolPaletteLoaded = false;
 	bool bCommandPaletteVisible = false;
 	bool bTelemetryEnabled = false;
+	bool bOnboardingVisible = false;
+	bool bOnboardingCompleted = false;
+	bool bSamplePromptsVisible = false;
 	FString CommandPaletteFilter;
+	int32 OnboardingStepIndex = 0;
 	float SessionSidebarSize = 0.18f;
 	float ToolPaletteSize = 0.22f;
 	float ChatWorkspaceSize = 0.60f;
