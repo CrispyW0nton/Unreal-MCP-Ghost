@@ -54,6 +54,55 @@ connection owns each Actor, and which events should remain cosmetic/local.
 | Verify runtime state | `network_debug_replication`, `pie_launch_session`, `pie_capture_log` |
 | Validate common mistakes | `net_validate_common_mistakes` |
 
+Workstream B.4 adds a focused `network_tools.py` surface over the most common
+replication authoring operations:
+
+| B.4 Task | Preferred MCP tool |
+| --- | --- |
+| Mark a variable replicated or RepNotify | `net_set_property_replicated` |
+| Create/configure Server, Client, or NetMulticast RPCs | `net_set_function_rpc` |
+| Set a lifetime replication condition | `net_set_replication_condition` |
+| Create/configure a replicated component template | `net_add_replicated_component` |
+| Add Blueprint role/authority branching | `net_set_role_override` |
+| Inspect active replication driver state | `net_get_replication_graph_state` |
+
+## MCP Network Tools
+
+Use these B.4 tools when building the multiplayer authoring slice of an Actor
+Blueprint:
+
+```python
+net_set_property_replicated(
+    blueprint_name="/Game/BP_Door",
+    variable_name="bIsOpen",
+    repnotify=True,
+    replication_condition="none"
+)
+net_set_function_rpc(
+    blueprint_name="/Game/BP_Door",
+    function_name="Server_RequestOpen",
+    rpc_type="server",
+    reliable=True
+)
+net_set_replication_condition(
+    blueprint_name="/Game/BP_Door",
+    variable_name="OwningPlayerState",
+    replication_condition="owner_only"
+)
+net_add_replicated_component(
+    blueprint_name="/Game/BP_Door",
+    component_name="ReplicatedMesh",
+    component_type="StaticMeshComponent"
+)
+net_set_role_override(blueprint_name="/Game/BP_Door")
+net_get_replication_graph_state(max_actors=25)
+```
+
+These wrappers complement the older `gameplay_tools.py` networking helpers. The
+B.4 names are the preferred public API for new replication authoring work
+because they return the standard StructuredResult shape and route through the
+native bridge command handler.
+
 ## Working Example
 
 Goal: make an interactable door open in multiplayer.

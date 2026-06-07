@@ -2258,6 +2258,59 @@ slice that confirms activation, effect application, tag state, and replication.
 
 ---
 
+### B.4 Networking and Replication (`network_tools.py`)
+
+Use these tools to author the common multiplayer surface on Actor Blueprints:
+replicated variables, RPC Custom Events, replicated component templates,
+role/authority branching, and runtime replication state inspection.
+
+#### Replicated properties and conditions
+```python
+net_set_property_replicated(
+    blueprint_name="/Game/BP_Door",
+    variable_name="bIsOpen",
+    repnotify=True,
+    replication_condition="none"
+)
+net_set_replication_condition(
+    blueprint_name="/Game/BP_Door",
+    variable_name="OwningPlayerState",
+    replication_condition="owner_only"
+)
+```
+
+#### RPC events and replicated components
+```python
+net_set_function_rpc(
+    blueprint_name="/Game/BP_Door",
+    function_name="Server_RequestOpen",
+    rpc_type="server",
+    reliable=True
+)
+net_set_function_rpc(
+    blueprint_name="/Game/BP_Door",
+    function_name="Multicast_PlayOpenFX",
+    rpc_type="netmulticast",
+    reliable=False
+)
+net_add_replicated_component(
+    blueprint_name="/Game/BP_Door",
+    component_name="ReplicatedMesh",
+    component_type="StaticMeshComponent"
+)
+```
+
+#### Role helpers and runtime state
+```python
+net_set_role_override(blueprint_name="/Game/BP_Door", node_position=[400, 0])
+net_get_replication_graph_state(max_actors=25)
+```
+
+After B.4 edits, run `compile_blueprint_and_report`, `net_validate_common_mistakes`,
+and a two-player PIE slice before treating the replication pass as complete.
+
+---
+
 ### StructuredResult Schema
 
 All substrate + import tools return this schema:

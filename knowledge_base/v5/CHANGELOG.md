@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### B.4 - Networking and replication authoring tools
+
+- Added `net_set_property_replicated`, `net_set_function_rpc`, and `net_set_replication_condition` for replicated Blueprint state and RPC authoring.
+- Added `net_add_replicated_component`, `net_set_role_override`, and `net_get_replication_graph_state` for component replication, authority flow, and runtime replication inspection.
+- Added native network bridge routes, inventory category metadata, usage guide notes, KB cross-links, and B.4 offline smoke tests.
+
 ### B.3 - Gameplay Ability System authoring tools
 
 - Added `gas_create_ability`, `gas_create_gameplay_effect`, `gas_create_gameplay_cue`, and `gas_create_attribute_set` for GAS asset creation.

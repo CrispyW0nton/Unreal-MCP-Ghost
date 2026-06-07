@@ -89,6 +89,11 @@
     "roadmap_phase": "phase_3_gas",
     "status": "live"
   },
+  "tools.network_tools": {
+    "category": "networking",
+    "roadmap_phase": "phase_3_networking_replication",
+    "status": "live"
+  },
   "tools.gameplay_tools": {
     "category": "gameplay_framework",
     "roadmap_phase": "baseline",

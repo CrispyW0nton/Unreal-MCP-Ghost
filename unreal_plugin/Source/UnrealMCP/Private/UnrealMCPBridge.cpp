@@ -88,6 +88,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPUMGCommands.h"
 #include "Commands/UnrealMCPExtendedCommands.h"
 #include "Commands/UnrealMCPGASCommands.h"
+#include "Commands/UnrealMCPNetworkCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
 
@@ -2684,6 +2685,21 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     GASCommands = MakeShared<FUnrealMCPGASCommands>();
                 }
                 ResultJson = GASCommands->HandleCommand(CommandType, Params);
+            }
+            // Networking & Replication Commands
+            else if (CommandType == TEXT("net_set_property_replicated") ||
+                     CommandType == TEXT("net_set_function_rpc") ||
+                     CommandType == TEXT("net_set_replication_condition") ||
+                     CommandType == TEXT("net_add_replicated_component") ||
+                     CommandType == TEXT("net_set_role_override") ||
+                     CommandType == TEXT("net_get_replication_graph_state"))
+            {
+                static TSharedPtr<FUnrealMCPNetworkCommands> NetworkCommands;
+                if (!NetworkCommands.IsValid())
+                {
+                    NetworkCommands = MakeShared<FUnrealMCPNetworkCommands>();
+                }
+                ResultJson = NetworkCommands->HandleCommand(CommandType, Params);
             }
             // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())
