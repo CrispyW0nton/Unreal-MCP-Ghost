@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.7 - PIE/log/viewport evidence inline
+
+- Added inline evidence extraction to `SMCPChatPanel` tool-call cards for screenshot paths, log snippets, and PIE/play-in-editor results.
+- Rendered an inline evidence section in the originating tool card so viewport captures, logs, and runtime checks stay attached to the command that produced them.
+- Added screenshot image widgets for existing local image files while still showing the captured path for missing or remote artifacts.
+- Extended the tool detail drawer with a full inline-evidence summary alongside args, structured result detail, and log tail.
+- Added C.7 static tests guarding evidence extraction, inline card rendering, image-widget setup, detail drawer evidence text, and this changelog entry.
+
 ### C.6 - In-panel tool palette
 
 - Added a toggleable left-side `SMCPChatPanel` tool palette with expandable categories and per-tool insert buttons.

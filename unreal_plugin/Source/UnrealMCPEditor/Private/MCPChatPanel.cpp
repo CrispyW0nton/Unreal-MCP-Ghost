@@ -2,6 +2,7 @@
 
 #include "AssetRegistry/AssetData.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Brushes/SlateDynamicImageBrush.h"
 #include "ContentBrowserModule.h"
 #include "DragAndDrop/ActorDragDropOp.h"
 #include "DragAndDrop/AssetDragDropOp.h"
@@ -41,6 +42,7 @@
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SWrapBox.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "SMCPChatPanel"
@@ -306,6 +308,7 @@ FReply SMCPChatPanel::HandleClearClicked()
 	ClearHistoryOnServer();
 	Messages.Reset();
 	StreamingMessageTextBlocks.Reset();
+	EvidenceImageBrushes.Reset();
 	RebuildMessageList();
 	return FReply::Handled();
 }
@@ -807,6 +810,7 @@ void SMCPChatPanel::RebuildMessageList()
 	const TArray<FChatMessage> ExistingMessages = Messages;
 	Messages.Reset();
 	StreamingMessageTextBlocks.Reset();
+	EvidenceImageBrushes.Reset();
 	MessageScrollBox->ClearChildren();
 
 	for (const FChatMessage& ChatMessage : ExistingMessages)
@@ -894,6 +898,13 @@ TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCa
 				.AutoHeight()
 				.Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
+					BuildEvidencePanel(ToolCall)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[
 					SNew(SHorizontalBox)
 
 					+ SHorizontalBox::Slot()
@@ -916,6 +927,127 @@ TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCa
 					]
 				]
 			]
+		];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolCall)
+{
+	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty())
+	{
+		return SNew(SBox)
+			.Visibility(EVisibility::Collapsed);
+	}
+
+	TSharedRef<SVerticalBox> EvidenceBox = SNew(SVerticalBox);
+	EvidenceBox->AddSlot()
+	.AutoHeight()
+	.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+	[
+		SNew(STextBlock)
+		.Text(LOCTEXT("InlineEvidencePanel", "Evidence"))
+		.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+	];
+
+	for (const FString& ScreenshotPath : ToolCall.ScreenshotPaths)
+	{
+		EvidenceBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			BuildScreenshotEvidenceWidget(ScreenshotPath)
+		];
+	}
+
+	for (const FString& PieResult : ToolCall.PieResults)
+	{
+		EvidenceBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+			.Padding(6.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("InlinePieEvidence", "PIE: {0}"), FText::FromString(PieResult)))
+				.AutoWrapText(true)
+			]
+		];
+	}
+
+	for (const FString& LogSnippet : ToolCall.LogSnippets)
+	{
+		EvidenceBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+			.BorderBackgroundColor(CodeBlockColor)
+			.Padding(6.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("InlineLogEvidence", "Log: {0}"), FText::FromString(LogSnippet)))
+				.Font(FAppStyle::GetFontStyle("Mono"))
+				.AutoWrapText(true)
+			]
+		];
+	}
+
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(6.0f)
+		[
+			EvidenceBox
+		];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildScreenshotEvidenceWidget(const FString& ScreenshotPath)
+{
+	FString NormalizedPath = ScreenshotPath;
+	NormalizedPath.RemoveFromStart(TEXT("file://"));
+	NormalizedPath.TrimStartAndEndInline();
+	FPaths::NormalizeFilename(NormalizedPath);
+
+	const FString Extension = FPaths::GetExtension(NormalizedPath).ToLower();
+	const bool bLooksLikeImage = Extension == TEXT("png") || Extension == TEXT("jpg") || Extension == TEXT("jpeg") || Extension == TEXT("bmp");
+	const bool bCanRenderInline = bLooksLikeImage && FPaths::FileExists(NormalizedPath);
+
+	TSharedRef<SVerticalBox> ScreenshotBox = SNew(SVerticalBox);
+	ScreenshotBox->AddSlot()
+	.AutoHeight()
+	.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+	[
+		SNew(STextBlock)
+		.Text(FText::Format(LOCTEXT("InlineScreenshotPath", "Screenshot: {0}"), FText::FromString(NormalizedPath)))
+		.AutoWrapText(true)
+	];
+
+	if (bCanRenderInline)
+	{
+		const TSharedPtr<FSlateDynamicImageBrush> ScreenshotBrush = MakeShared<FSlateDynamicImageBrush>(
+			FName(*NormalizedPath),
+			FVector2D(320.0f, 180.0f)
+		);
+		EvidenceImageBrushes.Add(ScreenshotBrush);
+
+		ScreenshotBox->AddSlot()
+		.AutoHeight()
+		[
+			SNew(SBox)
+			.HeightOverride(180.0f)
+			[
+				SNew(SImage)
+				.Image(ScreenshotBrush.Get())
+			]
+		];
+	}
+
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+		.Padding(6.0f)
+		[
+			ScreenshotBox
 		];
 }
 
@@ -1255,11 +1387,36 @@ void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
 
 	if (ToolDetailBody.IsValid())
 	{
+		FString EvidenceText;
+		if (!ToolCall.ScreenshotPaths.IsEmpty())
+		{
+			EvidenceText += TEXT("Screenshots:\n");
+			EvidenceText += FString::Join(ToolCall.ScreenshotPaths, LINE_TERMINATOR);
+			EvidenceText += TEXT("\n\n");
+		}
+		if (!ToolCall.PieResults.IsEmpty())
+		{
+			EvidenceText += TEXT("PIE results:\n");
+			EvidenceText += FString::Join(ToolCall.PieResults, LINE_TERMINATOR);
+			EvidenceText += TEXT("\n\n");
+		}
+		if (!ToolCall.LogSnippets.IsEmpty())
+		{
+			EvidenceText += TEXT("Log snippets:\n");
+			EvidenceText += FString::Join(ToolCall.LogSnippets, LINE_TERMINATOR);
+			EvidenceText += TEXT("\n\n");
+		}
+		if (EvidenceText.IsEmpty())
+		{
+			EvidenceText = TEXT("(none)");
+		}
+
 		const FString DetailText = FString::Printf(
-			TEXT("Status: %s\n\nArgs summary:\n%s\n\nResult:\n%s\n\nFull detail:\n%s\n\nLog tail:\n%s"),
+			TEXT("Status: %s\n\nArgs summary:\n%s\n\nResult:\n%s\n\nInline evidence:\n%s\nFull detail:\n%s\n\nLog tail:\n%s"),
 			*ToolCall.Status,
 			*ToolCall.ArgsSummary,
 			*ToolCall.ResultSummary,
+			*EvidenceText,
 			*ToolCall.DetailJson,
 			*ToolCall.LogTail
 		);
@@ -1475,6 +1632,118 @@ void SMCPChatPanel::ExtractToolCallsFromMessage(const FChatMessage& ChatMessage,
 	}
 }
 
+void SMCPChatPanel::ExtractEvidenceFromJsonObject(const TSharedPtr<FJsonObject>& Object, FToolCallView& OutToolCall) const
+{
+	if (!Object.IsValid())
+	{
+		return;
+	}
+
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Object->Values)
+	{
+		ExtractEvidenceFromJsonValue(Field.Key, Field.Value, OutToolCall);
+	}
+}
+
+void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const TSharedPtr<FJsonValue>& Value, FToolCallView& OutToolCall) const
+{
+	if (!Value.IsValid())
+	{
+		return;
+	}
+
+	const FString LowerField = FieldName.ToLower();
+	const bool bScreenshotField = LowerField.Contains(TEXT("screenshot")) ||
+		LowerField.Contains(TEXT("thumbnail")) ||
+		LowerField.Contains(TEXT("viewport_image")) ||
+		LowerField.Contains(TEXT("image_path"));
+	const bool bLogField = LowerField.Contains(TEXT("log_tail")) ||
+		LowerField.Contains(TEXT("log_snippet")) ||
+		LowerField.Contains(TEXT("log_excerpt")) ||
+		LowerField == TEXT("log");
+	const bool bPieField = LowerField.Contains(TEXT("pie")) ||
+		LowerField.Contains(TEXT("play_in_editor"));
+
+	if (Value->Type == EJson::String)
+	{
+		FString StringValue = Value->AsString().TrimStartAndEnd();
+		if (StringValue.IsEmpty())
+		{
+			return;
+		}
+
+		const FString LowerValue = StringValue.ToLower();
+		const bool bImageValue = LowerValue.EndsWith(TEXT(".png")) ||
+			LowerValue.EndsWith(TEXT(".jpg")) ||
+			LowerValue.EndsWith(TEXT(".jpeg")) ||
+			LowerValue.EndsWith(TEXT(".bmp"));
+		if (bScreenshotField || bImageValue)
+		{
+			OutToolCall.ScreenshotPaths.AddUnique(StringValue);
+		}
+		else if (bPieField)
+		{
+			OutToolCall.PieResults.AddUnique(TruncateForCard(StringValue, 360));
+		}
+		else if (bLogField)
+		{
+			OutToolCall.LogSnippets.AddUnique(TruncateForCard(StringValue, 480));
+		}
+		return;
+	}
+
+	if (Value->Type == EJson::Object)
+	{
+		ExtractEvidenceFromJsonObject(Value->AsObject(), OutToolCall);
+		if (bPieField)
+		{
+			OutToolCall.PieResults.AddUnique(TruncateForCard(JsonValueToString(Value), 360));
+		}
+		return;
+	}
+
+	if (Value->Type == EJson::Array)
+	{
+		TArray<FString> EvidenceParts;
+		for (const TSharedPtr<FJsonValue>& Item : Value->AsArray())
+		{
+			if (!Item.IsValid())
+			{
+				continue;
+			}
+
+			ExtractEvidenceFromJsonValue(FieldName, Item, OutToolCall);
+			if ((bLogField || bPieField) && Item->Type != EJson::Object && Item->Type != EJson::Array)
+			{
+				EvidenceParts.Add(JsonValueToString(Item));
+			}
+		}
+
+		if (!EvidenceParts.IsEmpty())
+		{
+			const FString JoinedEvidence = TruncateForCard(FString::Join(EvidenceParts, LINE_TERMINATOR), bLogField ? 480 : 360);
+			if (bLogField)
+			{
+				OutToolCall.LogSnippets.AddUnique(JoinedEvidence);
+			}
+			else if (bPieField)
+			{
+				OutToolCall.PieResults.AddUnique(JoinedEvidence);
+			}
+		}
+		return;
+	}
+
+	if (bPieField)
+	{
+		OutToolCall.PieResults.AddUnique(TruncateForCard(JsonValueToString(Value), 360));
+	}
+	else if (bLogField)
+	{
+		OutToolCall.LogSnippets.AddUnique(TruncateForCard(JsonValueToString(Value), 480));
+	}
+}
+
 bool SMCPChatPanel::TryBuildToolCallFromJsonObject(const TSharedPtr<FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const
 {
 	if (!Object.IsValid())
@@ -1575,6 +1844,11 @@ bool SMCPChatPanel::TryBuildToolCallFromJsonObject(const TSharedPtr<FJsonObject>
 	OutToolCall.DetailJson = JsonObjectToString(Object);
 	OutToolCall.LogTail = LogTail;
 	OutToolCall.bError = bError;
+	ExtractEvidenceFromJsonObject(Object, OutToolCall);
+	if (!LogTail.IsEmpty() && LogTail != TEXT("(empty)"))
+	{
+		OutToolCall.LogSnippets.AddUnique(TruncateForCard(LogTail, 480));
+	}
 	return true;
 }
 

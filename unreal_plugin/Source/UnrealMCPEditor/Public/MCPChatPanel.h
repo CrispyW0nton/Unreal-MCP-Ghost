@@ -36,6 +36,9 @@ private:
 		FString ResultSummary;
 		FString DetailJson;
 		FString LogTail;
+		TArray<FString> ScreenshotPaths;
+		TArray<FString> LogSnippets;
+		TArray<FString> PieResults;
 		bool bError = false;
 	};
 
@@ -77,6 +80,8 @@ private:
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCard(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildEvidencePanel(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildScreenshotEvidenceWidget(const FString& ScreenshotPath);
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildContextChips();
@@ -89,6 +94,8 @@ private:
 	void UpdateLastAgentTimestamp(const TArray<FChatMessage>& Messages);
 
 	void ExtractToolCallsFromMessage(const FChatMessage& ChatMessage, TArray<FToolCallView>& OutToolCalls) const;
+	void ExtractEvidenceFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
+	void ExtractEvidenceFromJsonValue(const FString& FieldName, const TSharedPtr<class FJsonValue>& Value, FToolCallView& OutToolCall) const;
 	void UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage);
 	bool TryBuildToolCallFromJsonObject(const TSharedPtr<class FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const;
 	FString JsonObjectToString(const TSharedPtr<class FJsonObject>& Object) const;
@@ -142,6 +149,7 @@ private:
 	TSharedPtr<STextBlock> ToolDetailTitle;
 	TSharedPtr<STextBlock> ToolDetailBody;
 	TMap<FString, TSharedPtr<STextBlock>> StreamingMessageTextBlocks;
+	TArray<TSharedPtr<struct FSlateDynamicImageBrush>> EvidenceImageBrushes;
 
 	FTSTicker::FDelegateHandle PollTickerHandle;
 };
