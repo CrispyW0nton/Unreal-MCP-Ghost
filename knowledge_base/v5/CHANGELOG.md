@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.6 - In-panel tool palette
+
+- Added a toggleable left-side `SMCPChatPanel` tool palette with expandable categories and per-tool insert buttons.
+- Exposed `/tools/list?domain=all` through the chat HTTP route layer using the same discovery payload as `list_available_tools`.
+- Tracked the UE editor chat HTTP/MCP support package, bringing the documented inventory to 603 MCP tools.
+- Wired tool clicks to insert prompt templates with `<parameter>` placeholders derived from discovered tool parameters.
+- Added C.6 static and route tests guarding palette fetch, category rendering, template insertion, and HTTP tool discovery.
+
 ### C.5 - Asset drag-and-drop
 
 - Upgraded `SMCPChatPanel` drops to accept Content Browser assets, Outliner actors, and OS file explorer drops as typed prompt references.

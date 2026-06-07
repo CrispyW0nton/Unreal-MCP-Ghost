@@ -102,6 +102,15 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(this, &SMCPChatPanel::GetToolPaletteToggleText)
+				.OnClicked(this, &SMCPChatPanel::HandleToggleToolPaletteClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
 			[
 				SNew(SButton)
 				.Text(LOCTEXT("ClearHistory", "Clear History"))
@@ -153,10 +162,26 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 		.Padding(8.0f, 4.0f, 8.0f, 8.0f)
 		[
 			SNew(SSplitter)
-			.Orientation(Orient_Vertical)
+			.Orientation(Orient_Horizontal)
 
 			+ SSplitter::Slot()
-			.Value(0.78f)
+			.Value(0.24f)
+			[
+				SNew(SBox)
+				.Visibility(this, &SMCPChatPanel::GetToolPaletteVisibility)
+				[
+					BuildToolPalette()
+				]
+			]
+
+			+ SSplitter::Slot()
+			.Value(0.76f)
+			[
+				SNew(SSplitter)
+				.Orientation(Orient_Vertical)
+
+				+ SSplitter::Slot()
+				.Value(0.78f)
 			[
 				SNew(SBorder)
 				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
@@ -225,10 +250,12 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 					]
 				]
 			]
+			]
 		]
 	];
 
 	LoadHistory();
+	LoadToolPalette();
 	PollAgentMessages();
 	PollTickerHandle = FTSTicker::GetCoreTicker().AddTicker(
 		FTickerDelegate::CreateRaw(this, &SMCPChatPanel::HandlePollTick),
@@ -280,6 +307,27 @@ FReply SMCPChatPanel::HandleClearClicked()
 	Messages.Reset();
 	StreamingMessageTextBlocks.Reset();
 	RebuildMessageList();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleToggleToolPaletteClicked()
+{
+	bToolPaletteVisible = !bToolPaletteVisible;
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleRefreshToolPaletteClicked()
+{
+	LoadToolPalette();
+	SetStatus(LOCTEXT("StatusToolPaletteRefresh", "Refreshing tools"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleToolPaletteToolClicked(FToolPaletteEntry Tool)
+{
+	const FString PromptTemplate = BuildToolPromptTemplate(Tool);
+	InsertComposerText(PromptTemplate);
+	SetStatus(FText::Format(LOCTEXT("StatusToolTemplateInserted", "Inserted {0} template"), FText::FromString(Tool.Name)), OkStatusColor);
 	return FReply::Handled();
 }
 
@@ -577,6 +625,35 @@ void SMCPChatPanel::ClearHistoryOnServer()
 	Request->ProcessRequest();
 }
 
+void SMCPChatPanel::LoadToolPalette()
+{
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/tools/list?domain=all")), TEXT("GET"));
+	ActiveRequests.Add(Request);
+	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	{
+		ActiveRequests.Remove(RequestPtr);
+
+		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
+		{
+			SetStatus(LOCTEXT("StatusToolPaletteOffline", "Tool palette unavailable"), ErrorStatusColor);
+			return;
+		}
+
+		TMap<FString, TArray<FToolPaletteEntry>> ParsedTools;
+		if (!ParseToolPaletteResponse(Response->GetContentAsString(), ParsedTools))
+		{
+			SetStatus(LOCTEXT("StatusToolPaletteParseFailed", "Tool palette parse failed"), ErrorStatusColor);
+			return;
+		}
+
+		ToolPaletteByCategory = MoveTemp(ParsedTools);
+		bToolPaletteLoaded = true;
+		RebuildToolPaletteList();
+		SetStatus(LOCTEXT("StatusToolPaletteLoaded", "Tool palette loaded"), OkStatusColor);
+	});
+	Request->ProcessRequest();
+}
+
 void SMCPChatPanel::AddMessage(const FChatMessage& ChatMessage)
 {
 	FChatMessage MessageToAdd = ChatMessage;
@@ -840,6 +917,126 @@ TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCa
 				]
 			]
 		];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildToolPalette()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("ToolPaletteTitle", "Tool Palette"))
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("ToolPaletteRefresh", "Refresh"))
+					.OnClicked(this, &SMCPChatPanel::HandleRefreshToolPaletteClicked)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			[
+				SNew(SScrollBox)
+
+				+ SScrollBox::Slot()
+				[
+					SAssignNew(ToolPaletteList, SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("ToolPaletteLoading", "Loading tools..."))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					]
+				]
+			]
+		];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools)
+{
+	TSharedRef<SVerticalBox> ToolButtons = SNew(SVerticalBox);
+	for (const FToolPaletteEntry& Tool : Tools)
+	{
+		ToolButtons->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(FText::FromString(Tool.Name))
+			.ToolTipText(FText::FromString(Tool.Description))
+			.OnClicked(this, &SMCPChatPanel::HandleToolPaletteToolClicked, Tool)
+		];
+	}
+
+	return SNew(SExpandableArea)
+		.InitiallyCollapsed(true)
+		.HeaderContent()
+		[
+			SNew(STextBlock)
+			.Text(FText::Format(LOCTEXT("ToolPaletteCategoryHeader", "{0} ({1})"), FText::FromString(Category), FText::AsNumber(Tools.Num())))
+			.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+		]
+		.BodyContent()
+		[
+			ToolButtons
+		];
+}
+
+void SMCPChatPanel::RebuildToolPaletteList()
+{
+	if (!ToolPaletteList.IsValid())
+	{
+		return;
+	}
+
+	ToolPaletteList->ClearChildren();
+	if (!bToolPaletteLoaded || ToolPaletteByCategory.IsEmpty())
+	{
+		ToolPaletteList->AddSlot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("ToolPaletteEmpty", "No tools loaded"))
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+		];
+		return;
+	}
+
+	TArray<FString> Categories;
+	ToolPaletteByCategory.GetKeys(Categories);
+	Categories.Sort();
+	for (const FString& Category : Categories)
+	{
+		if (const TArray<FToolPaletteEntry>* Tools = ToolPaletteByCategory.Find(Category))
+		{
+			ToolPaletteList->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				BuildToolPaletteCategory(Category, *Tools)
+			];
+		}
+	}
 }
 
 TSharedRef<SWidget> SMCPChatPanel::BuildContextChips()
@@ -1501,6 +1698,41 @@ FSlateColor SMCPChatPanel::GetMessageColor(const FString& Sender) const
 	return AgentMessageColor;
 }
 
+EVisibility SMCPChatPanel::GetToolPaletteVisibility() const
+{
+	return bToolPaletteVisible ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
+FText SMCPChatPanel::GetToolPaletteToggleText() const
+{
+	return bToolPaletteVisible ? LOCTEXT("HideToolPalette", "Hide Tools") : LOCTEXT("ShowToolPalette", "Show Tools");
+}
+
+FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const
+{
+	FString Template = FString::Printf(
+		TEXT("Use MCP tool `%s` from `%s`.\n"),
+		*Tool.Name,
+		*Tool.Category
+	);
+
+	if (!Tool.Parameters.IsEmpty())
+	{
+		Template += TEXT("Parameters:\n");
+		for (const FString& Parameter : Tool.Parameters)
+		{
+			Template += FString::Printf(TEXT("- %s: <%s>\n"), *Parameter, *Parameter);
+		}
+	}
+	else
+	{
+		Template += TEXT("Parameters: none\n");
+	}
+
+	Template += TEXT("Return the StructuredResult and summarize warnings/errors.");
+	return Template;
+}
+
 FString SMCPChatPanel::BuildDropReference(const TSharedPtr<FDragDropOperation>& Operation) const
 {
 	if (!Operation.IsValid())
@@ -1671,6 +1903,71 @@ TSharedPtr<FJsonObject> SMCPChatPanel::BuildEditorContext() const
 	}
 
 	return Context;
+}
+
+bool SMCPChatPanel::ParseToolPaletteResponse(const FString& JsonText, TMap<FString, TArray<FToolPaletteEntry>>& OutToolsByCategory) const
+{
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		return false;
+	}
+
+	const TSharedPtr<FJsonObject>* ToolsByCategoryObject = nullptr;
+	if (!Root->TryGetObjectField(TEXT("tools_by_category"), ToolsByCategoryObject) || ToolsByCategoryObject == nullptr || !ToolsByCategoryObject->IsValid())
+	{
+		return false;
+	}
+
+	for (const TPair<FString, TSharedPtr<FJsonValue>>& CategoryPair : (*ToolsByCategoryObject)->Values)
+	{
+		const FString& Category = CategoryPair.Key;
+		const TArray<TSharedPtr<FJsonValue>>* ToolValues = nullptr;
+		if (!CategoryPair.Value.IsValid() || !CategoryPair.Value->TryGetArray(ToolValues) || ToolValues == nullptr)
+		{
+			continue;
+		}
+
+		TArray<FToolPaletteEntry>& Entries = OutToolsByCategory.FindOrAdd(Category);
+		for (const TSharedPtr<FJsonValue>& ToolValue : *ToolValues)
+		{
+			const TSharedPtr<FJsonObject> ToolObject = ToolValue.IsValid() ? ToolValue->AsObject() : nullptr;
+			if (!ToolObject.IsValid())
+			{
+				continue;
+			}
+
+			FToolPaletteEntry Entry;
+			Entry.Name = GetStringField(ToolObject, TEXT("name"));
+			Entry.Description = GetStringField(ToolObject, TEXT("description"));
+			Entry.Category = GetStringField(ToolObject, TEXT("category"));
+			if (Entry.Category.IsEmpty())
+			{
+				Entry.Category = Category;
+			}
+
+			const TArray<TSharedPtr<FJsonValue>>* ParameterValues = nullptr;
+			if (ToolObject->TryGetArrayField(TEXT("parameters"), ParameterValues) && ParameterValues != nullptr)
+			{
+				for (const TSharedPtr<FJsonValue>& ParameterValue : *ParameterValues)
+				{
+					FString ParameterName;
+					if (ParameterValue.IsValid() && ParameterValue->TryGetString(ParameterName) && !ParameterName.IsEmpty())
+					{
+						Entry.Parameters.Add(ParameterName);
+					}
+				}
+			}
+
+			if (!Entry.Name.IsEmpty())
+			{
+				Entries.Add(Entry);
+			}
+		}
+	}
+
+	return !OutToolsByCategory.IsEmpty();
 }
 
 bool SMCPChatPanel::ParseMessagesResponse(const FString& JsonText, TArray<FChatMessage>& OutMessages) const

@@ -39,8 +39,19 @@ private:
 		bool bError = false;
 	};
 
+	struct FToolPaletteEntry
+	{
+		FString Name;
+		FString Description;
+		FString Category;
+		TArray<FString> Parameters;
+	};
+
 	FReply HandleSendClicked();
 	FReply HandleClearClicked();
+	FReply HandleToggleToolPaletteClicked();
+	FReply HandleRefreshToolPaletteClicked();
+	FReply HandleToolPaletteToolClicked(FToolPaletteEntry Tool);
 	FReply HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
 	FReply HandleCopyClicked(FString Message) const;
 	FReply HandleRerunClicked(FString Message, FString Sender);
@@ -57,13 +68,17 @@ private:
 	void PollAgentMessages();
 	void SendHumanMessage(const FString& Message);
 	void ClearHistoryOnServer();
+	void LoadToolPalette();
 
 	void AddMessage(const FChatMessage& ChatMessage);
 	void RebuildMessageList();
+	void RebuildToolPaletteList();
 	TSharedRef<SWidget> BuildMessageWidget(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCard(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildToolPalette();
+	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildContextChips();
 	void AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox);
 	void AppendStreamingDelta(const FString& MessageId, const FString& Sender, const FString& Delta, bool bDone);
@@ -98,6 +113,10 @@ private:
 	FString NormaliseSender(const FString& Sender) const;
 	FText GetSenderLabel(const FString& Sender) const;
 	FSlateColor GetMessageColor(const FString& Sender) const;
+	EVisibility GetToolPaletteVisibility() const;
+	FText GetToolPaletteToggleText() const;
+	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	bool ParseToolPaletteResponse(const FString& JsonText, TMap<FString, TArray<FToolPaletteEntry>>& OutToolsByCategory) const;
 	FString BuildDropReference(const TSharedPtr<class FDragDropOperation>& Operation) const;
 	FString ExtractFirstAssetReference(const FString& Message) const;
 	FString BuildServerUrl(const FString& PathAndQuery) const;
@@ -111,7 +130,11 @@ private:
 	FString LastAgentPollTimestamp;
 	FString LastCompileStatus = TEXT("unknown");
 	FString ServerBaseUrl = TEXT("http://127.0.0.1:8000");
+	bool bToolPaletteVisible = true;
+	bool bToolPaletteLoaded = false;
+	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
 
+	TSharedPtr<SVerticalBox> ToolPaletteList;
 	TSharedPtr<SScrollBox> MessageScrollBox;
 	TSharedPtr<SMultiLineEditableTextBox> MessageInput;
 	TSharedPtr<STextBlock> StatusText;
