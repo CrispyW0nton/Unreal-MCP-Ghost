@@ -2141,6 +2141,54 @@ prefer secure deployment config and avoid committing credentials.
 
 ---
 
+### B.13 Pixel Streaming and Remote Access (`pixelstream_tools.py`)
+
+Use these tools to inspect Pixel Streaming plugin availability, configure local
+streamer settings, and store launch profiles before standalone or packaged
+remote-demo validation.
+
+#### Inspect current config
+```python
+pixelstream_inspect_config(include_plugins=True)
+```
+
+#### Select Pixel Streaming generation
+```python
+pixelstream_configure_plugin(
+    enable_pixel_streaming=True,
+    enable_pixel_streaming_2=False,
+    prefer_pixel_streaming_2=False
+)
+```
+
+#### Configure local streamer settings
+```python
+pixelstream_configure_streamer(
+    signalling_url="ws://127.0.0.1:8888",
+    streamer_id="LocalDemo",
+    web_server_port=80,
+    signalling_port=8888,
+    render_offscreen=True
+)
+```
+
+#### Create a launch profile
+```python
+pixelstream_create_launch_profile(
+    profile_name="LocalPixelStreaming",
+    signalling_url="ws://127.0.0.1:8888",
+    streamer_id="LocalDemo",
+    resolution_x=1280,
+    resolution_y=720
+)
+```
+
+Validate Pixel Streaming in standalone or packaged execution. PIE-only checks do
+not prove the WebRTC/signalling path, GPU encoder support, browser input, or
+firewall/port readiness.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

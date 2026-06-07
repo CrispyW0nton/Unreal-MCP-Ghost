@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### B.13 - Pixel Streaming and remote access tools
+
+- Added `pixelstream_inspect_config` for Pixel Streaming plugin availability and config inspection.
+- Added `pixelstream_configure_plugin` for Pixel Streaming generation enablement and preference flags.
+- Added `pixelstream_configure_streamer` for signalling URL, streamer id, port, offscreen render, websocket, and encoder bitrate settings.
+- Added `pixelstream_create_launch_profile` for reusable launch profiles with standalone launch arguments.
+- Added native bridge routes, inventory metadata, usage guide notes, KB cross-links, and B.13 offline smoke tests.
+
 ### B.12 - Online Subsystem and EOS tools
 
 - Added `online_inspect_config` for masked Online Subsystem/EOS config and plugin availability inspection.

@@ -46,6 +46,15 @@ infrastructure. Treat it as deployment work, not just an editor checkbox.
 | Verify standalone behavior | PIE/standalone logs, screenshots, execution journal |
 | Document deployment | report packager and artifact paths |
 
+## MCP Pixel Streaming Tools
+
+| Tool | Use |
+| --- | --- |
+| `pixelstream_inspect_config` | Inspect Pixel Streaming, Pixel Streaming 2, Pixel Streaming Player, and PixelCapture plugin availability plus current config values. |
+| `pixelstream_configure_plugin` | Record Pixel Streaming enablement and preferred generation flags in `Config/DefaultEngine.ini`. |
+| `pixelstream_configure_streamer` | Configure signalling URL, streamer id, ports, render-offscreen, secure websocket, and encoder bitrate settings. |
+| `pixelstream_create_launch_profile` | Store a reusable launch profile under `UnrealMCP.PixelStreamingProfiles.*` and return standalone launch arguments. |
+
 ## Working Example
 
 Goal: prepare a local Pixel Streaming demo.

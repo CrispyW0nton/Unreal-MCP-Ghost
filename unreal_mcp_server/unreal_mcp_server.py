@@ -632,6 +632,8 @@ from tools.chaos_tools import register_chaos_tools
 from tools.mrq_tools import register_mrq_tools
 # B.12 Online Subsystem / EOS tools
 from tools.online_tools import register_online_tools
+# B.13 Pixel Streaming / remote access tools
+from tools.pixelstream_tools import register_pixelstream_tools
 # B.6 Geometry Script / Modeling tools
 from tools.geometry_tools import register_geometry_tools
 # B.7 MassEntity / StateTree / SmartObject tools
@@ -705,6 +707,8 @@ register_chaos_tools(mcp)
 register_mrq_tools(mcp)
 # B.12 Online Subsystem / EOS tools
 register_online_tools(mcp)
+# B.13 Pixel Streaming / remote access tools
+register_pixelstream_tools(mcp)
 # B.6 Geometry Script / Modeling tools
 register_geometry_tools(mcp)
 # B.7 MassEntity / StateTree / SmartObject tools

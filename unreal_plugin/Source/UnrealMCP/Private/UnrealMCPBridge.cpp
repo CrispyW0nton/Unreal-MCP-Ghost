@@ -93,6 +93,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPChaosCommands.h"
 #include "Commands/UnrealMCPMRQCommands.h"
 #include "Commands/UnrealMCPOnlineCommands.h"
+#include "Commands/UnrealMCPPixelStreamingCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
 #include "Commands/UnrealMCPMassCommands.h"
 #include "Commands/UnrealMCPMotionCommands.h"
@@ -2802,6 +2803,19 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     OnlineCommands = MakeShared<FUnrealMCPOnlineCommands>();
                 }
                 ResultJson = OnlineCommands->HandleCommand(CommandType, Params);
+            }
+            // Pixel Streaming / Remote Access Commands
+            else if (CommandType == TEXT("pixelstream_inspect_config") ||
+                     CommandType == TEXT("pixelstream_configure_plugin") ||
+                     CommandType == TEXT("pixelstream_configure_streamer") ||
+                     CommandType == TEXT("pixelstream_create_launch_profile"))
+            {
+                static TSharedPtr<FUnrealMCPPixelStreamingCommands> PixelStreamingCommands;
+                if (!PixelStreamingCommands.IsValid())
+                {
+                    PixelStreamingCommands = MakeShared<FUnrealMCPPixelStreamingCommands>();
+                }
+                ResultJson = PixelStreamingCommands->HandleCommand(CommandType, Params);
             }
             // Motion Matching / Pose Search / Chooser Commands
             else if (CommandType == TEXT("motion_create_pose_search_schema") ||
