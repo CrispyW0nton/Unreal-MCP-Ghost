@@ -1773,6 +1773,45 @@ After B.5 edits, run `metasound_compile`, verify the created assets with
 
 ---
 
+### B.6 Geometry Script and Modeling (`geometry_tools.py`)
+
+Use these tools for editor-side DynamicMesh authoring, mesh cleanup, UV
+generation, and baking generated geometry to Static Mesh assets.
+
+#### DynamicMesh creation and modeling
+```python
+geom_create_dynamic_mesh(
+    actor_name="DM_CoverBlock",
+    primitive="box",
+    dimensions=[200, 80, 120],
+    location=[0, 0, 0],
+    overwrite=True
+)
+geom_create_dynamic_mesh(actor_name="DM_Cutter", primitive="cylinder", dimensions=[35, 35, 180])
+geom_boolean_op(target_actor="DM_CoverBlock", tool_actor="DM_Cutter", operation="subtract")
+geom_extrude(actor_name="DM_CoverBlock", distance=25, direction=[0, 0, 1])
+geom_remesh(actor_name="DM_CoverBlock", target_triangle_count=1500, iterations=10)
+```
+
+#### UVs, displacement, and baking
+```python
+geom_uv_unwrap(actor_name="DM_CoverBlock", method="xatlas", texture_resolution=2048)
+geom_apply_displacement(actor_name="DM_CoverBlock", magnitude=8, frequency=0.08, seed=7)
+geom_bake_to_static_mesh(
+    actor_name="DM_CoverBlock",
+    asset_path="/Game/Geometry/SM_CoverBlock_A",
+    enable_collision=True,
+    overwrite=True,
+    save=True
+)
+```
+
+After B.6 edits, run `scan_project_assets` on the baked Static Mesh and verify
+UVs, collision, material slots, and in-level rendering before using the asset in
+gameplay content.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

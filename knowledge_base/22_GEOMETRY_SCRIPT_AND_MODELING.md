@@ -44,9 +44,35 @@ functions are runtime-safe.
 | --- | --- |
 | Inspect mesh assets | `scan_project_assets`, mesh audit tools |
 | Generate procedural assets | procedural/world tools, editor Python execution where safe |
+| Create and edit dynamic mesh actors | `geom_create_dynamic_mesh`, `geom_boolean_op`, `geom_extrude`, `geom_remesh`, `geom_apply_displacement` |
+| Generate UVs and bake assets | `geom_uv_unwrap`, `geom_bake_to_static_mesh` |
 | Create materials for generated meshes | `material_*`, `mat_*`, texture tools |
 | Place generated results | actor/viewport/editor tools |
 | Verify performance | technical art audits, screenshot capture, execution journal |
+
+## MCP Geometry Tools
+
+B.6 adds native Geometry Script bridge routes in `geometry_tools.py` for
+editor-safe DynamicMesh authoring:
+
+- `geom_create_dynamic_mesh` spawns an `ADynamicMeshActor` and seeds it with a
+  box, sphere, cylinder, plane, or empty mesh.
+- `geom_boolean_op` applies union, intersection, subtract, trim-inside, or
+  trim-outside operations between DynamicMesh actors.
+- `geom_extrude` applies linear face extrusion through Geometry Script
+  modeling options.
+- `geom_remesh` applies uniform remeshing by target triangle count or target
+  edge length.
+- `geom_uv_unwrap` generates or lays out UVs with XAtlas, PatchBuilder,
+  recompute, or layout modes.
+- `geom_bake_to_static_mesh` writes a DynamicMesh actor to a saved Static Mesh
+  asset under `/Game`.
+- `geom_apply_displacement` applies Perlin-noise displacement for rock,
+  terrain, and blockout variation passes.
+
+Treat these as technical-art/editor authoring tools. After baking, verify the
+Static Mesh asset path, material slots, collision, UV channel count, and runtime
+rendering before deleting the source DynamicMesh actor.
 
 ## Working Example
 

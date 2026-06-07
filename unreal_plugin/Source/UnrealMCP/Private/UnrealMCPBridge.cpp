@@ -90,6 +90,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPGASCommands.h"
 #include "Commands/UnrealMCPNetworkCommands.h"
 #include "Commands/UnrealMCPAudioCommands.h"
+#include "Commands/UnrealMCPGeometryCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
 
@@ -2718,6 +2719,22 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     AudioCommands = MakeShared<FUnrealMCPAudioCommands>();
                 }
                 ResultJson = AudioCommands->HandleCommand(CommandType, Params);
+            }
+            // Geometry Script / Modeling Commands
+            else if (CommandType == TEXT("geom_create_dynamic_mesh") ||
+                     CommandType == TEXT("geom_boolean_op") ||
+                     CommandType == TEXT("geom_extrude") ||
+                     CommandType == TEXT("geom_remesh") ||
+                     CommandType == TEXT("geom_uv_unwrap") ||
+                     CommandType == TEXT("geom_bake_to_static_mesh") ||
+                     CommandType == TEXT("geom_apply_displacement"))
+            {
+                static TSharedPtr<FUnrealMCPGeometryCommands> GeometryCommands;
+                if (!GeometryCommands.IsValid())
+                {
+                    GeometryCommands = MakeShared<FUnrealMCPGeometryCommands>();
+                }
+                ResultJson = GeometryCommands->HandleCommand(CommandType, Params);
             }
             // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())

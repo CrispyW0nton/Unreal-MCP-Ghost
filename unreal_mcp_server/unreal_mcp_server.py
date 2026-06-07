@@ -626,6 +626,8 @@ from tools.physics_tools import register_physics_tools
 from tools.knowledge_tools import register_knowledge_tools
 # Audio import tools
 from tools.audio_tools import register_audio_tools
+# B.6 Geometry Script / Modeling tools
+from tools.geometry_tools import register_geometry_tools
 # Asset import pipeline — Category C (single-asset)
 from tools.asset_import_tools import register_asset_import_tools
 # Folder/batch import pipeline — Category B
@@ -689,6 +691,8 @@ register_physics_tools(mcp)
 register_knowledge_tools(mcp)
 # Audio import tools
 register_audio_tools(mcp)
+# B.6 Geometry Script / Modeling tools
+register_geometry_tools(mcp)
 # Asset import pipeline — Category C (single-asset)
 register_asset_import_tools(mcp)
 # Folder/batch import pipeline — Category B

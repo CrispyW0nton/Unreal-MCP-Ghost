@@ -6,6 +6,11 @@
 
 ## 2026-06-07
 
+### B.6 - Geometry Script and Modeling Mode tools
+
+- Added `geom_create_dynamic_mesh`, `geom_boolean_op`, `geom_extrude`, `geom_remesh`, `geom_uv_unwrap`, `geom_bake_to_static_mesh`, and `geom_apply_displacement` for DynamicMesh authoring and Static Mesh baking.
+- Added native Geometry Script bridge routes, GeometryScripting plugin/module dependencies, usage guide notes, KB cross-links, and B.6 offline smoke tests.
+
 ### B.5 - MetaSounds and audio asset authoring tools
 
 - Added `metasound_create_source`, `metasound_create_patch`, `metasound_add_node`, `metasound_connect_pins`, and `metasound_compile` for MetaSound asset and graph authoring.

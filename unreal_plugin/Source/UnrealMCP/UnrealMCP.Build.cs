@@ -93,6 +93,11 @@ public class UnrealMCP : ModuleRules
 
                 // Procedural Mesh (extended ? Chapter 19)
                 "ProceduralMeshComponent",
+                "GeometryCore",
+                "GeometryFramework",
+                "DynamicMesh",
+                "GeometryScriptingCore",
+                "GeometryScriptingEditor",
 
                 // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
