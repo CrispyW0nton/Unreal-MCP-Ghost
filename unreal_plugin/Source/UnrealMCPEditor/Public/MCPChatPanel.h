@@ -50,8 +50,23 @@ private:
 		TArray<FString> Parameters;
 	};
 
+	struct FChatSessionEntry
+	{
+		FString Name;
+		FString UpdatedAt;
+		int32 MessageCount = 0;
+		bool bPinned = false;
+	};
+
 	FReply HandleSendClicked();
 	FReply HandleClearClicked();
+	FReply HandleNewSessionClicked();
+	FReply HandleContinueLastSessionClicked();
+	FReply HandleRenameSessionClicked();
+	FReply HandlePinSessionClicked();
+	FReply HandleDeleteSessionClicked();
+	FReply HandleExportSessionClicked();
+	FReply HandleSessionClicked(FChatSessionEntry Session);
 	FReply HandleToggleToolPaletteClicked();
 	FReply HandleRefreshToolPaletteClicked();
 	FReply HandleToolPaletteToolClicked(FToolPaletteEntry Tool);
@@ -72,16 +87,20 @@ private:
 	void SendHumanMessage(const FString& Message);
 	void ClearHistoryOnServer();
 	void LoadToolPalette();
+	void LoadSessions();
+	void SendSessionAction(const FString& Path, const TSharedPtr<class FJsonObject>& Payload, const FText& StatusOnSuccess);
 
 	void AddMessage(const FChatMessage& ChatMessage);
 	void RebuildMessageList();
 	void RebuildToolPaletteList();
+	void RebuildSessionList();
 	TSharedRef<SWidget> BuildMessageWidget(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCard(const FToolCallView& ToolCall);
 	TSharedRef<SWidget> BuildEvidencePanel(const FToolCallView& ToolCall);
 	TSharedRef<SWidget> BuildScreenshotEvidenceWidget(const FString& ScreenshotPath);
+	TSharedRef<SWidget> BuildSessionSidebar();
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildContextChips();
@@ -122,7 +141,11 @@ private:
 	FSlateColor GetMessageColor(const FString& Sender) const;
 	EVisibility GetToolPaletteVisibility() const;
 	FText GetToolPaletteToggleText() const;
+	FString BuildSessionQueryParam() const;
+	FString BuildNewSessionName() const;
+	FString BuildRenamedSessionName() const;
 	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	bool ParseSessionsResponse(const FString& JsonText, TArray<FChatSessionEntry>& OutSessions, FString& OutLastSession) const;
 	bool ParseToolPaletteResponse(const FString& JsonText, TMap<FString, TArray<FToolPaletteEntry>>& OutToolsByCategory) const;
 	FString BuildDropReference(const TSharedPtr<class FDragDropOperation>& Operation) const;
 	FString ExtractFirstAssetReference(const FString& Message) const;
@@ -137,10 +160,14 @@ private:
 	FString LastAgentPollTimestamp;
 	FString LastCompileStatus = TEXT("unknown");
 	FString ServerBaseUrl = TEXT("http://127.0.0.1:8000");
+	FString CurrentSessionName = TEXT("default");
+	FString LastSessionName = TEXT("default");
 	bool bToolPaletteVisible = true;
 	bool bToolPaletteLoaded = false;
 	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
+	TArray<FChatSessionEntry> ChatSessions;
 
+	TSharedPtr<SVerticalBox> SessionList;
 	TSharedPtr<SVerticalBox> ToolPaletteList;
 	TSharedPtr<SScrollBox> MessageScrollBox;
 	TSharedPtr<SMultiLineEditableTextBox> MessageInput;

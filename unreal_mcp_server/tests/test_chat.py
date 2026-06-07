@@ -109,6 +109,34 @@ class TestChatStorage(unittest.TestCase):
                     "timestamp": "2026-04-30T14:23:00Z",
                 }, path=path)
 
+    def test_named_sessions_are_isolated_and_exportable(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            session_dir = Path(tmp) / "Saved" / "MCPChat"
+            storage.append_message({
+                "sender": "human",
+                "message": "Dungeon run",
+                "timestamp": "2026-04-30T14:23:00Z",
+            }, session="Dungeon", session_dir=session_dir)
+            storage.append_message({
+                "sender": "human",
+                "message": "Slime run",
+                "timestamp": "2026-04-30T14:24:00Z",
+            }, session="Slime", session_dir=session_dir)
+
+            self.assertEqual(
+                [item["message"] for item in storage.get_recent_messages(session="Dungeon", session_dir=session_dir)],
+                ["Dungeon run"],
+            )
+            sessions = storage.list_sessions(session_dir=session_dir)
+            self.assertEqual({item["name"] for item in sessions["sessions"]}, {"Dungeon", "Slime"})
+            storage.pin_session("Dungeon", session_dir=session_dir)
+            storage.rename_session("Slime", "Boss Room", session_dir=session_dir)
+            markdown = storage.export_session_markdown("Boss Room", session_dir=session_dir)
+            self.assertIn("# MCP Chat Session: Boss Room", markdown)
+            self.assertIn("Slime run", markdown)
+            storage.delete_session("Dungeon", session_dir=session_dir)
+            self.assertFalse((session_dir / "Dungeon.json").exists())
+
 
 class TestChatRoutes(unittest.TestCase):
     def test_send_poll_history_and_clear(self):
@@ -119,9 +147,15 @@ class TestChatRoutes(unittest.TestCase):
                 Route("/chat/poll", routes.chat_poll, methods=["GET"]),
                 Route("/chat/history", routes.chat_history, methods=["GET"]),
                 Route("/chat/clear", routes.chat_clear, methods=["POST"]),
+                Route("/chat/sessions", routes.chat_sessions, methods=["GET"]),
+                Route("/chat/session/new", routes.chat_session_new, methods=["POST"]),
+                Route("/chat/session/rename", routes.chat_session_rename, methods=["POST"]),
+                Route("/chat/session/pin", routes.chat_session_pin, methods=["POST"]),
+                Route("/chat/session/delete", routes.chat_session_delete, methods=["POST"]),
+                Route("/chat/session/export", routes.chat_session_export, methods=["GET"]),
             ])
 
-            with patch.object(storage, "DEFAULT_CHAT_HISTORY_PATH", path):
+            with patch.object(storage, "DEFAULT_CHAT_HISTORY_PATH", path), patch.object(storage, "DEFAULT_CHAT_SESSION_DIR", Path(tmp) / "MCPChat"):
                 client = TestClient(app)
                 send_resp = client.post("/chat/send", json={
                     "sender": "human",
@@ -142,6 +176,25 @@ class TestChatRoutes(unittest.TestCase):
                 clear_resp = client.post("/chat/clear")
                 self.assertEqual(clear_resp.status_code, 200)
                 self.assertEqual(client.get("/chat/history").json()["messages"], [])
+
+                new_resp = client.post("/chat/session/new", json={"name": "Dungeon"})
+                self.assertEqual(new_resp.status_code, 200)
+                self.assertEqual(new_resp.json()["session"]["name"], "Dungeon")
+                session_send = client.post("/chat/send?session=Dungeon", json={
+                    "sender": "human",
+                    "message": "Session scoped",
+                    "timestamp": "2026-04-30T14:25:00Z",
+                })
+                self.assertEqual(session_send.status_code, 200)
+                self.assertEqual(len(client.get("/chat/history?session=Dungeon").json()["messages"]), 1)
+                self.assertEqual(client.get("/chat/history").json()["messages"], [])
+                self.assertEqual(client.post("/chat/session/pin", json={"name": "Dungeon", "pinned": True}).status_code, 200)
+                self.assertEqual(client.post("/chat/session/rename", json={"old_name": "Dungeon", "new_name": "Boss"}).status_code, 200)
+                export_resp = client.get("/chat/session/export?name=Boss")
+                self.assertEqual(export_resp.status_code, 200)
+                self.assertIn("Session scoped", export_resp.text)
+                self.assertIn("Boss", {item["name"] for item in client.get("/chat/sessions").json()["sessions"]})
+                self.assertEqual(client.post("/chat/session/delete", json={"name": "Boss"}).status_code, 200)
 
     def test_tools_list_route_uses_tool_inventory_categories(self):
         mcp = _MockRouteMCP()

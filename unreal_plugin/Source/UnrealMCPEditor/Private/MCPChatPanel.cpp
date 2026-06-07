@@ -167,7 +167,13 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Orientation(Orient_Horizontal)
 
 			+ SSplitter::Slot()
-			.Value(0.24f)
+			.Value(0.18f)
+			[
+				BuildSessionSidebar()
+			]
+
+			+ SSplitter::Slot()
+			.Value(0.22f)
 			[
 				SNew(SBox)
 				.Visibility(this, &SMCPChatPanel::GetToolPaletteVisibility)
@@ -177,7 +183,7 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			]
 
 			+ SSplitter::Slot()
-			.Value(0.76f)
+			.Value(0.60f)
 			[
 				SNew(SSplitter)
 				.Orientation(Orient_Vertical)
@@ -256,6 +262,7 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 		]
 	];
 
+	LoadSessions();
 	LoadHistory();
 	LoadToolPalette();
 	PollAgentMessages();
@@ -310,6 +317,110 @@ FReply SMCPChatPanel::HandleClearClicked()
 	StreamingMessageTextBlocks.Reset();
 	EvidenceImageBrushes.Reset();
 	RebuildMessageList();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleNewSessionClicked()
+{
+	const FString NewSessionName = BuildNewSessionName();
+	const TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+	Payload->SetStringField(TEXT("name"), NewSessionName);
+	CurrentSessionName = NewSessionName;
+	LastAgentPollTimestamp.Empty();
+	Messages.Reset();
+	RebuildMessageList();
+	SendSessionAction(TEXT("/chat/session/new"), Payload, LOCTEXT("StatusSessionCreated", "Session created"));
+	LoadHistory();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleContinueLastSessionClicked()
+{
+	if (!LastSessionName.IsEmpty())
+	{
+		CurrentSessionName = LastSessionName;
+		LastAgentPollTimestamp.Empty();
+		LoadHistory();
+		RebuildSessionList();
+		SetStatus(FText::Format(LOCTEXT("StatusSessionContinued", "Continuing {0}"), FText::FromString(CurrentSessionName)), OkStatusColor);
+	}
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleRenameSessionClicked()
+{
+	const FString NewName = BuildRenamedSessionName();
+	const TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+	Payload->SetStringField(TEXT("old_name"), CurrentSessionName);
+	Payload->SetStringField(TEXT("new_name"), NewName);
+	CurrentSessionName = NewName;
+	SendSessionAction(TEXT("/chat/session/rename"), Payload, LOCTEXT("StatusSessionRenamed", "Session renamed"));
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandlePinSessionClicked()
+{
+	bool bCurrentlyPinned = false;
+	for (const FChatSessionEntry& Session : ChatSessions)
+	{
+		if (Session.Name == CurrentSessionName)
+		{
+			bCurrentlyPinned = Session.bPinned;
+			break;
+		}
+	}
+
+	const TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+	Payload->SetStringField(TEXT("name"), CurrentSessionName);
+	Payload->SetBoolField(TEXT("pinned"), !bCurrentlyPinned);
+	SendSessionAction(TEXT("/chat/session/pin"), Payload, LOCTEXT("StatusSessionPinned", "Session pin updated"));
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleDeleteSessionClicked()
+{
+	const TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
+	Payload->SetStringField(TEXT("name"), CurrentSessionName);
+	SendSessionAction(TEXT("/chat/session/delete"), Payload, LOCTEXT("StatusSessionDeleted", "Session deleted"));
+	CurrentSessionName = TEXT("default");
+	LastAgentPollTimestamp.Empty();
+	Messages.Reset();
+	RebuildMessageList();
+	LoadHistory();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleExportSessionClicked()
+{
+	const FString Path = TEXT("/chat/session/export?name=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName);
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("GET"));
+	ActiveRequests.Add(Request);
+	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	{
+		ActiveRequests.Remove(RequestPtr);
+		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
+		{
+			SetStatus(LOCTEXT("StatusSessionExportFailed", "Export failed"), ErrorStatusColor);
+			return;
+		}
+
+		FPlatformApplicationMisc::ClipboardCopy(*Response->GetContentAsString());
+		SetStatus(LOCTEXT("StatusSessionExported", "Session markdown copied"), OkStatusColor);
+	});
+	Request->ProcessRequest();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleSessionClicked(FChatSessionEntry Session)
+{
+	if (!Session.Name.IsEmpty())
+	{
+		CurrentSessionName = Session.Name;
+		LastAgentPollTimestamp.Empty();
+		LoadHistory();
+		RebuildSessionList();
+		SetStatus(FText::Format(LOCTEXT("StatusSessionLoaded", "Loaded {0}"), FText::FromString(CurrentSessionName)), OkStatusColor);
+	}
 	return FReply::Handled();
 }
 
@@ -498,7 +609,8 @@ bool SMCPChatPanel::HandlePollTick(float DeltaTime)
 
 void SMCPChatPanel::LoadHistory()
 {
-	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/chat/history?limit=50")), TEXT("GET"));
+	const FString Path = TEXT("/chat/history?limit=50") + BuildSessionQueryParam();
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("GET"));
 	ActiveRequests.Add(Request);
 	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
@@ -516,7 +628,7 @@ void SMCPChatPanel::LoadHistory()
 			Messages = LoadedMessages;
 			UpdateLastAgentTimestamp(LoadedMessages);
 			RebuildMessageList();
-			SetStatus(LOCTEXT("StatusConnected", "Connected"), OkStatusColor);
+			SetStatus(FText::Format(LOCTEXT("StatusConnectedSession", "Connected: {0}"), FText::FromString(CurrentSessionName)), OkStatusColor);
 		}
 		else
 		{
@@ -528,7 +640,7 @@ void SMCPChatPanel::LoadHistory()
 
 void SMCPChatPanel::PollAgentMessages()
 {
-	FString Path = TEXT("/chat/poll?sender=agent");
+	FString Path = TEXT("/chat/poll?sender=agent") + BuildSessionQueryParam();
 	if (!LastAgentPollTimestamp.IsEmpty())
 	{
 		Path += TEXT("&since=");
@@ -581,12 +693,14 @@ void SMCPChatPanel::PollAgentMessages()
 
 void SMCPChatPanel::SendHumanMessage(const FString& Message)
 {
-	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/chat/send")), TEXT("POST"));
+	const FString Path = TEXT("/chat/send?session=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName);
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("POST"));
 
 	const TSharedPtr<FJsonObject> Payload = MakeShared<FJsonObject>();
 	Payload->SetStringField(TEXT("sender"), TEXT("human"));
 	Payload->SetStringField(TEXT("message"), Message);
 	Payload->SetStringField(TEXT("timestamp"), MakeCurrentTimestamp());
+	Payload->SetStringField(TEXT("session"), CurrentSessionName);
 	Payload->SetObjectField(TEXT("context"), BuildEditorContext());
 
 	FString Body;
@@ -606,13 +720,15 @@ void SMCPChatPanel::SendHumanMessage(const FString& Message)
 		}
 
 		SetStatus(LOCTEXT("StatusSendOk", "Connected"), OkStatusColor);
+		LoadSessions();
 	});
 	Request->ProcessRequest();
 }
 
 void SMCPChatPanel::ClearHistoryOnServer()
 {
-	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/chat/clear")), TEXT("POST"));
+	const FString Path = TEXT("/chat/clear?session=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName);
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("POST"));
 	ActiveRequests.Add(Request);
 	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
 	{
@@ -653,6 +769,62 @@ void SMCPChatPanel::LoadToolPalette()
 		bToolPaletteLoaded = true;
 		RebuildToolPaletteList();
 		SetStatus(LOCTEXT("StatusToolPaletteLoaded", "Tool palette loaded"), OkStatusColor);
+	});
+	Request->ProcessRequest();
+}
+
+void SMCPChatPanel::LoadSessions()
+{
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(TEXT("/chat/sessions")), TEXT("GET"));
+	ActiveRequests.Add(Request);
+	Request->OnProcessRequestComplete().BindLambda([this](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	{
+		ActiveRequests.Remove(RequestPtr);
+		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
+		{
+			SetStatus(LOCTEXT("StatusSessionsUnavailable", "Sessions unavailable"), ErrorStatusColor);
+			return;
+		}
+
+		TArray<FChatSessionEntry> ParsedSessions;
+		FString ParsedLastSession;
+		if (!ParseSessionsResponse(Response->GetContentAsString(), ParsedSessions, ParsedLastSession))
+		{
+			SetStatus(LOCTEXT("StatusSessionsParseFailed", "Session list parse failed"), ErrorStatusColor);
+			return;
+		}
+
+		ChatSessions = MoveTemp(ParsedSessions);
+		LastSessionName = ParsedLastSession.IsEmpty() ? CurrentSessionName : ParsedLastSession;
+		if (CurrentSessionName.IsEmpty())
+		{
+			CurrentSessionName = LastSessionName;
+		}
+		RebuildSessionList();
+	});
+	Request->ProcessRequest();
+}
+
+void SMCPChatPanel::SendSessionAction(const FString& Path, const TSharedPtr<FJsonObject>& Payload, const FText& StatusOnSuccess)
+{
+	const TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request = MakeJsonRequest(BuildServerUrl(Path), TEXT("POST"));
+	FString Body;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Body);
+	FJsonSerializer::Serialize(Payload.ToSharedRef(), Writer);
+	Request->SetContentAsString(Body);
+
+	ActiveRequests.Add(Request);
+	Request->OnProcessRequestComplete().BindLambda([this, StatusOnSuccess](FHttpRequestPtr RequestPtr, FHttpResponsePtr Response, bool bWasSuccessful)
+	{
+		ActiveRequests.Remove(RequestPtr);
+		if (!bWasSuccessful || !Response.IsValid() || Response->GetResponseCode() < 200 || Response->GetResponseCode() >= 300)
+		{
+			SetStatus(LOCTEXT("StatusSessionActionFailed", "Session action failed"), ErrorStatusColor);
+			return;
+		}
+
+		SetStatus(StatusOnSuccess, OkStatusColor);
+		LoadSessions();
 	});
 	Request->ProcessRequest();
 }
@@ -1049,6 +1221,138 @@ TSharedRef<SWidget> SMCPChatPanel::BuildScreenshotEvidenceWidget(const FString& 
 		[
 			ScreenshotBox
 		];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildSessionSidebar()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("SessionSidebarTitle", "Sessions"))
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("ContinueLastSession", "Continue Last"))
+				.OnClicked(this, &SMCPChatPanel::HandleContinueLastSessionClicked)
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("NewSession", "New"))
+				.OnClicked(this, &SMCPChatPanel::HandleNewSessionClicked)
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SWrapBox)
+
+				+ SWrapBox::Slot()
+				.Padding(0.0f, 0.0f, 4.0f, 4.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("RenameSession", "Rename"))
+					.OnClicked(this, &SMCPChatPanel::HandleRenameSessionClicked)
+				]
+
+				+ SWrapBox::Slot()
+				.Padding(0.0f, 0.0f, 4.0f, 4.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("PinSession", "Pin"))
+					.OnClicked(this, &SMCPChatPanel::HandlePinSessionClicked)
+				]
+
+				+ SWrapBox::Slot()
+				.Padding(0.0f, 0.0f, 4.0f, 4.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("DeleteSession", "Delete"))
+					.OnClicked(this, &SMCPChatPanel::HandleDeleteSessionClicked)
+				]
+
+				+ SWrapBox::Slot()
+				.Padding(0.0f, 0.0f, 4.0f, 4.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("ExportSession", "Export"))
+					.OnClicked(this, &SMCPChatPanel::HandleExportSessionClicked)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.FillHeight(1.0f)
+			[
+				SNew(SScrollBox)
+
+				+ SScrollBox::Slot()
+				[
+					SAssignNew(SessionList, SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("SessionsLoading", "Loading sessions..."))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					]
+				]
+			]
+		];
+}
+
+void SMCPChatPanel::RebuildSessionList()
+{
+	if (!SessionList.IsValid())
+	{
+		return;
+	}
+
+	SessionList->ClearChildren();
+	if (ChatSessions.IsEmpty())
+	{
+		SessionList->AddSlot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("SessionsEmpty", "No sessions"))
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+		];
+		return;
+	}
+
+	for (const FChatSessionEntry& Session : ChatSessions)
+	{
+		const FString Prefix = Session.bPinned ? TEXT("* ") : TEXT("");
+		const FString Suffix = Session.Name == CurrentSessionName ? TEXT("  <") : TEXT("");
+		const FString Label = FString::Printf(TEXT("%s%s (%d)%s"), *Prefix, *Session.Name, Session.MessageCount, *Suffix);
+		SessionList->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(FText::FromString(Label))
+			.ToolTipText(FText::FromString(Session.UpdatedAt))
+			.OnClicked(this, &SMCPChatPanel::HandleSessionClicked, Session)
+		];
+	}
 }
 
 TSharedRef<SWidget> SMCPChatPanel::BuildToolPalette()
@@ -1982,6 +2286,21 @@ FText SMCPChatPanel::GetToolPaletteToggleText() const
 	return bToolPaletteVisible ? LOCTEXT("HideToolPalette", "Hide Tools") : LOCTEXT("ShowToolPalette", "Show Tools");
 }
 
+FString SMCPChatPanel::BuildSessionQueryParam() const
+{
+	return TEXT("&session=") + FGenericPlatformHttp::UrlEncode(CurrentSessionName.IsEmpty() ? TEXT("default") : CurrentSessionName);
+}
+
+FString SMCPChatPanel::BuildNewSessionName() const
+{
+	return FString::Printf(TEXT("Session-%s"), *FDateTime::UtcNow().ToString(TEXT("%Y%m%d-%H%M%S")));
+}
+
+FString SMCPChatPanel::BuildRenamedSessionName() const
+{
+	return FString::Printf(TEXT("%s-renamed-%s"), *CurrentSessionName, *FDateTime::UtcNow().ToString(TEXT("%H%M%S")));
+}
+
 FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const
 {
 	FString Template = FString::Printf(
@@ -2242,6 +2561,44 @@ bool SMCPChatPanel::ParseToolPaletteResponse(const FString& JsonText, TMap<FStri
 	}
 
 	return !OutToolsByCategory.IsEmpty();
+}
+
+bool SMCPChatPanel::ParseSessionsResponse(const FString& JsonText, TArray<FChatSessionEntry>& OutSessions, FString& OutLastSession) const
+{
+	TSharedPtr<FJsonObject> Root;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(JsonText);
+	if (!FJsonSerializer::Deserialize(Reader, Root) || !Root.IsValid())
+	{
+		return false;
+	}
+
+	Root->TryGetStringField(TEXT("last_session"), OutLastSession);
+	const TArray<TSharedPtr<FJsonValue>>* SessionValues = nullptr;
+	if (!Root->TryGetArrayField(TEXT("sessions"), SessionValues) || SessionValues == nullptr)
+	{
+		return false;
+	}
+
+	for (const TSharedPtr<FJsonValue>& Value : *SessionValues)
+	{
+		const TSharedPtr<FJsonObject> Object = Value.IsValid() ? Value->AsObject() : nullptr;
+		if (!Object.IsValid())
+		{
+			continue;
+		}
+
+		FChatSessionEntry Session;
+		Session.Name = GetStringField(Object, TEXT("name"));
+		Session.UpdatedAt = GetStringField(Object, TEXT("updated_at"));
+		Session.bPinned = Object->GetBoolField(TEXT("pinned"));
+		Session.MessageCount = static_cast<int32>(Object->GetIntegerField(TEXT("message_count")));
+		if (!Session.Name.IsEmpty())
+		{
+			OutSessions.Add(Session);
+		}
+	}
+
+	return !OutSessions.IsEmpty();
 }
 
 bool SMCPChatPanel::ParseMessagesResponse(const FString& JsonText, TArray<FChatMessage>& OutMessages) const

@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.8 - Session management
+
+- Added named chat-session storage under `Saved/MCPChat/<session>.json` with session list, create, rename, pin, delete, and Markdown export helpers.
+- Exposed `/chat/sessions` plus `/chat/session/new`, `/chat/session/rename`, `/chat/session/pin`, `/chat/session/delete`, and `/chat/session/export` HTTP routes.
+- Threaded `session` through chat send, poll, history, and clear routes so multiple conversations stay isolated.
+- Added a left-side `SMCPChatPanel` session sidebar with Continue Last, New, Rename, Pin, Delete, Export, and per-session load actions.
+- Added C.8 storage, route, and static editor tests guarding named session persistence and session-scoped chat URLs.
+
 ### C.7 - PIE/log/viewport evidence inline
 
 - Added inline evidence extraction to `SMCPChatPanel` tool-call cards for screenshot paths, log snippets, and PIE/play-in-editor results.
