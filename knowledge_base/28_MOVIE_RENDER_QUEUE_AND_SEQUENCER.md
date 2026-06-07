@@ -43,8 +43,26 @@ Actor, bindings, cameras, shots, render presets, and output folders.
 | Inspect cinematic assets | `scan_project_assets`, sequence/camera asset scans |
 | Place cameras/actors | editor actor and viewport tools |
 | Create animation support | `anim_*`, Control Rig, Blueprint tools |
+| Create MRQ jobs | `mrq_create_job` |
+| Configure MRQ output/passes | `mrq_add_render_setting` |
+| Validate or start queue renders | `mrq_render_queue` |
 | Verify visual output | viewport screenshot, PIE/log tools |
 | Document output | execution journal and report packager |
+
+## MCP Movie Render Queue Tools
+
+The B.11 `mrq_tools.py` module exposes editor-queue controls backed by native
+MRQ bridge commands:
+
+| Tool | Use |
+| --- | --- |
+| `mrq_create_job` | Allocate an editor queue job, assign sequence/map paths, output folder, filename format, resolution, default deferred pass, and image output format. |
+| `mrq_add_render_setting` | Add or update output, image output, deferred pass, anti-aliasing, or console variable settings for a named job or the latest queue job. |
+| `mrq_render_queue` | Dry-run validate the current queue by default, or start a PIE executor render when `dry_run=False`. |
+
+Default `mrq_render_queue` calls are dry runs so automation can inspect queue
+state safely. Start an actual render only after confirming camera cuts, bindings,
+output path, frame range, and warm-up requirements.
 
 ## Working Example
 

@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### B.11 - Movie Render Queue tools
+
+- Added `mrq_create_job` for editor MRQ queue job creation with sequence/map assignment, output folder, filename format, resolution, deferred pass, and image output format setup.
+- Added `mrq_add_render_setting` for output, image output, deferred pass, anti-aliasing, and console variable render settings.
+- Added `mrq_render_queue` for dry-run queue validation by default and explicit PIE executor render starts.
+- Added native bridge routes, Movie Render Pipeline module dependencies, inventory metadata, usage guide notes, KB cross-links, and B.11 offline smoke tests.
+
 ### B.10 - Chaos destruction and cloth tools
 
 - Added `chaos_create_solver_actor` and `chaos_configure_solver_actor` for Chaos Solver actor creation and event/runtime budget configuration.

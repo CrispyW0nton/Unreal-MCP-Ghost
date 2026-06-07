@@ -2047,6 +2047,53 @@ of the gameplay proof.
 
 ---
 
+### B.11 Movie Render Queue (`mrq_tools.py`)
+
+Use these tools to create editor MRQ jobs, configure render settings, and validate
+or start the current queue after Sequencer assets and camera cuts are ready.
+
+#### Queue job creation
+```python
+mrq_create_job(
+    job_name="Trailer_Master",
+    sequence="/Game/Cinematics/LS_Trailer",
+    map="/Game/Maps/L_Cinematic",
+    output_directory="C:/Renders/Trailer",
+    file_name_format="{sequence_name}/{shot_name}.{frame_number}",
+    resolution=[3840, 2160],
+    image_format="exr",
+    clear_queue=True
+)
+```
+
+#### Render settings
+```python
+mrq_add_render_setting(
+    job_name="Trailer_Master",
+    setting_type="anti_aliasing",
+    temporal_samples=8,
+    spatial_samples=2,
+    warmup_frames=16
+)
+mrq_add_render_setting(
+    job_name="Trailer_Master",
+    setting_type="console_variables",
+    console_variables={"r.MotionBlurQuality": 4.0}
+)
+```
+
+#### Queue validation or render start
+```python
+mrq_render_queue(dry_run=True)
+mrq_render_queue(executor="pie", dry_run=False)
+```
+
+`mrq_render_queue` defaults to `dry_run=True`; start a real render only after
+checking queue summaries, camera cuts, sequence bindings, output folders, and
+simulation warm-up needs.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

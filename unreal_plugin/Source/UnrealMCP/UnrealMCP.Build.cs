@@ -153,6 +153,10 @@ public class UnrealMCP : ModuleRules
                 "LevelSequence",
                 "Sequencer",
                 "MovieSceneTools",
+                "MovieRenderPipelineCore",
+                "MovieRenderPipelineEditor",
+                "MovieRenderPipelineRenderPasses",
+                "MovieRenderPipelineSettings",
 
                 // Material editing - required for set_material_instance_parameter
                 "MaterialEditor",

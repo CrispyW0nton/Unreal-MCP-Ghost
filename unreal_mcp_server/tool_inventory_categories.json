@@ -44,6 +44,11 @@
     "roadmap_phase": "phase_3_chaos_destruction_cloth",
     "status": "live"
   },
+  "tools.mrq_tools": {
+    "category": "movie_render_queue",
+    "roadmap_phase": "phase_3_movie_render_queue",
+    "status": "live"
+  },
   "tools.geometry_tools": {
     "category": "geometry_modeling",
     "roadmap_phase": "phase_3_geometry_script_modeling",
