@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.2 - Core MCP Chat panel UX
+
+- Upgraded `SMCPChatPanel` to a resizable two-pane Slate layout with conversation history above a multiline composer.
+- Added Enter-to-send and Shift+Enter newline handling, plus generic drag/drop reference insertion for the composer.
+- Added role-tagged user, agent, and tool message bubbles with Copy, Re-run, Open Log, and Reveal Asset actions.
+- Added Markdown fenced-code rendering as highlighted monospaced blocks and append-on-delta SSE `data:` handling for streaming message updates.
+- Added C.2 static tests that guard the core panel UX wiring and editor module dependencies.
+
 ### C.1 - Editor-only chat module split
 
 - Added `UnrealMCPEditor`, a dedicated editor-only module for the dockable MCP Chat panel.

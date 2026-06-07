@@ -241,6 +241,9 @@ The panel:
 - Loads previous messages from `/chat/history`
 - Sends human messages to `/chat/send`
 - Polls agent replies from `/chat/poll?sender=agent`
+- Uses a resizable conversation/composer split with multiline input, drag/drop reference insertion, and Enter-to-send / Shift+Enter newline behavior
+- Renders role-tagged user, agent, and tool message bubbles with Copy, Re-run, Open Log, and Reveal Asset actions
+- Renders fenced Markdown code blocks as highlighted monospaced blocks and updates streaming `data:` deltas in place when available
 - Includes editor context such as current level and selected actor
 - Shows connection status against `http://127.0.0.1:8000`
 

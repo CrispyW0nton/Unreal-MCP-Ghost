@@ -1,23 +1,40 @@
 #include "MCPChatPanel.h"
 
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "ContentBrowserModule.h"
+#include "DragAndDrop/ActorDragDropOp.h"
+#include "DragAndDrop/AssetDragDropOp.h"
 #include "Editor.h"
 #include "Engine/World.h"
+#include "Framework/Application/SlateApplication.h"
+#include "Framework/Docking/TabManager.h"
+#include "HAL/PlatformApplicationMisc.h"
+#include "IContentBrowserSingleton.h"
+#include "Input/DragAndDrop.h"
 #include "HttpModule.h"
+#include "InputCoreTypes.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
 #include "Dom/JsonObject.h"
 #include "GameFramework/Actor.h"
 #include "GenericPlatform/GenericPlatformHttp.h"
+#include "Misc/Guid.h"
+#include "Misc/PackageName.h"
+#include "Modules/ModuleManager.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
 #include "Selection.h"
 #include "Styling/AppStyle.h"
+#include "UObject/SoftObjectPath.h"
+#include "Widgets/Input/SHyperlink.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
 #include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Text/STextBlock.h"
 
@@ -27,6 +44,9 @@ namespace
 {
 	const FSlateColor HumanMessageColor(FLinearColor(0.12f, 0.30f, 0.55f, 1.0f));
 	const FSlateColor AgentMessageColor(FLinearColor(0.12f, 0.42f, 0.22f, 1.0f));
+	const FSlateColor ToolMessageColor(FLinearColor(0.36f, 0.26f, 0.55f, 1.0f));
+	const FSlateColor CodeBlockColor(FLinearColor(0.06f, 0.07f, 0.09f, 1.0f));
+	const FSlateColor MarkdownAccentColor(FLinearColor(0.72f, 0.82f, 1.0f, 1.0f));
 	const FSlateColor ErrorStatusColor(FLinearColor(0.9f, 0.18f, 0.12f, 1.0f));
 	const FSlateColor OkStatusColor(FLinearColor(0.2f, 0.75f, 0.28f, 1.0f));
 	const FSlateColor PendingStatusColor(FLinearColor(0.75f, 0.62f, 0.22f, 1.0f));
@@ -93,50 +113,73 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
-		.Padding(8.0f, 4.0f)
+		.Padding(8.0f, 4.0f, 8.0f, 8.0f)
 		[
-			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-			.Padding(6.0f)
+			SNew(SSplitter)
+			.Orientation(Orient_Vertical)
+
+			+ SSplitter::Slot()
+			.Value(0.78f)
 			[
-				SAssignNew(MessageScrollBox, SScrollBox)
-			]
-		]
-
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(8.0f, 4.0f)
-		[
-			SNew(SSeparator)
-		]
-
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(8.0f)
-		[
-			SNew(SHorizontalBox)
-
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			.MinWidth(300.0f)
-			[
-				SNew(SBox)
-				.MinDesiredHeight(72.0f)
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+				.Padding(6.0f)
 				[
-					SAssignNew(MessageInput, SMultiLineEditableTextBox)
-					.HintText(LOCTEXT("InputHint", "Type a message for Cursor..."))
-					.AutoWrapText(true)
+					SAssignNew(MessageScrollBox, SScrollBox)
 				]
 			]
 
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Bottom)
-			.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+			+ SSplitter::Slot()
+			.Value(0.22f)
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("Send", "Send"))
-				.OnClicked(this, &SMCPChatPanel::HandleSendClicked)
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+				.Padding(8.0f)
+				[
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("ComposerDropHint", "Drop assets, actors, or files here. Enter sends; Shift+Enter adds a new line."))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.AutoWrapText(true)
+					]
+
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					[
+						SAssignNew(MessageInput, SMultiLineEditableTextBox)
+						.HintText(LOCTEXT("InputHint", "Type a message for the agent..."))
+						.AutoWrapText(true)
+						.OnKeyDownHandler(this, &SMCPChatPanel::HandleComposerKeyDown)
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 8.0f, 0.0f, 0.0f)
+					[
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("ComposerMode", "Markdown supported. Code fences render as highlighted blocks."))
+							.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("Send", "Send"))
+							.OnClicked(this, &SMCPChatPanel::HandleSendClicked)
+						]
+					]
+				]
 			]
 		]
 	];
@@ -182,7 +225,7 @@ FReply SMCPChatPanel::HandleSendClicked()
 
 	MessageInput->SetText(FText::GetEmpty());
 	SendHumanMessage(Text);
-	AddMessage(FChatMessage{TEXT(""), TEXT("human"), Text, MakeCurrentTimestamp()});
+	AddMessage(FChatMessage{MakeLocalMessageId(), TEXT("human"), Text, MakeCurrentTimestamp()});
 
 	return FReply::Handled();
 }
@@ -191,7 +234,98 @@ FReply SMCPChatPanel::HandleClearClicked()
 {
 	ClearHistoryOnServer();
 	Messages.Reset();
+	StreamingMessageTextBlocks.Reset();
 	RebuildMessageList();
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
+{
+	if (InKeyEvent.GetKey() == EKeys::Enter && !InKeyEvent.IsShiftDown())
+	{
+		return HandleSendClicked();
+	}
+
+	return FReply::Unhandled();
+}
+
+FReply SMCPChatPanel::HandleCopyClicked(FString Message) const
+{
+	FPlatformApplicationMisc::ClipboardCopy(*Message);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleRerunClicked(FString Message, FString Sender)
+{
+	if (NormaliseSender(Sender) == TEXT("user"))
+	{
+		SendHumanMessage(Message);
+		AddMessage(FChatMessage{MakeLocalMessageId(), TEXT("human"), Message, MakeCurrentTimestamp()});
+		SetStatus(LOCTEXT("StatusRerunSent", "Prompt re-run"), OkStatusColor);
+	}
+	else
+	{
+		InsertComposerText(Message);
+		SetStatus(LOCTEXT("StatusRerunCopied", "Message copied to composer"), PendingStatusColor);
+	}
+
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleOpenLogClicked()
+{
+	FGlobalTabmanager::Get()->TryInvokeTab(FName(TEXT("OutputLog")));
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleRevealAssetClicked(FString Message)
+{
+	const FString AssetReference = ExtractFirstAssetReference(Message);
+	if (AssetReference.IsEmpty())
+	{
+		SetStatus(LOCTEXT("StatusNoAssetReference", "No @asset reference found"), PendingStatusColor);
+		return FReply::Handled();
+	}
+
+	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+	TArray<FAssetData> Assets;
+	AssetRegistryModule.Get().GetAssetsByPackageName(FName(*AssetReference), Assets);
+
+	if (Assets.IsEmpty() && AssetReference.Contains(TEXT(".")))
+	{
+		const FAssetData AssetData = AssetRegistryModule.Get().GetAssetByObjectPath(FSoftObjectPath(AssetReference));
+		if (AssetData.IsValid())
+		{
+			Assets.Add(AssetData);
+		}
+	}
+
+	if (Assets.IsEmpty())
+	{
+		SetStatus(FText::Format(LOCTEXT("StatusAssetNotFound", "Asset not found: {0}"), FText::FromString(AssetReference)), ErrorStatusColor);
+		return FReply::Handled();
+	}
+
+	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
+	ContentBrowserModule.Get().SyncBrowserToAssets(Assets);
+	SetStatus(FText::Format(LOCTEXT("StatusAssetRevealed", "Revealed {0}"), FText::FromString(AssetReference)), OkStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)
+{
+	return DragDropEvent.GetOperation().IsValid() ? FReply::Handled() : FReply::Unhandled();
+}
+
+FReply SMCPChatPanel::OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)
+{
+	const TSharedPtr<FDragDropOperation> Operation = DragDropEvent.GetOperation();
+	if (!Operation.IsValid())
+	{
+		return FReply::Unhandled();
+	}
+
+	InsertComposerText(BuildDropReference(Operation));
 	return FReply::Handled();
 }
 
@@ -252,10 +386,25 @@ void SMCPChatPanel::PollAgentMessages()
 			return;
 		}
 
+		const FString ResponseBody = Response->GetContentAsString();
 		TArray<FChatMessage> NewMessages;
-		if (!ParseMessagesResponse(Response->GetContentAsString(), NewMessages))
+		if (!ParseMessagesResponse(ResponseBody, NewMessages))
 		{
-			SetStatus(LOCTEXT("StatusPollParseError", "Poll parse failed"), ErrorStatusColor);
+			TArray<FString> Lines;
+			ResponseBody.ParseIntoArrayLines(Lines, false);
+			bool bAppliedStreamDelta = false;
+			for (const FString& Line : Lines)
+			{
+				bAppliedStreamDelta |= ApplySseLine(Line);
+			}
+
+			if (!bAppliedStreamDelta)
+			{
+				SetStatus(LOCTEXT("StatusPollParseError", "Poll parse failed"), ErrorStatusColor);
+				return;
+			}
+
+			SetStatus(LOCTEXT("StatusStreamConnected", "Streaming"), OkStatusColor);
 			return;
 		}
 
@@ -320,32 +469,45 @@ void SMCPChatPanel::ClearHistoryOnServer()
 
 void SMCPChatPanel::AddMessage(const FChatMessage& ChatMessage)
 {
-	if (!ChatMessage.MessageId.IsEmpty())
+	FChatMessage MessageToAdd = ChatMessage;
+	if (MessageToAdd.MessageId.IsEmpty())
+	{
+		MessageToAdd.MessageId = MakeLocalMessageId();
+	}
+
+	if (!MessageToAdd.MessageId.IsEmpty())
 	{
 		for (const FChatMessage& Existing : Messages)
 		{
-			if (Existing.MessageId == ChatMessage.MessageId)
+			if (Existing.MessageId == MessageToAdd.MessageId)
 			{
 				return;
 			}
 		}
 	}
 
-	Messages.Add(ChatMessage);
+	Messages.Add(MessageToAdd);
 
 	if (!MessageScrollBox.IsValid())
 	{
 		return;
 	}
 
-	const bool bHuman = ChatMessage.Sender.Equals(TEXT("human"), ESearchCase::IgnoreCase);
-	const FSlateColor MessageColor = bHuman ? HumanMessageColor : AgentMessageColor;
-	const FText SenderLabel = bHuman ? LOCTEXT("HumanSender", "You") : LOCTEXT("AgentSender", "Cursor");
-
 	MessageScrollBox->AddSlot()
 	.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 	[
-		SNew(SBorder)
+		BuildMessageWidget(MessageToAdd)
+	];
+
+	MessageScrollBox->ScrollToEnd();
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildMessageWidget(const FChatMessage& ChatMessage)
+{
+	const FSlateColor MessageColor = GetMessageColor(ChatMessage.Sender);
+	const FText SenderLabel = GetSenderLabel(ChatMessage.Sender);
+
+	return SNew(SBorder)
 		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
 		.BorderBackgroundColor(MessageColor)
 		.Padding(8.0f)
@@ -355,23 +517,89 @@ void SMCPChatPanel::AddMessage(const FChatMessage& ChatMessage)
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				SNew(STextBlock)
-				.Text(FText::Format(LOCTEXT("MessageHeader", "{0}  {1}"), SenderLabel, FText::FromString(ChatMessage.Timestamp)))
-				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(SBorder)
+					.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+					.BorderBackgroundColor(FSlateColor(FLinearColor(0.02f, 0.02f, 0.025f, 0.6f)))
+					.Padding(6.0f, 2.0f)
+					[
+						SNew(STextBlock)
+						.Text(SenderLabel)
+						.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					]
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(8.0f, 0.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(ChatMessage.Timestamp))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SNew(SSpacer)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(3.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("CopyMessage", "Copy"))
+						.OnClicked(this, &SMCPChatPanel::HandleCopyClicked, ChatMessage.Message)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(3.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("RerunMessage", "Re-run"))
+						.OnClicked(this, &SMCPChatPanel::HandleRerunClicked, ChatMessage.Message, ChatMessage.Sender)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(3.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("OpenLog", "Open Log"))
+						.OnClicked(this, &SMCPChatPanel::HandleOpenLogClicked)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(3.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("RevealAsset", "Reveal Asset"))
+						.OnClicked(this, &SMCPChatPanel::HandleRevealAssetClicked, ChatMessage.Message)
+					]
+				]
 			]
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
-			.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+			.Padding(0.0f, 6.0f, 0.0f, 0.0f)
 			[
-				SNew(STextBlock)
-				.Text(FText::FromString(ChatMessage.Message))
-				.AutoWrapText(true)
+				BuildMarkdownMessageBody(ChatMessage)
 			]
-		]
-	];
-
-	MessageScrollBox->ScrollToEnd();
+		];
 }
 
 void SMCPChatPanel::RebuildMessageList()
@@ -383,12 +611,182 @@ void SMCPChatPanel::RebuildMessageList()
 
 	const TArray<FChatMessage> ExistingMessages = Messages;
 	Messages.Reset();
+	StreamingMessageTextBlocks.Reset();
 	MessageScrollBox->ClearChildren();
 
 	for (const FChatMessage& ChatMessage : ExistingMessages)
 	{
 		AddMessage(ChatMessage);
 	}
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildMarkdownMessageBody(const FChatMessage& ChatMessage)
+{
+	TSharedRef<SVerticalBox> BodyBox = SNew(SVerticalBox);
+	AddMarkdownBlocks(ChatMessage.Message, ChatMessage.MessageId, BodyBox);
+	return BodyBox;
+}
+
+void SMCPChatPanel::AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox)
+{
+	TArray<FString> Lines;
+	MarkdownText.ParseIntoArrayLines(Lines, false);
+
+	FString CurrentBlock;
+	FString CurrentCodeBlock;
+	bool bInCodeBlock = false;
+	bool bRegisteredStreamingText = false;
+
+	auto FlushTextBlock = [&]()
+	{
+		if (CurrentBlock.IsEmpty())
+		{
+			return;
+		}
+
+		TSharedPtr<STextBlock> TextBlock;
+		BodyBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SAssignNew(TextBlock, STextBlock)
+			.Text(FText::FromString(CurrentBlock.TrimStartAndEnd()))
+			.AutoWrapText(true)
+		];
+
+		if (!bRegisteredStreamingText && !MessageId.IsEmpty())
+		{
+			StreamingMessageTextBlocks.Add(MessageId, TextBlock);
+			bRegisteredStreamingText = true;
+		}
+
+		CurrentBlock.Reset();
+	};
+
+	auto FlushCodeBlock = [&]()
+	{
+		if (CurrentCodeBlock.IsEmpty())
+		{
+			return;
+		}
+
+		BodyBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 6.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+			.BorderBackgroundColor(CodeBlockColor)
+			.Padding(8.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::FromString(CurrentCodeBlock.TrimStartAndEnd()))
+				.Font(FAppStyle::GetFontStyle("Monospaced"))
+				.ColorAndOpacity(MarkdownAccentColor)
+				.AutoWrapText(true)
+			]
+		];
+
+		CurrentCodeBlock.Reset();
+	};
+
+	for (const FString& Line : Lines)
+	{
+		if (Line.StartsWith(TEXT("```")))
+		{
+			if (bInCodeBlock)
+			{
+				bInCodeBlock = false;
+				FlushCodeBlock();
+			}
+			else
+			{
+				FlushTextBlock();
+				bInCodeBlock = true;
+			}
+			continue;
+		}
+
+		if (bInCodeBlock)
+		{
+			CurrentCodeBlock += Line;
+			CurrentCodeBlock += LINE_TERMINATOR;
+		}
+		else
+		{
+			CurrentBlock += Line;
+			CurrentBlock += LINE_TERMINATOR;
+		}
+	}
+
+	FlushTextBlock();
+	FlushCodeBlock();
+}
+
+void SMCPChatPanel::AppendStreamingDelta(const FString& MessageId, const FString& Sender, const FString& Delta, bool bDone)
+{
+	if (MessageId.IsEmpty() || Delta.IsEmpty())
+	{
+		return;
+	}
+
+	for (FChatMessage& Message : Messages)
+	{
+		if (Message.MessageId == MessageId)
+		{
+			Message.Message += Delta;
+			if (TSharedPtr<STextBlock>* ExistingTextBlock = StreamingMessageTextBlocks.Find(MessageId))
+			{
+				if (ExistingTextBlock->IsValid())
+				{
+					(*ExistingTextBlock)->SetText(FText::FromString(Message.Message));
+				}
+			}
+			return;
+		}
+	}
+
+	AddMessage(FChatMessage{MessageId, Sender.IsEmpty() ? TEXT("agent") : Sender, Delta, MakeCurrentTimestamp()});
+}
+
+bool SMCPChatPanel::ApplySseLine(const FString& Line)
+{
+	if (!Line.StartsWith(TEXT("data:")))
+	{
+		return false;
+	}
+
+	const FString Payload = Line.RightChop(5).TrimStartAndEnd();
+	TSharedPtr<FJsonObject> EventObject;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Payload);
+	if (!FJsonSerializer::Deserialize(Reader, EventObject) || !EventObject.IsValid())
+	{
+		return false;
+	}
+
+	FString MessageId;
+	FString Sender;
+	FString Delta;
+	bool bDone = false;
+	EventObject->TryGetStringField(TEXT("message_id"), MessageId);
+	EventObject->TryGetStringField(TEXT("sender"), Sender);
+	EventObject->TryGetStringField(TEXT("delta"), Delta);
+	EventObject->TryGetBoolField(TEXT("done"), bDone);
+
+	AppendStreamingDelta(MessageId, Sender, Delta, bDone);
+	return true;
+}
+
+void SMCPChatPanel::InsertComposerText(const FString& Text)
+{
+	if (!MessageInput.IsValid())
+	{
+		return;
+	}
+
+	const FString ExistingText = MessageInput->GetText().ToString();
+	const FString Separator = ExistingText.IsEmpty() || ExistingText.EndsWith(TEXT("\n")) ? TEXT("") : LINE_TERMINATOR;
+	MessageInput->SetText(FText::FromString(ExistingText + Separator + Text));
 }
 
 void SMCPChatPanel::SetStatus(const FText& Text, const FSlateColor& Color)
@@ -414,6 +812,127 @@ void SMCPChatPanel::UpdateLastAgentTimestamp(const TArray<FChatMessage>& InMessa
 	{
 		LastAgentPollTimestamp = MakeCurrentTimestamp();
 	}
+}
+
+FString SMCPChatPanel::MakeLocalMessageId() const
+{
+	return FString::Printf(TEXT("local-%s"), *FGuid::NewGuid().ToString(EGuidFormats::DigitsWithHyphensLower));
+}
+
+FString SMCPChatPanel::NormaliseSender(const FString& Sender) const
+{
+	if (Sender.Equals(TEXT("human"), ESearchCase::IgnoreCase) || Sender.Equals(TEXT("user"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("user");
+	}
+	if (Sender.Equals(TEXT("tool"), ESearchCase::IgnoreCase))
+	{
+		return TEXT("tool");
+	}
+	return TEXT("agent");
+}
+
+FText SMCPChatPanel::GetSenderLabel(const FString& Sender) const
+{
+	const FString NormalisedSender = NormaliseSender(Sender);
+	if (NormalisedSender == TEXT("user"))
+	{
+		return LOCTEXT("HumanSender", "User");
+	}
+	if (NormalisedSender == TEXT("tool"))
+	{
+		return LOCTEXT("ToolSender", "Tool");
+	}
+	return LOCTEXT("AgentSender", "Agent");
+}
+
+FSlateColor SMCPChatPanel::GetMessageColor(const FString& Sender) const
+{
+	const FString NormalisedSender = NormaliseSender(Sender);
+	if (NormalisedSender == TEXT("user"))
+	{
+		return HumanMessageColor;
+	}
+	if (NormalisedSender == TEXT("tool"))
+	{
+		return ToolMessageColor;
+	}
+	return AgentMessageColor;
+}
+
+FString SMCPChatPanel::BuildDropReference(const TSharedPtr<FDragDropOperation>& Operation) const
+{
+	if (!Operation.IsValid())
+	{
+		return TEXT("");
+	}
+
+	if (Operation->IsOfType<FAssetDragDropOp>())
+	{
+		const TSharedPtr<FAssetDragDropOp> AssetDragDropOp = StaticCastSharedPtr<FAssetDragDropOp>(Operation);
+		if (AssetDragDropOp.IsValid() && AssetDragDropOp->HasAssets())
+		{
+			const FAssetData& FirstAsset = AssetDragDropOp->GetAssets()[0];
+			return FString::Printf(TEXT("@asset:%s"), *FirstAsset.PackageName.ToString());
+		}
+		if (AssetDragDropOp.IsValid() && AssetDragDropOp->HasAssetPaths())
+		{
+			return FString::Printf(TEXT("@asset:%s"), *AssetDragDropOp->GetAssetPaths()[0]);
+		}
+		return TEXT("@asset:<dropped-asset>");
+	}
+
+	if (Operation->IsOfType<FActorDragDropOp>())
+	{
+		const TSharedPtr<FActorDragDropOp> ActorDragDropOp = StaticCastSharedPtr<FActorDragDropOp>(Operation);
+		if (ActorDragDropOp.IsValid() && ActorDragDropOp->Actors.Num() > 0 && ActorDragDropOp->Actors[0].IsValid())
+		{
+			return FString::Printf(TEXT("@actor:%s"), *ActorDragDropOp->Actors[0]->GetName());
+		}
+		return TEXT("@actor:<dropped-actor>");
+	}
+
+	if (Operation->IsExternalOperation())
+	{
+		return TEXT("@file:<dropped-file>");
+	}
+
+	return TEXT("@drop:slate-operation");
+}
+
+FString SMCPChatPanel::ExtractFirstAssetReference(const FString& Message) const
+{
+	const FString Marker = TEXT("@asset:");
+	int32 MarkerIndex = INDEX_NONE;
+	if (!Message.FindChar(TCHAR('@'), MarkerIndex))
+	{
+		return TEXT("");
+	}
+
+	const int32 AssetMarkerIndex = Message.Find(Marker, ESearchCase::IgnoreCase);
+	if (AssetMarkerIndex == INDEX_NONE)
+	{
+		return TEXT("");
+	}
+
+	FString Remaining = Message.Mid(AssetMarkerIndex + Marker.Len()).TrimStartAndEnd();
+	int32 EndIndex = Remaining.Len();
+	for (int32 Index = 0; Index < Remaining.Len(); ++Index)
+	{
+		const TCHAR Char = Remaining[Index];
+		if (FChar::IsWhitespace(Char) || Char == TEXT(',') || Char == TEXT(')') || Char == TEXT(']'))
+		{
+			EndIndex = Index;
+			break;
+		}
+	}
+
+	FString Reference = Remaining.Left(EndIndex).TrimStartAndEnd();
+	Reference.RemoveFromStart(TEXT("\""));
+	Reference.RemoveFromEnd(TEXT("\""));
+	Reference.RemoveFromStart(TEXT("'"));
+	Reference.RemoveFromEnd(TEXT("'"));
+	return Reference;
 }
 
 FString SMCPChatPanel::BuildServerUrl(const FString& PathAndQuery) const

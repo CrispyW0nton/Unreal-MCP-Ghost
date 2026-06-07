@@ -15,6 +15,8 @@ public class UnrealMCPEditor : ModuleRules
                 "Core",
                 "CoreUObject",
                 "Engine",
+                "ApplicationCore",
+                "InputCore",
                 "Slate",
                 "SlateCore"
             }
@@ -25,6 +27,7 @@ public class UnrealMCPEditor : ModuleRules
             {
                 "EditorStyle",
                 "UnrealEd",
+                "AssetRegistry",
                 "AssetTools",
                 "ContentBrowser",
                 "ToolMenus",
