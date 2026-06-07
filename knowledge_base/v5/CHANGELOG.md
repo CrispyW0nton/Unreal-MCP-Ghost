@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### D.1 - Generative module scaffold
+
+- Added `tools/generative_tools.py` with `gen_list_providers` and `gen_prepare_import_manifest`.
+- Added a native `gen_prepare_import_manifest` bridge helper for generated asset import handoff validation.
+- Updated the generative content KB with provider scaffold and import manifest helper guidance.
+- Added inventory metadata, bridge audit categorization, and D.1 offline smoke coverage.
+
 ### C.11 - Onboarding
 
 - Added a config-backed first-launch MCP Chat tour with four steps: connect server, ask a question, drag an asset, and run a workflow.

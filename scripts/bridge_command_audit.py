@@ -287,6 +287,7 @@ def _category_for(command: str) -> str:
         "crowd_": "ai_navigation",
         "eqs_": "ai_eqs",
         "gas_": "gameplay_ability_system",
+        "gen_": "generative_content_pipeline",
         "material_": "technical_art",
         "mesh_": "technical_art",
         "nav_": "ai_navigation",

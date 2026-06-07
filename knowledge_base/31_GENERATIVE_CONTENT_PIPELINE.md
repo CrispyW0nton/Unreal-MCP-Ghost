@@ -41,12 +41,68 @@ verified in-editor.
 
 | Task | Preferred MCP direction |
 | --- | --- |
+| Discover provider readiness | `gen_list_providers` |
+| Prepare import handoff | `gen_prepare_import_manifest` |
 | Import assets | asset import, batch import, texture/audio import tools |
 | Normalize materials | `material_create_master`, `material_create_instance_from_master`, texture tools |
 | Audit meshes/textures | mesh, texture, technical-art audit tools |
 | Place generated content | editor actor and viewport tools |
 | Build procedural variants | procedural/world tools and data assets |
 | Verify playable result | PIE/log/screenshot tools and execution journal |
+
+## Provider Scaffold
+
+D.1 introduces `tools/generative_tools.py` as the neutral entry point for
+generated content. `gen_list_providers` reports the provider scaffold without
+requiring network access or credentials. The first planned provider is Tripo,
+with task-family coverage landing in later D milestones:
+
+- D.2 adds configuration and authentication.
+- D.3 mirrors the Tripo task model for prompt/image/multiview generation,
+  refine, texture, post-process, status, wait, and download.
+- D.4 imports downloaded results into Unreal assets.
+
+Agents should use this provider list as a capability map, not as proof that a
+paid generation request has been sent. Until D.2/D.3 land, no Tripo API call is
+made by the D.1 tools.
+
+Example:
+
+```python
+gen_list_providers(include_import_helpers=True)
+```
+
+## Import Manifest Helper
+
+`gen_prepare_import_manifest` is the import-side bridge helper for generated
+asset handoff. It validates the task id, normalizes the destination to a
+`/Game/...` content path, records source files, infers each file's import kind,
+and returns expected Unreal asset paths. It does not import or mutate assets;
+D.4 will consume this manifest before calling the asset import tools.
+
+Use it after a provider task has a local downloaded result, or as a dry run when
+planning a generated content pipeline:
+
+```python
+gen_prepare_import_manifest(
+    task_id="tripo_task_123",
+    local_files=["C:/Generated/slime_enemy.glb"],
+    content_path="/Game/Generated/Enemies",
+    asset_name="SM_SlimeEnemy",
+    create_material_instance=True,
+    create_blueprint=True,
+)
+```
+
+The returned `manifest` includes:
+
+- `source_files`: path, file name, extension, inferred import kind, and whether
+  the file currently exists on the Unreal host.
+- `expected_assets`: primary asset plus optional material instance and Blueprint
+  paths.
+- `options`: import flags that later tools should preserve.
+- `all_files_present`: false when planning references files that have not been
+  downloaded yet.
 
 ## Working Example
 

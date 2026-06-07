@@ -1,6 +1,128 @@
 #include "Commands/UnrealMCPCommonUtils.h"
+#include "Containers/Ticker.h"
+#include "Engine/SCS_Node.h"
+#include "Engine/SimpleConstructionScript.h"
 #include "GameFramework/Actor.h"
 #include "Engine/Blueprint.h"
+// CRASH-006: editor autosave suppression
+#include "Editor.h"
+#include "Editor/UnrealEdEngine.h"
+#include "IPackageAutoSaver.h"
+#include "UnrealEdGlobals.h"
+// CRASH-007: deferred safe compile + save
+#include "Kismet2/KismetEditorUtilities.h"
+#include "Kismet2/BlueprintEditorUtils.h"
+#include "UObject/SavePackage.h"
+#include "UObject/Package.h"
+#include "Misc/PackageName.h"
+
+// ---------------------------------------------------------------------------
+// SEH inner helpers (CRASH-005)
+//
+// MSVC C2712: a function that uses __try/__except cannot also contain any
+// C++ object that requires unwinding (FString locals, TWeakObjectPtr,
+// captured-by-value lambdas, FString temporaries returned by GetName(), etc.)
+// — even AFTER the __try block.
+//
+// Workaround: each __try lives in a tiny static helper here that takes raw
+// pointers/references and contains ZERO objects with destructors. The public
+// FUnrealMCPCommonUtils methods then just delegate to these helpers.
+//
+// On Clang / clang-cl (no MSVC SEH), each helper degrades to a direct call.
+// ---------------------------------------------------------------------------
+namespace UnrealMCPSehDetail
+{
+    static bool TryBlueprintModify(UBlueprint* BP)
+    {
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+        __try { BP->Modify(); return true; }
+        __except (1) { return false; }
+#else
+        BP->Modify();
+        return true;
+#endif
+    }
+
+    static bool TryMarkPackageDirty(UBlueprint* BP)
+    {
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+        __try { BP->MarkPackageDirty(); return true; }
+        __except (1) { return false; }
+#else
+        BP->MarkPackageDirty();
+        return true;
+#endif
+    }
+
+    static bool TrySCSAddNode(USimpleConstructionScript* SCS, USCS_Node* Node)
+    {
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+        __try { SCS->AddNode(Node); return true; }
+        __except (1) { return false; }
+#else
+        SCS->AddNode(Node);
+        return true;
+#endif
+    }
+
+    // SetObjectProperty signature pulled in via forward decl rather than
+    // a member call so this helper stays a leaf with zero unwinds.
+    typedef bool (*FSetObjectPropertyFn)(UObject* /*Object*/,
+                                         const FString& /*Name*/,
+                                         const TSharedPtr<FJsonValue>& /*Value*/,
+                                         FString& /*OutError*/);
+
+    static bool TrySetObjectProperty(FSetObjectPropertyFn Fn,
+                                     UObject* Object,
+                                     const FString& Name,
+                                     const TSharedPtr<FJsonValue>& Value,
+                                     FString& OutError,
+                                     bool& OutOk)
+    {
+        // Returns true on no SEH crash; OutOk holds the wrapped bool result.
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+        __try { OutOk = Fn(Object, Name, Value, OutError); return true; }
+        __except (1) { return false; }
+#else
+        OutOk = Fn(Object, Name, Value, OutError);
+        return true;
+#endif
+    }
+
+    // CRASH-007: leaf SEH helper for FKismetEditorUtilities::CompileBlueprint.
+    // Kept to a tiny no-unwind function for the same C2712 reason as the
+    // helpers above. The compile flags are passed by value (raw enum).
+    static bool TryCompileBlueprint(UBlueprint* BP, EBlueprintCompileOptions Flags)
+    {
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+        __try { FKismetEditorUtilities::CompileBlueprint(BP, Flags); return true; }
+        __except (1) { return false; }
+#else
+        FKismetEditorUtilities::CompileBlueprint(BP, Flags);
+        return true;
+#endif
+    }
+
+    // CRASH-007: leaf SEH helper for UPackage::SavePackage.
+    // Returns true on no SEH crash; OutSaved holds the wrapped bool result.
+    // Takes raw const TCHAR* for filename so we hold no FString locals.
+    static bool TrySavePackage(UPackage* Package, UObject* Asset,
+                               const TCHAR* FileNameRaw,
+                               const FSavePackageArgs& Args, bool& OutSaved)
+    {
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+        __try
+        {
+            OutSaved = UPackage::SavePackage(Package, Asset, FileNameRaw, Args);
+            return true;
+        }
+        __except (1) { return false; }
+#else
+        OutSaved = UPackage::SavePackage(Package, Asset, FileNameRaw, Args);
+        return true;
+#endif
+    }
+} // namespace UnrealMCPSehDetail
 #include "EdGraph/EdGraph.h"
 #include "EdGraph/EdGraphNode.h"
 #include "EdGraph/EdGraphPin.h"
@@ -201,6 +323,406 @@ void FUnrealMCPCommonUtils::SafeMarkBlueprintModified(UBlueprint* Blueprint)
     UE_LOG(LogTemp, Display,
         TEXT("[MCP] SafeMarkBlueprintModified: marked '%s' dirty without structural notifications"),
         *Blueprint->GetName());
+}
+
+// ---------------------------------------------------------------------------
+// SafeMarkBlueprintModifiedDeferred — defers MarkPackageDirty to next end-of-frame.
+//
+// Background (CRASH-005, "blackhole_ambient_loop AR walk crash" — UECC-Windows-49F65657...):
+//   Setting AudioComponent.Sound on an SCS template (BP_BlackHole) and immediately
+//   calling MarkPackageDirty() triggered the AssetRegistry to enqueue a dependency
+//   rescan of BP_BlackHole. The Content Browser's next tick (~3 s later) walked
+//   the BP's outgoing deps via FAssetRegistry::GetDependencies; the freshly-
+//   imported USoundWave 'blackhole_ambient_loop' was still mid-PostLoad on a
+//   background thread, and the AR's TObjectPtr cache held a stale entry. The
+//   walk dereferenced 0x00007ffb3f000298 → EXCEPTION_ACCESS_VIOLATION → editor
+//   crash. None of the in-command SEH guards caught it because the AV happened
+//   on a later editor tick, after the bridge command had already returned
+//   success.
+//
+// Fix:
+//   Modify() runs immediately (it only writes to the editor undo system; no
+//   AR side effects). MarkPackageDirty() — which is what fires the AR notifier
+//   — is queued via FTSTicker to fire on the next GameThread tick. By that
+//   point any synchronous SoundWave / NiagaraSystem / Texture PostLoad
+//   triggered by the property write will have completed, and the AR walk
+//   sees a fully-initialized dependency.
+//
+// Multiple deferred calls for the same package within one frame coalesce
+// naturally (MarkPackageDirty is idempotent and the delegate handle is one-shot).
+// ---------------------------------------------------------------------------
+void FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(UBlueprint* Blueprint)
+{
+    if (!Blueprint || !IsValid(Blueprint)) return;
+
+    // Synchronous part — safe; no AssetRegistry broadcast.
+    // SEH-wrapped via leaf helper to survive the rare case where Blueprint's
+    // transaction system is in an inconsistent state.
+    if (!UnrealMCPSehDetail::TryBlueprintModify(Blueprint))
+    {
+        UE_LOG(LogTemp, Error,
+            TEXT("[MCP] SafeMarkBlueprintModifiedDeferred: SEH crash inside Blueprint->Modify() for '%s' — caught, asset NOT marked dirty"),
+            *Blueprint->GetName());
+        return;
+    }
+
+    // Capture as TWeakObjectPtr — Blueprint may be GC'd before the next tick fires
+    // (rare, but possible if the user closes the editor or unloads the level).
+    TWeakObjectPtr<UBlueprint> WeakBP(Blueprint);
+    const FString BpName = Blueprint->GetName();
+
+    // FTSTicker fires on the GameThread on the next tick (delay 0.0). The
+    // lambda returns false to auto-deregister after the single fire — no
+    // manual handle bookkeeping required.
+    FTSTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateLambda([WeakBP, BpName](float /*DeltaTime*/) -> bool
+        {
+            UBlueprint* BP = WeakBP.Get();
+            if (!BP || !IsValid(BP))
+            {
+                UE_LOG(LogTemp, Verbose,
+                    TEXT("[MCP] SafeMarkBlueprintModifiedDeferred: '%s' was GC'd before deferred MarkPackageDirty — skipping"),
+                    *BpName);
+                return false; // one-shot
+            }
+
+            // SEH-guarded MarkPackageDirty via leaf helper — even after a
+            // tick deferral, the AR walk can still hit a corrupted dep
+            // cache in pathological cases. Catching the crash here keeps
+            // the editor alive; the user can re-run the workflow after
+            // restarting the AR cache.
+            const bool bOk = UnrealMCPSehDetail::TryMarkPackageDirty(BP);
+            if (!bOk)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[MCP] SafeMarkBlueprintModifiedDeferred: deferred MarkPackageDirty crashed for '%s' — caught (AR cache may be inconsistent; restart editor recommended)"),
+                    *BpName);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Display,
+                    TEXT("[MCP] SafeMarkBlueprintModifiedDeferred: dirty flag flushed for '%s' on next tick"),
+                    *BpName);
+            }
+            return false; // one-shot — never re-fire
+        }),
+        0.0f);
+
+    UE_LOG(LogTemp, Display,
+        TEXT("[MCP] SafeMarkBlueprintModifiedDeferred: queued dirty flush for '%s' (fires on next editor tick)"),
+        *Blueprint->GetName());
+}
+
+// ---------------------------------------------------------------------------
+// SetObjectPropertyGuarded — SEH-wrapped property setter.
+//
+// Lives in its own function so HandleSetComponentProperty (which has a
+// std::exception try/catch) can call it without triggering MSVC C2712
+// "cannot use __try in functions that require C++ object unwinding".
+// ---------------------------------------------------------------------------
+bool FUnrealMCPCommonUtils::SetObjectPropertyGuarded(UObject* Object,
+                                                     const FString& PropertyName,
+                                                     const TSharedPtr<FJsonValue>& Value,
+                                                     FString& OutErrorMessage,
+                                                     bool& OutSehCrash)
+{
+    OutSehCrash = false;
+    if (!Object)
+    {
+        OutErrorMessage = TEXT("SetObjectPropertyGuarded: null Object");
+        return false;
+    }
+
+    // Delegate the SEH guard to a leaf helper that has zero C++ unwind
+    // objects (see UnrealMCPSehDetail at top of file). MSVC C2712 forbids
+    // __try inside any function that allocates FString locals, so we
+    // can't __try here directly — we'd hit the same error if we did.
+    bool bOk = false;
+    const bool bNoSeh = UnrealMCPSehDetail::TrySetObjectProperty(
+        &FUnrealMCPCommonUtils::SetObjectProperty,
+        Object, PropertyName, Value, OutErrorMessage, bOk);
+
+    if (!bNoSeh)
+    {
+        // OutErrorMessage may be in a partially-written state from the AV;
+        // overwrite with a clean diagnostic.
+        OutSehCrash = true;
+        OutErrorMessage = FString::Printf(
+            TEXT("SetObjectPropertyGuarded: SEH access violation while setting '%s' on '%s' — caught"),
+            *PropertyName, *Object->GetName());
+        return false;
+    }
+    return bOk;
+}
+
+// ---------------------------------------------------------------------------
+// SCSAddNodeGuarded — SEH-wrapped SCS AddNode.
+//
+// AddNode triggers PostEditChange on the SCS internally; in pathological
+// cases (e.g. a fresh subobject template referencing an asset still in
+// async PostLoad) this can AV. Wrapping in SEH keeps the editor alive.
+// ---------------------------------------------------------------------------
+bool FUnrealMCPCommonUtils::SCSAddNodeGuarded(USimpleConstructionScript* SCS,
+                                              USCS_Node* NewNode,
+                                              bool& OutSehCrash)
+{
+    OutSehCrash = false;
+    if (!SCS || !NewNode)
+    {
+        return false;
+    }
+    // Delegate to leaf SEH helper (see UnrealMCPSehDetail at top of file)
+    // for the same C2712 reason as SetObjectPropertyGuarded.
+    const bool bNoSeh = UnrealMCPSehDetail::TrySCSAddNode(SCS, NewNode);
+    OutSehCrash = !bNoSeh;
+    return bNoSeh;
+}
+
+// ---------------------------------------------------------------------------
+// DeferAutoSave (CRASH-006)
+//
+// Background:
+//   Unreal's periodic autosave (UPackageAutoSaver) runs on the GameThread
+//   tick. The autosave interval defaults to 10 min and once it elapses,
+//   autosave fires on the very next idle tick — which can interleave with
+//   bridge SCS-mutation chains. Concrete failure mode (UECC-Windows-C418EA37
+//   crash):
+//
+//     1. Bridge: add_component_to_blueprint           → success
+//     2. Bridge: set_component_property Sound          → success
+//     3. Bridge: set_component_property bAutoActivate  → success
+//     4. Bridge worker queues set_component_property VolumeMultiplier
+//     5. ↳ Editor autosave timer expires; GameThread starts UPackage::SavePackage
+//        on the half-mutated BP_DangerSenseAI_BlueprintOnly
+//     6. ↳ AsyncTask for VolumeMultiplier runs while SavePackage is mid-flight
+//     7. Autosave finalizes, hits torn TObjectPtr → AV in CoreUObject
+//
+//   Address 0x00007ffb3ecccd55, stack: CoreUObject (×4) →
+//   FEditorEngine::Tick → FEngineLoop::Tick → main.
+//
+// Fix:
+//   Reset the autosave timer at the top of every bridge command. As long as
+//   the user keeps issuing commands faster than the autosave interval
+//   (default 10 min), autosave will never fire during a script run.
+//   Autosave still fires normally during idle time — this is purely a
+//   "push it forward" pattern, not a permanent disable.
+//
+// Implementation:
+//   GUnrealEd->GetPackageAutoSaver() returns IPackageAutoSaver& (ref) in
+//   UE 5.6. We call ResetAutoSaveTimer() on it. All access is guarded so
+//   the call is harmless if GUnrealEd / GIsEditor is not yet ready.
+// ---------------------------------------------------------------------------
+void FUnrealMCPCommonUtils::DeferAutoSave()
+{
+    if (!GIsEditor || !GUnrealEd)
+    {
+        return;
+    }
+    // GetPackageAutoSaver() returns IPackageAutoSaver& by reference in
+    // UE 5.6. Resetting the timer is cheap (just a float store).
+    IPackageAutoSaver& Saver = GUnrealEd->GetPackageAutoSaver();
+    Saver.ResetAutoSaveTimer();
+    // No log spam — this fires on every command. The previous-autosave
+    // timestamp is still tracked internally; only the *next* autosave is
+    // pushed forward by one full interval.
+}
+
+// ---------------------------------------------------------------------------
+// SafeCompileBlueprintDeferred (CRASH-007)
+//
+// Background:
+//   The MCP `compile_blueprint` command historically only marked the BP
+//   modified — it explicitly avoided FKismetEditorUtilities::CompileBlueprint
+//   because, when invoked synchronously from the bridge's AsyncTask lambda,
+//   that call entered the editor's MassEntityEditor observer chain and AV'd.
+//
+//   Side-effect: after SCS edits (e.g. adding a UAudioComponent template
+//   pointing at a freshly imported USoundWave), the Blueprint's GeneratedClass
+//   and CDO were never regenerated. The next manual Ctrl+Shift+S then
+//   serialised a stale CDO that referenced template subobjects whose post-load
+//   path had run — and AV'd in CoreUObject during the post-save reinstancing
+//   pass for level actor instances of the Blueprint.
+//
+// Fix:
+//   Run CompileBlueprint OUTSIDE our AsyncTask lambda by deferring it to a
+//   FTSTicker tick. The tick fires on the GameThread but in a clean stack
+//   frame — no nested AsyncTask, no MCP_GUARDED_RUN bridge frame above it,
+//   no in-flight bridge socket. In practice this consistently avoids the
+//   MassEntityEditor observer chain crash we historically hit with inline
+//   compiles. SEH guard catches any residual AV so the editor survives.
+//
+//   Compile flags:
+//     EBlueprintCompileOptions::SkipGarbageCollection
+//       Avoids a GC pass during compile that can race with the deferred
+//       MarkPackageDirty tick scheduled by SafeMarkBlueprintModifiedDeferred.
+//     EBlueprintCompileOptions::SkipSave
+//       Prevents the compile from queuing its own save (we save explicitly
+//       via SafeSaveBlueprintPackageDeferred when requested).
+// ---------------------------------------------------------------------------
+void FUnrealMCPCommonUtils::SafeCompileBlueprintDeferred(UBlueprint* Blueprint)
+{
+    if (!Blueprint || !IsValid(Blueprint))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] SafeCompileBlueprintDeferred: null/invalid Blueprint"));
+        return;
+    }
+
+    TWeakObjectPtr<UBlueprint> WeakBP(Blueprint);
+    const FString BpName = Blueprint->GetName();
+
+    FTSTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateLambda([WeakBP, BpName](float /*DeltaTime*/) -> bool
+        {
+            UBlueprint* BP = WeakBP.Get();
+            if (!BP || !IsValid(BP))
+            {
+                UE_LOG(LogTemp, Verbose,
+                    TEXT("[MCP] SafeCompileBlueprintDeferred: '%s' was GC'd before deferred compile — skipping"),
+                    *BpName);
+                return false;
+            }
+            if (!BP->GeneratedClass || !IsValid(BP->GeneratedClass))
+            {
+                UE_LOG(LogTemp, Warning,
+                    TEXT("[MCP] SafeCompileBlueprintDeferred: '%s' has no valid GeneratedClass — skipping deferred compile"),
+                    *BpName);
+                return false;
+            }
+
+            const EBlueprintCompileOptions Flags =
+                  EBlueprintCompileOptions::SkipGarbageCollection
+                | EBlueprintCompileOptions::SkipSave;
+
+            const bool bOk = UnrealMCPSehDetail::TryCompileBlueprint(BP, Flags);
+            if (!bOk)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[MCP] SafeCompileBlueprintDeferred: deferred CompileBlueprint AV'd for '%s' — caught by SEH; CDO may still be stale"),
+                    *BpName);
+            }
+            else
+            {
+                UE_LOG(LogTemp, Display,
+                    TEXT("[MCP] SafeCompileBlueprintDeferred: '%s' recompiled successfully (CDO regenerated)"),
+                    *BpName);
+            }
+            return false; // one-shot
+        }),
+        0.0f);
+
+    UE_LOG(LogTemp, Display,
+        TEXT("[MCP] SafeCompileBlueprintDeferred: queued compile for '%s' (fires on next editor tick)"),
+        *Blueprint->GetName());
+}
+
+// ---------------------------------------------------------------------------
+// SafeSaveBlueprintPackageDeferred (CRASH-007)
+//
+// Two-stage deferred chain:
+//   1. Schedule a guarded compile (own tick) so the CDO is regenerated.
+//   2. Schedule a guarded UPackage::SavePackage on a SECOND tick so the
+//      compile's PostEditChange / reinstancing has finished settling.
+//
+// Why low-level UPackage::SavePackage instead of UEditorAssetLibrary::SaveAsset
+// or UEditorLoadingAndSavingUtils::SavePackages:
+//   Both higher-level paths fire the editor's PreSave/PostSave delegate chain
+//   which in this project hits the MassEntityEditor observer with stale state
+//   and AVs (CRASH-002 / CRASH-007 same root). UPackage::SavePackage on the
+//   BP package directly avoids that delegate chain.
+//
+// SAVE_KeepDirty + manual SetDirtyFlag(false): UE5.6's SavePackage clears the
+// dirty flag itself, but only after firing the post-save delegates. We pass
+// SAVE_KeepDirty so SavePackage does NOT broadcast PackageDirtyStateChanged
+// from inside its serialise critical section, then clear the flag ourselves
+// after we know the file is on disk.
+// ---------------------------------------------------------------------------
+bool FUnrealMCPCommonUtils::SafeSaveBlueprintPackageDeferred(UBlueprint* Blueprint)
+{
+    if (!Blueprint || !IsValid(Blueprint))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] SafeSaveBlueprintPackageDeferred: null/invalid Blueprint"));
+        return false;
+    }
+    UPackage* Package = Blueprint->GetOutermost();
+    if (!Package || !IsValid(Package))
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[MCP] SafeSaveBlueprintPackageDeferred: '%s' has no valid outer package"),
+            *Blueprint->GetName());
+        return false;
+    }
+
+    // Stage 1 — deferred compile (regenerate CDO).
+    SafeCompileBlueprintDeferred(Blueprint);
+
+    // Stage 2 — deferred SavePackage. Capture weak refs so we don't keep the
+    // BP alive past a legitimate GC. Capture filename as FString (built once
+    // here, not in the hot tick), but pass to the leaf SEH helper as raw TCHAR*
+    // (the leaf has no unwind objects per C2712 rules).
+    TWeakObjectPtr<UBlueprint> WeakBP(Blueprint);
+    TWeakObjectPtr<UPackage> WeakPkg(Package);
+    const FString BpName = Blueprint->GetName();
+    const FString PackageName = Package->GetName();
+    const FString FileName = FPackageName::LongPackageNameToFilename(
+        PackageName, FPackageName::GetAssetPackageExtension());
+
+    FTSTicker::GetCoreTicker().AddTicker(
+        FTickerDelegate::CreateLambda([WeakBP, WeakPkg, BpName, PackageName, FileName](float /*DeltaTime*/) -> bool
+        {
+            UBlueprint* BP = WeakBP.Get();
+            UPackage* Pkg = WeakPkg.Get();
+            if (!BP || !IsValid(BP) || !Pkg || !IsValid(Pkg))
+            {
+                UE_LOG(LogTemp, Verbose,
+                    TEXT("[MCP] SafeSaveBlueprintPackageDeferred: '%s' was GC'd before deferred save — skipping"),
+                    *BpName);
+                return false;
+            }
+
+            FSavePackageArgs SaveArgs;
+            SaveArgs.TopLevelFlags      = RF_Public | RF_Standalone;
+            // SAVE_KeepDirty: don't broadcast PackageDirtyStateChanged from
+            // inside SavePackage's serialise; we clear manually below.
+            // SAVE_NoError: do not pop the modal save-error dialog on failure
+            // (we log instead — the editor stays interactive).
+            SaveArgs.SaveFlags          = SAVE_NoError | SAVE_KeepDirty;
+            SaveArgs.bForceByteSwapping = false;
+            SaveArgs.bWarnOfLongFilename= true;
+            SaveArgs.bSlowTask          = false;
+            SaveArgs.Error              = GError;
+
+            bool bSaved = false;
+            const bool bNoSeh = UnrealMCPSehDetail::TrySavePackage(
+                Pkg, BP, *FileName, SaveArgs, bSaved);
+
+            if (!bNoSeh)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[MCP] SafeSaveBlueprintPackageDeferred: deferred SavePackage AV'd for '%s' — caught by SEH; file '%s' NOT written"),
+                    *BpName, *FileName);
+                return false;
+            }
+            if (!bSaved)
+            {
+                UE_LOG(LogTemp, Error,
+                    TEXT("[MCP] SafeSaveBlueprintPackageDeferred: SavePackage returned false for '%s' (file '%s' not written)"),
+                    *BpName, *FileName);
+                return false;
+            }
+
+            // SAVE_KeepDirty kept the dirty bit; clear it now so the
+            // editor UI shows the asset as clean.
+            Pkg->SetDirtyFlag(false);
+            UE_LOG(LogTemp, Display,
+                TEXT("[MCP] SafeSaveBlueprintPackageDeferred: wrote '%s' OK (package '%s' clean)"),
+                *FileName, *PackageName);
+            return false; // one-shot
+        }),
+        0.05f); // small delay so the compile tick has fired first
+
+    UE_LOG(LogTemp, Display,
+        TEXT("[MCP] SafeSaveBlueprintPackageDeferred: scheduled compile + save chain for '%s' -> '%s'"),
+        *Blueprint->GetName(), *FileName);
+    return true;
 }
 
 bool FUnrealMCPCommonUtils::EnsureBlueprintGeneratedClass(UBlueprint* Blueprint)
@@ -564,6 +1086,29 @@ UK2Node_CallFunction* FUnrealMCPCommonUtils::CreateFunctionCallNode(UEdGraph* Gr
     // function reference so AllocateDefaultPins() produces all typed pins correctly.
     Graph->AddNode(FunctionNode, /*bFromUI=*/false, /*bSelectNewNode=*/false);
     FunctionNode->AllocateDefaultPins();
+
+    // Some project/module functions can come through as unresolved zero-pin call nodes
+    // when SetFromFunction alone does not bind the external member reference.
+    auto CountValidPins = [](const UK2Node_CallFunction* Node) -> int32
+    {
+        int32 Count = 0;
+        for (UEdGraphPin* Pin : Node->Pins)
+        {
+            if (Pin)
+            {
+                ++Count;
+            }
+        }
+        return Count;
+    };
+    if (CountValidPins(FunctionNode) == 0)
+    {
+        if (UClass* OwnerClass = Function->GetOuterUClass())
+        {
+            FunctionNode->FunctionReference.SetExternalMember(Function->GetFName(), OwnerClass);
+            FunctionNode->ReconstructNode();
+        }
+    }
 
     return FunctionNode;
 }

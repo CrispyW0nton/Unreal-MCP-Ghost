@@ -65,6 +65,11 @@
     "roadmap_phase": "phase_3_geometry_script_modeling",
     "status": "live"
   },
+  "tools.generative_tools": {
+    "category": "generative_content_pipeline",
+    "roadmap_phase": "phase_4_generative_content",
+    "status": "live"
+  },
   "tools.mass_tools": {
     "category": "mass_statetree_smartobjects",
     "roadmap_phase": "phase_3_mass_statetree_smartobjects",

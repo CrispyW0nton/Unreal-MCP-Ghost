@@ -96,6 +96,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPPixelStreamingCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
 #include "Commands/UnrealMCPMassCommands.h"
+#include "Commands/UnrealMCPGenerativeCommands.h"
 #include "Commands/UnrealMCPMetaHumanCommands.h"
 #include "Commands/UnrealMCPMotionCommands.h"
 #include "HAL/PlatformTime.h"
@@ -2817,6 +2818,16 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     PixelStreamingCommands = MakeShared<FUnrealMCPPixelStreamingCommands>();
                 }
                 ResultJson = PixelStreamingCommands->HandleCommand(CommandType, Params);
+            }
+            // Generative content import-side helper Commands
+            else if (CommandType == TEXT("gen_prepare_import_manifest"))
+            {
+                static TSharedPtr<FUnrealMCPGenerativeCommands> GenerativeCommands;
+                if (!GenerativeCommands.IsValid())
+                {
+                    GenerativeCommands = MakeShared<FUnrealMCPGenerativeCommands>();
+                }
+                ResultJson = GenerativeCommands->HandleCommand(CommandType, Params);
             }
             // MetaHuman package / animation linkage Commands
             else if (CommandType == TEXT("metahuman_import") ||

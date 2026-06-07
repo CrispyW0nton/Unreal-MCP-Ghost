@@ -674,6 +674,8 @@ from tools.gas_tools import register_gas_tools
 from tools.network_tools import register_network_tools
 # UE editor chat bridge — HTTP routes + MCP tools
 from tools.chat_tools import register_chat_tools
+# D.1 Generative content provider and import scaffold
+from tools.generative_tools import register_generative_tools
 
 register_chat_routes(mcp)
 
@@ -749,6 +751,8 @@ register_gas_tools(mcp)
 register_network_tools(mcp)
 # UE editor chat bridge
 register_chat_tools(mcp)
+# D.1 Generative content provider and import scaffold
+register_generative_tools(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────

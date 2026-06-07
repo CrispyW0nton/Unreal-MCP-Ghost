@@ -19,7 +19,10 @@
 #include "UnrealMCPBridge.generated.h"
 
 class AActor;
+class APawn;
 class FMCPServerRunnable;
+class UAudioComponent;
+class UNavigationSystemV1;
 
 struct FSithTrooperCombatState
 {
@@ -42,6 +45,40 @@ struct FSithTrooperCombatState
 	float DeathRagdollTime = 0.0f;
 	float SmoothedAnimSpeed = 0.0f;
 	float SmoothedAnimDirection = 0.0f;
+};
+
+struct FDarkJediBossCombatState
+{
+	TWeakObjectPtr<AActor> Target;
+	TWeakObjectPtr<UAudioComponent> SaberHumComponent;
+	FVector SpawnLocation = FVector::ZeroVector;
+	float LastSeenTime = -1000.0f;
+	float LostSightStartTime = -1.0f;
+	float StateEnterTime = 0.0f;
+	float NextMoveTime = 0.0f;
+	float NextAttackTime = 0.0f;
+	float NextDecisionTime = 0.0f;
+	float NextIncomingDamageTime = 0.0f;
+	float ForceEffectTime = 0.0f;
+	float ForceEndTime = 0.0f;
+	float NextLightningTickTime = 0.0f;
+	float NextLightningVfxTime = 0.0f;
+	float DeathRagdollTime = 0.0f;
+	float SmoothedAnimSpeed = 0.0f;
+	float SmoothedAnimDirection = 0.0f;
+	int32 CombatState = 0;
+	int32 ComboAttempts = 0;
+	int32 DesiredComboLength = 2;
+	int32 LastForceState = 4;
+	bool bAppliedRuntimeSetup = false;
+	bool bWasInCombat = false;
+	bool bSaberActivated = false;
+	bool bIssuedStateMove = false;
+	bool bDamageAppliedThisSwing = false;
+	bool bForceEffectApplied = false;
+	bool bDeathMontageStarted = false;
+	bool bDeathRagdollActivated = false;
+	float StrafeSign = 1.0f;
 };
 
 /**
@@ -90,8 +127,16 @@ private:
 	FTimerHandle WatchdogTimerHandle;
 	FTSTicker::FDelegateHandle SithCombatTickerHandle;
 	TMap<TWeakObjectPtr<AActor>, FSithTrooperCombatState> SithCombatStates;
+	TMap<TWeakObjectPtr<AActor>, FDarkJediBossCombatState> DarkJediBossStates;
 
 	bool SithCombatDirectorTick(float DeltaTime);
+	void DarkJediBossDirectorTick(
+		AActor* BossActor,
+		FDarkJediBossCombatState& State,
+		APawn* PlayerPawn,
+		UNavigationSystemV1* NavSystem,
+		float DeltaTime,
+		float Now);
 
 	// Command handler instances
 	TSharedPtr<FUnrealMCPEditorCommands> EditorCommands;
