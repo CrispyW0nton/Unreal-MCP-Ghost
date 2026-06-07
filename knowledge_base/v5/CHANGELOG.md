@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### D.2 - Generative config and auth
+
+- Added Tripo config/auth tools for key-source detection, local settings persistence, and per-session credit budget checks.
+- Added a Generate Asset Settings drawer in the MCP Chat panel for API key, model version, texture quality, output folder, and spend confirmation.
+- Updated the generative content KB with config/auth and cost-guard guidance.
+- Kept D.2 offline: no Tripo API call is made until D.3 task tools land.
+
 ### D.1 - Generative module scaffold
 
 - Added `tools/generative_tools.py` with `gen_list_providers` and `gen_prepare_import_manifest`.

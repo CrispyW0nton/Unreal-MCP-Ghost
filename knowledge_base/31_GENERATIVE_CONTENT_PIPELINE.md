@@ -42,6 +42,9 @@ verified in-editor.
 | Task | Preferred MCP direction |
 | --- | --- |
 | Discover provider readiness | `gen_list_providers` |
+| Inspect provider config/auth | `gen_get_provider_config` |
+| Save provider defaults | `gen_save_provider_config` |
+| Guard paid credit spend | `gen_check_credit_budget` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
 | Import assets | asset import, batch import, texture/audio import tools |
 | Normalize materials | `material_create_master`, `material_create_instance_from_master`, texture tools |
@@ -63,13 +66,69 @@ with task-family coverage landing in later D milestones:
 - D.4 imports downloaded results into Unreal assets.
 
 Agents should use this provider list as a capability map, not as proof that a
-paid generation request has been sent. Until D.2/D.3 land, no Tripo API call is
-made by the D.1 tools.
+paid generation request has been sent. D.2 can resolve auth/config state, but it
+still makes no Tripo API call.
 
 Example:
 
 ```python
 gen_list_providers(include_import_helpers=True)
+```
+
+## Config And Auth
+
+D.2 adds local Tripo configuration without making any network call. The MCP
+resolves credentials in this order:
+
+1. `TRIPO_API_KEY` from the server process environment.
+2. `Saved/MCPChat/secrets.json`, using `TRIPO_API_KEY` or `tripo_api_key`.
+
+The API key value is never returned by `gen_get_provider_config`; the tool only
+reports whether a key exists and which source won precedence. Defaults live in
+`Saved/MCPChat/generative_settings.json`:
+
+- `default_model_version`
+- `default_texture_quality`
+- `output_folder` under `/Game/Generated`
+- `session_credit_budget`
+
+The chat dock also exposes a Generate Asset Settings drawer for the same
+values. Use the environment variable for shared automation and the local
+secrets file for per-project editor sessions.
+
+Example:
+
+```python
+gen_get_provider_config(include_paths=True)
+
+gen_save_provider_config(
+    default_model_version="tripo-default",
+    default_texture_quality="standard",
+    output_folder="/Game/Generated/Enemies",
+    session_credit_budget=750,
+)
+```
+
+## Cost Guard
+
+Before any D.3 or later tool spends Tripo credits, call
+`gen_check_credit_budget`. It compares the estimated spend against the current
+session budget and requires `confirm_spend=True` before returning approval.
+Generation tools should stop when `approved` is false and surface the returned
+message to the user. When a tool is about to send the paid provider request, use
+`reserve_credits=True` so the approved estimate is recorded against that chat
+session before the task is launched.
+
+Example:
+
+```python
+gen_check_credit_budget(
+    estimated_credits=120,
+    session_name="dungeon-demo",
+    operation="text_to_model",
+    confirm_spend=True,
+    reserve_credits=True,
+)
 ```
 
 ## Import Manifest Helper

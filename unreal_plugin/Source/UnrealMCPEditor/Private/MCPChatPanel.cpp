@@ -11,6 +11,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/Docking/TabManager.h"
 #include "HAL/FileManager.h"
+#include "HAL/PlatformMisc.h"
 #include "HAL/PlatformTime.h"
 #include "HAL/PlatformApplicationMisc.h"
 #include "IContentBrowserSingleton.h"
@@ -29,6 +30,7 @@
 #include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonReader.h"
 #include "Serialization/JsonWriter.h"
 #include "Selection.h"
 #include "Styling/AppStyle.h"
@@ -81,6 +83,7 @@ namespace
 void SMCPChatPanel::Construct(const FArguments& InArgs)
 {
 	LoadLayoutSettings();
+	LoadGenerativeSettings();
 
 	ChildSlot
 	[
@@ -143,6 +146,15 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
 				SNew(SButton)
+				.Text(this, &SMCPChatPanel::GetGenerativeSettingsToggleText)
+				.OnClicked(this, &SMCPChatPanel::HandleToggleGenerativeSettingsClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
 				.Text(LOCTEXT("ShowTour", "Tour"))
 				.OnClicked(this, &SMCPChatPanel::HandleOnboardingNextClicked)
 			]
@@ -184,6 +196,17 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Visibility(this, &SMCPChatPanel::GetSamplePromptsVisibility)
 			[
 				BuildSamplePrompts()
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBox)
+			.Visibility(this, &SMCPChatPanel::GetGenerativeSettingsVisibility)
+			[
+				BuildGenerativeSettingsPanel()
 			]
 		]
 
@@ -614,6 +637,77 @@ FReply SMCPChatPanel::HandleToggleTelemetryClicked()
 	{
 		SetStatus(LOCTEXT("StatusTelemetryDisabled", "Metrics disabled"), PendingStatusColor);
 	}
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleToggleGenerativeSettingsClicked()
+{
+	bGenerativeSettingsVisible = !bGenerativeSettingsVisible;
+	if (bGenerativeSettingsVisible)
+	{
+		LoadGenerativeSettings();
+	}
+	SetStatus(
+		bGenerativeSettingsVisible ? LOCTEXT("StatusGenerativeSettingsOpen", "Generate settings open") : LOCTEXT("StatusGenerativeSettingsClosed", "Generate settings hidden"),
+		PendingStatusColor
+	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleSaveGenerativeSettingsClicked()
+{
+	if (GenerativeApiKeyInput.IsValid())
+	{
+		GenerativeApiKey = GenerativeApiKeyInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerativeModelVersionInput.IsValid())
+	{
+		GenerativeModelVersion = GenerativeModelVersionInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerativeTextureQualityInput.IsValid())
+	{
+		GenerativeTextureQuality = GenerativeTextureQualityInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerativeOutputFolderInput.IsValid())
+	{
+		GenerativeOutputFolder = GenerativeOutputFolderInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerativeCreditBudgetInput.IsValid())
+	{
+		GenerativeSessionCreditBudget = FMath::Max(0, FCString::Atoi(*GenerativeCreditBudgetInput->GetText().ToString()));
+	}
+
+	if (GenerativeModelVersion.IsEmpty())
+	{
+		GenerativeModelVersion = TEXT("tripo-default");
+	}
+	if (GenerativeTextureQuality.IsEmpty())
+	{
+		GenerativeTextureQuality = TEXT("standard");
+	}
+	if (!GenerativeOutputFolder.StartsWith(TEXT("/Game")))
+	{
+		GenerativeOutputFolder = TEXT("/Game/Generated");
+	}
+
+	SaveGenerativeSettingsToDisk();
+	RecordTelemetryEvent(TEXT("generative_settings_saved"));
+	SetStatus(LOCTEXT("StatusGenerativeSettingsSaved", "Generative settings saved"), OkStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleConfirmGenerativeSpendClicked()
+{
+	if (GenerativePendingSpendInput.IsValid())
+	{
+		GenerativePendingSpendCredits = FMath::Max(0, FCString::Atoi(*GenerativePendingSpendInput->GetText().ToString()));
+	}
+	bGenerativeSpendConfirmed = GenerativePendingSpendCredits > 0 && GenerativePendingSpendCredits <= GenerativeSessionCreditBudget;
+	SaveGenerativeSettingsToDisk();
+	SetStatus(
+		bGenerativeSpendConfirmed ? LOCTEXT("StatusGenerativeSpendConfirmed", "Next generative spend confirmed") : LOCTEXT("StatusGenerativeSpendRejected", "Spend exceeds budget or is empty"),
+		bGenerativeSpendConfirmed ? OkStatusColor : ErrorStatusColor
+	);
 	return FReply::Handled();
 }
 
@@ -1894,6 +1988,144 @@ TSharedRef<SWidget> SMCPChatPanel::BuildCommandPalette()
 		];
 }
 
+TSharedRef<SWidget> SMCPChatPanel::BuildGenerativeSettingsPanel()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("GenerativeSettingsTitle", "Generate Asset Settings"))
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetGenerativeAuthStatusText)
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("GenerativeSettingsFiles", "Settings: {0} | Secrets: {1}"), FText::FromString(GetGenerativeSettingsFilePath()), FText::FromString(GetGenerativeSecretsFilePath())))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.AutoWrapText(true)
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GenerativeApiKeyInput, SEditableTextBox)
+				.HintText(LOCTEXT("GenerativeApiKeyHint", "TRIPO_API_KEY or local Saved/MCPChat/secrets.json value"))
+				.Text(FText::FromString(GenerativeApiKey))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerativeModelVersionInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerativeModelVersionHint", "default model_version"))
+					.Text(FText::FromString(GenerativeModelVersion))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerativeTextureQualityInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerativeTextureQualityHint", "default texture_quality"))
+					.Text(FText::FromString(GenerativeTextureQuality))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SAssignNew(GenerativeOutputFolderInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerativeOutputFolderHint", "/Game/Generated"))
+					.Text(FText::FromString(GenerativeOutputFolder))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.55f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerativeCreditBudgetInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerativeCreditBudgetHint", "per-session credit budget"))
+					.Text(FText::AsNumber(GenerativeSessionCreditBudget))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.45f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerativePendingSpendInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerativePendingSpendHint", "credits to confirm"))
+					.Text(FText::AsNumber(GenerativePendingSpendCredits))
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("ConfirmGenerativeSpend", "Confirm Spend"))
+					.OnClicked(this, &SMCPChatPanel::HandleConfirmGenerativeSpendClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("SaveGenerativeSettings", "Save"))
+					.OnClicked(this, &SMCPChatPanel::HandleSaveGenerativeSettingsClicked)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(STextBlock)
+				.Text(this, &SMCPChatPanel::GetGenerativeBudgetText)
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				.AutoWrapText(true)
+			]
+		];
+}
+
 void SMCPChatPanel::RefreshCommandPaletteItems()
 {
 	CommandPaletteItems.Reset();
@@ -3034,6 +3266,11 @@ EVisibility SMCPChatPanel::GetCommandPaletteVisibility() const
 	return bCommandPaletteVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
+EVisibility SMCPChatPanel::GetGenerativeSettingsVisibility() const
+{
+	return bGenerativeSettingsVisible ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
 EVisibility SMCPChatPanel::GetOnboardingVisibility() const
 {
 	return bOnboardingVisible ? EVisibility::Visible : EVisibility::Collapsed;
@@ -3047,6 +3284,27 @@ EVisibility SMCPChatPanel::GetSamplePromptsVisibility() const
 FText SMCPChatPanel::GetToolPaletteToggleText() const
 {
 	return bToolPaletteVisible ? LOCTEXT("HideToolPalette", "Hide Tools") : LOCTEXT("ShowToolPalette", "Show Tools");
+}
+
+FText SMCPChatPanel::GetGenerativeSettingsToggleText() const
+{
+	return bGenerativeSettingsVisible ? LOCTEXT("HideGenerativeSettings", "Hide Generate") : LOCTEXT("ShowGenerativeSettings", "Generate Settings");
+}
+
+FText SMCPChatPanel::GetGenerativeAuthStatusText() const
+{
+	return FText::Format(LOCTEXT("GenerativeAuthStatus", "Tripo auth: {0}"), FText::FromString(GetGenerativeApiKeySource()));
+}
+
+FText SMCPChatPanel::GetGenerativeBudgetText() const
+{
+	return FText::Format(
+		LOCTEXT("GenerativeBudgetStatus", "Budget: {0} credits/session | Pending spend: {1} | Confirmed: {2} | Output: {3}"),
+		FText::AsNumber(GenerativeSessionCreditBudget),
+		FText::AsNumber(GenerativePendingSpendCredits),
+		bGenerativeSpendConfirmed ? LOCTEXT("GenerativeSpendYes", "yes") : LOCTEXT("GenerativeSpendNo", "no"),
+		FText::FromString(GenerativeOutputFolder)
+	);
 }
 
 FText SMCPChatPanel::GetOnboardingStepTitle() const
@@ -3134,6 +3392,113 @@ FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) co
 
 	Template += TEXT("Return the StructuredResult and summarize warnings/errors.");
 	return Template;
+}
+
+FString SMCPChatPanel::GetGenerativeSettingsFilePath() const
+{
+	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("MCPChat"), TEXT("generative_settings.json"));
+}
+
+FString SMCPChatPanel::GetGenerativeSecretsFilePath() const
+{
+	return FPaths::Combine(FPaths::ProjectSavedDir(), TEXT("MCPChat"), TEXT("secrets.json"));
+}
+
+FString SMCPChatPanel::GetGenerativeApiKeySource() const
+{
+	const FString EnvKey = FPlatformMisc::GetEnvironmentVariable(TEXT("TRIPO_API_KEY"));
+	if (!EnvKey.TrimStartAndEnd().IsEmpty())
+	{
+		return TEXT("env:TRIPO_API_KEY");
+	}
+	if (!GenerativeApiKey.TrimStartAndEnd().IsEmpty())
+	{
+		return TEXT("Saved/MCPChat/secrets.json");
+	}
+	return TEXT("missing");
+}
+
+void SMCPChatPanel::LoadGenerativeSettings()
+{
+	GenerativeModelVersion = TEXT("tripo-default");
+	GenerativeTextureQuality = TEXT("standard");
+	GenerativeOutputFolder = TEXT("/Game/Generated");
+	GenerativeSessionCreditBudget = 1000;
+	GenerativePendingSpendCredits = 0;
+	GenerativeApiKey.Empty();
+	bGenerativeSpendConfirmed = false;
+
+	FString SettingsText;
+	if (FFileHelper::LoadFileToString(SettingsText, *GetGenerativeSettingsFilePath()))
+	{
+		TSharedPtr<FJsonObject> SettingsObject;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(SettingsText);
+		if (FJsonSerializer::Deserialize(Reader, SettingsObject) && SettingsObject.IsValid())
+		{
+			SettingsObject->TryGetStringField(TEXT("default_model_version"), GenerativeModelVersion);
+			SettingsObject->TryGetStringField(TEXT("default_texture_quality"), GenerativeTextureQuality);
+			SettingsObject->TryGetStringField(TEXT("output_folder"), GenerativeOutputFolder);
+
+			double NumberValue = 0.0;
+			if (SettingsObject->TryGetNumberField(TEXT("session_credit_budget"), NumberValue))
+			{
+				GenerativeSessionCreditBudget = FMath::Max(0, FMath::RoundToInt(NumberValue));
+			}
+			if (SettingsObject->TryGetNumberField(TEXT("pending_spend_credits"), NumberValue))
+			{
+				GenerativePendingSpendCredits = FMath::Max(0, FMath::RoundToInt(NumberValue));
+			}
+			SettingsObject->TryGetBoolField(TEXT("spend_confirmed"), bGenerativeSpendConfirmed);
+		}
+	}
+
+	FString SecretsText;
+	if (FFileHelper::LoadFileToString(SecretsText, *GetGenerativeSecretsFilePath()))
+	{
+		TSharedPtr<FJsonObject> SecretsObject;
+		const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(SecretsText);
+		if (FJsonSerializer::Deserialize(Reader, SecretsObject) && SecretsObject.IsValid())
+		{
+			if (!SecretsObject->TryGetStringField(TEXT("TRIPO_API_KEY"), GenerativeApiKey))
+			{
+				SecretsObject->TryGetStringField(TEXT("tripo_api_key"), GenerativeApiKey);
+			}
+		}
+	}
+}
+
+void SMCPChatPanel::SaveGenerativeSettingsToDisk() const
+{
+	IFileManager::Get().MakeDirectory(*FPaths::GetPath(GetGenerativeSettingsFilePath()), true);
+
+	const TSharedPtr<FJsonObject> SettingsObject = BuildGenerativeSettingsJson();
+	FString SettingsText;
+	const TSharedRef<TJsonWriter<>> SettingsWriter = TJsonWriterFactory<>::Create(&SettingsText);
+	FJsonSerializer::Serialize(SettingsObject.ToSharedRef(), SettingsWriter);
+	FFileHelper::SaveStringToFile(SettingsText, *GetGenerativeSettingsFilePath());
+
+	if (!GenerativeApiKey.TrimStartAndEnd().IsEmpty())
+	{
+		const TSharedPtr<FJsonObject> SecretsObject = MakeShared<FJsonObject>();
+		SecretsObject->SetStringField(TEXT("TRIPO_API_KEY"), GenerativeApiKey.TrimStartAndEnd());
+		FString SecretsText;
+		const TSharedRef<TJsonWriter<>> SecretsWriter = TJsonWriterFactory<>::Create(&SecretsText);
+		FJsonSerializer::Serialize(SecretsObject.ToSharedRef(), SecretsWriter);
+		FFileHelper::SaveStringToFile(SecretsText, *GetGenerativeSecretsFilePath());
+	}
+}
+
+TSharedPtr<FJsonObject> SMCPChatPanel::BuildGenerativeSettingsJson() const
+{
+	const TSharedPtr<FJsonObject> SettingsObject = MakeShared<FJsonObject>();
+	SettingsObject->SetStringField(TEXT("provider"), TEXT("tripo"));
+	SettingsObject->SetStringField(TEXT("default_model_version"), GenerativeModelVersion.IsEmpty() ? TEXT("tripo-default") : GenerativeModelVersion);
+	SettingsObject->SetStringField(TEXT("default_texture_quality"), GenerativeTextureQuality.IsEmpty() ? TEXT("standard") : GenerativeTextureQuality);
+	SettingsObject->SetStringField(TEXT("output_folder"), GenerativeOutputFolder.StartsWith(TEXT("/Game")) ? GenerativeOutputFolder : TEXT("/Game/Generated"));
+	SettingsObject->SetNumberField(TEXT("session_credit_budget"), FMath::Max(0, GenerativeSessionCreditBudget));
+	SettingsObject->SetNumberField(TEXT("pending_spend_credits"), FMath::Max(0, GenerativePendingSpendCredits));
+	SettingsObject->SetBoolField(TEXT("spend_confirmed"), bGenerativeSpendConfirmed);
+	return SettingsObject;
 }
 
 bool SMCPChatPanel::CommandPaletteItemMatches(const FString& Filter, const FCommandPaletteItem& Item) const
