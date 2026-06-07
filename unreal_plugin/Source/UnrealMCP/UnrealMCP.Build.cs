@@ -80,6 +80,10 @@ public class UnrealMCP : ModuleRules
                 "GameplayAbilities",
                 "GameplayTags",
 
+                // Online Subsystem / EOS configuration - required for B.12 tools
+                "OnlineSubsystem",
+                "OnlineSubsystemUtils",
+
                 // Animation Blueprint (extended ? Chapter 17)
                 "AnimGraph",
                 "AnimGraphRuntime",

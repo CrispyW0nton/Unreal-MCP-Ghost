@@ -237,9 +237,9 @@ What do you need?
 | Property | Value |
 |----------|-------|
 | Engine | UE 5.6 |
-| MCP Tools | 587 |
-| Tool Modules | 42 categorized modules/skills |
-| C++ Commands | 226 |
+| MCP Tools | 591 |
+| Tool Modules | 43 categorized modules/skills |
+| C++ Commands | 230 |
 | Transports | stdio, SSE, streamable-HTTP |
 | Plugin Port | 55557 |
 | Inventory Command | `python scripts/tool_inventory.py --markdown` |

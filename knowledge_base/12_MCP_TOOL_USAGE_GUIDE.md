@@ -2094,6 +2094,53 @@ simulation warm-up needs.
 
 ---
 
+### B.12 Online Subsystem and EOS (`online_tools.py`)
+
+Use these tools to inspect and configure Online Subsystem/EOS project settings
+before generating Blueprint login, lobby, or session flows.
+
+#### Inspect current config
+```python
+online_inspect_config(include_plugins=True)
+```
+
+#### Select the default online service
+```python
+online_configure_default_subsystem(
+    default_service="EOS",
+    native_service="EOS",
+    enable_online_subsystem=True
+)
+```
+
+#### Create or update EOS artifact settings
+```python
+online_create_eos_artifact_config(
+    artifact_name="Dev",
+    product_id="...",
+    sandbox_id="...",
+    deployment_id="...",
+    client_id="...",
+    store_secrets=False
+)
+```
+
+#### Configure EOS session flags
+```python
+online_configure_eos_sessions(
+    use_eos_sessions=True,
+    use_eos_lobbies=True,
+    use_eos_presence=True,
+    use_eos_connect=True,
+    mirror_stats_to_eos=False
+)
+```
+
+Keep `store_secrets=False` for normal automation. If secrets are required,
+prefer secure deployment config and avoid committing credentials.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

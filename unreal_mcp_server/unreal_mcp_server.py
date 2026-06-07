@@ -630,6 +630,8 @@ from tools.audio_tools import register_audio_tools
 from tools.chaos_tools import register_chaos_tools
 # B.11 Movie Render Queue tools
 from tools.mrq_tools import register_mrq_tools
+# B.12 Online Subsystem / EOS tools
+from tools.online_tools import register_online_tools
 # B.6 Geometry Script / Modeling tools
 from tools.geometry_tools import register_geometry_tools
 # B.7 MassEntity / StateTree / SmartObject tools
@@ -701,6 +703,8 @@ register_audio_tools(mcp)
 register_chaos_tools(mcp)
 # B.11 Movie Render Queue tools
 register_mrq_tools(mcp)
+# B.12 Online Subsystem / EOS tools
+register_online_tools(mcp)
 # B.6 Geometry Script / Modeling tools
 register_geometry_tools(mcp)
 # B.7 MassEntity / StateTree / SmartObject tools

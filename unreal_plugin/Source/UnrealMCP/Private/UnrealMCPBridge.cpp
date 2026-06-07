@@ -92,6 +92,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPAudioCommands.h"
 #include "Commands/UnrealMCPChaosCommands.h"
 #include "Commands/UnrealMCPMRQCommands.h"
+#include "Commands/UnrealMCPOnlineCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
 #include "Commands/UnrealMCPMassCommands.h"
 #include "Commands/UnrealMCPMotionCommands.h"
@@ -2788,6 +2789,19 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     MRQCommands = MakeShared<FUnrealMCPMRQCommands>();
                 }
                 ResultJson = MRQCommands->HandleCommand(CommandType, Params);
+            }
+            // Online Subsystem / EOS Commands
+            else if (CommandType == TEXT("online_inspect_config") ||
+                     CommandType == TEXT("online_configure_default_subsystem") ||
+                     CommandType == TEXT("online_create_eos_artifact_config") ||
+                     CommandType == TEXT("online_configure_eos_sessions"))
+            {
+                static TSharedPtr<FUnrealMCPOnlineCommands> OnlineCommands;
+                if (!OnlineCommands.IsValid())
+                {
+                    OnlineCommands = MakeShared<FUnrealMCPOnlineCommands>();
+                }
+                ResultJson = OnlineCommands->HandleCommand(CommandType, Params);
             }
             // Motion Matching / Pose Search / Chooser Commands
             else if (CommandType == TEXT("motion_create_pose_search_schema") ||

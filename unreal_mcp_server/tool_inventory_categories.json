@@ -49,6 +49,11 @@
     "roadmap_phase": "phase_3_movie_render_queue",
     "status": "live"
   },
+  "tools.online_tools": {
+    "category": "online_subsystem_eos",
+    "roadmap_phase": "phase_3_online_subsystem_eos",
+    "status": "live"
+  },
   "tools.geometry_tools": {
     "category": "geometry_modeling",
     "roadmap_phase": "phase_3_geometry_script_modeling",

@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### B.12 - Online Subsystem and EOS tools
+
+- Added `online_inspect_config` for masked Online Subsystem/EOS config and plugin availability inspection.
+- Added `online_configure_default_subsystem` for default/native online service config.
+- Added `online_create_eos_artifact_config` for EOS artifact/product/sandbox/deployment/client id setup with secret suppression by default.
+- Added `online_configure_eos_sessions` for EOS session, lobby, presence, connect, and stat mirroring flags.
+- Added native bridge routes, OnlineSubsystem module/plugin dependencies, inventory metadata, usage guide notes, KB cross-links, and B.12 offline smoke tests.
+
 ### B.11 - Movie Render Queue tools
 
 - Added `mrq_create_job` for editor MRQ queue job creation with sequence/map assignment, output folder, filename format, resolution, deferred pass, and image output format setup.

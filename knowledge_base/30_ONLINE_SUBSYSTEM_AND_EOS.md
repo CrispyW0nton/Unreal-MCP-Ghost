@@ -40,11 +40,31 @@ cleanly solved by sprinkling Blueprint session nodes at the end.
 
 | Task | Preferred MCP direction |
 | --- | --- |
+| Inspect OSS/EOS config | `online_inspect_config` |
+| Choose default online service | `online_configure_default_subsystem` |
+| Create/update EOS artifact config | `online_create_eos_artifact_config` |
+| Configure EOS session flags | `online_configure_eos_sessions` |
 | Create Blueprint session nodes | `session_create_blueprint_flow`, `session_find_blueprint_flow` |
 | Inspect input/project state | `get_project_context`, `scan_project_assets` |
 | Verify replication/session readiness | `network_debug_replication`, networking validators |
 | Build UI flows | UMG/widget tools |
 | Record config evidence | execution journal and report tools |
+
+## MCP Online Subsystem and EOS Tools
+
+The B.12 `online_tools.py` module focuses on project configuration that should
+exist before Blueprint login/session flows are generated:
+
+| Tool | Use |
+| --- | --- |
+| `online_inspect_config` | Read `Config/DefaultEngine.ini` OSS/EOS values and plugin availability without exposing secrets. |
+| `online_configure_default_subsystem` | Set the `OnlineSubsystem` default and native platform service values, commonly `EOS`. |
+| `online_create_eos_artifact_config` | Create or update EOS artifact/product/sandbox/deployment/client id values; secrets are suppressed unless `store_secrets=True`. |
+| `online_configure_eos_sessions` | Set EOS session, lobby, presence, connect, and stat mirroring flags. |
+
+Use the inspection tool after every mutation and record the masked summary in
+the execution journal. Do not commit production client secrets or encryption
+keys; prefer secure deployment configuration.
 
 ## Working Example
 
