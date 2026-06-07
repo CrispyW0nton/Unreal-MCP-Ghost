@@ -92,6 +92,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPAudioCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
 #include "Commands/UnrealMCPMassCommands.h"
+#include "Commands/UnrealMCPMotionCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
 
@@ -2754,6 +2755,22 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     MassCommands = MakeShared<FUnrealMCPMassCommands>();
                 }
                 ResultJson = MassCommands->HandleCommand(CommandType, Params);
+            }
+            // Motion Matching / Pose Search / Chooser Commands
+            else if (CommandType == TEXT("motion_create_pose_search_schema") ||
+                     CommandType == TEXT("motion_create_pose_search_database") ||
+                     CommandType == TEXT("motion_add_database_sequence") ||
+                     CommandType == TEXT("motion_inspect_pose_search_asset") ||
+                     CommandType == TEXT("chooser_create_table") ||
+                     CommandType == TEXT("chooser_add_asset_row") ||
+                     CommandType == TEXT("chooser_inspect_table"))
+            {
+                static TSharedPtr<FUnrealMCPMotionCommands> MotionCommands;
+                if (!MotionCommands.IsValid())
+                {
+                    MotionCommands = MakeShared<FUnrealMCPMotionCommands>();
+                }
+                ResultJson = MotionCommands->HandleCommand(CommandType, Params);
             }
             // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())

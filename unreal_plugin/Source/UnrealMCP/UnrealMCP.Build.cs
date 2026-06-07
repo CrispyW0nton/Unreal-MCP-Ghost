@@ -21,6 +21,8 @@ public class UnrealMCP : ModuleRules
                 // AnimGraphNodeBinding_Base.h (Private) includes AnimGraphNodeBinding.h (UE 5.6+: Internal/).
                 System.IO.Path.Combine(EngineDirectory, "Source/Editor/AnimGraph/Private"),
                 System.IO.Path.Combine(EngineDirectory, "Source/Editor/AnimGraph/Internal"),
+                // UChooserTable and FAssetChooser live in the Chooser plugin's internal headers.
+                System.IO.Path.Combine(EngineDirectory, "Plugins/Chooser/Source/Chooser/Internal"),
             }
         );
 
@@ -111,6 +113,12 @@ public class UnrealMCP : ModuleRules
                 "SmartObjectsModule",
                 "StructUtils",
                 "PropertyBindingUtils",
+
+                // Motion Matching / Pose Search / Chooser authoring - required for B.8 tools
+                "PoseSearch",
+                "PoseSearchEditor",
+                "Chooser",
+                "ChooserEditor",
 
                 // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.

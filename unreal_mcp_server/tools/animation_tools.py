@@ -9,7 +9,9 @@ C++ bridge.
 """
 import logging
 import ast
+import json
 import textwrap
+import time
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
 
@@ -27,6 +29,67 @@ def _send(command: str, params: dict) -> Dict[str, Any]:
     except Exception as e:
         logger.error(f"Error in {command}: {e}")
         return {"success": False, "message": str(e)}
+
+
+def _make_result(
+    *,
+    success: bool,
+    stage: str,
+    message: str,
+    inputs: Dict[str, Any],
+    outputs: Optional[Dict[str, Any]] = None,
+    warnings: Optional[List[str]] = None,
+    errors: Optional[List[str]] = None,
+    t0: float,
+) -> Dict[str, Any]:
+    return {
+        "success": success,
+        "stage": stage,
+        "message": message,
+        "inputs": inputs,
+        "outputs": outputs or {},
+        "warnings": warnings or [],
+        "errors": errors or [],
+        "log_tail": [],
+        "meta": {"tool": stage, "duration_ms": int((time.monotonic() - t0) * 1000)},
+    }
+
+
+def _bridge_result(
+    *,
+    stage: str,
+    raw: Dict[str, Any],
+    inputs: Dict[str, Any],
+    message: str,
+    t0: float,
+) -> str:
+    raw = raw or {}
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    if failed:
+        msg = raw.get("error") or raw.get("message") or f"{stage} failed"
+        return json.dumps(_make_result(
+            success=False,
+            stage="error",
+            message=msg,
+            inputs=inputs,
+            errors=[msg],
+            t0=t0,
+        ))
+
+    warnings = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
+    outputs = {
+        key: value for key, value in raw.items()
+        if key not in {"success", "status", "message", "error", "warnings"}
+    }
+    return json.dumps(_make_result(
+        success=True,
+        stage=stage,
+        message=message,
+        inputs=inputs,
+        outputs=outputs,
+        warnings=warnings,
+        t0=t0,
+    ))
 
 
 def _exec(code: str) -> Dict[str, Any]:
@@ -1896,5 +1959,232 @@ else:
             "output_asset_path": out_full,
             "message": output.strip() or ("Retargeted" if success else "Retarget failed")
         }
+
+    @mcp.tool()
+    def motion_create_pose_search_schema(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Animation/MotionMatching",
+        skeleton: str = "",
+        sample_rate: int = 30,
+        add_default_channels: bool = True,
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a Pose Search schema asset for Motion Matching databases.
+
+        Args:
+            name: Asset name to create.
+            path: Content Browser folder under /Game.
+            skeleton: Optional Skeleton or Skeletal Mesh asset used to seed the schema.
+            sample_rate: Pose sampling rate in Hz.
+            add_default_channels: Add UE's default Pose Search feature channels.
+            overwrite: Delete an existing schema asset before creation.
+            save: Save the asset package after creation.
+
+        Returns:
+            Structured JSON with schema asset path, skeletons, sample rate, and channel count.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            motion_create_pose_search_schema(name="PSS_Locomotion", skeleton="/Game/Characters/Hero/SK_Hero")"""
+        t0 = time.monotonic()
+        inputs = {
+            "name": name,
+            "path": path,
+            "skeleton": skeleton,
+            "sample_rate": sample_rate,
+            "add_default_channels": add_default_channels,
+            "overwrite": overwrite,
+            "save": save,
+        }
+        raw = _send("motion_create_pose_search_schema", inputs)
+        return _bridge_result(stage="motion_create_pose_search_schema", raw=raw, inputs=inputs, message="Created Pose Search schema", t0=t0)
+
+    @mcp.tool()
+    def motion_create_pose_search_database(
+        ctx: Context,
+        name: str,
+        schema: str,
+        path: str = "/Game/Animation/MotionMatching",
+        sequences: Optional[List[str]] = None,
+        search_mode: str = "pca_kd_tree",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a Pose Search database asset and optionally seed animation sequences.
+
+        Args:
+            name: Asset name to create.
+            schema: Pose Search schema asset path.
+            path: Content Browser folder under /Game.
+            sequences: Optional AnimSequence asset paths to add to the database.
+            search_mode: Search mode, such as pca_kd_tree, brute_force, vp_tree, or event_only.
+            overwrite: Delete an existing database asset before creation.
+            save: Save the asset package after creation.
+
+        Returns:
+            Structured JSON with database path, schema, search mode, tags, and animation assets.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            motion_create_pose_search_database(name="PSD_Locomotion", schema="/Game/Animation/MotionMatching/PSS_Locomotion")"""
+        t0 = time.monotonic()
+        inputs = {
+            "name": name,
+            "schema": schema,
+            "path": path,
+            "sequences": sequences or [],
+            "search_mode": search_mode,
+            "overwrite": overwrite,
+            "save": save,
+        }
+        raw = _send("motion_create_pose_search_database", inputs)
+        return _bridge_result(stage="motion_create_pose_search_database", raw=raw, inputs=inputs, message="Created Pose Search database", t0=t0)
+
+    @mcp.tool()
+    def motion_add_database_sequence(
+        ctx: Context,
+        database: str,
+        sequence: str,
+        enabled: bool = True,
+        disable_reselection: bool = False,
+        mirror_option: str = "unmirrored",
+        sampling_range: Optional[List[float]] = None,
+        save: bool = True,
+    ) -> str:
+        """Add an AnimSequence entry to a Pose Search database.
+
+        Args:
+            database: Pose Search database asset path.
+            sequence: AnimSequence asset path to add.
+            enabled: Whether the database entry participates in search.
+            disable_reselection: Prevent immediate reselection of the same source asset.
+            mirror_option: unmirrored, mirrored_only, or both.
+            sampling_range: Optional [start_seconds, end_seconds] trim range; [0, 0] means full asset.
+            save: Save the database asset after mutation.
+
+        Returns:
+            Structured JSON with the added sequence and updated database summary.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            motion_add_database_sequence(database="/Game/Animation/MotionMatching/PSD_Locomotion", sequence="/Game/Characters/Hero/Animations/A_Run")"""
+        t0 = time.monotonic()
+        inputs = {
+            "database": database,
+            "sequence": sequence,
+            "enabled": enabled,
+            "disable_reselection": disable_reselection,
+            "mirror_option": mirror_option,
+            "sampling_range": sampling_range or [0.0, 0.0],
+            "save": save,
+        }
+        raw = _send("motion_add_database_sequence", inputs)
+        return _bridge_result(stage="motion_add_database_sequence", raw=raw, inputs=inputs, message="Added sequence to Pose Search database", t0=t0)
+
+    @mcp.tool()
+    def motion_inspect_pose_search_asset(
+        ctx: Context,
+        asset: str,
+    ) -> str:
+        """Inspect a Pose Search schema or database asset.
+
+        Args:
+            asset: Pose Search schema or database asset path.
+
+        Returns:
+            Structured JSON with schema channels or database animation assets.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            motion_inspect_pose_search_asset(asset="/Game/Animation/MotionMatching/PSD_Locomotion")"""
+        t0 = time.monotonic()
+        inputs = {"asset": asset}
+        raw = _send("motion_inspect_pose_search_asset", inputs)
+        return _bridge_result(stage="motion_inspect_pose_search_asset", raw=raw, inputs=inputs, message="Inspected Pose Search asset", t0=t0)
+
+    @mcp.tool()
+    def chooser_create_table(
+        ctx: Context,
+        name: str,
+        path: str = "/Game/Animation/Choosers",
+        result_class: str = "/Script/CoreUObject.Object",
+        overwrite: bool = False,
+        save: bool = True,
+    ) -> str:
+        """Create a Chooser table configured for object asset results.
+
+        Args:
+            name: Asset name to create.
+            path: Content Browser folder under /Game.
+            result_class: Output object class path or class name.
+            overwrite: Delete an existing Chooser table before creation.
+            save: Save the asset package after creation.
+
+        Returns:
+            Structured JSON with Chooser path, result class, rows, and columns.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            chooser_create_table(name="CH_Locomotion", result_class="/Script/Engine.AnimationAsset")"""
+        t0 = time.monotonic()
+        inputs = {
+            "name": name,
+            "path": path,
+            "result_class": result_class,
+            "overwrite": overwrite,
+            "save": save,
+        }
+        raw = _send("chooser_create_table", inputs)
+        return _bridge_result(stage="chooser_create_table", raw=raw, inputs=inputs, message="Created Chooser table", t0=t0)
+
+    @mcp.tool()
+    def chooser_add_asset_row(
+        ctx: Context,
+        chooser: str,
+        asset: str,
+        enabled: bool = True,
+        save: bool = True,
+    ) -> str:
+        """Add a hard asset result row to a Chooser table.
+
+        Args:
+            chooser: Chooser table asset path.
+            asset: Asset path to use as the row result.
+            enabled: Whether the row is enabled.
+            save: Save the Chooser table after mutation.
+
+        Returns:
+            Structured JSON with the added asset, row index, and updated row list.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            chooser_add_asset_row(chooser="/Game/Animation/Choosers/CH_Locomotion", asset="/Game/Characters/Hero/Animations/A_Run")"""
+        t0 = time.monotonic()
+        inputs = {"chooser": chooser, "asset": asset, "enabled": enabled, "save": save}
+        raw = _send("chooser_add_asset_row", inputs)
+        return _bridge_result(stage="chooser_add_asset_row", raw=raw, inputs=inputs, message="Added asset row to Chooser table", t0=t0)
+
+    @mcp.tool()
+    def chooser_inspect_table(
+        ctx: Context,
+        chooser: str,
+    ) -> str:
+        """Inspect a Chooser table's rows, columns, and result settings.
+
+        Args:
+            chooser: Chooser table asset path.
+
+        Returns:
+            Structured JSON with result type, output class, rows, and columns.
+
+        KB: see knowledge_base/24_MOTION_MATCHING_AND_CHOOSERS.md#mcp-motion-matching-and-chooser-tools
+        Example:
+            chooser_inspect_table(chooser="/Game/Animation/Choosers/CH_Locomotion")"""
+        t0 = time.monotonic()
+        inputs = {"chooser": chooser}
+        raw = _send("chooser_inspect_table", inputs)
+        return _bridge_result(stage="chooser_inspect_table", raw=raw, inputs=inputs, message="Inspected Chooser table", t0=t0)
 
     logger.info("Animation tools registered (including IK Rig / IK Retargeter)")

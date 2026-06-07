@@ -1884,6 +1884,67 @@ tasks around them.
 
 ---
 
+### B.8 Motion Matching and Chooser (`animation_tools.py`)
+
+Use these tools to create Pose Search schemas/databases for Motion Matching and
+seed Chooser tables with asset result rows. Tune schema channels, Chooser
+conditions, and runtime AnimBP nodes in the editor after the initial MCP setup.
+
+#### Pose Search assets
+```python
+motion_create_pose_search_schema(
+    name="PSS_Locomotion",
+    path="/Game/Animation/MotionMatching",
+    skeleton="/Game/Characters/Hero/SK_Hero",
+    sample_rate=30,
+    add_default_channels=True,
+    overwrite=True,
+    save=True
+)
+motion_create_pose_search_database(
+    name="PSD_Locomotion",
+    schema="/Game/Animation/MotionMatching/PSS_Locomotion",
+    sequences=["/Game/Characters/Hero/Animations/A_Run"],
+    search_mode="pca_kd_tree",
+    overwrite=True,
+    save=True
+)
+motion_add_database_sequence(
+    database="/Game/Animation/MotionMatching/PSD_Locomotion",
+    sequence="/Game/Characters/Hero/Animations/A_Stop",
+    enabled=True,
+    disable_reselection=False,
+    mirror_option="both",
+    sampling_range=[0.0, 0.0],
+    save=True
+)
+motion_inspect_pose_search_asset(asset="/Game/Animation/MotionMatching/PSD_Locomotion")
+```
+
+#### Chooser tables
+```python
+chooser_create_table(
+    name="CH_Locomotion",
+    path="/Game/Animation/Choosers",
+    result_class="/Script/Engine.AnimationAsset",
+    overwrite=True,
+    save=True
+)
+chooser_add_asset_row(
+    chooser="/Game/Animation/Choosers/CH_Locomotion",
+    asset="/Game/Characters/Hero/Animations/A_Run",
+    enabled=True,
+    save=True
+)
+chooser_inspect_table(chooser="/Game/Animation/Choosers/CH_Locomotion")
+```
+
+After B.8 edits, inspect the returned schema/database/table summaries, then
+open the assets in the editor to tune channel weights, Chooser context columns,
+and AnimBP Motion Matching nodes against real locomotion clips.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

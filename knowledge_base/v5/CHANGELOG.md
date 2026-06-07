@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### B.8 - Motion Matching and Chooser tools
+
+- Added `motion_create_pose_search_schema`, `motion_create_pose_search_database`, `motion_add_database_sequence`, and `motion_inspect_pose_search_asset` for Pose Search authoring.
+- Added `chooser_create_table`, `chooser_add_asset_row`, and `chooser_inspect_table` for Chooser table asset-result setup and inspection.
+- Added native bridge routes, PoseSearch/Chooser plugin and module dependencies, usage guide notes, KB cross-links, and B.8 offline smoke tests.
+
 ### B.7 - MassEntity, StateTree, and SmartObject tools
 
 - Added `mass_create_entity_config`, `mass_add_trait`, and `mass_inspect_entity_config` for MassEntity config asset authoring.
