@@ -53,8 +53,10 @@ Control Rig, materials, and gameplay components separated.
 | Tool | Use |
 | --- | --- |
 | `metahuman_import` | Register an assembled/imported MetaHuman asset root, scan its package tree, and write a manifest section for later tools. |
+| `metahuman_inspect_package` | Read the manifest and rescan the package root before animation, wrapper, or performance work. |
 | `metahuman_link_to_skeleton` | Link the body skeletal mesh to skeleton, IK Rig, retargeter, AnimBP, and post-process AnimBP references. |
 | `metahuman_assign_dna` | Record DNA asset/file, face mesh, and rig logic metadata for face/body rig validation. |
+| `metahuman_configure_wrapper` | Persist wrapper Blueprint, parent class, component names, and gameplay tag metadata for gameplay integration. |
 
 ## Working Example
 

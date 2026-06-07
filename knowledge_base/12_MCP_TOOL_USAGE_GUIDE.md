@@ -2207,6 +2207,14 @@ metahuman_import(
 )
 ```
 
+#### Inspect package manifest
+```python
+metahuman_inspect_package(
+    character_name="Ada",
+    metahuman_root="/Game/MetaHumans/Ada"
+)
+```
+
 #### Link skeleton and animation assets
 ```python
 metahuman_link_to_skeleton(
@@ -2226,6 +2234,16 @@ metahuman_assign_dna(
     dna_asset="/Game/MetaHumans/Ada/Face/Ada_DNA",
     face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face",
     rig_logic_asset="/Game/MetaHumans/Ada/Face/CR_Ada_Face"
+)
+```
+
+#### Configure gameplay wrapper metadata
+```python
+metahuman_configure_wrapper(
+    character_name="Ada",
+    wrapper_blueprint="/Game/Characters/BP_AdaWrapper",
+    parent_class="/Script/Engine.Character",
+    gameplay_tag="Character.MetaHuman.NPC"
 )
 ```
 

@@ -42,8 +42,10 @@ class TestB14MetaHumanTools(unittest.TestCase):
     def test_b14_metahuman_tools_register(self):
         expected = {
             "metahuman_import",
+            "metahuman_inspect_package",
             "metahuman_link_to_skeleton",
             "metahuman_assign_dna",
+            "metahuman_configure_wrapper",
         }
         self.assertTrue(expected.issubset(set(self.mcp.tools)))
 
@@ -71,6 +73,11 @@ class TestB14MetaHumanTools(unittest.TestCase):
                     "face_skeletal_mesh": params.get("face_skeletal_mesh", ""),
                     "rig_logic_asset": params.get("rig_logic_asset", ""),
                 },
+                "wrapper": {
+                    "wrapper_blueprint": params.get("wrapper_blueprint", ""),
+                    "parent_class": params.get("parent_class", "/Script/Engine.Character"),
+                    "gameplay_tag": params.get("gameplay_tag", "Character.MetaHuman"),
+                },
             }
 
         with patch("tools.animation_tools._send", side_effect=fake_send):
@@ -83,6 +90,11 @@ class TestB14MetaHumanTools(unittest.TestCase):
                     body_skeletal_mesh="/Game/MetaHumans/Ada/Body/SK_Ada_Body",
                     face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face",
                     create_manifest=True,
+                )),
+                json.loads(self.mcp.tools["metahuman_inspect_package"](
+                    ctx=None,
+                    character_name="Ada",
+                    metahuman_root="/Game/MetaHumans/Ada",
                 )),
                 json.loads(self.mcp.tools["metahuman_link_to_skeleton"](
                     ctx=None,
@@ -102,12 +114,24 @@ class TestB14MetaHumanTools(unittest.TestCase):
                     face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face",
                     rig_logic_asset="/Game/MetaHumans/Ada/Face/CR_Ada_Face",
                 )),
+                json.loads(self.mcp.tools["metahuman_configure_wrapper"](
+                    ctx=None,
+                    character_name="Ada",
+                    wrapper_blueprint="/Game/Characters/BP_AdaWrapper",
+                    parent_class="/Script/Engine.Character",
+                    body_component_name="Body",
+                    face_component_name="Face",
+                    attach_to_component="Mesh",
+                    gameplay_tag="Character.MetaHuman.NPC",
+                )),
             ]
 
         stages = [
             "metahuman_import",
+            "metahuman_inspect_package",
             "metahuman_link_to_skeleton",
             "metahuman_assign_dna",
+            "metahuman_configure_wrapper",
         ]
         for payload, stage in zip(payloads, stages):
             _assert_structured(self, payload, stage)
@@ -116,10 +140,13 @@ class TestB14MetaHumanTools(unittest.TestCase):
         self.assertEqual([call[0] for call in calls], stages)
         self.assertEqual(calls[0][1]["metahuman_root"], "/Game/MetaHumans/Ada")
         self.assertTrue(calls[0][1]["create_manifest"])
-        self.assertEqual(calls[1][1]["body_skeletal_mesh"], "/Game/MetaHumans/Ada/Body/SK_Ada_Body")
-        self.assertEqual(calls[1][1]["retargeter"], "/Game/Animation/Retargeters/RTG_Ada")
-        self.assertEqual(calls[2][1]["dna_asset"], "/Game/MetaHumans/Ada/Face/Ada_DNA")
-        self.assertEqual(calls[2][1]["rig_logic_asset"], "/Game/MetaHumans/Ada/Face/CR_Ada_Face")
+        self.assertEqual(calls[1][1]["metahuman_root"], "/Game/MetaHumans/Ada")
+        self.assertEqual(calls[2][1]["body_skeletal_mesh"], "/Game/MetaHumans/Ada/Body/SK_Ada_Body")
+        self.assertEqual(calls[2][1]["retargeter"], "/Game/Animation/Retargeters/RTG_Ada")
+        self.assertEqual(calls[3][1]["dna_asset"], "/Game/MetaHumans/Ada/Face/Ada_DNA")
+        self.assertEqual(calls[3][1]["rig_logic_asset"], "/Game/MetaHumans/Ada/Face/CR_Ada_Face")
+        self.assertEqual(calls[4][1]["wrapper_blueprint"], "/Game/Characters/BP_AdaWrapper")
+        self.assertEqual(calls[4][1]["gameplay_tag"], "Character.MetaHuman.NPC")
 
 
 if __name__ == "__main__":

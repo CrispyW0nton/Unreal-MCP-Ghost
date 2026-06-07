@@ -2820,8 +2820,10 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
             }
             // MetaHuman package / animation linkage Commands
             else if (CommandType == TEXT("metahuman_import") ||
+                     CommandType == TEXT("metahuman_inspect_package") ||
                      CommandType == TEXT("metahuman_link_to_skeleton") ||
-                     CommandType == TEXT("metahuman_assign_dna"))
+                     CommandType == TEXT("metahuman_assign_dna") ||
+                     CommandType == TEXT("metahuman_configure_wrapper"))
             {
                 static TSharedPtr<FUnrealMCPMetaHumanCommands> MetaHumanCommands;
                 if (!MetaHumanCommands.IsValid())

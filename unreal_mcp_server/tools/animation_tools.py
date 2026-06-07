@@ -2215,6 +2215,25 @@ else:
         return _bridge_result(stage="metahuman_import", raw=raw, inputs=inputs, message="Registered MetaHuman package", t0=t0)
 
     @mcp.tool()
+    def metahuman_inspect_package(
+        ctx: Context,
+        character_name: str,
+        metahuman_root: str = "",
+    ) -> str:
+        """Inspect a registered MetaHuman manifest and scan its package assets.
+
+        KB: see knowledge_base/27_METAHUMAN_PIPELINE.md#mcp-metahuman-tools
+        Example:
+            metahuman_inspect_package(character_name="Ada", metahuman_root="/Game/MetaHumans/Ada")"""
+        t0 = time.monotonic()
+        inputs = {
+            "character_name": character_name,
+            "metahuman_root": metahuman_root,
+        }
+        raw = _send("metahuman_inspect_package", inputs)
+        return _bridge_result(stage="metahuman_inspect_package", raw=raw, inputs=inputs, message="Inspected MetaHuman package", t0=t0)
+
+    @mcp.tool()
     def metahuman_link_to_skeleton(
         ctx: Context,
         character_name: str,
@@ -2267,5 +2286,34 @@ else:
         }
         raw = _send("metahuman_assign_dna", inputs)
         return _bridge_result(stage="metahuman_assign_dna", raw=raw, inputs=inputs, message="Assigned MetaHuman DNA metadata", t0=t0)
+
+    @mcp.tool()
+    def metahuman_configure_wrapper(
+        ctx: Context,
+        character_name: str,
+        wrapper_blueprint: str,
+        parent_class: str = "/Script/Engine.Character",
+        body_component_name: str = "Body",
+        face_component_name: str = "Face",
+        attach_to_component: str = "Mesh",
+        gameplay_tag: str = "Character.MetaHuman",
+    ) -> str:
+        """Configure wrapper Blueprint metadata for a MetaHuman gameplay character.
+
+        KB: see knowledge_base/27_METAHUMAN_PIPELINE.md#mcp-metahuman-tools
+        Example:
+            metahuman_configure_wrapper(character_name="Ada", wrapper_blueprint="/Game/Characters/BP_AdaWrapper")"""
+        t0 = time.monotonic()
+        inputs = {
+            "character_name": character_name,
+            "wrapper_blueprint": wrapper_blueprint,
+            "parent_class": parent_class,
+            "body_component_name": body_component_name,
+            "face_component_name": face_component_name,
+            "attach_to_component": attach_to_component,
+            "gameplay_tag": gameplay_tag,
+        }
+        raw = _send("metahuman_configure_wrapper", inputs)
+        return _bridge_result(stage="metahuman_configure_wrapper", raw=raw, inputs=inputs, message="Configured MetaHuman wrapper metadata", t0=t0)
 
     logger.info("Animation tools registered (including IK Rig / IK Retargeter)")

@@ -9,8 +9,10 @@
 ### B.14 - MetaHuman pipeline tools
 
 - Added `metahuman_import` for assembled MetaHuman package registration, asset-tree scanning, and manifest creation.
+- Added `metahuman_inspect_package` for manifest and package-root inspection before follow-on animation or wrapper work.
 - Added `metahuman_link_to_skeleton` for body skeletal mesh, skeleton, IK Rig, retargeter, AnimBP, and post-process AnimBP references.
 - Added `metahuman_assign_dna` for DNA asset/file, face skeletal mesh, and rig logic metadata.
+- Added `metahuman_configure_wrapper` for gameplay wrapper Blueprint metadata and integration references.
 - Added native bridge routes, animation inventory coverage notes, usage guide notes, KB cross-links, and B.14 offline smoke tests.
 
 ### B.13 - Pixel Streaming and remote access tools

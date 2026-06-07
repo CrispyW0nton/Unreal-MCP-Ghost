@@ -18,12 +18,15 @@ public:
 
 private:
     TSharedPtr<FJsonObject> HandleImport(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleInspectPackage(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleLinkToSkeleton(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleAssignDNA(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleConfigureWrapper(const TSharedPtr<FJsonObject>& Params);
 
     FString GetDefaultEngineIniPath() const;
     bool LoadDefaultEngineConfig(FConfigFile& ConfigFile, FString& OutPath) const;
     bool WriteDefaultEngineConfig(FConfigFile& ConfigFile, const FString& ConfigPath) const;
+    FString GetStringValue(const FConfigFile& ConfigFile, const FString& Section, const FString& Key, const FString& DefaultValue = FString()) const;
     void SetStringValue(FConfigFile& ConfigFile, const FString& Section, const FString& Key, const FString& Value) const;
     void SetBoolValue(FConfigFile& ConfigFile, const FString& Section, const FString& Key, bool bValue) const;
     FString NormalizeAssetPath(const FString& InPath) const;
