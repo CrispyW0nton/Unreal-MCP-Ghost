@@ -626,6 +626,8 @@ from tools.physics_tools import register_physics_tools
 from tools.knowledge_tools import register_knowledge_tools
 # Audio import tools
 from tools.audio_tools import register_audio_tools
+# B.10 Chaos destruction / cloth tools
+from tools.chaos_tools import register_chaos_tools
 # B.6 Geometry Script / Modeling tools
 from tools.geometry_tools import register_geometry_tools
 # B.7 MassEntity / StateTree / SmartObject tools
@@ -693,6 +695,8 @@ register_physics_tools(mcp)
 register_knowledge_tools(mcp)
 # Audio import tools
 register_audio_tools(mcp)
+# B.10 Chaos destruction / cloth tools
+register_chaos_tools(mcp)
 # B.6 Geometry Script / Modeling tools
 register_geometry_tools(mcp)
 # B.7 MassEntity / StateTree / SmartObject tools

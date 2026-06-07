@@ -39,6 +39,11 @@
     "roadmap_phase": "phase_3_metasounds_audio",
     "status": "live"
   },
+  "tools.chaos_tools": {
+    "category": "chaos_destruction_cloth",
+    "roadmap_phase": "phase_3_chaos_destruction_cloth",
+    "status": "live"
+  },
   "tools.geometry_tools": {
     "category": "geometry_modeling",
     "roadmap_phase": "phase_3_geometry_script_modeling",

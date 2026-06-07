@@ -90,6 +90,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPGASCommands.h"
 #include "Commands/UnrealMCPNetworkCommands.h"
 #include "Commands/UnrealMCPAudioCommands.h"
+#include "Commands/UnrealMCPChaosCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
 #include "Commands/UnrealMCPMassCommands.h"
 #include "Commands/UnrealMCPMotionCommands.h"
@@ -2760,6 +2761,20 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     MassCommands = MakeShared<FUnrealMCPMassCommands>();
                 }
                 ResultJson = MassCommands->HandleCommand(CommandType, Params);
+            }
+            // Chaos destruction / cloth Commands
+            else if (CommandType == TEXT("chaos_create_solver_actor") ||
+                     CommandType == TEXT("chaos_configure_solver_actor") ||
+                     CommandType == TEXT("chaos_inspect_geometry_collection") ||
+                     CommandType == TEXT("chaos_configure_geometry_collection") ||
+                     CommandType == TEXT("chaos_configure_cloth_component"))
+            {
+                static TSharedPtr<FUnrealMCPChaosCommands> ChaosCommands;
+                if (!ChaosCommands.IsValid())
+                {
+                    ChaosCommands = MakeShared<FUnrealMCPChaosCommands>();
+                }
+                ResultJson = ChaosCommands->HandleCommand(CommandType, Params);
             }
             // Motion Matching / Pose Search / Chooser Commands
             else if (CommandType == TEXT("motion_create_pose_search_schema") ||

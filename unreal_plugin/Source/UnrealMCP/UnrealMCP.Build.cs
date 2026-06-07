@@ -124,6 +124,13 @@ public class UnrealMCP : ModuleRules
                 "WorldPartitionEditor",
                 "DataLayerEditor",
 
+                // Chaos destruction / cloth authoring - required for B.10 tools
+                "Chaos",
+                "ChaosSolverEngine",
+                "GeometryCollectionEngine",
+                "FieldSystemEngine",
+                "ClothingSystemRuntimeInterface",
+
                 // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
                 // The user must have the "Python Editor Script Plugin" enabled in UE5.

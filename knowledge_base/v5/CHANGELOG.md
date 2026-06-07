@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### B.10 - Chaos destruction and cloth tools
+
+- Added `chaos_create_solver_actor` and `chaos_configure_solver_actor` for Chaos Solver actor creation and event/runtime budget configuration.
+- Added `chaos_inspect_geometry_collection` and `chaos_configure_geometry_collection` for Geometry Collection inspection, thresholds, clustering, event flags, and solver assignment.
+- Added `chaos_configure_cloth_component` for SkeletalMeshComponent cloth simulation controls.
+- Added native bridge routes, Chaos/GeometryCollection/Clothing module dependencies, inventory metadata, usage guide notes, KB cross-links, and B.10 offline smoke tests.
+
 ### B.9 - World Partition and HLOD tools
 
 - Added `wp_load_region`, `wp_unload_region`, and `wp_create_data_layer` for World Partition editor region and Data Layer authoring.

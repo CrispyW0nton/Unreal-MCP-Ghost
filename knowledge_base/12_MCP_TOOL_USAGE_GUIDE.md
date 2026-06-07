@@ -1994,6 +1994,59 @@ and streaming-source movement.
 
 ---
 
+### B.10 Chaos Destruction and Cloth (`chaos_tools.py`)
+
+Use these tools to configure Chaos solver actors, Geometry Collection runtime
+destruction policy, and cloth simulation controls after the underlying assets
+have been authored or imported.
+
+#### Chaos solver
+```python
+chaos_create_solver_actor(
+    actor_name="ChaosSolver_Destruction",
+    set_as_world_solver=True,
+    overwrite=False
+)
+chaos_configure_solver_actor(
+    actor_name="ChaosSolver_Destruction",
+    generate_break_data=True,
+    generate_collision_data=False,
+    optimize_runtime_memory=True,
+    per_advance_breaks_allowed=64
+)
+```
+
+#### Geometry Collection policy
+```python
+chaos_inspect_geometry_collection(actor_name="GC_Barrier_A")
+chaos_configure_geometry_collection(
+    actor_name="GC_Barrier_A",
+    simulate_physics=True,
+    gravity_enabled=True,
+    notify_breaks=True,
+    enable_damage_from_collision=True,
+    damage_thresholds=[500000, 50000, 5000],
+    solver_actor="ChaosSolver_Destruction"
+)
+```
+
+#### Cloth simulation
+```python
+chaos_configure_cloth_component(
+    actor_name="BP_CloakedHero_0",
+    component_name="HeroMesh",
+    update_in_editor=True,
+    cloth_max_distance_scale=1.0,
+    force_reset=True
+)
+```
+
+After B.10 edits, validate destruction and cloth behavior in PIE, then capture
+logs/screenshots if break events, cloth resets, or solver event streams are part
+of the gameplay proof.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

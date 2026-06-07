@@ -43,10 +43,40 @@ destruction, or server-authored state rather than uncontrolled chaos.
 | Task | Preferred MCP direction |
 | --- | --- |
 | Inspect physics assets | `scan_project_assets`, physics/procedural tools |
+| Create a Chaos solver | `chaos_create_solver_actor` |
+| Configure solver events/budget | `chaos_configure_solver_actor` |
+| Inspect destructible setup | `chaos_inspect_geometry_collection` |
+| Configure Geometry Collection runtime policy | `chaos_configure_geometry_collection` |
+| Configure cloth simulation | `chaos_configure_cloth_component` |
 | Configure Blueprint actors | Blueprint/component/property tools |
 | Attach VFX response | Niagara tools and Blueprint graph tools |
 | Validate runtime | PIE, logs, viewport screenshots, performance snapshots |
 | Record evidence | execution journal and vertical slice report tools |
+
+## MCP Chaos and Cloth Tools
+
+Use these tools after Geometry Collection fracture assets or cloth skeletal
+meshes exist. The B.10 tool surface focuses on runtime-ready configuration:
+solver actors, destruction event generation, Geometry Collection thresholds, and
+cloth component simulation toggles.
+
+| Tool | Use |
+| --- | --- |
+| `chaos_create_solver_actor` | Spawn a Chaos Solver actor and optionally make it the current world solver. |
+| `chaos_configure_solver_actor` | Tune solver iteration counts, floor behavior, generated collision/break/trailing data, and destruction throttling. |
+| `chaos_inspect_geometry_collection` | Inspect a Geometry Collection actor/component or asset path for rest collection, solver, thresholds, and event flags. |
+| `chaos_configure_geometry_collection` | Set simulate physics, gravity, clustering, damage thresholds, break/collision notifications, and solver assignment. |
+| `chaos_configure_cloth_component` | Suspend/resume cloth, enable editor updates, set cloth scale/blend, and force teleport/reset/recreate operations. |
+
+Recommended MCP flow:
+
+1. Create or locate a solver with `chaos_create_solver_actor`.
+2. Enable only the event streams you need with `chaos_configure_solver_actor`;
+   break data is useful for dust/VFX, but all streams can be expensive.
+3. Inspect the Geometry Collection with `chaos_inspect_geometry_collection`.
+4. Set thresholds and event flags with `chaos_configure_geometry_collection`.
+5. For cloth actors, use `chaos_configure_cloth_component` to update editor
+   simulation, reset teleport state, or temporarily suspend simulation.
 
 ## Working Example
 
