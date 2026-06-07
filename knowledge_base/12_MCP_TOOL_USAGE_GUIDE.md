@@ -1812,6 +1812,78 @@ gameplay content.
 
 ---
 
+### B.7 MassEntity, StateTree, and SmartObject (`mass_tools.py`)
+
+Use these tools for editor-side setup of MassEntity configs, StateTree assets,
+and SmartObject definitions before runtime population or behavior testing.
+
+#### MassEntity configs
+```python
+mass_create_entity_config(
+    name="EC_CrowdAgent",
+    path="/Game/Mass/EntityConfigs",
+    traits=["MassAssortedFragmentsTrait"],
+    overwrite=True,
+    save=True
+)
+mass_add_trait(
+    config_asset="/Game/Mass/EntityConfigs/EC_CrowdAgent",
+    trait_class="MassLODTrait",
+    save=True
+)
+mass_inspect_entity_config(
+    config_asset="/Game/Mass/EntityConfigs/EC_CrowdAgent",
+    validate=True
+)
+```
+
+#### StateTree assets
+```python
+statetree_create(
+    name="ST_CrowdAmbient",
+    path="/Game/AI/StateTrees",
+    schema_class="/Script/GameplayStateTreeModule.StateTreeComponentSchema",
+    overwrite=True,
+    save=True
+)
+statetree_add_state(
+    state_tree="/Game/AI/StateTrees/ST_CrowdAmbient",
+    name="Idle",
+    parent_state="Root",
+    description="Wait for a usable ambient activity",
+    state_type="state",
+    save=True
+)
+statetree_inspect(state_tree="/Game/AI/StateTrees/ST_CrowdAmbient")
+```
+
+#### SmartObject definitions
+```python
+smartobject_create_definition(
+    name="SO_BenchInteraction",
+    path="/Game/AI/SmartObjects",
+    slot_name="Sit",
+    overwrite=True,
+    save=True
+)
+smartobject_add_slot(
+    definition="/Game/AI/SmartObjects/SO_BenchInteraction",
+    slot_name="ApproachLeft",
+    offset=[0, -80, 0],
+    rotation=[0, 0, 0],
+    activity_tags=["AI.Activity.Sit"],
+    enabled=True,
+    save=True
+)
+smartobject_inspect_definition(definition="/Game/AI/SmartObjects/SO_BenchInteraction")
+```
+
+After B.7 edits, inspect the returned trait/state/slot summaries, then verify
+the assets in the editor before wiring runtime spawners, processors, or behavior
+tasks around them.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

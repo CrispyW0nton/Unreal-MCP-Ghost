@@ -99,6 +99,19 @@ public class UnrealMCP : ModuleRules
                 "GeometryScriptingCore",
                 "GeometryScriptingEditor",
 
+                // MassEntity / StateTree / SmartObject authoring - required for B.7 tools
+                "MassEntity",
+                "MassSpawner",
+                "MassActors",
+                "MassLOD",
+                "MassSmartObjects",
+                "StateTreeModule",
+                "StateTreeEditorModule",
+                "GameplayStateTreeModule",
+                "SmartObjectsModule",
+                "StructUtils",
+                "PropertyBindingUtils",
+
                 // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
                 // The user must have the "Python Editor Script Plugin" enabled in UE5.

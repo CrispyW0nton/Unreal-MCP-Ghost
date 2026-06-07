@@ -47,10 +47,31 @@ evaluators, and tasks should stay inspectable and performant.
 | Task | Preferred MCP direction |
 | --- | --- |
 | Onboard AI work | `get_onboarding_context("ai")`, `get_onboarding_context("mass")` |
-| Inspect project assets | `scan_project_assets` for StateTree, Mass, and Blueprint assets |
+| Author Mass configs | `mass_create_entity_config`, `mass_add_trait`, `mass_inspect_entity_config` |
+| Author StateTrees | `statetree_create`, `statetree_add_state`, `statetree_inspect` |
+| Author Smart Objects | `smartobject_create_definition`, `smartobject_add_slot`, `smartobject_inspect_definition` |
+| Inspect project assets | `scan_project_assets` for StateTree, Mass, SmartObject, and Blueprint assets |
 | Create supporting BT/BB/EQS | AI MCP tools for classic AI slices |
 | Build actor wrappers | Blueprint/component tools where Mass needs placed authoring helpers |
 | Verify runtime | PIE launch/log tools and gameplay debugger snapshots |
+
+## MCP Mass, StateTree, and SmartObject Tools
+
+`tools.mass_tools` adds a native UE 5.6 bridge surface for the asset authoring
+that usually has to happen before Mass and StateTree runtime work can be tested.
+Use it for small, inspectable slices first:
+
+- MassEntity configs: create `UMassEntityConfigAsset` assets, add traits, and
+  inspect trait classes, parent config, GUID, and optional validation status.
+- StateTrees: create assets with a schema, add top-level subtrees or child
+  states, then inspect schema, readiness, compiled state count, and hierarchy.
+- Smart Objects: create definition assets, add slots with offsets/rotations and
+  gameplay tags, then inspect slot transforms, tags, enabled flags, and bounds.
+
+The native bridge uses editor transactions, package dirtying, asset registry
+registration, and optional saves. Keep trait and schema names explicit when a
+project has multiple plugin variants loaded; short names are accepted, but full
+`/Script/Module.Class` paths are easier to audit in automation logs.
 
 ## Working Example
 

@@ -44,6 +44,11 @@
     "roadmap_phase": "phase_3_geometry_script_modeling",
     "status": "live"
   },
+  "tools.mass_tools": {
+    "category": "mass_statetree_smartobjects",
+    "roadmap_phase": "phase_3_mass_statetree_smartobjects",
+    "status": "live"
+  },
   "tools.blueprint_tools": {
     "category": "blueprint_asset",
     "roadmap_phase": "baseline",

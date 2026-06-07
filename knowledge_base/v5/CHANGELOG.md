@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### B.7 - MassEntity, StateTree, and SmartObject tools
+
+- Added `mass_create_entity_config`, `mass_add_trait`, and `mass_inspect_entity_config` for MassEntity config asset authoring.
+- Added `statetree_create`, `statetree_add_state`, and `statetree_inspect` for StateTree schema-backed asset creation and hierarchy inspection.
+- Added `smartobject_create_definition`, `smartobject_add_slot`, and `smartobject_inspect_definition` for SmartObject definition and slot authoring.
+- Added native bridge routes, MassGameplay/StateTree/GameplayStateTree/SmartObjects dependencies, inventory metadata, usage guide notes, KB cross-links, and B.7 offline smoke tests.
+
 ### B.6 - Geometry Script and Modeling Mode tools
 
 - Added `geom_create_dynamic_mesh`, `geom_boolean_op`, `geom_extrude`, `geom_remesh`, `geom_uv_unwrap`, `geom_bake_to_static_mesh`, and `geom_apply_displacement` for DynamicMesh authoring and Static Mesh baking.

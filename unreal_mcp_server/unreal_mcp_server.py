@@ -628,6 +628,8 @@ from tools.knowledge_tools import register_knowledge_tools
 from tools.audio_tools import register_audio_tools
 # B.6 Geometry Script / Modeling tools
 from tools.geometry_tools import register_geometry_tools
+# B.7 MassEntity / StateTree / SmartObject tools
+from tools.mass_tools import register_mass_tools
 # Asset import pipeline — Category C (single-asset)
 from tools.asset_import_tools import register_asset_import_tools
 # Folder/batch import pipeline — Category B
@@ -693,6 +695,8 @@ register_knowledge_tools(mcp)
 register_audio_tools(mcp)
 # B.6 Geometry Script / Modeling tools
 register_geometry_tools(mcp)
+# B.7 MassEntity / StateTree / SmartObject tools
+register_mass_tools(mcp)
 # Asset import pipeline — Category C (single-asset)
 register_asset_import_tools(mcp)
 # Folder/batch import pipeline — Category B

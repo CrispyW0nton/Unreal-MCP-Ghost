@@ -91,6 +91,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPNetworkCommands.h"
 #include "Commands/UnrealMCPAudioCommands.h"
 #include "Commands/UnrealMCPGeometryCommands.h"
+#include "Commands/UnrealMCPMassCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
 
@@ -2735,6 +2736,24 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     GeometryCommands = MakeShared<FUnrealMCPGeometryCommands>();
                 }
                 ResultJson = GeometryCommands->HandleCommand(CommandType, Params);
+            }
+            // MassEntity / StateTree / SmartObject Commands
+            else if (CommandType == TEXT("mass_create_entity_config") ||
+                     CommandType == TEXT("mass_add_trait") ||
+                     CommandType == TEXT("mass_inspect_entity_config") ||
+                     CommandType == TEXT("statetree_create") ||
+                     CommandType == TEXT("statetree_add_state") ||
+                     CommandType == TEXT("statetree_inspect") ||
+                     CommandType == TEXT("smartobject_create_definition") ||
+                     CommandType == TEXT("smartobject_add_slot") ||
+                     CommandType == TEXT("smartobject_inspect_definition"))
+            {
+                static TSharedPtr<FUnrealMCPMassCommands> MassCommands;
+                if (!MassCommands.IsValid())
+                {
+                    MassCommands = MakeShared<FUnrealMCPMassCommands>();
+                }
+                ResultJson = MassCommands->HandleCommand(CommandType, Params);
             }
             // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())
