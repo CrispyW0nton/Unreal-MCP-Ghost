@@ -21,6 +21,7 @@
 #include "GenericPlatform/GenericPlatformHttp.h"
 #include "Misc/Guid.h"
 #include "Misc/PackageName.h"
+#include "Misc/Paths.h"
 #include "Modules/ModuleManager.h"
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonWriter.h"
@@ -406,7 +407,16 @@ FReply SMCPChatPanel::HandleContextChipClicked(FString Reference)
 
 FReply SMCPChatPanel::OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)
 {
-	return DragDropEvent.GetOperation().IsValid() ? FReply::Handled() : FReply::Unhandled();
+	const TSharedPtr<FDragDropOperation> Operation = DragDropEvent.GetOperation();
+	if (!Operation.IsValid())
+	{
+		return FReply::Unhandled();
+	}
+
+	return (Operation->IsOfType<FAssetDragDropOp>() ||
+		Operation->IsOfType<FActorDragDropOp>() ||
+		Operation->IsOfType<FExternalDragOperation>() ||
+		Operation->IsExternalOperation()) ? FReply::Handled() : FReply::Unhandled();
 }
 
 FReply SMCPChatPanel::OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)
@@ -417,7 +427,15 @@ FReply SMCPChatPanel::OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& 
 		return FReply::Unhandled();
 	}
 
-	InsertComposerText(BuildDropReference(Operation));
+	const FString DropReference = BuildDropReference(Operation);
+	if (DropReference.IsEmpty())
+	{
+		SetStatus(LOCTEXT("StatusUnsupportedDrop", "Unsupported drop"), ErrorStatusColor);
+		return FReply::Handled();
+	}
+
+	InsertComposerText(DropReference);
+	SetStatus(FText::Format(LOCTEXT("StatusDropInserted", "Inserted dropped reference: {0}"), FText::FromString(DropReference)), OkStatusColor);
 	return FReply::Handled();
 }
 
@@ -1493,14 +1511,30 @@ FString SMCPChatPanel::BuildDropReference(const TSharedPtr<FDragDropOperation>& 
 	if (Operation->IsOfType<FAssetDragDropOp>())
 	{
 		const TSharedPtr<FAssetDragDropOp> AssetDragDropOp = StaticCastSharedPtr<FAssetDragDropOp>(Operation);
+		TArray<FString> References;
 		if (AssetDragDropOp.IsValid() && AssetDragDropOp->HasAssets())
 		{
-			const FAssetData& FirstAsset = AssetDragDropOp->GetAssets()[0];
-			return FString::Printf(TEXT("@asset:%s"), *FirstAsset.PackageName.ToString());
+			for (const FAssetData& AssetData : AssetDragDropOp->GetAssets())
+			{
+				if (!AssetData.PackageName.IsNone())
+				{
+					References.Add(FString::Printf(TEXT("@asset:%s"), *AssetData.PackageName.ToString()));
+				}
+			}
 		}
 		if (AssetDragDropOp.IsValid() && AssetDragDropOp->HasAssetPaths())
 		{
-			return FString::Printf(TEXT("@asset:%s"), *AssetDragDropOp->GetAssetPaths()[0]);
+			for (const FString& AssetPath : AssetDragDropOp->GetAssetPaths())
+			{
+				if (!AssetPath.IsEmpty())
+				{
+					References.Add(FString::Printf(TEXT("@asset:%s"), *AssetPath));
+				}
+			}
+		}
+		if (!References.IsEmpty())
+		{
+			return FString::Join(References, LINE_TERMINATOR);
 		}
 		return TEXT("@asset:<dropped-asset>");
 	}
@@ -1508,19 +1542,53 @@ FString SMCPChatPanel::BuildDropReference(const TSharedPtr<FDragDropOperation>& 
 	if (Operation->IsOfType<FActorDragDropOp>())
 	{
 		const TSharedPtr<FActorDragDropOp> ActorDragDropOp = StaticCastSharedPtr<FActorDragDropOp>(Operation);
-		if (ActorDragDropOp.IsValid() && ActorDragDropOp->Actors.Num() > 0 && ActorDragDropOp->Actors[0].IsValid())
+		TArray<FString> References;
+		if (ActorDragDropOp.IsValid())
 		{
-			return FString::Printf(TEXT("@actor:%s"), *ActorDragDropOp->Actors[0]->GetName());
+			for (const TWeakObjectPtr<AActor>& ActorPtr : ActorDragDropOp->Actors)
+			{
+				if (ActorPtr.IsValid())
+				{
+					References.Add(FString::Printf(TEXT("@actor:%s"), *ActorPtr->GetName()));
+				}
+			}
+		}
+		if (!References.IsEmpty())
+		{
+			return FString::Join(References, LINE_TERMINATOR);
 		}
 		return TEXT("@actor:<dropped-actor>");
 	}
 
-	if (Operation->IsExternalOperation())
+	if (Operation->IsOfType<FExternalDragOperation>())
 	{
-		return TEXT("@file:<dropped-file>");
+		const TSharedPtr<FExternalDragOperation> ExternalDragDropOp = StaticCastSharedPtr<FExternalDragOperation>(Operation);
+		TArray<FString> References;
+		if (ExternalDragDropOp.IsValid() && ExternalDragDropOp->HasFiles())
+		{
+			for (const FString& FilePath : ExternalDragDropOp->GetFiles())
+			{
+				if (FilePath.IsEmpty())
+				{
+					continue;
+				}
+
+				FString NormalizedFilePath = FPaths::ConvertRelativePathToFull(FilePath);
+				FPaths::MakeStandardFilename(NormalizedFilePath);
+				References.Add(FString::Printf(TEXT("@file:%s"), *NormalizedFilePath));
+			}
+		}
+		if (!References.IsEmpty())
+		{
+			return FString::Join(References, LINE_TERMINATOR);
+		}
+		if (ExternalDragDropOp.IsValid() && ExternalDragDropOp->HasText())
+		{
+			return FString::Printf(TEXT("@text:%s"), *ExternalDragDropOp->GetText());
+		}
 	}
 
-	return TEXT("@drop:slate-operation");
+	return Operation->IsExternalOperation() ? TEXT("@file:<dropped-file>") : TEXT("");
 }
 
 FString SMCPChatPanel::ExtractFirstAssetReference(const FString& Message) const

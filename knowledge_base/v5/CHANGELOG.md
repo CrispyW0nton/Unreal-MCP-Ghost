@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### C.5 - Asset drag-and-drop
+
+- Upgraded `SMCPChatPanel` drops to accept Content Browser assets, Outliner actors, and OS file explorer drops as typed prompt references.
+- Added multi-item drop handling that inserts one `@asset`, `@actor`, or `@file` reference per line.
+- Normalized external file paths before inserting `@file:` references into the composer.
+- Added C.5 static tests guarding supported drag sources, typed reference formatting, OS file normalization, and multi-item joining.
+
 ### C.4 - Context chips
 
 - Added live context chips above the `SMCPChatPanel` composer for open level, selected actor, dirty assets, last compile status, and the SSE 8000 server.

@@ -48,7 +48,8 @@ class CoreChatPanelUxTest(unittest.TestCase):
         self.assertIn("@asset:<dropped-asset>", self.cpp)
         self.assertIn("@actor:<dropped-actor>", self.cpp)
         self.assertIn("@file:<dropped-file>", self.cpp)
-        self.assertIn("InsertComposerText(BuildDropReference(Operation))", self.cpp)
+        self.assertIn("const FString DropReference = BuildDropReference(Operation)", self.cpp)
+        self.assertIn("InsertComposerText(DropReference)", self.cpp)
 
     def test_streaming_delta_path_updates_existing_text_block(self) -> None:
         self.assertIn("AppendStreamingDelta", self.header)
