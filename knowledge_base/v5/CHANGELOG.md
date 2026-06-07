@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### B.9 - World Partition and HLOD tools
+
+- Added `wp_load_region`, `wp_unload_region`, and `wp_create_data_layer` for World Partition editor region and Data Layer authoring.
+- Added `hlod_generate` and `hlod_assign_layer` for World Partition HLOD builder passes and actor HLOD layer assignment.
+- Added native bridge routes, WorldPartitionEditor/DataLayerEditor module dependencies, usage guide notes, KB cross-links, inventory metadata, and B.9 offline smoke tests.
+
 ### B.8 - Motion Matching and Chooser tools
 
 - Added `motion_create_pose_search_schema`, `motion_create_pose_search_database`, `motion_add_database_sequence`, and `motion_inspect_pose_search_asset` for Pose Search authoring.

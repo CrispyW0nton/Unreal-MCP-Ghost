@@ -2554,6 +2554,11 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("spawn_blueprint_actor") ||
                      CommandType == TEXT("focus_viewport") ||
                      CommandType == TEXT("take_screenshot") ||
+                     CommandType == TEXT("wp_load_region") ||
+                     CommandType == TEXT("wp_unload_region") ||
+                     CommandType == TEXT("wp_create_data_layer") ||
+                     CommandType == TEXT("hlod_generate") ||
+                     CommandType == TEXT("hlod_assign_layer") ||
                      CommandType == TEXT("exec_python"))
             {
                 if (!EditorCommands.IsValid())

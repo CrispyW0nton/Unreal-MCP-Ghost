@@ -1945,6 +1945,55 @@ and AnimBP Motion Matching nodes against real locomotion clips.
 
 ---
 
+### B.9 World Partition and HLOD (`editor_tools.py`)
+
+Use these tools in World Partition editor worlds to load temporary edit regions,
+create Data Layers, assign HLOD layers, and launch HLOD commandlet passes from
+MCP. Always verify generated HLOD output in-editor before treating it as final.
+
+#### World Partition edit regions
+```python
+wp_load_region(
+    center=[0, 0, 0],
+    extent=[50000, 50000, 50000],
+    label="Downtown Edit Window"
+)
+wp_unload_region(label="Downtown Edit Window")
+```
+
+#### Data Layers
+```python
+wp_create_data_layer(
+    name="Gameplay_POIs",
+    type="runtime",
+    asset_path="/Game/DataLayers/Gameplay_POIs",
+    initially_visible=True,
+    loaded_in_editor=True,
+    initial_runtime_state="unloaded",
+    save=True
+)
+```
+
+#### HLOD setup and assignment
+```python
+hlod_assign_layer(
+    hlod_layer="/Game/HLOD/HLODLayer_Buildings",
+    actors=["SM_BlockoutTower_01", "SM_BlockoutTower_02"]
+)
+hlod_generate(
+    setup=True,
+    build=True,
+    force=False,
+    layer="HLODLayer_Buildings"
+)
+```
+
+After B.9 edits, inspect returned region/Data Layer/HLOD summaries, review the
+World Partition HLOD builder log, and test runtime streaming behavior with PIE
+and streaming-source movement.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |

@@ -82,7 +82,8 @@
   "tools.editor_tools": {
     "category": "editor_actor_viewport",
     "roadmap_phase": "baseline",
-    "status": "live"
+    "status": "live",
+    "coverage_note": "Includes B.9 World Partition, Data Layer, and HLOD editor tools."
   },
   "tools.exec_substrate": {
     "category": "execution_substrate",

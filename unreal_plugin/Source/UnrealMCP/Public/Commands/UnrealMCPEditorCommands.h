@@ -38,4 +38,11 @@ private:
 
     // Python scripting
     TSharedPtr<FJsonObject> HandleExecPython(const TSharedPtr<FJsonObject>& Params);
+
+    // World Partition / HLOD commands
+    TSharedPtr<FJsonObject> HandleWorldPartitionLoadRegion(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleWorldPartitionUnloadRegion(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleWorldPartitionCreateDataLayer(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleHLODGenerate(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleHLODAssignLayer(const TSharedPtr<FJsonObject>& Params);
 };

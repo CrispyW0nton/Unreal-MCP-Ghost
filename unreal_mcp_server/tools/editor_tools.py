@@ -83,6 +83,67 @@ def _native_or_python_json(command: str, params: Dict[str, Any], fallback_code: 
     return fallback
 
 
+def _make_result(
+    *,
+    success: bool,
+    stage: str,
+    message: str,
+    inputs: Dict[str, Any],
+    outputs: Optional[Dict[str, Any]] = None,
+    warnings: Optional[List[str]] = None,
+    errors: Optional[List[str]] = None,
+    t0: float,
+) -> Dict[str, Any]:
+    return {
+        "success": success,
+        "stage": stage,
+        "message": message,
+        "inputs": inputs,
+        "outputs": outputs or {},
+        "warnings": warnings or [],
+        "errors": errors or [],
+        "log_tail": [],
+        "meta": {"tool": stage, "duration_ms": int((time.monotonic() - t0) * 1000)},
+    }
+
+
+def _bridge_result(
+    *,
+    stage: str,
+    raw: Dict[str, Any],
+    inputs: Dict[str, Any],
+    message: str,
+    t0: float,
+) -> str:
+    raw = raw or {}
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    if failed:
+        msg = raw.get("error") or raw.get("message") or f"{stage} failed"
+        return json.dumps(_make_result(
+            success=False,
+            stage="error",
+            message=msg,
+            inputs=inputs,
+            errors=[msg],
+            t0=t0,
+        ))
+
+    warnings = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
+    outputs = {
+        key: value for key, value in raw.items()
+        if key not in {"success", "status", "message", "error", "warnings"}
+    }
+    return json.dumps(_make_result(
+        success=True,
+        stage=stage,
+        message=message,
+        inputs=inputs,
+        outputs=outputs,
+        warnings=warnings,
+        t0=t0,
+    ))
+
+
 def _insanitii_actor_fallback_code(actor_name_or_label: str = "INS_") -> str:
     return textwrap.dedent(f"""
         import json, unreal
@@ -3171,6 +3232,170 @@ def register_editor_tools(mcp: FastMCP):
             }) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def wp_load_region(
+        ctx: Context,
+        center: List[float] = [0.0, 0.0, 0.0],
+        extent: List[float] = [50000.0, 50000.0, 50000.0],
+        label: str = "MCP Loaded Region",
+    ) -> str:
+        """Load a World Partition editor region by bounding box.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            wp_load_region(center=[0, 0, 0], extent=[50000, 50000, 50000], label="Downtown Edit Window")"""
+        t0 = time.monotonic()
+        inputs = {
+            "center": [float(v) for v in center],
+            "extent": [float(v) for v in extent],
+            "label": label,
+        }
+        raw = _send_unreal_command("wp_load_region", inputs)
+        return _bridge_result(
+            stage="wp_load_region",
+            raw=raw,
+            inputs=inputs,
+            message="Loaded World Partition editor region",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def wp_unload_region(
+        ctx: Context,
+        label: str = "",
+        center: Optional[List[float]] = None,
+        extent: Optional[List[float]] = None,
+        min: Optional[List[float]] = None,
+        max: Optional[List[float]] = None,
+        exact: bool = False,
+    ) -> str:
+        """Unload matching World Partition editor region loaders.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            wp_unload_region(label="Downtown Edit Window")"""
+        t0 = time.monotonic()
+        inputs: Dict[str, Any] = {"label": label, "exact": exact}
+        if center is not None:
+            inputs["center"] = [float(v) for v in center]
+        if extent is not None:
+            inputs["extent"] = [float(v) for v in extent]
+        if min is not None:
+            inputs["min"] = [float(v) for v in min]
+        if max is not None:
+            inputs["max"] = [float(v) for v in max]
+        raw = _send_unreal_command("wp_unload_region", inputs)
+        return _bridge_result(
+            stage="wp_unload_region",
+            raw=raw,
+            inputs=inputs,
+            message="Unloaded matching World Partition editor regions",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def wp_create_data_layer(
+        ctx: Context,
+        name: str,
+        type: str = "runtime",
+        asset_path: str = "",
+        private: bool = False,
+        initially_visible: bool = True,
+        loaded_in_editor: bool = True,
+        initial_runtime_state: str = "unloaded",
+        save: bool = True,
+    ) -> str:
+        """Create or reuse a Data Layer asset and instance in the active editor world.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            wp_create_data_layer(name="Gameplay_POIs", type="runtime", asset_path="/Game/DataLayers/Gameplay_POIs")"""
+        t0 = time.monotonic()
+        inputs = {
+            "name": name,
+            "type": type,
+            "asset_path": asset_path,
+            "private": private,
+            "initially_visible": initially_visible,
+            "loaded_in_editor": loaded_in_editor,
+            "initial_runtime_state": initial_runtime_state,
+            "save": save,
+        }
+        raw = _send_unreal_command("wp_create_data_layer", inputs)
+        return _bridge_result(
+            stage="wp_create_data_layer",
+            raw=raw,
+            inputs=inputs,
+            message="Created or reused Data Layer",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def hlod_generate(
+        ctx: Context,
+        setup: bool = True,
+        build: bool = True,
+        delete: bool = False,
+        stats: bool = False,
+        force: bool = False,
+        report_only: bool = False,
+        layer: str = "",
+        actor: str = "",
+        extra_args: str = "",
+    ) -> str:
+        """Run the World Partition HLOD builder commandlet for the active map.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            hlod_generate(setup=True, build=True, layer="HLODLayer_Buildings")"""
+        t0 = time.monotonic()
+        inputs = {
+            "setup": setup,
+            "build": build,
+            "delete": delete,
+            "stats": stats,
+            "force": force,
+            "report_only": report_only,
+            "layer": layer,
+            "actor": actor,
+            "extra_args": extra_args,
+        }
+        raw = _send_unreal_command("hlod_generate", inputs)
+        return _bridge_result(
+            stage="hlod_generate",
+            raw=raw,
+            inputs=inputs,
+            message="Ran World Partition HLOD builder",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def hlod_assign_layer(
+        ctx: Context,
+        hlod_layer: str,
+        actors: Optional[List[str]] = None,
+        actor: str = "",
+    ) -> str:
+        """Assign an HLOD Layer asset to named actors or the current editor selection.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            hlod_assign_layer(hlod_layer="/Game/HLOD/HLODLayer_Buildings", actors=["SM_Blockout_01"])"""
+        t0 = time.monotonic()
+        inputs = {
+            "hlod_layer": hlod_layer,
+            "actors": actors or [],
+            "actor": actor,
+        }
+        raw = _send_unreal_command("hlod_assign_layer", inputs)
+        return _bridge_result(
+            stage="hlod_assign_layer",
+            raw=raw,
+            inputs=inputs,
+            message="Assigned HLOD layer to actors",
+            t0=t0,
+        )
 
     @mcp.tool()
     def exec_python(ctx: Context, code: str) -> Dict[str, Any]:

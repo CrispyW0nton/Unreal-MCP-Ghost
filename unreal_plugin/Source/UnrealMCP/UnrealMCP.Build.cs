@@ -120,6 +120,10 @@ public class UnrealMCP : ModuleRules
                 "Chooser",
                 "ChooserEditor",
 
+                // World Partition / Data Layer / HLOD authoring - required for B.9 tools
+                "WorldPartitionEditor",
+                "DataLayerEditor",
+
                 // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
                 // The user must have the "Python Editor Script Plugin" enabled in UE5.

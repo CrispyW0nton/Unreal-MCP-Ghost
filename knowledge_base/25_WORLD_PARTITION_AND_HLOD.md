@@ -42,9 +42,37 @@ MCP automation is placing or editing many actors.
 | --- | --- |
 | Inspect current level | `get_project_context`, actor/world inspection tools |
 | Scan large-world assets | `scan_project_assets`, world-building tools |
+| Load an edit window | `wp_load_region` |
+| Unload an edit window | `wp_unload_region` |
+| Create a Data Layer | `wp_create_data_layer` |
+| Build or report HLODs | `hlod_generate` |
+| Assign actor HLOD layer | `hlod_assign_layer` |
 | Place or update actors | editor actor tools, viewport tools, execution journal |
 | Audit performance | `stat`/viewport/profiling helpers, screenshot capture |
 | Verify streaming behavior | PIE launch/log tools and manual streaming-source checks |
+
+## MCP World Partition and HLOD Tools
+
+Use these tools when the active editor world uses World Partition and you need
+MCP-safe large-world authoring primitives before actor placement or HLOD builds.
+
+| Tool | Use |
+| --- | --- |
+| `wp_load_region` | Create a user World Partition loader adapter for a center/extent region and load matching cells in the editor. |
+| `wp_unload_region` | Unload and release matching editor loader adapters by label or region bounds. |
+| `wp_create_data_layer` | Create or reuse a Data Layer asset and instance, set runtime/editor type, visibility, editor load state, and initial runtime state. |
+| `hlod_generate` | Run the World Partition HLOD builder commandlet for setup/build/rebuild/delete/report/stat passes on the active map. |
+| `hlod_assign_layer` | Assign an HLOD Layer asset to named actors or the current editor selection. |
+
+Recommended MCP flow:
+
+1. Load a region with `wp_load_region` before placing or editing actors in a
+   large world.
+2. Group authored content with `wp_create_data_layer` when ownership or runtime
+   visibility matters.
+3. Assign an HLOD layer to large distant static actors with `hlod_assign_layer`.
+4. Run `hlod_generate` in report or build mode and inspect the commandlet log.
+5. Unload temporary edit windows with `wp_unload_region` after the edit pass.
 
 ## Working Example
 
