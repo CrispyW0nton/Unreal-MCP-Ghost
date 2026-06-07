@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.3 - Tool-call visualization
+
+- Added structured tool-call parsing to `SMCPChatPanel` for JSON MCP invocation/result payloads.
+- Rendered tool calls as collapsible cards showing tool name, args summary, status, and structured result summary.
+- Added a tool detail drawer that shows full args/result JSON and `log_tail` for selected tool cards.
+- Added a Repair action for failed tool cards that queues a `repair_tools` chain request through the chat bridge.
+- Added C.3 static tests guarding card rendering, detail drawer wiring, structured-result parsing, and repair prompt dispatch.
+
 ### C.2 - Core MCP Chat panel UX
 
 - Upgraded `SMCPChatPanel` to a resizable two-pane Slate layout with conversation history above a multiline composer.

@@ -27,6 +27,7 @@
 #include "Selection.h"
 #include "Styling/AppStyle.h"
 #include "UObject/SoftObjectPath.h"
+#include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Input/SHyperlink.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SMultiLineEditableTextBox.h"
@@ -47,6 +48,8 @@ namespace
 	const FSlateColor ToolMessageColor(FLinearColor(0.36f, 0.26f, 0.55f, 1.0f));
 	const FSlateColor CodeBlockColor(FLinearColor(0.06f, 0.07f, 0.09f, 1.0f));
 	const FSlateColor MarkdownAccentColor(FLinearColor(0.72f, 0.82f, 1.0f, 1.0f));
+	const FSlateColor ToolCardColor(FLinearColor(0.10f, 0.10f, 0.13f, 1.0f));
+	const FSlateColor ToolErrorColor(FLinearColor(0.46f, 0.10f, 0.10f, 1.0f));
 	const FSlateColor ErrorStatusColor(FLinearColor(0.9f, 0.18f, 0.12f, 1.0f));
 	const FSlateColor OkStatusColor(FLinearColor(0.2f, 0.75f, 0.28f, 1.0f));
 	const FSlateColor PendingStatusColor(FLinearColor(0.75f, 0.62f, 0.22f, 1.0f));
@@ -109,6 +112,36 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			SNew(STextBlock)
 			.Text(FText::Format(LOCTEXT("Endpoint", "Endpoint: {0}"), FText::FromString(ServerBaseUrl)))
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+			.Padding(8.0f)
+			[
+				SAssignNew(ToolDetailDrawer, SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SAssignNew(ToolDetailTitle, STextBlock)
+					.Text(LOCTEXT("ToolDetailEmptyTitle", "Tool Call Details"))
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					SAssignNew(ToolDetailBody, STextBlock)
+					.Text(LOCTEXT("ToolDetailEmptyBody", "Select a tool card to inspect full args, outputs, and log tail."))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.AutoWrapText(true)
+				]
+			]
 		]
 
 		+ SVerticalBox::Slot()
@@ -309,6 +342,27 @@ FReply SMCPChatPanel::HandleRevealAssetClicked(FString Message)
 	FContentBrowserModule& ContentBrowserModule = FModuleManager::LoadModuleChecked<FContentBrowserModule>(TEXT("ContentBrowser"));
 	ContentBrowserModule.Get().SyncBrowserToAssets(Assets);
 	SetStatus(FText::Format(LOCTEXT("StatusAssetRevealed", "Revealed {0}"), FText::FromString(AssetReference)), OkStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleToolDetailsClicked(FToolCallView ToolCall)
+{
+	ShowToolDetailDrawer(ToolCall);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleRepairToolClicked(FToolCallView ToolCall)
+{
+	const FString RepairPrompt = FString::Printf(
+		TEXT("Run the repair_tools chain for failed MCP tool `%s`. Status: %s. Result: %s. Details: %s"),
+		*ToolCall.ToolName,
+		*ToolCall.Status,
+		*ToolCall.ResultSummary,
+		*ToolCall.DetailJson
+	);
+	SendHumanMessage(RepairPrompt);
+	AddMessage(FChatMessage{MakeLocalMessageId(), TEXT("human"), RepairPrompt, MakeCurrentTimestamp()});
+	SetStatus(LOCTEXT("StatusRepairQueued", "Repair request queued"), PendingStatusColor);
 	return FReply::Handled();
 }
 
@@ -599,6 +653,13 @@ TSharedRef<SWidget> SMCPChatPanel::BuildMessageWidget(const FChatMessage& ChatMe
 			[
 				BuildMarkdownMessageBody(ChatMessage)
 			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+			[
+				BuildToolCallCards(ChatMessage)
+			]
 		];
 }
 
@@ -625,6 +686,103 @@ TSharedRef<SWidget> SMCPChatPanel::BuildMarkdownMessageBody(const FChatMessage& 
 	TSharedRef<SVerticalBox> BodyBox = SNew(SVerticalBox);
 	AddMarkdownBlocks(ChatMessage.Message, ChatMessage.MessageId, BodyBox);
 	return BodyBox;
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCards(const FChatMessage& ChatMessage)
+{
+	TArray<FToolCallView> ToolCalls;
+	ExtractToolCallsFromMessage(ChatMessage, ToolCalls);
+
+	TSharedRef<SVerticalBox> ToolCardsBox = SNew(SVerticalBox);
+	for (const FToolCallView& ToolCall : ToolCalls)
+	{
+		ToolCardsBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			BuildToolCallCard(ToolCall)
+		];
+	}
+
+	return ToolCardsBox;
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCall)
+{
+	const FSlateColor CardColor = ToolCall.bError ? ToolErrorColor : ToolCardColor;
+	const FText HeaderText = FText::Format(
+		LOCTEXT("ToolCardHeader", "{0}  |  {1}"),
+		FText::FromString(ToolCall.ToolName),
+		FText::FromString(ToolCall.Status.IsEmpty() ? TEXT("pending") : ToolCall.Status)
+	);
+
+	return SNew(SExpandableArea)
+		.InitiallyCollapsed(false)
+		.HeaderContent()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+			.BorderBackgroundColor(CardColor)
+			.Padding(6.0f)
+			[
+				SNew(STextBlock)
+				.Text(HeaderText)
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+		]
+		.BodyContent()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+			.BorderBackgroundColor(CardColor)
+			.Padding(8.0f)
+			[
+				SNew(SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text(FText::Format(LOCTEXT("ToolArgsSummary", "Args: {0}"), FText::FromString(ToolCall.ArgsSummary)))
+					.AutoWrapText(true)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::Format(LOCTEXT("ToolResultSummary", "Result: {0}"), FText::FromString(ToolCall.ResultSummary)))
+					.AutoWrapText(true)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[
+					SNew(SHorizontalBox)
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Text(LOCTEXT("ToolDetails", "Details"))
+						.OnClicked(this, &SMCPChatPanel::HandleToolDetailsClicked, ToolCall)
+					]
+
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					[
+						SNew(SButton)
+						.Visibility(ToolCall.bError ? EVisibility::Visible : EVisibility::Collapsed)
+						.Text(LOCTEXT("ToolRepair", "Repair"))
+						.OnClicked(this, &SMCPChatPanel::HandleRepairToolClicked, ToolCall)
+					]
+				]
+			]
+		];
 }
 
 void SMCPChatPanel::AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox)
@@ -787,6 +945,224 @@ void SMCPChatPanel::InsertComposerText(const FString& Text)
 	const FString ExistingText = MessageInput->GetText().ToString();
 	const FString Separator = ExistingText.IsEmpty() || ExistingText.EndsWith(TEXT("\n")) ? TEXT("") : LINE_TERMINATOR;
 	MessageInput->SetText(FText::FromString(ExistingText + Separator + Text));
+}
+
+void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
+{
+	if (ToolDetailTitle.IsValid())
+	{
+		ToolDetailTitle->SetText(FText::Format(LOCTEXT("ToolDetailTitle", "{0} details"), FText::FromString(ToolCall.ToolName)));
+	}
+
+	if (ToolDetailBody.IsValid())
+	{
+		const FString DetailText = FString::Printf(
+			TEXT("Status: %s\n\nArgs summary:\n%s\n\nResult:\n%s\n\nFull detail:\n%s\n\nLog tail:\n%s"),
+			*ToolCall.Status,
+			*ToolCall.ArgsSummary,
+			*ToolCall.ResultSummary,
+			*ToolCall.DetailJson,
+			*ToolCall.LogTail
+		);
+		ToolDetailBody->SetText(FText::FromString(DetailText));
+	}
+
+	SetStatus(LOCTEXT("StatusToolDetailsOpen", "Tool details open"), OkStatusColor);
+}
+
+void SMCPChatPanel::ExtractToolCallsFromMessage(const FChatMessage& ChatMessage, TArray<FToolCallView>& OutToolCalls) const
+{
+	const FString Text = ChatMessage.Message.TrimStartAndEnd();
+	if (Text.IsEmpty() || (!Text.StartsWith(TEXT("{")) && !Text.StartsWith(TEXT("["))))
+	{
+		return;
+	}
+
+	TSharedPtr<FJsonValue> RootValue;
+	const TSharedRef<TJsonReader<>> Reader = TJsonReaderFactory<>::Create(Text);
+	if (!FJsonSerializer::Deserialize(Reader, RootValue) || !RootValue.IsValid())
+	{
+		return;
+	}
+
+	if (RootValue->Type == EJson::Object)
+	{
+		FToolCallView ToolCall;
+		if (TryBuildToolCallFromJsonObject(RootValue->AsObject(), ChatMessage.MessageId, ToolCall))
+		{
+			OutToolCalls.Add(ToolCall);
+		}
+		return;
+	}
+
+	if (RootValue->Type == EJson::Array)
+	{
+		for (const TSharedPtr<FJsonValue>& Item : RootValue->AsArray())
+		{
+			if (!Item.IsValid() || Item->Type != EJson::Object)
+			{
+				continue;
+			}
+
+			FToolCallView ToolCall;
+			if (TryBuildToolCallFromJsonObject(Item->AsObject(), ChatMessage.MessageId, ToolCall))
+			{
+				OutToolCalls.Add(ToolCall);
+			}
+		}
+	}
+}
+
+bool SMCPChatPanel::TryBuildToolCallFromJsonObject(const TSharedPtr<FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const
+{
+	if (!Object.IsValid())
+	{
+		return false;
+	}
+
+	FString ToolName = GetStringField(Object, TEXT("tool"));
+	if (ToolName.IsEmpty())
+	{
+		ToolName = GetStringField(Object, TEXT("tool_name"));
+	}
+	if (ToolName.IsEmpty())
+	{
+		ToolName = GetStringField(Object, TEXT("name"));
+	}
+
+	const TSharedPtr<FJsonObject>* InvocationObject = nullptr;
+	if (ToolName.IsEmpty() && Object->TryGetObjectField(TEXT("tool_call"), InvocationObject) && InvocationObject && InvocationObject->IsValid())
+	{
+		return TryBuildToolCallFromJsonObject(*InvocationObject, MessageId, OutToolCall);
+	}
+
+	if (ToolName.IsEmpty())
+	{
+		return false;
+	}
+
+	FString Status = GetStringField(Object, TEXT("status"));
+	if (Status.IsEmpty())
+	{
+		Status = GetStringField(Object, TEXT("stage"));
+	}
+
+	bool bSuccess = false;
+	const bool bHasSuccess = Object->TryGetBoolField(TEXT("success"), bSuccess);
+	bool bError = Status.Contains(TEXT("error"), ESearchCase::IgnoreCase) || Status.Contains(TEXT("fail"), ESearchCase::IgnoreCase);
+	if (bHasSuccess)
+	{
+		bError = !bSuccess;
+		if (Status.IsEmpty())
+		{
+			Status = bSuccess ? TEXT("success") : TEXT("error");
+		}
+	}
+	if (Status.IsEmpty())
+	{
+		Status = TEXT("pending");
+	}
+
+	const TSharedPtr<FJsonObject>* ArgsObject = nullptr;
+	FString ArgsSummary = TEXT("(none)");
+	if (Object->TryGetObjectField(TEXT("args"), ArgsObject) && ArgsObject && ArgsObject->IsValid())
+	{
+		ArgsSummary = SummarizeJsonObject(*ArgsObject);
+	}
+	else if (Object->TryGetObjectField(TEXT("arguments"), ArgsObject) && ArgsObject && ArgsObject->IsValid())
+	{
+		ArgsSummary = SummarizeJsonObject(*ArgsObject);
+	}
+	else if (const TSharedPtr<FJsonValue> ArgsValue = Object->TryGetField(TEXT("args")); ArgsValue.IsValid())
+	{
+		ArgsSummary = SummarizeJsonValue(ArgsValue);
+	}
+
+	const TSharedPtr<FJsonObject>* OutputsObject = nullptr;
+	FString ResultSummary = GetStringField(Object, TEXT("message"));
+	if (ResultSummary.IsEmpty() && Object->TryGetObjectField(TEXT("outputs"), OutputsObject) && OutputsObject && OutputsObject->IsValid())
+	{
+		ResultSummary = SummarizeJsonObject(*OutputsObject);
+	}
+	else if (const TSharedPtr<FJsonValue> OutputValue = Object->TryGetField(TEXT("result")); ResultSummary.IsEmpty() && OutputValue.IsValid())
+	{
+		ResultSummary = SummarizeJsonValue(OutputValue);
+	}
+	if (ResultSummary.IsEmpty())
+	{
+		ResultSummary = TEXT("(no structured result yet)");
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* LogTailArray = nullptr;
+	FString LogTail = TEXT("(empty)");
+	if (Object->TryGetArrayField(TEXT("log_tail"), LogTailArray) && LogTailArray)
+	{
+		TArray<FString> LogLines;
+		for (const TSharedPtr<FJsonValue>& LogValue : *LogTailArray)
+		{
+			LogLines.Add(SummarizeJsonValue(LogValue, 240));
+		}
+		LogTail = FString::Join(LogLines, LINE_TERMINATOR);
+	}
+
+	OutToolCall.MessageId = MessageId;
+	OutToolCall.ToolName = ToolName;
+	OutToolCall.ArgsSummary = ArgsSummary;
+	OutToolCall.Status = Status;
+	OutToolCall.ResultSummary = TruncateForCard(ResultSummary, 240);
+	OutToolCall.DetailJson = JsonObjectToString(Object);
+	OutToolCall.LogTail = LogTail;
+	OutToolCall.bError = bError;
+	return true;
+}
+
+FString SMCPChatPanel::JsonObjectToString(const TSharedPtr<FJsonObject>& Object) const
+{
+	if (!Object.IsValid())
+	{
+		return TEXT("{}");
+	}
+
+	FString Text;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Text);
+	FJsonSerializer::Serialize(Object.ToSharedRef(), Writer);
+	return Text;
+}
+
+FString SMCPChatPanel::JsonValueToString(const TSharedPtr<FJsonValue>& Value) const
+{
+	if (!Value.IsValid())
+	{
+		return TEXT("");
+	}
+
+	FString Text;
+	const TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Text);
+	FJsonSerializer::Serialize(Value, TEXT(""), Writer);
+	return Text;
+}
+
+FString SMCPChatPanel::SummarizeJsonObject(const TSharedPtr<FJsonObject>& Object, int32 MaxChars) const
+{
+	return TruncateForCard(JsonObjectToString(Object), MaxChars);
+}
+
+FString SMCPChatPanel::SummarizeJsonValue(const TSharedPtr<FJsonValue>& Value, int32 MaxChars) const
+{
+	return TruncateForCard(JsonValueToString(Value), MaxChars);
+}
+
+FString SMCPChatPanel::TruncateForCard(const FString& Text, int32 MaxChars) const
+{
+	FString Compact = Text;
+	Compact.ReplaceInline(TEXT("\r"), TEXT(" "));
+	Compact.ReplaceInline(TEXT("\n"), TEXT(" "));
+	Compact = Compact.TrimStartAndEnd();
+	if (Compact.Len() > MaxChars)
+	{
+		return Compact.Left(MaxChars - 3) + TEXT("...");
+	}
+	return Compact;
 }
 
 void SMCPChatPanel::SetStatus(const FText& Text, const FSlateColor& Color)

@@ -243,6 +243,7 @@ The panel:
 - Polls agent replies from `/chat/poll?sender=agent`
 - Uses a resizable conversation/composer split with multiline input, drag/drop reference insertion, and Enter-to-send / Shift+Enter newline behavior
 - Renders role-tagged user, agent, and tool message bubbles with Copy, Re-run, Open Log, and Reveal Asset actions
+- Renders structured MCP tool invocations as collapsible cards with args, status, result summaries, full-detail drawer, log tail, and a Repair action for failed tool results
 - Renders fenced Markdown code blocks as highlighted monospaced blocks and updates streaming `data:` deltas in place when available
 - Includes editor context such as current level and selected actor
 - Shows connection status against `http://127.0.0.1:8000`
