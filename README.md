@@ -2,7 +2,7 @@
 
 Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP server that lets AI agents inspect and modify live UE projects through the Model Context Protocol.
 
-The current server registers **600 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window that can send messages to Cursor through the server.
+The current server registers **600 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window with live context chips that can send messages to Cursor through the server.
 
 ## What It Can Do
 
@@ -14,7 +14,7 @@ The current server registers **600 MCP tools**. The plugin exposes a TCP bridge 
 - Add VFX/audio/material logic: Niagara components, spawn Niagara nodes, sound nodes, material instance parameters, collision settings, and Sequencer transform tracks.
 - Validate and repair Blueprints with diagnostic, repair, execution journal, action risk-evaluation, PIE, log, and viewport evidence tools.
 - Provide a repo knowledge base for UE5 workflows, Blueprint patterns, MCP usage, first-person systems, retargeting, Sequencer, Control Rig, weapons, melee, force powers, and boss AI.
-- Provide an editor-side chat panel plus an optional Cursor SDK watcher for automatic replies.
+- Provide an editor-side chat panel with live level, actor, dirty-asset, compile, and SSE server context chips plus an optional Cursor SDK watcher for automatic replies.
 
 ## Architecture
 

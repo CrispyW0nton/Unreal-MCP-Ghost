@@ -48,6 +48,7 @@ private:
 	FReply HandleRevealAssetClicked(FString Message);
 	FReply HandleToolDetailsClicked(FToolCallView ToolCall);
 	FReply HandleRepairToolClicked(FToolCallView ToolCall);
+	FReply HandleContextChipClicked(FString Reference);
 	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
 	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
 	bool HandlePollTick(float DeltaTime);
@@ -63,6 +64,7 @@ private:
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCard(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildContextChips();
 	void AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox);
 	void AppendStreamingDelta(const FString& MessageId, const FString& Sender, const FString& Delta, bool bDone);
 	bool ApplySseLine(const FString& Line);
@@ -72,12 +74,26 @@ private:
 	void UpdateLastAgentTimestamp(const TArray<FChatMessage>& Messages);
 
 	void ExtractToolCallsFromMessage(const FChatMessage& ChatMessage, TArray<FToolCallView>& OutToolCalls) const;
+	void UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage);
 	bool TryBuildToolCallFromJsonObject(const TSharedPtr<class FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const;
 	FString JsonObjectToString(const TSharedPtr<class FJsonObject>& Object) const;
 	FString JsonValueToString(const TSharedPtr<class FJsonValue>& Value) const;
 	FString SummarizeJsonObject(const TSharedPtr<class FJsonObject>& Object, int32 MaxChars = 180) const;
 	FString SummarizeJsonValue(const TSharedPtr<class FJsonValue>& Value, int32 MaxChars = 180) const;
 	FString TruncateForCard(const FString& Text, int32 MaxChars = 180) const;
+	FText GetOpenLevelChipText() const;
+	FText GetSelectedActorChipText() const;
+	FText GetDirtyAssetsChipText() const;
+	FText GetLastCompileChipText() const;
+	FText GetServerChipText() const;
+	FString GetOpenLevelReference() const;
+	FString GetSelectedActorReference() const;
+	FString GetDirtyAssetsReference() const;
+	FString GetLastCompileReference() const;
+	FString GetServerReference() const;
+	FString GetOpenLevelName() const;
+	FString GetSelectedActorName() const;
+	int32 CountDirtyPackages() const;
 	FString MakeLocalMessageId() const;
 	FString NormaliseSender(const FString& Sender) const;
 	FText GetSenderLabel(const FString& Sender) const;
@@ -93,6 +109,7 @@ private:
 	TArray<FChatMessage> Messages;
 	TArray<TSharedPtr<class IHttpRequest, ESPMode::ThreadSafe>> ActiveRequests;
 	FString LastAgentPollTimestamp;
+	FString LastCompileStatus = TEXT("unknown");
 	FString ServerBaseUrl = TEXT("http://127.0.0.1:8000");
 
 	TSharedPtr<SScrollBox> MessageScrollBox;

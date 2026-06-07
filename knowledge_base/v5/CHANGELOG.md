@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### C.4 - Context chips
+
+- Added live context chips above the `SMCPChatPanel` composer for open level, selected actor, dirty assets, last compile status, and the SSE 8000 server.
+- Wired chip clicks to insert `@level`, `@actor`, `@dirty-assets`, `@last-compile`, and `@server` context references into the prompt.
+- Added editor-state helpers for current level, selected actor, dirty package count, and structured/text compile-result tracking.
+- Added C.4 static tests guarding chip labels, click wiring, inserted references, and editor context probes.
+
 ### C.3 - Tool-call visualization
 
 - Added structured tool-call parsing to `SMCPChatPanel` for JSON MCP invocation/result payloads.

@@ -27,6 +27,8 @@
 #include "Selection.h"
 #include "Styling/AppStyle.h"
 #include "UObject/SoftObjectPath.h"
+#include "UObject/Package.h"
+#include "UObject/UObjectIterator.h"
 #include "Widgets/Layout/SExpandableArea.h"
 #include "Widgets/Input/SHyperlink.h"
 #include "Widgets/Input/SButton.h"
@@ -37,6 +39,7 @@
 #include "Widgets/Layout/SSeparator.h"
 #include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Layout/SSpacer.h"
+#include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "SMCPChatPanel"
@@ -170,6 +173,13 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 				.Padding(8.0f)
 				[
 					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+					[
+						BuildContextChips()
+					]
 
 					+ SVerticalBox::Slot()
 					.AutoHeight()
@@ -366,6 +376,34 @@ FReply SMCPChatPanel::HandleRepairToolClicked(FToolCallView ToolCall)
 	return FReply::Handled();
 }
 
+FReply SMCPChatPanel::HandleContextChipClicked(FString Reference)
+{
+	if (Reference == TEXT("level"))
+	{
+		Reference = GetOpenLevelReference();
+	}
+	else if (Reference == TEXT("actor"))
+	{
+		Reference = GetSelectedActorReference();
+	}
+	else if (Reference == TEXT("dirty"))
+	{
+		Reference = GetDirtyAssetsReference();
+	}
+	else if (Reference == TEXT("compile"))
+	{
+		Reference = GetLastCompileReference();
+	}
+	else if (Reference == TEXT("server"))
+	{
+		Reference = GetServerReference();
+	}
+
+	InsertComposerText(Reference);
+	SetStatus(FText::Format(LOCTEXT("StatusContextInserted", "Inserted {0}"), FText::FromString(Reference)), OkStatusColor);
+	return FReply::Handled();
+}
+
 FReply SMCPChatPanel::OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent)
 {
 	return DragDropEvent.GetOperation().IsValid() ? FReply::Handled() : FReply::Unhandled();
@@ -541,6 +579,7 @@ void SMCPChatPanel::AddMessage(const FChatMessage& ChatMessage)
 	}
 
 	Messages.Add(MessageToAdd);
+	UpdateLastCompileStateFromMessage(MessageToAdd);
 
 	if (!MessageScrollBox.IsValid())
 	{
@@ -785,6 +824,51 @@ TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCa
 		];
 }
 
+TSharedRef<SWidget> SMCPChatPanel::BuildContextChips()
+{
+	return SNew(SWrapBox)
+
+		+ SWrapBox::Slot()
+		.Padding(0.0f, 0.0f, 6.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(this, &SMCPChatPanel::GetOpenLevelChipText)
+			.OnClicked(this, &SMCPChatPanel::HandleContextChipClicked, FString(TEXT("level")))
+		]
+
+		+ SWrapBox::Slot()
+		.Padding(0.0f, 0.0f, 6.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(this, &SMCPChatPanel::GetSelectedActorChipText)
+			.OnClicked(this, &SMCPChatPanel::HandleContextChipClicked, FString(TEXT("actor")))
+		]
+
+		+ SWrapBox::Slot()
+		.Padding(0.0f, 0.0f, 6.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(this, &SMCPChatPanel::GetDirtyAssetsChipText)
+			.OnClicked(this, &SMCPChatPanel::HandleContextChipClicked, FString(TEXT("dirty")))
+		]
+
+		+ SWrapBox::Slot()
+		.Padding(0.0f, 0.0f, 6.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(this, &SMCPChatPanel::GetLastCompileChipText)
+			.OnClicked(this, &SMCPChatPanel::HandleContextChipClicked, FString(TEXT("compile")))
+		]
+
+		+ SWrapBox::Slot()
+		.Padding(0.0f, 0.0f, 6.0f, 4.0f)
+		[
+			SNew(SButton)
+			.Text(this, &SMCPChatPanel::GetServerChipText)
+			.OnClicked(this, &SMCPChatPanel::HandleContextChipClicked, FString(TEXT("server")))
+		];
+}
+
 void SMCPChatPanel::AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox)
 {
 	TArray<FString> Lines;
@@ -968,6 +1052,169 @@ void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
 	}
 
 	SetStatus(LOCTEXT("StatusToolDetailsOpen", "Tool details open"), OkStatusColor);
+}
+
+void SMCPChatPanel::UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage)
+{
+	TArray<FToolCallView> ToolCalls;
+	ExtractToolCallsFromMessage(ChatMessage, ToolCalls);
+	for (const FToolCallView& ToolCall : ToolCalls)
+	{
+		if (ToolCall.ToolName.Contains(TEXT("compile"), ESearchCase::IgnoreCase))
+		{
+			LastCompileStatus = ToolCall.bError ? TEXT("fail") : TEXT("ok");
+			return;
+		}
+	}
+
+	const FString Text = ChatMessage.Message;
+	if (!Text.Contains(TEXT("compile"), ESearchCase::IgnoreCase))
+	{
+		return;
+	}
+
+	if (Text.Contains(TEXT("failed"), ESearchCase::IgnoreCase) ||
+		Text.Contains(TEXT("failure"), ESearchCase::IgnoreCase) ||
+		Text.Contains(TEXT("error"), ESearchCase::IgnoreCase))
+	{
+		LastCompileStatus = TEXT("fail");
+	}
+	else if (Text.Contains(TEXT("succeeded"), ESearchCase::IgnoreCase) ||
+		Text.Contains(TEXT("success"), ESearchCase::IgnoreCase) ||
+		Text.Contains(TEXT("compiled"), ESearchCase::IgnoreCase))
+	{
+		LastCompileStatus = TEXT("ok");
+	}
+}
+
+FText SMCPChatPanel::GetOpenLevelChipText() const
+{
+	const FString LevelName = GetOpenLevelName();
+	return FText::Format(
+		LOCTEXT("OpenLevelChip", "Open Level: {0}"),
+		FText::FromString(LevelName.IsEmpty() ? TEXT("none") : LevelName)
+	);
+}
+
+FText SMCPChatPanel::GetSelectedActorChipText() const
+{
+	const FString ActorName = GetSelectedActorName();
+	return FText::Format(
+		LOCTEXT("SelectedActorChip", "Selected Actor: {0}"),
+		FText::FromString(ActorName.IsEmpty() ? TEXT("none") : ActorName)
+	);
+}
+
+FText SMCPChatPanel::GetDirtyAssetsChipText() const
+{
+	return FText::Format(
+		LOCTEXT("DirtyAssetsChip", "Dirty Assets ({0})"),
+		FText::AsNumber(CountDirtyPackages())
+	);
+}
+
+FText SMCPChatPanel::GetLastCompileChipText() const
+{
+	if (LastCompileStatus == TEXT("ok"))
+	{
+		return FText::FromString(TEXT("Last Compile: \u2705"));
+	}
+	if (LastCompileStatus == TEXT("fail"))
+	{
+		return FText::FromString(TEXT("Last Compile: \u274C"));
+	}
+	return LOCTEXT("LastCompileUnknownChip", "Last Compile: ?");
+}
+
+FText SMCPChatPanel::GetServerChipText() const
+{
+	return LOCTEXT("ServerChip", "Server: SSE 8000");
+}
+
+FString SMCPChatPanel::GetOpenLevelReference() const
+{
+	const FString LevelName = GetOpenLevelName();
+	return FString::Printf(TEXT("@level:%s"), LevelName.IsEmpty() ? TEXT("none") : *LevelName);
+}
+
+FString SMCPChatPanel::GetSelectedActorReference() const
+{
+	const FString ActorName = GetSelectedActorName();
+	return FString::Printf(TEXT("@actor:%s"), ActorName.IsEmpty() ? TEXT("none") : *ActorName);
+}
+
+FString SMCPChatPanel::GetDirtyAssetsReference() const
+{
+	return FString::Printf(TEXT("@dirty-assets:%d"), CountDirtyPackages());
+}
+
+FString SMCPChatPanel::GetLastCompileReference() const
+{
+	return FString::Printf(TEXT("@last-compile:%s"), LastCompileStatus.IsEmpty() ? TEXT("unknown") : *LastCompileStatus);
+}
+
+FString SMCPChatPanel::GetServerReference() const
+{
+	return TEXT("@server:sse:8000");
+}
+
+FString SMCPChatPanel::GetOpenLevelName() const
+{
+	if (!GEditor)
+	{
+		return FString();
+	}
+
+	const UWorld* World = GEditor->GetEditorWorldContext().World();
+	if (!World || !World->GetOutermost())
+	{
+		return FString();
+	}
+
+	return FPackageName::GetShortName(World->GetOutermost()->GetName());
+}
+
+FString SMCPChatPanel::GetSelectedActorName() const
+{
+	if (!GEditor)
+	{
+		return FString();
+	}
+
+	USelection* SelectedActors = GEditor->GetSelectedActors();
+	if (!SelectedActors)
+	{
+		return FString();
+	}
+
+	for (FSelectionIterator Iterator(*SelectedActors); Iterator; ++Iterator)
+	{
+		if (const AActor* Actor = Cast<AActor>(*Iterator))
+		{
+			return Actor->GetName();
+		}
+	}
+
+	return FString();
+}
+
+int32 SMCPChatPanel::CountDirtyPackages() const
+{
+	int32 DirtyPackages = 0;
+	for (TObjectIterator<UPackage> Iterator; Iterator; ++Iterator)
+	{
+		const UPackage* Package = *Iterator;
+		if (!Package || Package->HasAnyFlags(RF_Transient))
+		{
+			continue;
+		}
+
+		if (Package->IsDirty())
+		{
+			++DirtyPackages;
+		}
+	}
+	return DirtyPackages;
 }
 
 void SMCPChatPanel::ExtractToolCallsFromMessage(const FChatMessage& ChatMessage, TArray<FToolCallView>& OutToolCalls) const
