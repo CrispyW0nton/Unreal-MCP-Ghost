@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### B.3 - Gameplay Ability System authoring tools
+
+- Added `gas_create_ability`, `gas_create_gameplay_effect`, `gas_create_gameplay_cue`, and `gas_create_attribute_set` for GAS asset creation.
+- Added `gas_grant_ability`, `gas_apply_effect`, and `gas_add_tag` for ASC-backed Blueprint authoring metadata.
+- Added `gas_create_ability_task_node` for AbilityTask factory nodes in GameplayAbility graphs.
+- Added native GAS bridge routes, inventory category metadata, usage guide notes, KB cross-links, and B.3 offline smoke tests.
+
 ### B.2 - graph-aware Blueprint/material diagnostics
 
 - Added `compile_blueprint_and_report` for compile status plus graph summaries.

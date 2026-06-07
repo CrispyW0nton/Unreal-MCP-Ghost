@@ -2212,6 +2212,52 @@ Recommended post-mutation sequence:
 
 ---
 
+### B.3 Gameplay Ability System (`gas_tools.py`)
+
+Use these tools to create a small GAS asset slice before wiring project-specific
+runtime grant, input, replication, and prediction code.
+
+#### GAS asset creation
+```python
+gas_create_ability(name="GA_Dash", path="/Game/GAS/Abilities")
+gas_create_gameplay_effect(name="GE_DashCooldown", path="/Game/GAS/Effects")
+gas_create_gameplay_cue(name="GCN_DashTrail", notify_type="actor")
+gas_create_attribute_set(name="AS_HeroCombat", path="/Game/GAS/Attributes")
+```
+
+#### GAS Blueprint annotations
+```python
+gas_grant_ability(
+    target_bp="/Game/BP_Hero",
+    ability="/Game/GAS/Abilities/GA_Dash",
+    level=1
+)
+gas_apply_effect(target_bp="/Game/BP_Hero", effect="/Game/GAS/Effects/GE_StartupStats")
+gas_add_tag(target_bp="/Game/BP_Hero", tag="Ability.Movement.Dash")
+```
+
+`gas_grant_ability`, `gas_apply_effect`, and `gas_add_tag` can ensure an
+`AbilitySystemComponent` exists on the target Blueprint and record auditable
+package metadata. They are authoring helpers; production runtime grant and
+attribute replication still belong in project C++ or verified Blueprint startup
+logic.
+
+#### Ability task nodes
+```python
+gas_create_ability_task_node(
+    blueprint_name="/Game/GAS/Abilities/GA_Dash",
+    task_class="AbilityTask_WaitDelay",
+    task_function="WaitDelay",
+    position_x=200,
+    position_y=120
+)
+```
+
+Follow any GAS authoring pass with `compile_blueprint_and_report` and a PIE
+slice that confirms activation, effect application, tag state, and replication.
+
+---
+
 ### StructuredResult Schema
 
 All substrate + import tools return this schema:

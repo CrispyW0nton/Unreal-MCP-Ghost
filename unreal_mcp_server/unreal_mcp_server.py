@@ -656,6 +656,8 @@ from tools.repair_tools import register_repair_tools
 from tools.niagara_tools import register_niagara_tools
 # V6 Skills — skill_repair_broken_blueprint
 from skills.repair_broken_blueprint.skill import register_repair_broken_blueprint_skill
+# B.3 Gameplay Ability System authoring tools
+from tools.gas_tools import register_gas_tools
 # UE editor chat bridge — HTTP routes + MCP tools
 from tools.chat_tools import register_chat_tools
 
@@ -715,6 +717,8 @@ register_repair_tools(mcp)
 register_niagara_tools(mcp)
 # V6 Skills — skill_repair_broken_blueprint
 register_repair_broken_blueprint_skill(mcp)
+# B.3 Gameplay Ability System tools
+register_gas_tools(mcp)
 # UE editor chat bridge
 register_chat_tools(mcp)
 

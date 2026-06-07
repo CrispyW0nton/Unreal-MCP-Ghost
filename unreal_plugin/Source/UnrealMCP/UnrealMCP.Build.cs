@@ -75,6 +75,8 @@ public class UnrealMCP : ModuleRules
                 "BehaviorTreeEditor",
                 "AIGraph",           // UAIGraph, UAIGraphNode, FGraphNodeClassData
                 "GameplayTasks",
+                "GameplayAbilities",
+                "GameplayTags",
 
                 // Animation Blueprint (extended ? Chapter 17)
                 "AnimGraph",

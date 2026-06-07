@@ -84,6 +84,11 @@
     "roadmap_phase": "baseline",
     "status": "live"
   },
+  "tools.gas_tools": {
+    "category": "gameplay_ability_system",
+    "roadmap_phase": "phase_3_gas",
+    "status": "live"
+  },
   "tools.gameplay_tools": {
     "category": "gameplay_framework",
     "roadmap_phase": "baseline",

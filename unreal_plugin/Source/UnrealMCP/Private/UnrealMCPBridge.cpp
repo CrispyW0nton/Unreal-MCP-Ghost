@@ -87,6 +87,7 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPCommonUtils.h"
 #include "Commands/UnrealMCPUMGCommands.h"
 #include "Commands/UnrealMCPExtendedCommands.h"
+#include "Commands/UnrealMCPGASCommands.h"
 #include "HAL/PlatformTime.h"
 #include "UnrealMCPModule.h"
 
@@ -2667,6 +2668,23 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
             {
                 ResultJson = UMGCommands->HandleCommand(CommandType, Params);
             }
+            // Gameplay Ability System Commands
+            else if (CommandType == TEXT("gas_create_ability") ||
+                     CommandType == TEXT("gas_create_gameplay_effect") ||
+                     CommandType == TEXT("gas_create_gameplay_cue") ||
+                     CommandType == TEXT("gas_create_attribute_set") ||
+                     CommandType == TEXT("gas_grant_ability") ||
+                     CommandType == TEXT("gas_apply_effect") ||
+                     CommandType == TEXT("gas_add_tag") ||
+                     CommandType == TEXT("gas_create_ability_task_node"))
+            {
+                static TSharedPtr<FUnrealMCPGASCommands> GASCommands;
+                if (!GASCommands.IsValid())
+                {
+                    GASCommands = MakeShared<FUnrealMCPGASCommands>();
+                }
+                ResultJson = GASCommands->HandleCommand(CommandType, Params);
+            }
             // Extended Commands ? all 283 tools from Blueprints Visual Scripting for UE5
             else if (ExtendedCommands.IsValid())
             {
@@ -2794,7 +2812,11 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
     else if (CommandType == TEXT("compile_blueprint") ||
              CommandType == TEXT("save_blueprint")    ||
              CommandType == TEXT("create_blueprint")  ||
-             CommandType == TEXT("add_skeleton_socket"))
+             CommandType == TEXT("add_skeleton_socket") ||
+             CommandType == TEXT("gas_create_ability") ||
+             CommandType == TEXT("gas_create_gameplay_effect") ||
+             CommandType == TEXT("gas_create_gameplay_cue") ||
+             CommandType == TEXT("gas_create_attribute_set"))
     {
         TimeoutSeconds = 80.0;   // legitimately slow
     }

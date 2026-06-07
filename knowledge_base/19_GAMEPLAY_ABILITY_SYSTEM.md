@@ -52,10 +52,33 @@ mode. Finish with PIE evidence.
 | --- | --- |
 | Inspect current project state | `get_project_context`, `scan_project_assets`, `list_available_tools("gas")` |
 | Find gameplay classes/assets | `scan_project_assets(path="/Game", class_filter="Blueprint")`, C++/reflection inspection tools |
-| Create Blueprint-facing assets | Blueprint asset tools, data tools, and import tools after C++ bases exist |
+| Create Blueprint-facing assets | `gas_create_ability`, `gas_create_gameplay_effect`, `gas_create_gameplay_cue`, `gas_create_attribute_set` |
+| Author default grants/effects/tags | `gas_grant_ability`, `gas_apply_effect`, `gas_add_tag` |
+| Add ability async task nodes | `gas_create_ability_task_node` |
 | Add variables/graphs | `bp_*` graph tools for small Blueprint ability helpers |
 | Verify replication shape | `net_describe_blueprint_replication`, `network_debug_replication`, PIE/log tools |
 | Document the slice | `execution_journal_*`, `skill_package_vertical_slice_report` |
+
+## MCP GAS Tools
+
+Workstream B.3 adds a focused GAS authoring surface:
+
+- `gas_create_ability` creates a Blueprint asset parented to `UGameplayAbility`
+  or a supplied ability base class.
+- `gas_create_gameplay_effect` creates a Blueprint `UGameplayEffect`.
+- `gas_create_gameplay_cue` creates an actor or static GameplayCue notify.
+- `gas_create_attribute_set` creates an AttributeSet Blueprint when the target
+  project supports Blueprint AttributeSet subclasses.
+- `gas_grant_ability`, `gas_apply_effect`, and `gas_add_tag` ensure an
+  `AbilitySystemComponent` exists on the target Blueprint when requested and
+  record auditable package metadata for the intended default grant/effect/tag.
+- `gas_create_ability_task_node` adds a static BlueprintCallable AbilityTask
+  factory call node to a GameplayAbility graph.
+
+These tools create and annotate assets; they do not replace project-specific
+C++ base classes for replicated attributes, input binding, prediction policy, or
+runtime grant code. After using them, run `compile_blueprint_and_report` and a
+small PIE validation slice.
 
 ## Working Example
 
