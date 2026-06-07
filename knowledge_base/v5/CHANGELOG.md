@@ -6,6 +6,13 @@
 
 ## 2026-06-07
 
+### C.1 - Editor-only chat module split
+
+- Added `UnrealMCPEditor`, a dedicated editor-only module for the dockable MCP Chat panel.
+- Moved `SMCPChatPanel` under `unreal_plugin/Source/UnrealMCPEditor/` with a Public/Private module split.
+- Moved chat tab registration and `Window > MCP Chat` menu wiring out of the core `UnrealMCP` module startup.
+- Added static tests to keep the C.1 module boundary and descriptor entry from regressing.
+
 ### B.14 - MetaHuman pipeline tools
 
 - Added `metahuman_import` for assembled MetaHuman package registration, asset-tree scanning, and manifest creation.

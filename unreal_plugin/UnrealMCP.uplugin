@@ -99,6 +99,17 @@
 				"Engine",
 				"UnrealEd"
 			]
+		},
+		{
+			"Name": "UnrealMCPEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"AdditionalDependencies": [
+				"CoreUObject",
+				"Engine",
+				"UnrealEd",
+				"UnrealMCP"
+			]
 		}
 	]
 }

@@ -27,4 +27,4 @@ public:
 	{
 		return FModuleManager::Get().IsModuleLoaded("UnrealMCP");
 	}
-}; 
+};

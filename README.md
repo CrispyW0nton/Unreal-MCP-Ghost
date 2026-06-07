@@ -33,7 +33,8 @@ Python FastMCP server
 UnrealMCP UE plugin
   - localhost:55557
   - runs commands on the editor GameThread
-  - includes Window > MCP Chat
+  - UnrealMCP module: TCP bridge and command handlers
+  - UnrealMCPEditor module: Window > MCP Chat
   |
   v
 Unreal Engine Editor
@@ -231,6 +232,9 @@ The plugin registers a dockable tab:
 ```text
 Window > MCP Chat
 ```
+
+The tab is implemented in the editor-only `UnrealMCPEditor` module so the core
+`UnrealMCP` module can stay focused on TCP bridge command handling.
 
 The panel:
 
