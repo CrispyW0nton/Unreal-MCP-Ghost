@@ -6,6 +6,14 @@
 
 ## 2026-06-07
 
+### C.9 - Command palette
+
+- Added a Ctrl+K command palette to `SMCPChatPanel` with a header button and in-panel search surface.
+- Populated fuzzy-searchable entries from MCP tools, core KB docs, recent `@asset:` references, recent user prompts, and slash commands.
+- Wired palette clicks to insert tool templates, KB prompts, asset references, recent prompts, or slash command text into the composer.
+- Routed `/clear` through the existing clear-history action while keeping `/help`, `/undo`, and `/repair` available from the palette.
+- Added C.9 static tests guarding command palette declarations, Ctrl+K/button wiring, search sources, fuzzy matching, click behavior, and this changelog entry.
+
 ### C.8 - Session management
 
 - Added named chat-session storage under `Saved/MCPChat/<session>.json` with session list, create, rename, pin, delete, and Markdown export helpers.

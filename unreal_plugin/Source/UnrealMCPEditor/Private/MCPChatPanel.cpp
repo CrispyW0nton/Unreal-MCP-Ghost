@@ -43,6 +43,7 @@
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Images/SImage.h"
+#include "Widgets/Input/SEditableTextBox.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "SMCPChatPanel"
@@ -109,6 +110,15 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 				SNew(SButton)
 				.Text(this, &SMCPChatPanel::GetToolPaletteToggleText)
 				.OnClicked(this, &SMCPChatPanel::HandleToggleToolPaletteClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("CommandPalette", "Command Palette"))
+				.OnClicked(this, &SMCPChatPanel::HandleOpenCommandPaletteClicked)
 			]
 
 			+ SHorizontalBox::Slot()
@@ -190,14 +200,31 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 
 				+ SSplitter::Slot()
 				.Value(0.78f)
-			[
-				SNew(SBorder)
-				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
-				.Padding(6.0f)
 				[
-					SAssignNew(MessageScrollBox, SScrollBox)
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+					[
+						SNew(SBox)
+						.Visibility(this, &SMCPChatPanel::GetCommandPaletteVisibility)
+						[
+							BuildCommandPalette()
+						]
+					]
+
+					+ SVerticalBox::Slot()
+					.FillHeight(1.0f)
+					[
+						SNew(SBorder)
+						.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+						.Padding(6.0f)
+						[
+							SAssignNew(MessageScrollBox, SScrollBox)
+						]
+					]
 				]
-			]
 
 			+ SSplitter::Slot()
 			.Value(0.22f)
@@ -445,8 +472,51 @@ FReply SMCPChatPanel::HandleToolPaletteToolClicked(FToolPaletteEntry Tool)
 	return FReply::Handled();
 }
 
+FReply SMCPChatPanel::HandleOpenCommandPaletteClicked()
+{
+	bCommandPaletteVisible = true;
+	CommandPaletteFilter.Empty();
+	RefreshCommandPaletteItems();
+	RebuildCommandPaletteResults();
+	if (CommandPaletteInput.IsValid())
+	{
+		CommandPaletteInput->SetText(FText::GetEmpty());
+		FSlateApplication::Get().SetKeyboardFocus(CommandPaletteInput.ToSharedRef());
+	}
+	SetStatus(LOCTEXT("StatusCommandPaletteOpened", "Command palette opened"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+void SMCPChatPanel::HandleCommandPaletteTextChanged(const FText& Text)
+{
+	CommandPaletteFilter = Text.ToString();
+	RebuildCommandPaletteResults();
+}
+
+FReply SMCPChatPanel::HandleCommandPaletteItemClicked(FCommandPaletteItem Item)
+{
+	if (Item.Kind == TEXT("slash") && Item.Label == TEXT("/clear"))
+	{
+		HandleClearClicked();
+	}
+	else
+	{
+		InsertComposerText(Item.InsertText.IsEmpty() ? Item.Label : Item.InsertText);
+		SetStatus(FText::Format(LOCTEXT("StatusCommandPaletteInserted", "Inserted {0}"), FText::FromString(Item.Label)), OkStatusColor);
+	}
+
+	bCommandPaletteVisible = false;
+	CommandPaletteFilter.Empty();
+	return FReply::Handled();
+}
+
 FReply SMCPChatPanel::HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent)
 {
+	if (InKeyEvent.GetKey() == EKeys::K && InKeyEvent.IsControlDown())
+	{
+		return HandleOpenCommandPaletteClicked();
+	}
+
 	if (InKeyEvent.GetKey() == EKeys::Enter && !InKeyEvent.IsShiftDown())
 	{
 		return HandleSendClicked();
@@ -628,6 +698,11 @@ void SMCPChatPanel::LoadHistory()
 			Messages = LoadedMessages;
 			UpdateLastAgentTimestamp(LoadedMessages);
 			RebuildMessageList();
+			if (bCommandPaletteVisible)
+			{
+				RefreshCommandPaletteItems();
+				RebuildCommandPaletteResults();
+			}
 			SetStatus(FText::Format(LOCTEXT("StatusConnectedSession", "Connected: {0}"), FText::FromString(CurrentSessionName)), OkStatusColor);
 		}
 		else
@@ -768,6 +843,11 @@ void SMCPChatPanel::LoadToolPalette()
 		ToolPaletteByCategory = MoveTemp(ParsedTools);
 		bToolPaletteLoaded = true;
 		RebuildToolPaletteList();
+		if (bCommandPaletteVisible)
+		{
+			RefreshCommandPaletteItems();
+			RebuildCommandPaletteResults();
+		}
 		SetStatus(LOCTEXT("StatusToolPaletteLoaded", "Tool palette loaded"), OkStatusColor);
 	});
 	Request->ProcessRequest();
@@ -850,6 +930,11 @@ void SMCPChatPanel::AddMessage(const FChatMessage& ChatMessage)
 
 	Messages.Add(MessageToAdd);
 	UpdateLastCompileStateFromMessage(MessageToAdd);
+	if (bCommandPaletteVisible)
+	{
+		RefreshCommandPaletteItems();
+		RebuildCommandPaletteResults();
+	}
 
 	if (!MessageScrollBox.IsValid())
 	{
@@ -1473,6 +1558,244 @@ void SMCPChatPanel::RebuildToolPaletteList()
 			];
 		}
 	}
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildCommandPalette()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("CommandPaletteTitle", "Command Palette"))
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(CommandPaletteInput, SEditableTextBox)
+				.HintText(LOCTEXT("CommandPaletteHint", "Search tools, KB docs, assets, prompts, and slash commands"))
+				.OnTextChanged(this, &SMCPChatPanel::HandleCommandPaletteTextChanged)
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SScrollBox)
+				.Orientation(Orient_Vertical)
+
+				+ SScrollBox::Slot()
+				[
+					SAssignNew(CommandPaletteResults, SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("CommandPaletteEmpty", "Open with Ctrl+K"))
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					]
+				]
+			]
+		];
+}
+
+void SMCPChatPanel::RefreshCommandPaletteItems()
+{
+	CommandPaletteItems.Reset();
+
+	AddCommandPaletteItem(TEXT("/help"), TEXT("Slash command"), TEXT("/help"), TEXT("slash"));
+	AddCommandPaletteItem(TEXT("/clear"), TEXT("Slash command"), TEXT("/clear"), TEXT("slash"));
+	AddCommandPaletteItem(TEXT("/undo"), TEXT("Slash command"), TEXT("/undo"), TEXT("slash"));
+	AddCommandPaletteItem(
+		TEXT("/repair"),
+		TEXT("Slash command"),
+		TEXT("Run the repair_tools chain for the most recent failed MCP action and explain the fix."),
+		TEXT("slash")
+	);
+
+	AddCommandPaletteItem(
+		TEXT("KB doc: v5 changelog"),
+		TEXT("kb://v5/CHANGELOG.md"),
+		TEXT("Open kb://v5/CHANGELOG.md and summarize the relevant recent MCP Chat changes."),
+		TEXT("kb")
+	);
+	AddCommandPaletteItem(
+		TEXT("KB doc: Unreal MCP book guidance"),
+		TEXT("docs/knowledge-base/README.md"),
+		TEXT("Use docs/knowledge-base/README.md and the Unreal MCP book study guides before planning this editor/plugin change."),
+		TEXT("kb")
+	);
+	AddCommandPaletteItem(
+		TEXT("KB doc: UE C++ scripting guide"),
+		TEXT("docs/knowledge-base/unreal-cpp-li-2023.md"),
+		TEXT("Use docs/knowledge-base/unreal-cpp-li-2023.md to check Unreal C++ and reflection guidance for this change."),
+		TEXT("kb")
+	);
+	AddCommandPaletteItem(
+		TEXT("KB doc: UE editor experience guide"),
+		TEXT("docs/knowledge-base/elevating-game-experiences-ue5-2e.md"),
+		TEXT("Use docs/knowledge-base/elevating-game-experiences-ue5-2e.md to check editor workflow and UI quality guidance."),
+		TEXT("kb")
+	);
+	AddCommandPaletteItem(
+		TEXT("KB doc: UE AI guide"),
+		TEXT("docs/knowledge-base/game-ai-unreal-sapio-2019.md"),
+		TEXT("Use docs/knowledge-base/game-ai-unreal-sapio-2019.md to check Behavior Tree, Blackboard, nav, and EQS guidance."),
+		TEXT("kb")
+	);
+
+	TArray<FString> Categories;
+	ToolPaletteByCategory.GetKeys(Categories);
+	Categories.Sort();
+	for (const FString& Category : Categories)
+	{
+		if (const TArray<FToolPaletteEntry>* Tools = ToolPaletteByCategory.Find(Category))
+		{
+			for (const FToolPaletteEntry& Tool : *Tools)
+			{
+				const FString Detail = Tool.Description.IsEmpty()
+					? FString::Printf(TEXT("Tool in %s"), *Category)
+					: FString::Printf(TEXT("%s - %s"), *Category, *Tool.Description);
+				AddCommandPaletteItem(Tool.Name, Detail, BuildToolPromptTemplate(Tool), TEXT("tool"));
+			}
+		}
+	}
+
+	TSet<FString> SeenAssetReferences;
+	for (const FChatMessage& Message : Messages)
+	{
+		int32 SearchIndex = 0;
+		while (SearchIndex < Message.Message.Len())
+		{
+			const int32 ReferenceIndex = Message.Message.Find(TEXT("@asset:"), ESearchCase::IgnoreCase, ESearchDir::FromStart, SearchIndex);
+			if (ReferenceIndex == INDEX_NONE)
+			{
+				break;
+			}
+
+			int32 ReferenceEnd = ReferenceIndex;
+			while (ReferenceEnd < Message.Message.Len() && !FChar::IsWhitespace(Message.Message[ReferenceEnd]))
+			{
+				++ReferenceEnd;
+			}
+
+			const FString Reference = Message.Message.Mid(ReferenceIndex, ReferenceEnd - ReferenceIndex).TrimStartAndEnd();
+			if (!Reference.IsEmpty() && !SeenAssetReferences.Contains(Reference))
+			{
+				SeenAssetReferences.Add(Reference);
+				AddCommandPaletteItem(
+					FString::Printf(TEXT("Recent asset: %s"), *Reference),
+					TEXT("Recent asset reference"),
+					Reference,
+					TEXT("asset")
+				);
+			}
+			SearchIndex = ReferenceEnd + 1;
+		}
+	}
+
+	int32 RecentPromptCount = 0;
+	for (int32 MessageIndex = Messages.Num() - 1; MessageIndex >= 0 && RecentPromptCount < 12; --MessageIndex)
+	{
+		const FChatMessage& Message = Messages[MessageIndex];
+		if (NormaliseSender(Message.Sender) != TEXT("user") || Message.Message.TrimStartAndEnd().IsEmpty())
+		{
+			continue;
+		}
+
+		const FString Prompt = Message.Message.TrimStartAndEnd();
+		AddCommandPaletteItem(
+			FString::Printf(TEXT("Recent prompt: %s"), *TruncateForCard(Prompt, 64)),
+			Message.Timestamp.IsEmpty() ? TEXT("Recent prompt") : Message.Timestamp,
+			Prompt,
+			TEXT("prompt")
+		);
+		++RecentPromptCount;
+	}
+}
+
+void SMCPChatPanel::RebuildCommandPaletteResults()
+{
+	if (!CommandPaletteResults.IsValid())
+	{
+		return;
+	}
+
+	CommandPaletteResults->ClearChildren();
+
+	int32 MatchCount = 0;
+	for (const FCommandPaletteItem& Item : CommandPaletteItems)
+	{
+		if (!CommandPaletteItemMatches(CommandPaletteFilter, Item))
+		{
+			continue;
+		}
+
+		CommandPaletteResults->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+		[
+			SNew(SButton)
+			.ToolTipText(FText::FromString(Item.Detail))
+			.OnClicked(this, &SMCPChatPanel::HandleCommandPaletteItemClicked, Item)
+			[
+				SNew(SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Item.Label))
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(Item.Detail))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.AutoWrapText(true)
+				]
+			]
+		];
+
+		++MatchCount;
+		if (MatchCount >= 20)
+		{
+			break;
+		}
+	}
+
+	if (MatchCount == 0)
+	{
+		CommandPaletteResults->AddSlot()
+		.AutoHeight()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("CommandPaletteNoMatches", "No command matches"))
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+		];
+	}
+}
+
+void SMCPChatPanel::AddCommandPaletteItem(const FString& Label, const FString& Detail, const FString& InsertText, const FString& Kind)
+{
+	FCommandPaletteItem Item;
+	Item.Label = Label;
+	Item.Detail = Detail;
+	Item.InsertText = InsertText;
+	Item.Kind = Kind;
+	CommandPaletteItems.Add(Item);
 }
 
 TSharedRef<SWidget> SMCPChatPanel::BuildContextChips()
@@ -2281,6 +2604,11 @@ EVisibility SMCPChatPanel::GetToolPaletteVisibility() const
 	return bToolPaletteVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
+EVisibility SMCPChatPanel::GetCommandPaletteVisibility() const
+{
+	return bCommandPaletteVisible ? EVisibility::Visible : EVisibility::Collapsed;
+}
+
 FText SMCPChatPanel::GetToolPaletteToggleText() const
 {
 	return bToolPaletteVisible ? LOCTEXT("HideToolPalette", "Hide Tools") : LOCTEXT("ShowToolPalette", "Show Tools");
@@ -2324,6 +2652,50 @@ FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) co
 
 	Template += TEXT("Return the StructuredResult and summarize warnings/errors.");
 	return Template;
+}
+
+bool SMCPChatPanel::CommandPaletteItemMatches(const FString& Filter, const FCommandPaletteItem& Item) const
+{
+	const FString Needle = Filter.TrimStartAndEnd().ToLower();
+	if (Needle.IsEmpty())
+	{
+		return true;
+	}
+
+	const FString Haystack = FString::Printf(
+		TEXT("%s %s %s %s"),
+		*Item.Label,
+		*Item.Detail,
+		*Item.InsertText,
+		*Item.Kind
+	).ToLower();
+	if (Haystack.Contains(Needle))
+	{
+		return true;
+	}
+
+	int32 HaystackIndex = 0;
+	for (int32 NeedleIndex = 0; NeedleIndex < Needle.Len(); ++NeedleIndex)
+	{
+		bool bMatchedCharacter = false;
+		while (HaystackIndex < Haystack.Len())
+		{
+			if (Haystack[HaystackIndex] == Needle[NeedleIndex])
+			{
+				bMatchedCharacter = true;
+				++HaystackIndex;
+				break;
+			}
+			++HaystackIndex;
+		}
+
+		if (!bMatchedCharacter)
+		{
+			return false;
+		}
+	}
+
+	return true;
 }
 
 FString SMCPChatPanel::BuildDropReference(const TSharedPtr<FDragDropOperation>& Operation) const

@@ -5,6 +5,7 @@
 #include "Widgets/SCompoundWidget.h"
 
 class SScrollBox;
+class SEditableTextBox;
 class SMultiLineEditableTextBox;
 class STextBlock;
 class SVerticalBox;
@@ -58,6 +59,14 @@ private:
 		bool bPinned = false;
 	};
 
+	struct FCommandPaletteItem
+	{
+		FString Label;
+		FString Detail;
+		FString InsertText;
+		FString Kind;
+	};
+
 	FReply HandleSendClicked();
 	FReply HandleClearClicked();
 	FReply HandleNewSessionClicked();
@@ -70,6 +79,9 @@ private:
 	FReply HandleToggleToolPaletteClicked();
 	FReply HandleRefreshToolPaletteClicked();
 	FReply HandleToolPaletteToolClicked(FToolPaletteEntry Tool);
+	FReply HandleOpenCommandPaletteClicked();
+	void HandleCommandPaletteTextChanged(const FText& Text);
+	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
 	FReply HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
 	FReply HandleCopyClicked(FString Message) const;
 	FReply HandleRerunClicked(FString Message, FString Sender);
@@ -94,6 +106,9 @@ private:
 	void RebuildMessageList();
 	void RebuildToolPaletteList();
 	void RebuildSessionList();
+	void RefreshCommandPaletteItems();
+	void RebuildCommandPaletteResults();
+	void AddCommandPaletteItem(const FString& Label, const FString& Detail, const FString& InsertText, const FString& Kind);
 	TSharedRef<SWidget> BuildMessageWidget(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
@@ -103,6 +118,7 @@ private:
 	TSharedRef<SWidget> BuildSessionSidebar();
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
+	TSharedRef<SWidget> BuildCommandPalette();
 	TSharedRef<SWidget> BuildContextChips();
 	void AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox);
 	void AppendStreamingDelta(const FString& MessageId, const FString& Sender, const FString& Delta, bool bDone);
@@ -140,11 +156,13 @@ private:
 	FText GetSenderLabel(const FString& Sender) const;
 	FSlateColor GetMessageColor(const FString& Sender) const;
 	EVisibility GetToolPaletteVisibility() const;
+	EVisibility GetCommandPaletteVisibility() const;
 	FText GetToolPaletteToggleText() const;
 	FString BuildSessionQueryParam() const;
 	FString BuildNewSessionName() const;
 	FString BuildRenamedSessionName() const;
 	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	bool CommandPaletteItemMatches(const FString& Filter, const FCommandPaletteItem& Item) const;
 	bool ParseSessionsResponse(const FString& JsonText, TArray<FChatSessionEntry>& OutSessions, FString& OutLastSession) const;
 	bool ParseToolPaletteResponse(const FString& JsonText, TMap<FString, TArray<FToolPaletteEntry>>& OutToolsByCategory) const;
 	FString BuildDropReference(const TSharedPtr<class FDragDropOperation>& Operation) const;
@@ -164,12 +182,17 @@ private:
 	FString LastSessionName = TEXT("default");
 	bool bToolPaletteVisible = true;
 	bool bToolPaletteLoaded = false;
+	bool bCommandPaletteVisible = false;
+	FString CommandPaletteFilter;
 	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
 	TArray<FChatSessionEntry> ChatSessions;
+	TArray<FCommandPaletteItem> CommandPaletteItems;
 
 	TSharedPtr<SVerticalBox> SessionList;
 	TSharedPtr<SVerticalBox> ToolPaletteList;
+	TSharedPtr<SVerticalBox> CommandPaletteResults;
 	TSharedPtr<SScrollBox> MessageScrollBox;
+	TSharedPtr<SEditableTextBox> CommandPaletteInput;
 	TSharedPtr<SMultiLineEditableTextBox> MessageInput;
 	TSharedPtr<STextBlock> StatusText;
 	TSharedPtr<SVerticalBox> ToolDetailDrawer;
