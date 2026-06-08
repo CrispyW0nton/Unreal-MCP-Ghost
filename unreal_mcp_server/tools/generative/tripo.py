@@ -57,7 +57,7 @@ class TripoProvider:
                 "output_folder": config.get("output_folder", "/Game/Generated"),
                 "session_credit_budget": config.get("session_credit_budget", 0),
             },
-            "next_milestones": ["D.7 playable slice skill"],
+            "next_milestones": ["D.8 knowledge base", "D.9 chat dock integration"],
         }
 
     def normalize_model_version(self, value: str | None) -> str:

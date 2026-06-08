@@ -668,6 +668,8 @@ from tools.repair_tools import register_repair_tools
 from tools.niagara_tools import register_niagara_tools
 # V6 Skills — skill_repair_broken_blueprint
 from skills.repair_broken_blueprint.skill import register_repair_broken_blueprint_skill
+# D.7 Skills — skill_generate_playable_slice
+from skills.playable_slice.skill import register_playable_slice_skill
 # B.3 Gameplay Ability System authoring tools
 from tools.gas_tools import register_gas_tools
 # B.4 Networking & Replication authoring tools
@@ -745,6 +747,8 @@ register_repair_tools(mcp)
 register_niagara_tools(mcp)
 # V6 Skills — skill_repair_broken_blueprint
 register_repair_broken_blueprint_skill(mcp)
+# D.7 Skills — skill_generate_playable_slice
+register_playable_slice_skill(mcp)
 # B.3 Gameplay Ability System tools
 register_gas_tools(mcp)
 # B.4 Networking & Replication tools

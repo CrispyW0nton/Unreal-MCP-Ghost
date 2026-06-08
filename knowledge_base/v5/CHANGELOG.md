@@ -6,6 +6,12 @@
 
 ## 2026-06-08
 
+### D.7 - Playable slice skill
+
+- Added `skill_generate_playable_slice` with offline plan mode and a Tripo-gated asset submission mode.
+- Added `knowledge_base/v5/PLAYABLE_SLICE_SCHEMA.json` for the generated slice plan contract.
+- Documented the D.7 API-key, credit-budget, and `confirm_spend=True` gates plus the remaining async import/Blueprint/PIE/report steps.
+
 ### D.6 - Texture-only path
 
 - Added `gen_texture_from_prompt` as the prompt-only texture entry point with channel/resolution validation and a Material Instance handoff plan.

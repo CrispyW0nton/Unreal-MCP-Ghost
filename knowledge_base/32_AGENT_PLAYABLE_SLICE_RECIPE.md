@@ -41,11 +41,57 @@ complete loop first, then expand.
 | Task | Preferred MCP direction |
 | --- | --- |
 | Discover current project | `get_project_context`, `scan_project_assets`, `list_available_tools` |
+| Plan generated slice | `skill_generate_playable_slice(mode="plan")` |
+| Start paid asset generation | `skill_generate_playable_slice(mode="submit_assets", confirm_spend=True)` |
 | Plan risk | `risk_evaluate_action` and a short execution journal |
 | Build gameplay | Blueprint, gameplay, data, UMG, AI, animation, material, and actor tools |
 | Verify editor state | compile/save/diagnostic tools and asset scans |
 | Verify runtime | `pie_launch_session`, `pie_capture_log`, `viewport_capture_screenshot` |
 | Package evidence | `execution_journal_finish`, `skill_package_vertical_slice_report` |
+
+## D7 Playable Slice Skill
+
+`skill_generate_playable_slice(brief)` is the D.7 high-order entry point for
+the headline generative demo. It converts a one-sentence brief into a validated
+`unreal_mcp_playable_slice_plan.v1` plan using
+`knowledge_base/v5/PLAYABLE_SLICE_SCHEMA.json`.
+
+Mode `plan` is offline and safe. It returns:
+
+- one hero asset, two prop assets, and one enemy asset planned for Tripo
+  `text_to_model`;
+- player, enemy AI, level, HUD, validation, and report targets;
+- the ordered tool phases for context, generation, import, Blueprint work, AI,
+  level placement, HUD, PIE evidence, and report packaging.
+
+Mode `submit_assets` is the first paid execution gate. It requires:
+
+- `TRIPO_API_KEY` from the environment or `Saved/MCPChat/secrets.json`;
+- enough remaining session credit budget;
+- `confirm_spend=True` after user approval.
+
+When those gates pass, the skill submits four Tripo `text_to_model` tasks and
+returns task IDs plus next steps. It does not pretend that asynchronous
+generation, import, Blueprint wiring, PIE, or report packaging have completed.
+Agents must continue through `gen_tripo_wait_for_task`,
+`gen_tripo_import_to_project`, Blueprint/AI/UMG tools, PIE evidence, and
+`skill_package_vertical_slice_report`.
+
+Example:
+
+```python
+skill_generate_playable_slice(
+    brief="third-person dungeon demo with a slime, a skeleton, and a boss",
+    mode="plan",
+)
+
+skill_generate_playable_slice(
+    brief="third-person dungeon demo with a slime, a skeleton, and a boss",
+    mode="submit_assets",
+    session_name="dungeon-demo",
+    confirm_spend=True,
+)
+```
 
 ## Working Example
 
