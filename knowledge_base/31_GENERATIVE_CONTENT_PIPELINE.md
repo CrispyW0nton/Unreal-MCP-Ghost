@@ -48,6 +48,7 @@ verified in-editor.
 | Submit Tripo generation tasks | `gen_tripo_text_to_model`, `gen_tripo_image_to_model`, `gen_tripo_multiview_to_model` |
 | Refine, texture, or export Tripo results | `gen_tripo_refine_model`, `gen_tripo_texture_model`, `gen_tripo_post_process` |
 | Plan prompt-only texture sets | `gen_texture_from_prompt` |
+| Plan Tripo Magic Brush paint sessions | `gen_prepare_texture_paint_session` |
 | Poll and collect Tripo outputs | `gen_tripo_get_task_status`, `gen_tripo_wait_for_task`, `gen_tripo_download_result` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
 | Import Tripo outputs into Unreal | `gen_tripo_import_to_project` |
@@ -359,6 +360,61 @@ material_set_instance_parameters_bulk(
     },
 )
 ```
+
+## Magic Brush Texture Edit Sessions
+
+`gen_prepare_texture_paint_session` records an offline Tripo Studio Magic Brush
+plan in `Saved/MCPChat/texture_paint_sessions.json`. It does not call Tripo,
+upload viewport renders, paint pixels, or spend credits. Use it when the Unreal
+chat UI needs to mirror Tripo's `Edit` tab before the user commits to a paid
+operation.
+
+The inspected Tripo Studio route is:
+
+```text
+https://studio.tripo3d.ai/workspace/texture-edit
+```
+
+The observed Studio UX is:
+
+1. Select or upload a textured model from the right Assets panel.
+2. In **Magic Brush**, use Gen Mode with a prompt and creativity strength to
+   generate preview texture images from the current mesh view.
+3. Choose a generated image, or switch to Paint Mode color.
+4. Open the brush bar and adjust size, strength, and hardness.
+5. Paint/blend onto the model, rotate the viewport, repeat as needed, and save.
+
+The observed Studio API flow is:
+
+- `retexture_generate` with `camera_matrix`, `model_version`, `project_id`,
+  `prompt`, `render_image`, and `strength`.
+- Poll the returned operation id, then fetch with `get_retexture`; image history
+  uses `get_retexture_images`.
+- Save/apply calls `apply_retexture` with `image_map`, `model_version`, and
+  `project_id`.
+
+Current MCP execution still uses the public task-model handoff:
+
+```python
+gen_prepare_texture_paint_session(
+    model_task_id="model-task-id",
+    texture_prompt="weathered copper with bright worn edges",
+    texture_reference_image="C:/Refs/copper_style.png",
+    viewport_view="front_three_quarter",
+    brush_strength=0.25,
+    brush_hardness=0.35,
+    creativity_strength=0.7,
+    blend_mode="soft_overlay",
+    paint_notes="blend across shoulder seams",
+    save_name="MI_CopperKnight_Edit",
+    tripo_project_id="studio-project-id",
+)
+```
+
+The returned `mcp_tool_sequence` starts with `gen_tripo_texture_model`, then
+`gen_tripo_wait_for_task`, then `gen_tripo_import_to_project`. Add a dedicated
+Studio `retexture_generate`/`apply_retexture` wrapper later if Tripo exposes
+those endpoints for API-key use outside the web workspace.
 
 ## D8 Generative Runbook
 

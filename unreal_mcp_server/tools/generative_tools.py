@@ -23,6 +23,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CHAT_DIR = _REPO_ROOT / "Saved" / "MCPChat"
 _SECRETS_PATH = _CHAT_DIR / "secrets.json"
 _SETTINGS_PATH = _CHAT_DIR / "generative_settings.json"
+_TEXTURE_PAINT_SESSIONS_PATH = _CHAT_DIR / "texture_paint_sessions.json"
 _PROVIDERS = ProviderRegistry([TRIPO_PROVIDER])
 _TRIPO_PROVIDER = _PROVIDERS.get("tripo")
 _TRIPO_BASE_URL = _TRIPO_PROVIDER.base_url
@@ -336,6 +337,143 @@ def _texture_from_prompt_plan(
             },
         ],
     }
+
+
+def _clamp_float(value: Any, default: float, minimum: float, maximum: float) -> float:
+    try:
+        number = float(value)
+    except (TypeError, ValueError):
+        number = default
+    return max(minimum, min(maximum, number))
+
+
+def _normalize_texture_reference(value: str) -> Dict[str, str]:
+    reference = _clean_optional_text(value)
+    if not reference:
+        return {"kind": "none", "value": ""}
+    parsed = urllib.parse.urlparse(reference)
+    if parsed.scheme in {"http", "https"}:
+        return {"kind": "url", "value": reference}
+    return {"kind": "path", "value": str(Path(reference))}
+
+
+def _build_texture_paint_session_plan(
+    *,
+    model_task_id: str,
+    texture_prompt: str,
+    texture_reference_image: str,
+    viewport_view: str,
+    camera_matrix: Optional[List[float]],
+    brush_size: float,
+    brush_strength: float,
+    brush_hardness: float,
+    creativity_strength: float,
+    paint_mode: str,
+    paint_color: str,
+    blend_mode: str,
+    paint_notes: str,
+    save_name: str,
+    tripo_project_id: str,
+) -> Dict[str, Any]:
+    reference = _normalize_texture_reference(texture_reference_image)
+    clean_view = _clean_optional_text(viewport_view) or "current"
+    clean_mode = (_clean_optional_text(paint_mode) or "image").lower()
+    if clean_mode not in {"image", "color"}:
+        clean_mode = "image"
+    clean_blend = _clean_optional_text(blend_mode) or "normal"
+    clean_save_name = _safe_name(save_name or f"{model_task_id}_MagicBrush", "MagicBrushTexture")
+    prompt_parts = [texture_prompt]
+    if reference["value"]:
+        prompt_parts.append(f"use {reference['kind']} reference {reference['value']} as the texture style target")
+    if paint_notes:
+        prompt_parts.append(f"paint/blend notes: {paint_notes}")
+    prompt_parts.append(
+        "Magic Brush intent: generate a high-fidelity texture preview from the mesh view, "
+        "paint it onto the visible model, rotate the model for coverage, blend seams, then save"
+    )
+    prompt_parts.append(
+        f"view={clean_view}; brush_size={brush_size:.3f}; brush_strength={brush_strength:.2f}; "
+        f"brush_hardness={brush_hardness:.2f}; blend_mode={clean_blend}; save_name={clean_save_name}"
+    )
+    if clean_mode == "color":
+        prompt_parts.append(f"paint mode color={paint_color or '#FFFFFF'}")
+
+    session_id = f"magic_brush_{_safe_name(model_task_id, 'model')}_{int(time.time())}"
+    prompt_text = "; ".join(part for part in prompt_parts if part)
+    plan = {
+        "session_id": session_id,
+        "provider": "tripo",
+        "workspace_route": "https://studio.tripo3d.ai/workspace/texture-edit",
+        "studio_tool_name": "Magic Brush",
+        "model_task_id": model_task_id,
+        "tripo_project_id": tripo_project_id,
+        "prompt": prompt_text,
+        "texture_reference": reference,
+        "viewport": {
+            "view": clean_view,
+            "camera_matrix": camera_matrix or [],
+        },
+        "brush": {
+            "mode": clean_mode,
+            "size": brush_size,
+            "strength": brush_strength,
+            "hardness": brush_hardness,
+            "creativity_strength": creativity_strength,
+            "color": paint_color or "#FFFFFF",
+            "blend_mode": clean_blend,
+            "notes": paint_notes,
+        },
+        "save": {
+            "name": clean_save_name,
+            "apply_behavior": "compile painted image parts and apply them as a saved retexture pass",
+        },
+        "observed_tripo_studio_flow": [
+            "Select or upload a textured model in the right Assets panel.",
+            "Use Magic Brush Gen Mode with a prompt and creativity strength to generate preview texture images from the current mesh view.",
+            "Choose a generated image or Paint Mode color, open the brush bar, adjust size, strength, and hardness.",
+            "Paint/blend onto the model, rotate the viewport for coverage, and repeat as needed.",
+            "Save applies uploaded painted image parts to the model.",
+        ],
+        "observed_studio_api_contract": {
+            "generate_preview": {
+                "endpoint": "/v2/studio/operation/retexture_generate",
+                "body_fields": ["camera_matrix", "model_version", "project_id", "prompt", "render_image", "strength"],
+                "poll_then_fetch": "/v2/studio/operation/get_retexture",
+                "image_history": "/v2/studio/operation/get_retexture_images",
+            },
+            "save_apply": {
+                "endpoint": "/v2/studio/operation/apply_retexture",
+                "body_fields": ["image_map", "model_version", "project_id"],
+            },
+        },
+        "mcp_tool_sequence": [
+            {
+                "tool": "gen_tripo_texture_model",
+                "args": {
+                    "task_id": model_task_id,
+                    "texture_prompt": prompt_text,
+                    "model_version": "v3.0-20250812",
+                    "texture": True,
+                    "pbr": True,
+                    "texture_alignment": "original_image",
+                    "confirm_spend": False,
+                },
+            },
+            {"tool": "gen_tripo_wait_for_task", "args": {"task_id": "<texture_task_id>", "timeout_s": 900, "poll_s": 10}},
+            {"tool": "gen_tripo_import_to_project", "args": {"task_id": "<texture_task_id>", "content_path": "/Game/Generated", "create_material_instance": True}},
+        ],
+    }
+    return plan
+
+
+def _save_texture_paint_session(plan: Dict[str, Any]) -> None:
+    sessions = _read_json_file(_TEXTURE_PAINT_SESSIONS_PATH)
+    items = sessions.get("sessions")
+    if not isinstance(items, list):
+        items = []
+    items.append(plan)
+    sessions["sessions"] = items[-50:]
+    _write_json_file(_TEXTURE_PAINT_SESSIONS_PATH, sessions)
 
 
 def _default_tripo_download_folder(task_id: str) -> Path:
@@ -1086,6 +1224,125 @@ def register_generative_tools(mcp: FastMCP):
             outputs=outputs,
             warnings=warnings,
             errors=errors,
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_prepare_texture_paint_session(
+        ctx: Context,
+        model_task_id: str,
+        texture_prompt: str,
+        texture_reference_image: str = "",
+        viewport_view: str = "current",
+        camera_matrix: Optional[List[float]] = None,
+        brush_size: float = 0.03,
+        brush_strength: float = 0.2,
+        brush_hardness: float = 0.0,
+        creativity_strength: float = 0.6,
+        paint_mode: str = "image",
+        paint_color: str = "#FFFFFF",
+        blend_mode: str = "normal",
+        paint_notes: str = "",
+        save_name: str = "",
+        tripo_project_id: str = "",
+        record_session: bool = True,
+    ) -> str:
+        """Plan a Tripo Studio Magic Brush texture-paint session without spending credits.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_prepare_texture_paint_session(model_task_id="model-task-id", texture_prompt="aged brass edge wear", brush_strength=0.25)"""
+        t0 = time.monotonic()
+        safe_task_id = _clean_optional_text(model_task_id)
+        safe_prompt = _clean_optional_text(texture_prompt)
+        safe_notes = _clean_optional_text(paint_notes)
+        safe_project_id = _clean_optional_text(tripo_project_id)
+        normalized_camera = []
+        if camera_matrix:
+            normalized_camera = [
+                _clamp_float(value, 0.0, -1000000.0, 1000000.0)
+                for value in camera_matrix
+            ]
+        normalized_brush_size = _clamp_float(brush_size, 0.03, 0.001, 0.1)
+        normalized_brush_strength = _clamp_float(brush_strength, 0.2, 0.01, 1.0)
+        normalized_hardness = _clamp_float(brush_hardness, 0.0, 0.0, 1.0)
+        normalized_creativity = _clamp_float(creativity_strength, 0.6, 0.0, 1.0)
+        inputs = {
+            "model_task_id": model_task_id,
+            "texture_prompt": texture_prompt,
+            "texture_reference_image": texture_reference_image,
+            "viewport_view": viewport_view,
+            "camera_matrix": camera_matrix or [],
+            "brush_size": brush_size,
+            "brush_strength": brush_strength,
+            "brush_hardness": brush_hardness,
+            "creativity_strength": creativity_strength,
+            "paint_mode": paint_mode,
+            "paint_color": paint_color,
+            "blend_mode": blend_mode,
+            "paint_notes": paint_notes,
+            "save_name": save_name,
+            "tripo_project_id": tripo_project_id,
+            "record_session": record_session,
+        }
+        if not safe_task_id:
+            return _result_json(
+                success=False,
+                stage="gen_prepare_texture_paint_session",
+                message="model_task_id is required",
+                inputs=inputs,
+                errors=["model_task_id is required"],
+                t0=t0,
+            )
+        if not safe_prompt:
+            return _result_json(
+                success=False,
+                stage="gen_prepare_texture_paint_session",
+                message="texture_prompt is required",
+                inputs=inputs,
+                errors=["texture_prompt is required"],
+                t0=t0,
+            )
+
+        plan = _build_texture_paint_session_plan(
+            model_task_id=safe_task_id,
+            texture_prompt=safe_prompt,
+            texture_reference_image=texture_reference_image,
+            viewport_view=viewport_view,
+            camera_matrix=normalized_camera,
+            brush_size=normalized_brush_size,
+            brush_strength=normalized_brush_strength,
+            brush_hardness=normalized_hardness,
+            creativity_strength=normalized_creativity,
+            paint_mode=paint_mode,
+            paint_color=_clean_optional_text(paint_color) or "#FFFFFF",
+            blend_mode=blend_mode,
+            paint_notes=safe_notes,
+            save_name=save_name,
+            tripo_project_id=safe_project_id,
+        )
+        if record_session:
+            _save_texture_paint_session(plan)
+
+        warnings = [
+            "This tool only prepares a Magic Brush texture-paint plan; it does not call Tripo, upload viewport images, paint pixels, or spend credits.",
+            "The public MCP execution handoff uses gen_tripo_texture_model until a dedicated Tripo Studio retexture/apply endpoint wrapper is implemented.",
+        ]
+        if not safe_project_id:
+            warnings.append("Tripo Studio apply_retexture uses project_id; provide tripo_project_id when mirroring the exact Studio Magic Brush save flow.")
+
+        return _result_json(
+            success=True,
+            stage="gen_prepare_texture_paint_session",
+            message="Prepared Tripo Magic Brush texture-paint session plan",
+            inputs=inputs,
+            outputs={
+                "session": plan,
+                "session_file": str(_TEXTURE_PAINT_SESSIONS_PATH) if record_session else "",
+                "estimated_credits": 0,
+                "spend_required": False,
+            },
+            warnings=warnings,
             t0=t0,
         )
 

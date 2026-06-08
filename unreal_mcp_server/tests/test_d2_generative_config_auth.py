@@ -47,6 +47,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_get_provider_config",
             "gen_save_provider_config",
             "gen_check_credit_budget",
+            "gen_prepare_texture_paint_session",
         }
         self.assertTrue(expected.issubset(set(self.mcp.tools)))
 
@@ -156,6 +157,44 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(overage["success"])
         self.assertFalse(overage["outputs"]["within_budget"])
 
+    async def test_prepare_texture_paint_session_records_magic_brush_plan_without_spend(self):
+        import tools.generative_tools as generative_tools
+
+        with tempfile.TemporaryDirectory() as tmp:
+            session_path = Path(tmp) / "Saved" / "MCPChat" / "texture_paint_sessions.json"
+            with patch.object(generative_tools, "_TEXTURE_PAINT_SESSIONS_PATH", session_path):
+                payload = json.loads(await self.mcp.tools["gen_prepare_texture_paint_session"](
+                    ctx=None,
+                    model_task_id="model-task-123",
+                    texture_prompt="weathered copper, worn bright edges",
+                    texture_reference_image="https://example.test/reference.png",
+                    viewport_view="front_three_quarter",
+                    camera_matrix=[1.0, 0.0, 0.0, 1.0],
+                    brush_size=0.04,
+                    brush_strength=0.25,
+                    brush_hardness=0.35,
+                    creativity_strength=0.7,
+                    paint_mode="image",
+                    blend_mode="soft_overlay",
+                    paint_notes="blend across shoulder seams",
+                    save_name="MI_CopperKnight_Edit",
+                    tripo_project_id="project-456",
+                ))
+                self.assertTrue(session_path.exists())
+                saved = json.loads(session_path.read_text(encoding="utf-8"))
+
+        _assert_structured(self, payload, "gen_prepare_texture_paint_session")
+        self.assertTrue(payload["success"])
+        self.assertFalse(payload["outputs"]["spend_required"])
+        session = payload["outputs"]["session"]
+        self.assertEqual(session["studio_tool_name"], "Magic Brush")
+        self.assertEqual(session["workspace_route"], "https://studio.tripo3d.ai/workspace/texture-edit")
+        self.assertEqual(session["brush"]["strength"], 0.25)
+        self.assertIn("retexture_generate", json.dumps(session["observed_studio_api_contract"]))
+        self.assertIn("apply_retexture", json.dumps(session["observed_studio_api_contract"]))
+        self.assertEqual(session["mcp_tool_sequence"][0]["tool"], "gen_tripo_texture_model")
+        self.assertEqual(saved["sessions"][0]["model_task_id"], "model-task-123")
+
     def test_d2_static_chat_panel_and_kb_wiring(self):
         panel_header = (REPO_ROOT / "unreal_plugin" / "Source" / "UnrealMCPEditor" / "Public" / "MCPChatPanel.h").read_text(encoding="utf-8")
         panel_cpp = (REPO_ROOT / "unreal_plugin" / "Source" / "UnrealMCPEditor" / "Private" / "MCPChatPanel.cpp").read_text(encoding="utf-8")
@@ -199,6 +238,17 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_get_provider_config",
             "gen_save_provider_config",
             "gen_check_credit_budget",
+            "gen_prepare_texture_paint_session",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, kb_text)
+                self.assertIn(token, generative_text)
+
+        for token in (
+            "Magic Brush",
+            "retexture_generate",
+            "apply_retexture",
+            "texture_paint_sessions.json",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, kb_text)

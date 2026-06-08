@@ -76,6 +76,10 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "Generate Asset action",
             "inline progress bar",
             "gen_tripo_wait_for_task",
+            "Magic Brush Texture Edit Sessions",
+            "gen_prepare_texture_paint_session",
+            "retexture_generate",
+            "apply_retexture",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.kb)
@@ -83,6 +87,7 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
         self.assertIn("D.9 - Chat dock generative integration", self.changelog)
         self.assertIn("Generate Asset quick action", self.changelog)
         self.assertIn("inline Tripo progress rendering", self.changelog)
+        self.assertIn("gen_prepare_texture_paint_session", self.changelog)
 
 
 if __name__ == "__main__":
