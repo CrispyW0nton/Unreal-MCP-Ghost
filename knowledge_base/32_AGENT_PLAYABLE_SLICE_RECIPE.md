@@ -140,6 +140,31 @@ skill_generate_playable_slice(
 This is the canonical D.8 prompt-and-tool recipe for the headline demo. Use it
 as the first pass before adding project-specific flourish.
 
+## Live Preflight
+
+Before attempting a real Tripo spend or claiming the end-to-end Unreal run is
+ready, run the no-spend preflight:
+
+```powershell
+python scripts/playable_slice_live_preflight.py
+```
+
+The preflight returns `unreal_mcp_playable_slice_live_preflight.v1` with
+`ready_for_live_spend`, gate statuses, and next actions. It checks the same
+practical blockers that stop a live generated playable slice:
+
+- `tripo_api_key`: `TRIPO_API_KEY` or `Saved/MCPChat/secrets.json` is configured
+  without printing the secret.
+- `credit_budget`: the session budget can cover the estimated four-asset slice.
+- `unreal_build_tooling`: UE `RunUAT`, the plugin descriptor, and
+  `scripts/build_unreal_plugin.ps1` are available.
+- `packaged_plugin`: a packaged Win64 UnrealMCP plugin build exists.
+- `unreal_bridge`: the Unreal MCP socket is reachable at the configured host and
+  port.
+
+Use `--require-ready` in automation when every gate must pass. The preflight
+does not contact Tripo, does not mutate Unreal, and does not reserve credits.
+
 ## Chat Dock Playable Slice Builder
 
 The MCP Chat dock now has a **Playable Slice** quick action for the headline
