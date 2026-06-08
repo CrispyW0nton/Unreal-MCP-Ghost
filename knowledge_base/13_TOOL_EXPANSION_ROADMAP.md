@@ -457,9 +457,9 @@ Slice 4 smoke result, 2026-05-17:
 
 - Extended `scripts/bridge_command_audit.py` with explicit review recommendations for C++ routes that are not referenced by Python wrappers.
 - Classified each C++-only route as `needs_python_wrapper`, `internal_alias`, `internal_helper`, `legacy_or_superseded`, or `recipe_or_sample`.
-- Current tracked-worktree review finds 21 C++-only routes: 11 should receive Python wrappers, 3 are aliases, 1 is an internal helper, 2 are legacy or superseded, and 4 are sample/recipe routes better suited to skills or removal.
-- Highest-priority remaining wrapper candidates are `add_blueprint_function_with_pins`, `add_interface_event_node`, `call_custom_event`, `connect_anim_graph_nodes`, `add_sequence_player_node`, and `set_pawn_properties`.
-- Native-route parity wrappers are now live for `set_behavior_tree_blackboard`, `bt_get_info`, `add_niagara_component`, `set_blueprint_parent_class`, `reconstruct_blueprint_node`, `set_spawn_actor_class`, and `rename_blueprint_comment_node`; existing graph helpers route supported `add_open_level_node`, `add_arithmetic_operator_node`, `add_relational_operator_node`, and `add_construction_script_node` calls through their native command names.
+- Current tracked-worktree review finds 14 C++-only routes: 5 should receive Python wrappers, 2 are aliases, 1 is an internal helper, 2 are legacy or superseded, and 4 are sample/recipe routes better suited to skills or removal.
+- Highest-priority remaining wrapper candidates are `add_clear_blackboard_value_node`, `add_finish_execute_node`, `add_get_random_reachable_point_node`, `add_map_variable`, and `set_pawn_properties`.
+- Native-route parity wrappers are now live for `set_behavior_tree_blackboard`, `bt_get_info`, `add_niagara_component`, `set_blueprint_parent_class`, `reconstruct_blueprint_node`, `set_spawn_actor_class`, `rename_blueprint_comment_node`, `add_blueprint_custom_event_node`, `add_blueprint_function_with_pins`, `add_interface_event_node`, `add_custom_event`, `call_custom_event`, `add_sequence_player_node`, and `connect_anim_graph_nodes`; existing graph helpers route supported `add_open_level_node`, `add_arithmetic_operator_node`, `add_relational_operator_node`, and `add_construction_script_node` calls through their native command names.
 - Offline tests now assert that the registry includes the C++-only review section and that high-value routes receive deterministic recommendations.
 
 Slice 5 smoke result, 2026-05-17:

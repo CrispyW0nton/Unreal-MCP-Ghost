@@ -17,6 +17,12 @@
 - Routed supported `add_open_level_node`, `add_arithmetic_operator_node`, `add_relational_operator_node`, and `add_construction_script_node` calls through their native bridge command names while preserving generic fallbacks for richer cases.
 - Reduced the tracked bridge audit's C++-only route backlog from 30 to 21 and updated the Phase 7 roadmap notes.
 
+### B.17 - Graph and animation bridge parity wrappers
+
+- Added native-route Python wrappers for typed Blueprint custom events/functions, interface events, custom-event calls, Sequence Player nodes, and AnimGraph pose-node connections so generated gameplay and animation graphs can use the routed C++ command names directly.
+- Reduced the tracked bridge audit's C++-only route backlog from 21 to 14, with Python-missing-C++ routes still at 0.
+- Updated the Phase 7 roadmap and offline parity tests for the new graph and animation wrappers.
+
 ### C.13 - Playable Slice quick action
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.

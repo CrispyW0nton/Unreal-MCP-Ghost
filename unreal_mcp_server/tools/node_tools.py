@@ -470,6 +470,140 @@ def register_blueprint_node_tools(mcp: FastMCP):
     # ------------------------------------------------------------------
 
     @mcp.tool()
+    def add_blueprint_custom_event_node(
+        ctx: Context,
+        blueprint_name: str,
+        event_name: str,
+        graph_name: str = "EventGraph",
+        inputs: Optional[List[Dict[str, str]]] = None,
+        node_position: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        """Add or update a custom event node with optional typed input pins.
+
+        This is the typed native route for generated gameplay events. Use it
+        when a generated Blueprint needs a named event that carries values such
+        as Damage, Instigator, TargetActor, or WaveIndex.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            event_name: Custom event name.
+            graph_name: Graph to operate on. Default 'EventGraph'.
+            inputs: Optional input pin specs like [{"name": "Damage", "type": "Float"}].
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_custom_event_node(blueprint_name="/Game/MCP_Test/BP_Enemy", event_name="ApplyGeneratedDamage", inputs=[{"name": "Damage", "type": "Float"}])
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "event_name": event_name,
+            "graph_name": graph_name,
+            "inputs": inputs or [],
+            "node_position": node_position,
+        }
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "add_blueprint_custom_event_node",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": params,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("add_blueprint_custom_event_node", params) or {}
+            return _structured_node_result(
+                raw,
+                stage="add_blueprint_custom_event_node",
+                message=f"Added custom event '{event_name}' to '{blueprint_name}'",
+                inputs=params,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "add_blueprint_custom_event_node",
+                "message": str(e),
+                "inputs": params,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
+    @mcp.tool()
+    def add_blueprint_function_with_pins(
+        ctx: Context,
+        blueprint_name: str,
+        function_name: str,
+        inputs: Optional[List[Dict[str, str]]] = None,
+        outputs: Optional[List[Dict[str, str]]] = None,
+        is_pure: bool = False,
+    ) -> Dict[str, Any]:
+        """Create or update a Blueprint function graph with typed pins.
+
+        Use this for reusable generated mechanics such as CalculateDamage,
+        CanInteract, BuildWaveData, or any function that needs stable input and
+        output pins before node wiring begins.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            function_name: Function graph name.
+            inputs: Optional input pin specs like [{"name": "Damage", "type": "Float"}].
+            outputs: Optional output pin specs like [{"name": "Result", "type": "Boolean"}].
+            is_pure: Whether the function should be pure when supported by the native route.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_function_with_pins(blueprint_name="/Game/MCP_Test/BP_Enemy", function_name="CanSeePlayer", outputs=[{"name": "CanSee", "type": "Boolean"}])
+        """
+        params: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "function_name": function_name,
+            "inputs": inputs or [],
+            "outputs": outputs or [],
+            "is_pure": is_pure,
+        }
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "add_blueprint_function_with_pins",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": params,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("add_blueprint_function_with_pins", params) or {}
+            return _structured_node_result(
+                raw,
+                stage="add_blueprint_function_with_pins",
+                message=f"Created or updated function '{function_name}' on '{blueprint_name}'",
+                inputs=params,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "add_blueprint_function_with_pins",
+                "message": str(e),
+                "inputs": params,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
+    @mcp.tool()
     def add_blueprint_event_node(
         ctx: Context,
         blueprint_name: str,

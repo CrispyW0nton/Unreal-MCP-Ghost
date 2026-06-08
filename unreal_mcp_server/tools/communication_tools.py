@@ -24,6 +24,30 @@ def _send(command: str, params: dict) -> Dict[str, Any]:
 
 
 def register_communication_tools(mcp: FastMCP):
+    def _structured_comm_result(
+        raw: Dict[str, Any],
+        *,
+        stage: str,
+        message: str,
+        inputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw = raw or {}
+        error_message = raw.get("error") or raw.get("message") or ""
+        success = raw.get("success") is not False and raw.get("status") != "error" and not raw.get("error")
+        return {
+            "success": success,
+            "stage": stage,
+            "message": message if success else (error_message or f"{stage} failed"),
+            "inputs": inputs,
+            "outputs": {
+                key: value
+                for key, value in raw.items()
+                if key not in {"success", "status", "message", "error"}
+            } if success else {},
+            "warnings": [],
+            "errors": [] if success else [error_message or f"{stage} failed"],
+            "log_tail": [],
+        }
 
     # ── Event Dispatchers ─────────────────────────────────────────────────────
 
@@ -282,7 +306,122 @@ def register_communication_tools(mcp: FastMCP):
             "node_position": node_position
         })
 
+    @mcp.tool()
+    def add_interface_event_node(
+        ctx: Context,
+        blueprint_name: str,
+        interface_name: str,
+        function_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """Add an implementation event node for a Blueprint Interface function.
+
+        Use this after `implement_blueprint_interface` when a generated actor
+        needs to handle interface-driven interactions such as Interact, Damage,
+        or Use without hard references to a concrete class.
+
+        Args:
+            blueprint_name: Blueprint implementing the interface.
+            interface_name: Blueprint Interface asset name or path.
+            function_name: Interface function to implement as an event.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_interface_event_node(blueprint_name="/Game/MCP_Test/BP_Door", interface_name="/Game/MCP_Test/BPI_Interactable", function_name="Interact")
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        inputs = {
+            "blueprint_name": blueprint_name,
+            "interface_name": interface_name,
+            "function_name": function_name,
+            "node_position": node_position,
+        }
+        raw = _send("add_interface_event_node", inputs)
+        return _structured_comm_result(
+            raw,
+            stage="add_interface_event_node",
+            message=f"Added interface event '{function_name}' to '{blueprint_name}'",
+            inputs=inputs,
+        )
+
     # ── Functions & Macros ────────────────────────────────────────────────────
+
+    @mcp.tool()
+    def add_custom_event(
+        ctx: Context,
+        blueprint_name: str,
+        event_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """Add a custom event node to a Blueprint Event Graph.
+
+        Use this for generated gameplay entry points such as StartEncounter,
+        SpawnWave, ApplyReward, or any named event that other nodes can call.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            event_name: Custom event name.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            add_custom_event(blueprint_name="/Game/MCP_Test/BP_Encounter", event_name="StartEncounter")
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        inputs = {
+            "blueprint_name": blueprint_name,
+            "event_name": event_name,
+            "node_position": node_position,
+        }
+        raw = _send("add_custom_event", inputs)
+        return _structured_comm_result(
+            raw,
+            stage="add_custom_event",
+            message=f"Added custom event '{event_name}' to '{blueprint_name}'",
+            inputs=inputs,
+        )
+
+    @mcp.tool()
+    def call_custom_event(
+        ctx: Context,
+        blueprint_name: str,
+        target_blueprint: str,
+        event_name: str,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """Add a function-call node for a custom event defined on another Blueprint.
+
+        Use this for generated Blueprint communication where one authored actor
+        needs to trigger a named event exposed by another generated Blueprint.
+
+        Args:
+            blueprint_name: Calling Blueprint asset name or path.
+            target_blueprint: Blueprint that owns the custom event.
+            event_name: Custom event/function name to call.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            call_custom_event(blueprint_name="/Game/MCP_Test/BP_Button", target_blueprint="/Game/MCP_Test/BP_Door", event_name="OpenDoor")
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        inputs = {
+            "blueprint_name": blueprint_name,
+            "target_blueprint": target_blueprint,
+            "event_name": event_name,
+            "node_position": node_position,
+        }
+        raw = _send("call_custom_event", inputs)
+        return _structured_comm_result(
+            raw,
+            stage="call_custom_event",
+            message=f"Added custom event call '{event_name}' in '{blueprint_name}'",
+            inputs=inputs,
+        )
 
     @mcp.tool()
     def add_custom_function(

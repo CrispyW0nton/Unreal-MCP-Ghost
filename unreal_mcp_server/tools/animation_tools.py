@@ -92,6 +92,43 @@ def _bridge_result(
     ))
 
 
+def _structured_bridge_result(
+    *,
+    stage: str,
+    raw: Dict[str, Any],
+    inputs: Dict[str, Any],
+    message: str,
+    t0: float,
+) -> Dict[str, Any]:
+    raw = raw or {}
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    if failed:
+        msg = raw.get("error") or raw.get("message") or f"{stage} failed"
+        return _make_result(
+            success=False,
+            stage=stage,
+            message=msg,
+            inputs=inputs,
+            errors=[msg],
+            t0=t0,
+        )
+
+    warnings = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
+    outputs = {
+        key: value for key, value in raw.items()
+        if key not in {"success", "status", "message", "error", "warnings"}
+    }
+    return _make_result(
+        success=True,
+        stage=stage,
+        message=message,
+        inputs=inputs,
+        outputs=outputs,
+        warnings=warnings,
+        t0=t0,
+    )
+
+
 def _exec(code: str) -> Dict[str, Any]:
     """Run Python inside UE5 via exec_python command (tier-3 timeout)."""
     from unreal_mcp_server import get_unreal_connection
@@ -578,6 +615,96 @@ def register_animation_tools(mcp: FastMCP):
             "blend_space_asset": blend_space_asset,
             "node_position": node_position
         })
+
+    @mcp.tool()
+    def add_sequence_player_node(
+        ctx: Context,
+        anim_blueprint_name: str,
+        sequence_asset: str,
+        graph_name: str = "",
+        wire_to_root: bool = False,
+        loop: bool = True,
+        node_position: List[float] = None
+    ) -> Dict[str, Any]:
+        """Add a Sequence Player node to an Animation Blueprint AnimGraph.
+
+        Use this when an autonomous slice needs to wire a generated or imported
+        animation sequence into an AnimBP graph for idle, attack, hit reaction,
+        or simple prototype locomotion playback.
+
+        Args:
+            anim_blueprint_name: Animation Blueprint asset path or name.
+            sequence_asset: Animation Sequence asset path.
+            graph_name: Optional graph name; defaults to AnimGraph.
+            wire_to_root: If true, attempt to wire the pose output to Root.
+            loop: Whether the sequence player should loop.
+            node_position: Optional graph position.
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            add_sequence_player_node(anim_blueprint_name="/Game/MCP_Test/ABP_Enemy", sequence_asset="/Game/MCP_Test/A_Idle.A_Idle")
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        inputs: Dict[str, Any] = {
+            "anim_blueprint_name": anim_blueprint_name,
+            "sequence_asset": sequence_asset,
+            "wire_to_root": wire_to_root,
+            "loop": loop,
+            "node_position": node_position,
+        }
+        if graph_name:
+            inputs["graph_name"] = graph_name
+        t0 = time.monotonic()
+        raw = _send("add_sequence_player_node", inputs)
+        return _structured_bridge_result(
+            stage="add_sequence_player_node",
+            raw=raw,
+            inputs=inputs,
+            message=f"Added Sequence Player for '{sequence_asset}'",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def connect_anim_graph_nodes(
+        ctx: Context,
+        anim_blueprint_name: str,
+        source_node_id: str,
+        target_node_id: str,
+        graph_name: str = ""
+    ) -> Dict[str, Any]:
+        """Connect compatible pose pins between two Animation Blueprint graph nodes.
+
+        Use this after creating generated AnimGraph nodes when the agent needs
+        to explicitly wire a Sequence Player, Blend Space, Slot, or state output
+        into another pose-consuming node.
+
+        Args:
+            anim_blueprint_name: Animation Blueprint asset path or name.
+            source_node_id: Source node GUID.
+            target_node_id: Target node GUID.
+            graph_name: Optional graph name; defaults to AnimGraph.
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#overview
+        Example:
+            connect_anim_graph_nodes(anim_blueprint_name="/Game/MCP_Test/ABP_Enemy", source_node_id="00000000-0000-0000-0000-000000000001", target_node_id="00000000-0000-0000-0000-000000000002")
+        """
+        inputs: Dict[str, Any] = {
+            "anim_blueprint_name": anim_blueprint_name,
+            "source_node_id": source_node_id,
+            "target_node_id": target_node_id,
+        }
+        if graph_name:
+            inputs["graph_name"] = graph_name
+        t0 = time.monotonic()
+        raw = _send("connect_anim_graph_nodes", inputs)
+        return _structured_bridge_result(
+            stage="connect_anim_graph_nodes",
+            raw=raw,
+            inputs=inputs,
+            message=f"Connected AnimGraph node '{source_node_id}' to '{target_node_id}'",
+            t0=t0,
+        )
 
     @mcp.tool()
     def insert_anim_graph_slot(

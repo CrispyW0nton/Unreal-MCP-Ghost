@@ -116,15 +116,125 @@ class TestBridgeParityWrappers(unittest.TestCase):
                 "EdGraphNode_Comment_0",
                 "Generated Combat Loop",
             )
+            custom_event = mcp.tools["add_blueprint_custom_event_node"](
+                None,
+                "/Game/MCP_Test/BP_Enemy",
+                "ApplyGeneratedDamage",
+                inputs=[{"name": "Damage", "type": "Float"}],
+            )
+            function = mcp.tools["add_blueprint_function_with_pins"](
+                None,
+                "/Game/MCP_Test/BP_Enemy",
+                "CanSeePlayer",
+                outputs=[{"name": "CanSee", "type": "Boolean"}],
+                is_pure=True,
+            )
 
         self.assertTrue(reconstruct["success"])
         self.assertTrue(spawn_class["success"])
         self.assertTrue(rename_comment["success"])
+        self.assertTrue(custom_event["success"])
+        self.assertTrue(function["success"])
         self.assertEqual(fake_unreal.calls[0][0], "reconstruct_blueprint_node")
         self.assertEqual(fake_unreal.calls[1][0], "set_spawn_actor_class")
         self.assertEqual(fake_unreal.calls[1][1]["actor_class"], "BP_Enemy_C")
         self.assertEqual(fake_unreal.calls[2][0], "rename_blueprint_comment_node")
         self.assertEqual(fake_unreal.calls[2][1]["comment_text"], "Generated Combat Loop")
+        self.assertEqual(fake_unreal.calls[3][0], "add_blueprint_custom_event_node")
+        self.assertEqual(fake_unreal.calls[3][1]["event_name"], "ApplyGeneratedDamage")
+        self.assertEqual(fake_unreal.calls[3][1]["inputs"], [{"name": "Damage", "type": "Float"}])
+        self.assertEqual(fake_unreal.calls[4][0], "add_blueprint_function_with_pins")
+        self.assertEqual(fake_unreal.calls[4][1]["function_name"], "CanSeePlayer")
+        self.assertEqual(fake_unreal.calls[4][1]["outputs"], [{"name": "CanSee", "type": "Boolean"}])
+        self.assertTrue(fake_unreal.calls[4][1]["is_pure"])
+
+    def test_communication_native_wrappers_register_and_dispatch(self):
+        from tools.communication_tools import register_communication_tools
+
+        mcp = _MockMCP()
+        register_communication_tools(mcp)
+
+        calls = []
+
+        def fake_send(command, params):
+            calls.append((command, params))
+            return {"success": True, "command": command, "params": params}
+
+        with patch("tools.communication_tools._send", side_effect=fake_send):
+            interface_event = mcp.tools["add_interface_event_node"](
+                None,
+                "/Game/MCP_Test/BP_Door",
+                "/Game/MCP_Test/BPI_Interactable",
+                "Interact",
+                [120, 240],
+            )
+            custom_event = mcp.tools["add_custom_event"](
+                None,
+                "/Game/MCP_Test/BP_Encounter",
+                "StartEncounter",
+            )
+            custom_call = mcp.tools["call_custom_event"](
+                None,
+                "/Game/MCP_Test/BP_Button",
+                "/Game/MCP_Test/BP_Door",
+                "OpenDoor",
+                [360, 120],
+            )
+
+        self.assertTrue(interface_event["success"])
+        self.assertTrue(custom_event["success"])
+        self.assertTrue(custom_call["success"])
+        self.assertEqual(calls[0][0], "add_interface_event_node")
+        self.assertEqual(calls[0][1]["interface_name"], "/Game/MCP_Test/BPI_Interactable")
+        self.assertEqual(calls[0][1]["function_name"], "Interact")
+        self.assertEqual(calls[0][1]["node_position"], [120, 240])
+        self.assertEqual(calls[1][0], "add_custom_event")
+        self.assertEqual(calls[1][1]["event_name"], "StartEncounter")
+        self.assertEqual(calls[1][1]["node_position"], [0, 0])
+        self.assertEqual(calls[2][0], "call_custom_event")
+        self.assertEqual(calls[2][1]["target_blueprint"], "/Game/MCP_Test/BP_Door")
+        self.assertEqual(calls[2][1]["event_name"], "OpenDoor")
+
+    def test_animation_native_wrappers_register_and_dispatch(self):
+        from tools.animation_tools import register_animation_tools
+
+        mcp = _MockMCP()
+        register_animation_tools(mcp)
+
+        calls = []
+
+        def fake_send(command, params):
+            calls.append((command, params))
+            return {"success": True, "command": command, "params": params}
+
+        with patch("tools.animation_tools._send", side_effect=fake_send):
+            sequence = mcp.tools["add_sequence_player_node"](
+                None,
+                "/Game/MCP_Test/ABP_Enemy",
+                "/Game/MCP_Test/A_Idle.A_Idle",
+                graph_name="AnimGraph",
+                wire_to_root=True,
+                loop=False,
+                node_position=[100, 200],
+            )
+            connection = mcp.tools["connect_anim_graph_nodes"](
+                None,
+                "/Game/MCP_Test/ABP_Enemy",
+                "source-guid",
+                "target-guid",
+            )
+
+        self.assertTrue(sequence["success"])
+        self.assertTrue(connection["success"])
+        self.assertEqual(calls[0][0], "add_sequence_player_node")
+        self.assertEqual(calls[0][1]["anim_blueprint_name"], "/Game/MCP_Test/ABP_Enemy")
+        self.assertEqual(calls[0][1]["sequence_asset"], "/Game/MCP_Test/A_Idle.A_Idle")
+        self.assertEqual(calls[0][1]["graph_name"], "AnimGraph")
+        self.assertTrue(calls[0][1]["wire_to_root"])
+        self.assertFalse(calls[0][1]["loop"])
+        self.assertEqual(calls[1][0], "connect_anim_graph_nodes")
+        self.assertEqual(calls[1][1]["source_node_id"], "source-guid")
+        self.assertEqual(calls[1][1]["target_node_id"], "target-guid")
 
 
 if __name__ == "__main__":
