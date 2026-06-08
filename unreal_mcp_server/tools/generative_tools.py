@@ -25,6 +25,7 @@ _CHAT_DIR = _REPO_ROOT / "Saved" / "MCPChat"
 _SECRETS_PATH = _CHAT_DIR / "secrets.json"
 _SETTINGS_PATH = _CHAT_DIR / "generative_settings.json"
 _TEXTURE_PAINT_SESSIONS_PATH = _CHAT_DIR / "texture_paint_sessions.json"
+_TRIPO_TASK_CREDIT_LEDGER_PATH = _CHAT_DIR / "tripo_task_credit_ledger.json"
 _PROVIDERS = ProviderRegistry([TRIPO_PROVIDER])
 _TRIPO_PROVIDER = _PROVIDERS.get("tripo")
 _TRIPO_BASE_URL = _TRIPO_PROVIDER.base_url
@@ -806,6 +807,22 @@ def _estimate_tripo_credits(task_type: str, payload: Dict[str, Any]) -> int:
     return _TRIPO_PROVIDER.estimate_credits(task_type, payload)
 
 
+def _tripo_get_wallet_balance(timeout_s: int = 30) -> Dict[str, Any]:
+    response = _tripo_json_request("GET", "/user/balance", timeout_s=timeout_s)
+    body = response.get("body") if isinstance(response.get("body"), dict) else {}
+    if response.get("http_status", 0) >= 400 or body.get("code", 0) not in (0, "0", None):
+        message = body.get("message") or body.get("suggestion") or f"Tripo wallet balance request failed with HTTP {response.get('http_status')}"
+        raise RuntimeError(str(message))
+    data = body.get("data") if isinstance(body.get("data"), dict) else body
+    return {
+        "balance": max(0, _safe_int(data.get("balance"), 0)),
+        "frozen": max(0, _safe_int(data.get("frozen"), 0)),
+        "http_status": response.get("http_status"),
+        "trace_id": response.get("trace_id", ""),
+        "raw_response": body,
+    }
+
+
 def _find_runuat(engine_root: str = "") -> str:
     roots = [engine_root] if engine_root else [
         r"C:\Program Files\Epic Games\UE_5.6",
@@ -986,6 +1003,7 @@ def _build_generate_asset_preflight(
             "supported_modes": sorted(supported_modes),
             "smart_mesh_required": smart_mesh_required,
             "smart_low_poly_default": True,
+            "wallet_tool": "gen_tripo_get_wallet_balance",
             "paid_tools": {
                 "text_to_model": "gen_tripo_text_to_model",
                 "image_to_model": "gen_tripo_image_to_model",
@@ -997,6 +1015,8 @@ def _build_generate_asset_preflight(
                 "gen_tripo_magic_brush_generate",
                 "gen_tripo_magic_brush_get_retexture",
                 "gen_tripo_magic_brush_list_images",
+                "gen_record_texture_paint_stroke",
+                "gen_compile_texture_paint_image_map",
                 "gen_tripo_magic_brush_apply",
             ],
         },
@@ -1066,6 +1086,131 @@ def _release_credit_reservation(credit_guard: Dict[str, Any]) -> None:
     credit_guard["remaining_after"] = max(0, _safe_int(credit_guard.get("budget"), 0) - usage[session_name])
 
 
+def _load_tripo_task_credit_ledger() -> Dict[str, Any]:
+    ledger = _read_json_file(_TRIPO_TASK_CREDIT_LEDGER_PATH)
+    tasks = ledger.get("tasks")
+    ledger["tasks"] = tasks if isinstance(tasks, dict) else {}
+    return ledger
+
+
+def _write_tripo_task_credit_ledger(ledger: Dict[str, Any]) -> None:
+    tasks = ledger.get("tasks")
+    if isinstance(tasks, dict) and len(tasks) > 250:
+        ordered = sorted(
+            tasks.items(),
+            key=lambda item: _safe_int(item[1].get("updated_at") if isinstance(item[1], dict) else 0, 0),
+            reverse=True,
+        )
+        ledger["tasks"] = dict(ordered[:250])
+    else:
+        ledger["tasks"] = tasks if isinstance(tasks, dict) else {}
+    _write_json_file(_TRIPO_TASK_CREDIT_LEDGER_PATH, ledger)
+
+
+def _record_tripo_task_credit_ledger(task_id: str, credit_guard: Dict[str, Any]) -> Dict[str, Any]:
+    safe_task_id = _clean_optional_text(task_id)
+    if not safe_task_id:
+        return {}
+    ledger = _load_tripo_task_credit_ledger()
+    tasks = ledger.setdefault("tasks", {})
+    existing = tasks.get(safe_task_id)
+    if not isinstance(existing, dict):
+        existing = {}
+    now = int(time.time())
+    existing.update({
+        "task_id": safe_task_id,
+        "provider": "tripo",
+        "session_name": str(credit_guard.get("session_name") or "default"),
+        "operation": str(credit_guard.get("operation") or ""),
+        "estimated_credits": max(0, _safe_int(credit_guard.get("estimated_credits"), 0)),
+        "reserved": bool(credit_guard.get("reserved")),
+        "submitted_at": existing.get("submitted_at") or now,
+        "updated_at": now,
+    })
+    tasks[safe_task_id] = existing
+    _write_tripo_task_credit_ledger(ledger)
+    return existing
+
+
+def _extract_task_consumed_credits(task: Dict[str, Any]) -> Optional[int]:
+    for key in ("consumed_credit", "consumed_credits", "credit_consumed"):
+        if key in task and task.get(key) not in (None, ""):
+            value = _safe_int(task.get(key), -1)
+            return max(0, value) if value >= 0 else None
+    return None
+
+
+def _reconcile_tripo_task_credit_usage(task: Dict[str, Any]) -> Dict[str, Any]:
+    task_id = _clean_optional_text(str(task.get("task_id") or task.get("id") or ""))
+    consumed = _extract_task_consumed_credits(task)
+    if not task_id:
+        return {"available": False, "reason": "task_id_missing"}
+    if consumed is None:
+        return {"available": False, "task_id": task_id, "reason": "consumed_credit_missing"}
+
+    ledger = _load_tripo_task_credit_ledger()
+    tasks = ledger.setdefault("tasks", {})
+    record = tasks.get(task_id)
+    if not isinstance(record, dict):
+        return {"available": False, "task_id": task_id, "consumed_credits": consumed, "reason": "task_not_in_local_credit_ledger"}
+
+    already_reconciled = bool(record.get("reconciled"))
+    previous_consumed = _safe_int(record.get("consumed_credits"), -1)
+    if already_reconciled and previous_consumed == consumed:
+        settings = _load_generative_settings()
+        usage = settings.setdefault("credit_usage_by_session", {})
+        session_name = str(record.get("session_name") or "default")
+        return {
+            "available": True,
+            "task_id": task_id,
+            "session_name": session_name,
+            "estimated_credits": max(0, _safe_int(record.get("estimated_credits"), 0)),
+            "consumed_credits": consumed,
+            "delta": 0,
+            "already_reconciled": True,
+            "used_after": max(0, _safe_int(usage.get(session_name), 0)),
+            "settings_path": str(_SETTINGS_PATH),
+        }
+
+    settings = _load_generative_settings()
+    usage = settings.setdefault("credit_usage_by_session", {})
+    session_name = str(record.get("session_name") or "default")
+    estimated = max(0, _safe_int(record.get("estimated_credits"), 0))
+    baseline = previous_consumed if already_reconciled and previous_consumed >= 0 else estimated
+    delta = consumed - baseline
+    used_before = max(0, _safe_int(usage.get(session_name), 0))
+    used_after = max(0, used_before + delta)
+    usage[session_name] = used_after
+    settings["credit_usage_by_session"] = usage
+    _write_json_file(_SETTINGS_PATH, settings)
+
+    now = int(time.time())
+    record.update({
+        "consumed_credits": consumed,
+        "reconciled": True,
+        "reconciled_at": now,
+        "updated_at": now,
+        "last_delta": delta,
+        "used_before": used_before,
+        "used_after": used_after,
+    })
+    tasks[task_id] = record
+    _write_tripo_task_credit_ledger(ledger)
+    return {
+        "available": True,
+        "task_id": task_id,
+        "session_name": session_name,
+        "estimated_credits": estimated,
+        "consumed_credits": consumed,
+        "delta": delta,
+        "already_reconciled": False,
+        "used_before": used_before,
+        "used_after": used_after,
+        "settings_path": str(_SETTINGS_PATH),
+        "ledger_path": str(_TRIPO_TASK_CREDIT_LEDGER_PATH),
+    }
+
+
 def _tripo_task_result_json(
     *,
     stage: str,
@@ -1075,6 +1220,8 @@ def _tripo_task_result_json(
     credit_guard: Dict[str, Any],
     t0: float,
 ) -> str:
+    task_id = str(task_response["task_id"])
+    credit_record = _record_tripo_task_credit_ledger(task_id, credit_guard)
     return _result_json(
         success=True,
         stage=stage,
@@ -1082,9 +1229,10 @@ def _tripo_task_result_json(
         inputs=inputs,
         outputs={
             "provider": "tripo",
-            "task_id": task_response["task_id"],
+            "task_id": task_id,
             "request": payload,
             "credit_guard": credit_guard,
+            "credit_record": credit_record,
             "trace_id": task_response.get("trace_id", ""),
             "raw_response": task_response.get("response", {}),
         },
@@ -1340,6 +1488,7 @@ def _provider_config_outputs() -> Dict[str, Any]:
         "credit_usage_by_session": settings["credit_usage_by_session"],
         "settings_path": str(_SETTINGS_PATH),
         "secrets_path": str(_SECRETS_PATH),
+        "credit_reconciliation_ledger_path": str(_TRIPO_TASK_CREDIT_LEDGER_PATH),
         "network_required": False,
         "spend_confirmation_required": True,
     }
@@ -1410,6 +1559,7 @@ def register_generative_tools(mcp: FastMCP):
         if not include_paths:
             outputs.pop("settings_path", None)
             outputs.pop("secrets_path", None)
+            outputs.pop("credit_reconciliation_ledger_path", None)
         return _result_json(
             success=True,
             stage="gen_get_provider_config",
@@ -1476,6 +1626,49 @@ def register_generative_tools(mcp: FastMCP):
             warnings=warnings,
             t0=t0,
         )
+
+    @mcp.tool()
+    async def gen_tripo_get_wallet_balance(
+        ctx: Context,
+        timeout_s: int = 30,
+    ) -> str:
+        """Read the live Tripo API wallet balance without spending credits.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#cost-guard
+        Example:
+            gen_tripo_get_wallet_balance(timeout_s=30)"""
+        t0 = time.monotonic()
+        inputs = {"timeout_s": timeout_s}
+        try:
+            balance = _tripo_get_wallet_balance(timeout_s=timeout_s)
+            return _result_json(
+                success=True,
+                stage="gen_tripo_get_wallet_balance",
+                message="Loaded live Tripo wallet balance",
+                inputs=inputs,
+                outputs={
+                    "provider": "tripo",
+                    "wallet": {
+                        "balance": balance["balance"],
+                        "frozen": balance["frozen"],
+                    },
+                    "network_required": True,
+                    "spend_required": False,
+                    "trace_id": balance.get("trace_id", ""),
+                    "raw_response": balance.get("raw_response", {}),
+                },
+                t0=t0,
+            )
+        except Exception as exc:
+            return _result_json(
+                success=False,
+                stage="gen_tripo_get_wallet_balance",
+                message=str(exc),
+                inputs=inputs,
+                outputs={"provider": "tripo", "network_required": True, "spend_required": False},
+                errors=[str(exc)],
+                t0=t0,
+            )
 
     @mcp.tool()
     async def gen_check_credit_budget(
@@ -2579,7 +2772,8 @@ def register_generative_tools(mcp: FastMCP):
         try:
             result = _tripo_get_task(task_id)
             task = result["task"]
-            return _result_json(success=True, stage="gen_tripo_get_task_status", message=f"Tripo task status: {task.get('status', 'unknown')}", inputs=inputs, outputs={"task": task, "trace_id": result.get("trace_id", ""), "final": task.get("status") in _TRIPO_FINAL_STATUSES}, t0=t0)
+            credit_reconciliation = _reconcile_tripo_task_credit_usage(task)
+            return _result_json(success=True, stage="gen_tripo_get_task_status", message=f"Tripo task status: {task.get('status', 'unknown')}", inputs=inputs, outputs={"task": task, "trace_id": result.get("trace_id", ""), "final": task.get("status") in _TRIPO_FINAL_STATUSES, "credit_reconciliation": credit_reconciliation}, t0=t0)
         except Exception as exc:
             return _result_json(success=False, stage="gen_tripo_get_task_status", message=str(exc), inputs=inputs, errors=[str(exc)], t0=t0)
 
@@ -2600,7 +2794,8 @@ def register_generative_tools(mcp: FastMCP):
                 task = result["task"]
                 snapshots.append({"status": task.get("status"), "progress": task.get("progress"), "running_left_time": task.get("running_left_time")})
                 if task.get("status") in _TRIPO_FINAL_STATUSES:
-                    return _result_json(success=task.get("status") == "success", stage="gen_tripo_wait_for_task", message=f"Tripo task finalized: {task.get('status')}", inputs=inputs, outputs={"task": task, "snapshots": snapshots}, errors=[] if task.get("status") == "success" else [f"Tripo task finalized as {task.get('status')}"], t0=t0)
+                    credit_reconciliation = _reconcile_tripo_task_credit_usage(task)
+                    return _result_json(success=task.get("status") == "success", stage="gen_tripo_wait_for_task", message=f"Tripo task finalized: {task.get('status')}", inputs=inputs, outputs={"task": task, "snapshots": snapshots, "credit_reconciliation": credit_reconciliation}, errors=[] if task.get("status") == "success" else [f"Tripo task finalized as {task.get('status')}"], t0=t0)
                 if time.monotonic() >= deadline:
                     return _result_json(success=False, stage="gen_tripo_wait_for_task", message="Timed out waiting for Tripo task", inputs=inputs, outputs={"snapshots": snapshots}, errors=["Timed out waiting for Tripo task"], t0=t0)
                 time.sleep(max(1, int(poll_s)))

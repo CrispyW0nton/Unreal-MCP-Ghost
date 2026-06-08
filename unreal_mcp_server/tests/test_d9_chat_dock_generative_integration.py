@@ -73,6 +73,8 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "do not reserve credits",
             "do not mutate Unreal",
             "Smart Mesh/good topology",
+            "gen_tripo_get_wallet_balance",
+            "wallet balance/frozen credits",
             "Preflight gates: auth",
             "paid work requires confirmed spend",
             "Use Preflight or add a Tripo API key before paid generation",

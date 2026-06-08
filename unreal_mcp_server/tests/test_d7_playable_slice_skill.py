@@ -44,6 +44,7 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         root = Path(tmp.name)
         settings_path = root / "Saved" / "MCPChat" / "generative_settings.json"
         secrets_path = root / "Saved" / "MCPChat" / "secrets.json"
+        ledger_path = root / "Saved" / "MCPChat" / "tripo_task_credit_ledger.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(json.dumps({
             "default_model_version": "v3.1-20260211",
@@ -54,7 +55,13 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         }), encoding="utf-8")
         if api_key:
             secrets_path.write_text(json.dumps({"TRIPO_API_KEY": api_key}), encoding="utf-8")
-        return tmp, patch.object(generative_tools, "_SETTINGS_PATH", settings_path), patch.object(generative_tools, "_SECRETS_PATH", secrets_path), patch.dict(os.environ, {"TRIPO_API_KEY": ""})
+        return (
+            tmp,
+            patch.object(generative_tools, "_SETTINGS_PATH", settings_path),
+            patch.object(generative_tools, "_SECRETS_PATH", secrets_path),
+            patch.object(generative_tools, "_TRIPO_TASK_CREDIT_LEDGER_PATH", ledger_path),
+            patch.dict(os.environ, {"TRIPO_API_KEY": ""}),
+        )
 
     def test_d7_tool_registers(self):
         from skills.playable_slice.skill import register_playable_slice_skill
@@ -131,8 +138,8 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
     def test_submit_assets_requires_tripo_api_key(self):
         from skills.playable_slice.skill import skill_generate_playable_slice
 
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context(api_key="")
-        with tmp, settings_patch, secrets_patch, env_patch:
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context(api_key="")
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch:
             result = skill_generate_playable_slice(
                 "third-person dungeon demo with a slime",
                 mode="submit_assets",
@@ -146,8 +153,8 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
     def test_submit_assets_requires_confirmation_before_paid_request(self):
         from skills.playable_slice.skill import skill_generate_playable_slice
 
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context(api_key="tsk_test_secret_123456")
-        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task") as submit:
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context(api_key="tsk_test_secret_123456")
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, patch("tools.generative_tools._tripo_submit_task") as submit:
             result = skill_generate_playable_slice(
                 "third-person dungeon demo with a slime",
                 mode="submit_assets",
@@ -171,8 +178,8 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
                 "response": {"code": 0, "data": {"task_id": f"task-{len(submitted)}"}},
             }
 
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context(api_key="tsk_test_secret_123456")
-        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit):
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context(api_key="tsk_test_secret_123456")
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit):
             result = skill_generate_playable_slice(
                 "third-person dungeon demo with a slime and a boss",
                 mode="submit_assets",

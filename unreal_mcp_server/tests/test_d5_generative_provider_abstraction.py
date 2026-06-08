@@ -33,6 +33,7 @@ class TestD5GenerativeProviderAbstraction(unittest.TestCase):
         self.assertEqual(description["provider"], "tripo")
         self.assertEqual(description["status"], "configured")
         self.assertIn("text_to_model", description["capabilities"])
+        self.assertIn("wallet_balance", description["capabilities"])
         self.assertIn("import_to_project", description["capabilities"])
         self.assertIn(".glb", description["output_policy"]["model_extensions"])
         self.assertIn("D.8 knowledge base", description["next_milestones"])

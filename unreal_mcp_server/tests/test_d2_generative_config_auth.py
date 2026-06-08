@@ -46,6 +46,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         expected = {
             "gen_get_provider_config",
             "gen_save_provider_config",
+            "gen_tripo_get_wallet_balance",
             "gen_check_credit_budget",
             "gen_generate_asset_preflight",
             "gen_prepare_texture_paint_session",
@@ -109,6 +110,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(loaded["outputs"]["api_key_configured"])
         self.assertEqual(loaded["outputs"]["api_key_source"], "env:TRIPO_API_KEY")
         self.assertNotIn("settings_path", loaded["outputs"])
+        self.assertNotIn("credit_reconciliation_ledger_path", loaded["outputs"])
         self.assertNotIn("env_secret_abcdef", json.dumps(loaded))
 
     async def test_credit_budget_requires_confirmation_and_rejects_overage(self):
@@ -202,6 +204,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(preflight["settings"]["session_credits_remaining"], 80)
         self.assertTrue(preflight["workspace"]["smart_low_poly_default"])
         self.assertIn("gen_tripo_multiview_to_model", preflight["workspace"]["paid_tools"].values())
+        self.assertEqual(preflight["workspace"]["wallet_tool"], "gen_tripo_get_wallet_balance")
         self.assertTrue(all(gate["status"] == "ready" for gate in preflight["gates"]))
         self.assertIn("smart_mesh_policy", {gate["id"] for gate in preflight["gates"]})
 
@@ -329,6 +332,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         for token in (
             "gen_get_provider_config",
             "gen_save_provider_config",
+            "gen_tripo_get_wallet_balance",
             "gen_check_credit_budget",
             "gen_prepare_texture_paint_session",
             "gen_record_texture_paint_stroke",

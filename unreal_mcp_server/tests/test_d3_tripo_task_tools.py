@@ -49,6 +49,7 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
         root = Path(tmp.name)
         settings_path = root / "Saved" / "MCPChat" / "generative_settings.json"
         secrets_path = root / "Saved" / "MCPChat" / "secrets.json"
+        ledger_path = root / "Saved" / "MCPChat" / "tripo_task_credit_ledger.json"
         settings_path.parent.mkdir(parents=True, exist_ok=True)
         settings_path.write_text(json.dumps({
             "default_model_version": "v3.1-20260211",
@@ -58,7 +59,13 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
             "credit_usage_by_session": {},
         }), encoding="utf-8")
         secrets_path.write_text(json.dumps({"TRIPO_API_KEY": "tsk_test_secret_123456"}), encoding="utf-8")
-        return tmp, patch.object(generative_tools, "_SETTINGS_PATH", settings_path), patch.object(generative_tools, "_SECRETS_PATH", secrets_path), patch.dict(os.environ, {"TRIPO_API_KEY": ""})
+        return (
+            tmp,
+            patch.object(generative_tools, "_SETTINGS_PATH", settings_path),
+            patch.object(generative_tools, "_SECRETS_PATH", secrets_path),
+            patch.object(generative_tools, "_TRIPO_TASK_CREDIT_LEDGER_PATH", ledger_path),
+            patch.dict(os.environ, {"TRIPO_API_KEY": ""}),
+        )
 
     def test_d3_tools_register(self):
         expected = {
@@ -71,12 +78,13 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
             "gen_tripo_get_task_status",
             "gen_tripo_wait_for_task",
             "gen_tripo_download_result",
+            "gen_tripo_get_wallet_balance",
         }
         self.assertTrue(expected.issubset(set(self.mcp.tools)))
 
     async def test_text_to_model_requires_confirm_before_submit(self):
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context()
-        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task") as submit:
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context()
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, patch("tools.generative_tools._tripo_submit_task") as submit:
             payload = json.loads(await self.mcp.tools["gen_tripo_text_to_model"](
                 ctx=None,
                 prompt="stylized slime enemy",
@@ -95,8 +103,8 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
             calls.append(payload)
             return {"task_id": "task-text", "response": {"code": 0, "data": {"task_id": "task-text"}}, "trace_id": "trace-1"}
 
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context()
-        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit):
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context()
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit):
             payload = json.loads(await self.mcp.tools["gen_tripo_text_to_model"](
                 ctx=None,
                 prompt="stylized slime enemy",
@@ -115,10 +123,66 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0]["model_version"], "v3.1-20260211")
         self.assertTrue(calls[0]["smart_low_poly"])
         self.assertTrue(payload["outputs"]["credit_guard"]["reserved"])
+        self.assertEqual(payload["outputs"]["credit_record"]["task_id"], "task-text")
+        self.assertEqual(payload["outputs"]["credit_record"]["session_name"], "demo")
+
+    async def test_status_reconciles_actual_consumed_credit_once(self):
+        def fake_submit(_payload):
+            return {"task_id": "task-text", "response": {"code": 0, "data": {"task_id": "task-text"}}, "trace_id": "trace-1"}
+
+        final_task = {
+            "task_id": "task-text",
+            "status": "success",
+            "progress": 100,
+            "consumed_credit": 34,
+            "output": {"model": "https://signed.example/model.glb"},
+        }
+
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context()
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, \
+                patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit), \
+                patch("tools.generative_tools._tripo_get_task", return_value={"task": final_task, "trace_id": "trace-status"}):
+            submitted = json.loads(await self.mcp.tools["gen_tripo_text_to_model"](
+                ctx=None,
+                prompt="stylized slime enemy",
+                confirm_spend=True,
+                session_name="demo",
+            ))
+            estimated = submitted["outputs"]["credit_guard"]["estimated_credits"]
+            status = json.loads(await self.mcp.tools["gen_tripo_get_task_status"](ctx=None, task_id="task-text"))
+            status_again = json.loads(await self.mcp.tools["gen_tripo_get_task_status"](ctx=None, task_id="task-text"))
+            import tools.generative_tools as generative_tools
+            settings = generative_tools._load_generative_settings()
+
+        self.assertGreater(estimated, 34)
+        _assert_structured(self, status, "gen_tripo_get_task_status")
+        reconciliation = status["outputs"]["credit_reconciliation"]
+        self.assertTrue(reconciliation["available"])
+        self.assertEqual(reconciliation["estimated_credits"], estimated)
+        self.assertEqual(reconciliation["consumed_credits"], 34)
+        self.assertEqual(reconciliation["used_after"], 34)
+        self.assertTrue(status_again["outputs"]["credit_reconciliation"]["already_reconciled"])
+        self.assertEqual(settings["credit_usage_by_session"]["demo"], 34)
+
+    async def test_wallet_balance_reads_live_balance_without_spend(self):
+        with patch("tools.generative_tools._tripo_get_wallet_balance", return_value={
+            "balance": 300,
+            "frozen": 20,
+            "trace_id": "trace-wallet",
+            "raw_response": {"code": 0, "data": {"balance": 300, "frozen": 20}},
+        }):
+            payload = json.loads(await self.mcp.tools["gen_tripo_get_wallet_balance"](ctx=None, timeout_s=5))
+
+        _assert_structured(self, payload, "gen_tripo_get_wallet_balance")
+        self.assertTrue(payload["success"])
+        self.assertTrue(payload["outputs"]["network_required"])
+        self.assertFalse(payload["outputs"]["spend_required"])
+        self.assertEqual(payload["outputs"]["wallet"]["balance"], 300)
+        self.assertEqual(payload["outputs"]["wallet"]["frozen"], 20)
 
     async def test_submission_failure_releases_credit_reservation(self):
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context()
-        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=RuntimeError("provider unavailable")):
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context()
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=RuntimeError("provider unavailable")):
             payload = json.loads(await self.mcp.tools["gen_tripo_text_to_model"](
                 ctx=None,
                 prompt="stylized slime enemy",
@@ -142,8 +206,8 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
             submitted.append(payload)
             return {"task_id": f"task-{payload['type']}", "response": {"code": 0, "data": {"task_id": "task"}}, "trace_id": "trace"}
 
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context()
-        with tmp, settings_patch, secrets_patch, env_patch, \
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context()
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, \
                 patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit), \
                 patch("tools.generative_tools._tripo_upload_file", return_value={"file_token": "uploaded-token"}):
             image_payload = json.loads(await self.mcp.tools["gen_tripo_image_to_model"](
@@ -178,8 +242,8 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
             submitted.append(payload)
             return {"task_id": f"task-{payload['type']}", "response": {"code": 0, "data": {"task_id": "task"}}, "trace_id": "trace"}
 
-        tmp, settings_patch, secrets_patch, env_patch = self._settings_context()
-        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit):
+        tmp, settings_patch, secrets_patch, ledger_patch, env_patch = self._settings_context()
+        with tmp, settings_patch, secrets_patch, ledger_patch, env_patch, patch("tools.generative_tools._tripo_submit_task", side_effect=fake_submit):
             refine = json.loads(await self.mcp.tools["gen_tripo_refine_model"](ctx=None, task_id="draft-task", confirm_spend=True))
             texture = json.loads(await self.mcp.tools["gen_tripo_texture_model"](ctx=None, task_id="model-task", texture_prompt="mossy stone", confirm_spend=True))
             convert = json.loads(await self.mcp.tools["gen_tripo_post_process"](ctx=None, task_id="model-task", target_format="FBX", confirm_spend=True))
@@ -230,7 +294,9 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
             "gen_tripo_text_to_model",
             "gen_tripo_image_to_model",
             "gen_tripo_multiview_to_model",
+            "gen_tripo_get_wallet_balance",
             "gen_tripo_download_result",
+            "consumed_credit",
             "confirm_spend=True",
         ):
             with self.subTest(token=token):

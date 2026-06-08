@@ -45,6 +45,7 @@ verified in-editor.
 | Inspect provider config/auth | `gen_get_provider_config` |
 | Save provider defaults | `gen_save_provider_config` |
 | Guard paid credit spend | `gen_check_credit_budget` |
+| Check live Tripo API wallet credits | `gen_tripo_get_wallet_balance` |
 | Submit Tripo generation tasks | `gen_tripo_text_to_model`, `gen_tripo_image_to_model`, `gen_tripo_multiview_to_model` |
 | Refine, texture, or export Tripo results | `gen_tripo_refine_model`, `gen_tripo_texture_model`, `gen_tripo_post_process` |
 | Plan prompt-only texture sets | `gen_texture_from_prompt` |
@@ -174,6 +175,20 @@ message to the user. When a tool is about to send the paid provider request, use
 `reserve_credits=True` so the approved estimate is recorded against that chat
 session before the task is launched.
 
+Use `gen_tripo_get_wallet_balance` when a live, no-spend provider wallet check
+is needed. It calls Tripo's `/user/balance` endpoint, requires
+`TRIPO_API_KEY`, and returns the API wallet `balance` plus any `frozen` credits
+from running or pending work. This is separate from the local per-session budget:
+the wallet proves provider-side buying power, while the MCP budget is the local
+user approval guard inside Unreal.
+
+After a Tripo task is accepted, the MCP writes a local task-credit ledger in
+`Saved/MCPChat/tripo_task_credit_ledger.json`. `gen_tripo_get_task_status` and
+`gen_tripo_wait_for_task` inspect Tripo's `consumed_credit` field when it is
+available and reconcile `credit_usage_by_session` from the reserved estimate to
+the actual consumed amount. Reconciliation is idempotent, so repeated polling
+does not double-count credits.
+
 Example:
 
 ```python
@@ -213,8 +228,11 @@ provider output; imported assets should favor game-ready topology over maximum
 sculpt detail.
 
 Then use `gen_tripo_get_task_status` or `gen_tripo_wait_for_task` until the
-task reaches a final status. Successful Tripo task output URLs are short-lived,
-so call `gen_tripo_download_result` promptly and pass the local files into
+task reaches a final status. These status tools also return a
+`credit_reconciliation` object when the task includes `consumed_credit`, so the
+Generative Credits display can move from estimated reservation to actual
+provider consumption. Successful Tripo task output URLs are short-lived, so call
+`gen_tripo_download_result` promptly and pass the local files into
 `gen_prepare_import_manifest` before D.4 imports them.
 
 Example:
@@ -603,7 +621,9 @@ Credits** display. It shows the per-session budget, credits used from
 that spend is confirmed. The UI preserves the server's
 `credit_usage_by_session` map when saving local settings so budget history is not
 lost when a user updates the Tripo key, model version, texture quality, or output
-folder.
+folder. For live provider balance, call `gen_tripo_get_wallet_balance`; for
+completed task accuracy, use the `credit_reconciliation` output from
+`gen_tripo_get_task_status` or `gen_tripo_wait_for_task`.
 
 The Generate Asset panel also includes a **Preflight** action. It inserts a
 no-spend Tripo Generate Asset preflight prompt that calls

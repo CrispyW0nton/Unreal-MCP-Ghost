@@ -23,6 +23,7 @@ class TripoProvider:
         "magic_brush_get_retexture",
         "magic_brush_get_retexture_images",
         "magic_brush_apply_retexture",
+        "wallet_balance",
         "post_process",
         "download_result",
         "import_to_project",
