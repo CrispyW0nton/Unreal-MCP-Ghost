@@ -660,6 +660,11 @@ def register_advanced_node_tools(mcp: FastMCP):
             add_open_level_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
+        if not level_name:
+            return _send("add_open_level_node", {
+                "blueprint_name": blueprint_name,
+                "node_position": node_position,
+            })
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UGameplayStatics",
@@ -1380,6 +1385,19 @@ def register_advanced_node_tools(mcp: FastMCP):
             ("Power", "Float"): "MultiplyMultiply_FloatFloat",
         }
         fn = _op_map.get((operator, operand_type), f"{operator}_{operand_type}{operand_type}")
+        _native_supported = {
+            ("Add", "Float"), ("Add", "Integer"), ("Add", "Int"), ("Add", "Vector"),
+            ("Subtract", "Float"), ("Subtract", "Integer"), ("Subtract", "Int"), ("Subtract", "Vector"),
+            ("Multiply", "Float"), ("Multiply", "Integer"), ("Multiply", "Int"), ("Multiply", "Vector"),
+            ("Divide", "Float"), ("Divide", "Integer"), ("Divide", "Int"),
+        }
+        if (operator, operand_type) in _native_supported:
+            return _send("add_arithmetic_operator_node", {
+                "blueprint_name": blueprint_name,
+                "operator": operator,
+                "operand_type": operand_type,
+                "node_position": node_position or [0, 0],
+            })
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetMathLibrary",
@@ -1427,6 +1445,14 @@ def register_advanced_node_tools(mcp: FastMCP):
             ("LessEqual", "Float"): "LessEqual_FloatFloat", ("LessEqual", "Integer"): "LessEqual_IntInt",
         }
         fn = _rel_map.get((operator, operand_type), f"{operator}_{operand_type}{operand_type}")
+        _native_supported = {"Float", "Integer", "Int"}
+        if operand_type in _native_supported:
+            return _send("add_relational_operator_node", {
+                "blueprint_name": blueprint_name,
+                "operator": operator,
+                "operand_type": operand_type,
+                "node_position": node_position or [0, 0],
+            })
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetMathLibrary",
@@ -1488,9 +1514,8 @@ def register_advanced_node_tools(mcp: FastMCP):
             add_construction_script_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_event_node", {
+        return _send("add_construction_script_node", {
             "blueprint_name": blueprint_name,
-            "event_name": "UserConstructionScript",
             "node_position": node_position
         })
 

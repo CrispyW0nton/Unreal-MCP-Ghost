@@ -11,6 +11,12 @@
 - Added native-route Python wrappers for `set_behavior_tree_blackboard` and `bt_get_info` so playable-slice enemy AI workflows can assign Blackboard assets and inspect Behavior Trees through the same command names routed by C++.
 - Updated the AI systems KB with the Blackboard handoff and BT inspection mapping, reducing the bridge audit's C++-only route backlog.
 
+### B.16 - Blueprint bridge parity wrappers
+
+- Added native-route Python wrappers for `add_niagara_component`, `set_blueprint_parent_class`, `reconstruct_blueprint_node`, `set_spawn_actor_class`, and `rename_blueprint_comment_node` so generated Blueprint/VFX/playable-slice workflows can call the routed C++ commands directly.
+- Routed supported `add_open_level_node`, `add_arithmetic_operator_node`, `add_relational_operator_node`, and `add_construction_script_node` calls through their native bridge command names while preserving generic fallbacks for richer cases.
+- Reduced the tracked bridge audit's C++-only route backlog from 30 to 21 and updated the Phase 7 roadmap notes.
+
 ### C.13 - Playable Slice quick action
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.

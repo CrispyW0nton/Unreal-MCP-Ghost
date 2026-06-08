@@ -178,6 +178,67 @@ def register_blueprint_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def add_niagara_component(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str,
+        niagara_system_path: str = "",
+    ) -> Dict[str, Any]:
+        """Add a NiagaraComponent to a Blueprint through the native bridge route.
+
+        Use this for playable-slice VFX hooks such as enemy hit sparks, ambient
+        magic props, portals, or generated asset preview effects. The native
+        command adds an SCS NiagaraComponent and optionally assigns a Niagara
+        System asset.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            component_name: SCS variable name for the NiagaraComponent.
+            niagara_system_path: Optional UNiagaraSystem asset path.
+
+        KB: see knowledge_base/09_VISUAL_EFFECTS_NIAGARA.md#overview
+        Example:
+            add_niagara_component(blueprint_name="/Game/MCP_Test/BP_Example", component_name="FX_Glow")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "component_name": component_name,
+            "niagara_system_path": niagara_system_path,
+        }
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "add_niagara_component",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("add_niagara_component", inputs) or {}
+            return _structured_bridge_result(
+                raw,
+                stage="add_niagara_component",
+                message=f"Added Niagara component '{component_name}' to '{blueprint_name}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "add_niagara_component",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
+    @mcp.tool()
     def set_static_mesh_properties(
         ctx: Context,
         blueprint_name: str,
@@ -211,6 +272,63 @@ def register_blueprint_tools(mcp: FastMCP):
             return unreal.send_command("set_static_mesh_properties", params) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def set_blueprint_parent_class(
+        ctx: Context,
+        blueprint_name: str,
+        new_parent_class: str,
+    ) -> Dict[str, Any]:
+        """Reparent a Blueprint to a Blueprint or native C++ parent class.
+
+        Use this when a generated gameplay Blueprint needs to move from a
+        generic Actor shell to Pawn, Character, Controller, or a project-specific
+        base class before the playable slice is compiled.
+
+        Args:
+            blueprint_name: Blueprint asset name or path to reparent.
+            new_parent_class: Blueprint asset name/path or native class name.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            set_blueprint_parent_class(blueprint_name="/Game/MCP_Test/BP_Enemy", new_parent_class="Character")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs = {
+            "blueprint_name": blueprint_name,
+            "new_parent_class": new_parent_class,
+        }
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "set_blueprint_parent_class",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("set_blueprint_parent_class", inputs) or {}
+            return _structured_bridge_result(
+                raw,
+                stage="set_blueprint_parent_class",
+                message=f"Reparented '{blueprint_name}' to '{new_parent_class}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "set_blueprint_parent_class",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
 
     @mcp.tool()
     def set_component_property(

@@ -41,10 +41,23 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertGreater(commands["create_blueprint"]["python_references"], 0)
         self.assertGreater(commands["create_blueprint"]["cpp_routes"], 0)
         review = {entry["command"]: entry for entry in registry["cpp_unreferenced_review"]}
-        self.assertIn("add_niagara_component", review)
-        self.assertEqual(review["add_niagara_component"]["recommendation"], "needs_python_wrapper")
+        self.assertIn("add_blueprint_function_with_pins", review)
+        self.assertEqual(review["add_blueprint_function_with_pins"]["recommendation"], "needs_python_wrapper")
         self.assertNotIn("set_behavior_tree_blackboard", review)
         self.assertNotIn("bt_get_info", review)
+        for bridged_command in (
+            "add_arithmetic_operator_node",
+            "add_construction_script_node",
+            "add_niagara_component",
+            "add_open_level_node",
+            "add_relational_operator_node",
+            "reconstruct_blueprint_node",
+            "rename_blueprint_comment_node",
+            "set_blueprint_parent_class",
+            "set_spawn_actor_class",
+        ):
+            with self.subTest(bridged_command=bridged_command):
+                self.assertNotIn(bridged_command, review)
 
     def test_registry_snapshot_comparison_is_stable_after_write(self):
         audit = _load_audit_module()
@@ -70,7 +83,7 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertIn("## C++-Only Route Review", markdown)
         self.assertIn("## Commands By Category", markdown)
         self.assertIn("Python missing C++ routes", markdown)
-        self.assertIn("add_niagara_component", markdown)
+        self.assertIn("add_blueprint_function_with_pins", markdown)
 
 
 if __name__ == "__main__":

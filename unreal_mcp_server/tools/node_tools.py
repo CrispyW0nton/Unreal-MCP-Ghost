@@ -10,6 +10,30 @@ logger = logging.getLogger("UnrealMCP")
 
 
 def register_blueprint_node_tools(mcp: FastMCP):
+    def _structured_node_result(
+        raw: Dict[str, Any],
+        *,
+        stage: str,
+        message: str,
+        inputs: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        raw = raw or {}
+        error_message = raw.get("error") or raw.get("message") or ""
+        success = raw.get("success") is not False and raw.get("status") != "error" and not raw.get("error")
+        return {
+            "success": success,
+            "stage": stage,
+            "message": message if success else (error_message or f"{stage} failed"),
+            "inputs": inputs,
+            "outputs": {
+                key: value
+                for key, value in raw.items()
+                if key not in {"success", "status", "message", "error"}
+            } if success else {},
+            "warnings": [],
+            "errors": [] if success else [error_message or f"{stage} failed"],
+            "log_tail": [],
+        }
 
     # ------------------------------------------------------------------
     # GRAPH INSPECTION
@@ -344,6 +368,65 @@ def register_blueprint_node_tools(mcp: FastMCP):
             }) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def reconstruct_blueprint_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        graph_name: str = "EventGraph",
+    ) -> Dict[str, Any]:
+        """Reconstruct a Blueprint node so Unreal refreshes its pins and types.
+
+        Use this after setting wildcard pins, changing SpawnActor classes, or
+        applying graph repairs that need UE to re-run pin propagation.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            node_id: Node GUID or short object name.
+            graph_name: Graph to operate on. Default 'EventGraph'.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            reconstruct_blueprint_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="K2Node_CallFunction_0")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs = {
+            "blueprint_name": blueprint_name,
+            "node_id": node_id,
+            "graph_name": graph_name,
+        }
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "reconstruct_blueprint_node",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("reconstruct_blueprint_node", inputs) or {}
+            return _structured_node_result(
+                raw,
+                stage="reconstruct_blueprint_node",
+                message=f"Reconstructed node '{node_id}' in '{blueprint_name}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "reconstruct_blueprint_node",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
 
     # ------------------------------------------------------------------
     # NODE DELETION
@@ -1298,6 +1381,68 @@ def register_blueprint_node_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    @mcp.tool()
+    def set_spawn_actor_class(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        actor_class: str,
+        graph_name: str = "EventGraph",
+    ) -> Dict[str, Any]:
+        """Set the Class pin on an existing SpawnActorFromClass Blueprint node.
+
+        Use this after creating a SpawnActor node when the generated gameplay
+        graph needs to spawn a specific Blueprint or native Actor class.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            node_id: SpawnActorFromClass node GUID or short object name.
+            actor_class: Native or Blueprint-generated actor class name.
+            graph_name: Graph to operate on. Default 'EventGraph'.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            set_spawn_actor_class(blueprint_name="/Game/MCP_Test/BP_Example", node_id="K2Node_SpawnActorFromClass_0", actor_class="BP_Enemy_C")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs = {
+            "blueprint_name": blueprint_name,
+            "node_id": node_id,
+            "actor_class": actor_class,
+            "graph_name": graph_name,
+        }
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "set_spawn_actor_class",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("set_spawn_actor_class", inputs) or {}
+            return _structured_node_result(
+                raw,
+                stage="set_spawn_actor_class",
+                message=f"Set SpawnActor class on '{node_id}' to '{actor_class}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "set_spawn_actor_class",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
     # ===================================================================
     # Phase 2: Comment nodes and node repositioning (L-018, L-019)
     # ===================================================================
@@ -1355,6 +1500,72 @@ def register_blueprint_node_tools(mcp: FastMCP):
             return unreal.send_command("add_blueprint_comment_node", params) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def rename_blueprint_comment_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        comment_text: str,
+        graph_name: str = "EventGraph",
+        color: Optional[List[float]] = None,
+    ) -> Dict[str, Any]:
+        """Rename and optionally recolor an existing Blueprint comment node.
+
+        Use this to keep generated Blueprint graphs readable after automated
+        node layout, repair, or playable-slice assembly passes.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            node_id: Comment node GUID or short object name.
+            comment_text: New comment header text.
+            graph_name: Graph to operate on. Default 'EventGraph'.
+            color: Optional [R, G, B, A] values in 0..1 range.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            rename_blueprint_comment_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="EdGraphNode_Comment_0", comment_text="Generated Combat Loop")
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs: Dict[str, Any] = {
+            "blueprint_name": blueprint_name,
+            "node_id": node_id,
+            "comment_text": comment_text,
+            "graph_name": graph_name,
+        }
+        if color is not None:
+            inputs["color"] = color
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "rename_blueprint_comment_node",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("rename_blueprint_comment_node", inputs) or {}
+            return _structured_node_result(
+                raw,
+                stage="rename_blueprint_comment_node",
+                message=f"Renamed comment node '{node_id}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "rename_blueprint_comment_node",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
 
     @mcp.tool()
     def create_comment_box(
