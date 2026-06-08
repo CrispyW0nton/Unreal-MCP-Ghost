@@ -73,20 +73,55 @@ def _enemy_from_brief(brief: str) -> str:
     return "enemy"
 
 
-def _asset_prompt(theme: str, role: str, index: int, enemy: str) -> str:
+def _split_user_list(value: str) -> List[str]:
+    parts = re.split(r"[,;\n]+", value or "")
+    return [part.strip() for part in parts if part.strip()]
+
+
+def _pick_requested_roles(asset_roles: str, enemy: str) -> Dict[str, Any]:
+    requested = _split_user_list(asset_roles)
+    hero = next((item for item in requested if re.search(r"\b(hero|player|character|protagonist|avatar)\b", item, re.I)), "")
+    enemy_role = next((item for item in requested if re.search(r"\b(enemy|boss|npc|ai|slime|skeleton|robot|drone|creature)\b", item, re.I)), "")
+    props = [
+        item for item in requested
+        if item != hero and item != enemy_role
+    ]
+    while len(props) < 2:
+        props.append(("cover prop", "objective pickup")[len(props)])
+    return {
+        "requested": requested,
+        "hero": hero or "third-person hero character",
+        "enemy": enemy_role or enemy,
+        "props": props[:2],
+    }
+
+
+def _asset_prompt(theme: str, role: str, index: int, enemy: str, descriptor: str = "") -> str:
+    requested = descriptor.strip()
     if role == "hero":
-        return f"game-ready third-person hero character for a {theme} playable slice, clean silhouette, readable proportions"
+        subject = requested or "third-person hero character"
+        return f"game-ready {subject} for a {theme} playable slice, clean silhouette, readable proportions"
     if role == "enemy":
-        return f"game-ready {enemy} enemy for a {theme} encounter, simple patrol/chase readable silhouette"
+        subject = requested or enemy
+        return f"game-ready {subject} enemy for a {theme} encounter, simple patrol/chase readable silhouette"
     prop_names = ("cover prop", "objective pickup")
-    return f"game-ready {theme} {prop_names[index - 1]}, low-poly vertical-slice style, clear collision shape"
+    subject = requested or prop_names[index - 1]
+    return f"game-ready {theme} {subject}, low-poly vertical-slice style, clear collision shape"
 
 
-def build_playable_slice_plan(brief: str, content_path: str = "/Game/Generated/PlayableSlice") -> Dict[str, Any]:
+def build_playable_slice_plan(
+    brief: str,
+    content_path: str = "/Game/Generated/PlayableSlice",
+    asset_roles: str = "",
+    gameplay_loop: str = "",
+    acceptance_criteria: str = "",
+    required_evidence: str = "",
+) -> Dict[str, Any]:
     """Build a deterministic D.7 plan from a one-sentence game brief."""
 
     theme = _theme_from_brief(brief)
     enemy = _enemy_from_brief(brief)
+    requested_roles = _pick_requested_roles(asset_roles, enemy)
     slug = _safe_name(brief[:48], "PlayableSlice")
     base_path = _normalize_content_folder(content_path)
     assets: List[Dict[str, Any]] = []
@@ -94,13 +129,16 @@ def build_playable_slice_plan(brief: str, content_path: str = "/Game/Generated/P
     for index, role in enumerate(_ASSET_ROLES, start=1):
         if role == "prop":
             prop_index += 1
-            name = f"{slug}_Prop{prop_index}"
-            prompt = _asset_prompt(theme, role, prop_index, enemy)
+            descriptor = requested_roles["props"][prop_index - 1]
+            name = f"{slug}_{_safe_name(descriptor, f'Prop{prop_index}')}"
+            prompt = _asset_prompt(theme, role, prop_index, enemy, descriptor)
         else:
-            name = f"{slug}_{role.title()}"
-            prompt = _asset_prompt(theme, role, index, enemy)
+            descriptor = requested_roles[role]
+            name = f"{slug}_{_safe_name(descriptor, role.title())}"
+            prompt = _asset_prompt(theme, role, index, enemy, descriptor)
         assets.append({
             "role": role,
+            "description": descriptor,
             "name": name,
             "prompt": prompt,
             "provider": "tripo",
@@ -118,6 +156,7 @@ def build_playable_slice_plan(brief: str, content_path: str = "/Game/Generated/P
         "brief": brief,
         "theme": theme,
         "content_path": base_path,
+        "requested_asset_roles": requested_roles["requested"],
         "assets": assets,
         "gameplay": {
             "player_blueprint": f"{base_path}/Blueprints/BP_{slug}_Player",
@@ -125,7 +164,8 @@ def build_playable_slice_plan(brief: str, content_path: str = "/Game/Generated/P
             "behavior_tree": f"{base_path}/AI/BT_{slug}_Enemy",
             "blackboard": f"{base_path}/AI/BB_{slug}_Enemy",
             "hud_widget": f"{base_path}/UI/WBP_{slug}_HUD",
-            "level_goal": "small third-person arena with hero start, two props, one patrol/chase enemy, health HUD, and exit objective",
+            "requested_loop": gameplay_loop.strip(),
+            "level_goal": gameplay_loop.strip() or "small third-person arena with hero start, two props, one patrol/chase enemy, health HUD, and exit objective",
         },
         "tool_sequence": [
             {"phase": "context", "tools": ["get_project_context", "list_available_tools", "execution_journal_start"]},
@@ -139,7 +179,8 @@ def build_playable_slice_plan(brief: str, content_path: str = "/Game/Generated/P
         ],
         "validation": {
             "required_blueprints": ["player_blueprint", "enemy_blueprint", "hud_widget"],
-            "required_runtime_evidence": ["PIE >= 60 seconds", "viewport screenshot", "compile reports"],
+            "acceptance_criteria": acceptance_criteria.strip(),
+            "required_runtime_evidence": _split_user_list(required_evidence) or ["PIE >= 60 seconds", "viewport screenshot", "compile reports"],
             "report_tool": "skill_package_vertical_slice_report",
         },
     }
@@ -164,7 +205,7 @@ def validate_playable_slice_plan(plan: Dict[str, Any]) -> List[str]:
             if not isinstance(asset, dict):
                 errors.append("asset entries must be objects")
                 continue
-            for key in ("name", "prompt", "provider", "task_type", "content_path"):
+            for key in ("name", "description", "prompt", "provider", "task_type", "content_path"):
                 if not str(asset.get(key, "")).strip():
                     errors.append(f"asset {asset.get('role', '?')} missing {key}")
             if asset.get("smart_low_poly") is not True:
@@ -297,6 +338,8 @@ def _build_playable_slice_orchestration(
     }
     verification_phase = {
         "phase": "verify_and_report",
+        "acceptance_criteria": plan["validation"].get("acceptance_criteria", ""),
+        "required_evidence": plan["validation"].get("required_runtime_evidence", []),
         "tool_calls": [
             {"tool": "compile_blueprint_and_report", "args": {"blueprint_path": "<each_touched_blueprint_or_widget>"}},
             {"tool": "pie_launch_session", "args": {"map": "<current_or_created_level>"}},
@@ -314,6 +357,8 @@ def _build_playable_slice_orchestration(
                         "compile": "<compile summary>",
                         "pie": "<PIE summary>",
                         "screenshot": "<screenshot path>",
+                        "acceptance_criteria": plan["validation"].get("acceptance_criteria", ""),
+                        "required_evidence": plan["validation"].get("required_runtime_evidence", []),
                     },
                 },
             },
@@ -334,6 +379,8 @@ def _build_playable_slice_orchestration(
                     "verification": {
                         "brief": plan["brief"],
                         "plan_schema": plan["schema"],
+                        "acceptance_criteria": plan["validation"].get("acceptance_criteria", ""),
+                        "required_evidence": plan["validation"].get("required_runtime_evidence", []),
                         "compile": "<compile_blueprint_and_report summaries>",
                         "pie": "<pie_launch_session and pie_capture_log summary>",
                         "screenshot": "<viewport_capture_screenshot path>",
@@ -474,6 +521,10 @@ def skill_generate_playable_slice(
     confirm_spend: bool = False,
     task_submissions_json: str = "",
     imported_assets_json: str = "",
+    asset_roles: str = "",
+    gameplay_loop: str = "",
+    acceptance_criteria: str = "",
+    required_evidence: str = "",
 ) -> Dict[str, Any]:
     """Plan or start a generated playable-slice workflow from one brief."""
 
@@ -485,6 +536,10 @@ def skill_generate_playable_slice(
         "content_path": content_path,
         "session_name": session_name,
         "confirm_spend": confirm_spend,
+        "asset_roles": asset_roles,
+        "gameplay_loop": gameplay_loop,
+        "acceptance_criteria": acceptance_criteria,
+        "required_evidence": required_evidence,
         "task_submissions_json": task_submissions_json,
         "imported_assets_json": imported_assets_json,
     }
@@ -507,7 +562,14 @@ def skill_generate_playable_slice(
             t0=t0,
         )
 
-    plan = build_playable_slice_plan(brief, content_path)
+    plan = build_playable_slice_plan(
+        brief,
+        content_path,
+        asset_roles=asset_roles,
+        gameplay_loop=gameplay_loop,
+        acceptance_criteria=acceptance_criteria,
+        required_evidence=required_evidence,
+    )
     validation_errors = validate_playable_slice_plan(plan)
     schema = _load_schema()
     if validation_errors:
@@ -595,6 +657,10 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
         confirm_spend: bool = False,
         task_submissions_json: str = "",
         imported_assets_json: str = "",
+        asset_roles: str = "",
+        gameplay_loop: str = "",
+        acceptance_criteria: str = "",
+        required_evidence: str = "",
     ) -> str:
         """Plan or start a generated playable slice from one brief.
 
@@ -603,16 +669,23 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
         TRIPO_API_KEY and confirm_spend=True before submitting paid Tripo tasks.
         Mode `orchestrate` returns a no-spend import/gameplay/PIE/report package
         from the plan plus optional submitted-task and imported-asset JSON arrays.
+        Optional asset_roles, gameplay_loop, acceptance_criteria, and
+        required_evidence inputs let the Unreal Playable Slice UI steer the
+        generated plan instead of relying on brief-only inference.
 
         KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#d7-playable-slice-skill
         Example:
-            skill_generate_playable_slice(brief="third-person dungeon demo with a slime and a boss", mode="orchestrate")"""
+            skill_generate_playable_slice(brief="third-person dungeon demo with a slime and a boss", mode="orchestrate", asset_roles="hero, key, boss")"""
         result = _impl(
             brief=brief,
             mode=mode,
             content_path=content_path,
             session_name=session_name,
             confirm_spend=confirm_spend,
+            asset_roles=asset_roles,
+            gameplay_loop=gameplay_loop,
+            acceptance_criteria=acceptance_criteria,
+            required_evidence=required_evidence,
             task_submissions_json=task_submissions_json,
             imported_assets_json=imported_assets_json,
         )

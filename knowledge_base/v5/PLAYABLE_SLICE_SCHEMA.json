@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Unreal MCP Playable Slice Plan",
   "type": "object",
-  "required": ["schema", "brief", "theme", "content_path", "assets", "gameplay", "tool_sequence", "validation"],
+  "required": ["schema", "brief", "theme", "content_path", "requested_asset_roles", "assets", "gameplay", "tool_sequence", "validation"],
   "properties": {
     "schema": {
       "const": "unreal_mcp_playable_slice_plan.v1"
@@ -25,10 +25,14 @@
       "maxItems": 4,
       "items": {
         "type": "object",
-        "required": ["role", "name", "prompt", "provider", "task_type", "content_path", "smart_low_poly"],
+        "required": ["role", "description", "name", "prompt", "provider", "task_type", "content_path", "smart_low_poly"],
         "properties": {
           "role": {
             "enum": ["hero", "prop", "enemy"]
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1
           },
           "name": {
             "type": "string",
@@ -54,9 +58,15 @@
         }
       }
     },
+    "requested_asset_roles": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
     "gameplay": {
       "type": "object",
-      "required": ["player_blueprint", "enemy_blueprint", "behavior_tree", "blackboard", "hud_widget", "level_goal"]
+      "required": ["player_blueprint", "enemy_blueprint", "behavior_tree", "blackboard", "hud_widget", "requested_loop", "level_goal"]
     },
     "tool_sequence": {
       "type": "array",
@@ -68,7 +78,7 @@
     },
     "validation": {
       "type": "object",
-      "required": ["required_blueprints", "required_runtime_evidence", "report_tool"]
+      "required": ["required_blueprints", "acceptance_criteria", "required_runtime_evidence", "report_tool"]
     }
   }
 }

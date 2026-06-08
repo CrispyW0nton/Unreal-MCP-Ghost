@@ -15,12 +15,20 @@ playable-slice workflow.
   import/gameplay/PIE/report execution package from the plan plus optional
   submitted-task and imported-asset JSON arrays.
 
+Optional `asset_roles`, `gameplay_loop`, `acceptance_criteria`, and
+`required_evidence` inputs are accepted by all modes. They let the Unreal
+Playable Slice UI shape the generated plan: asset prompts use requested role
+descriptions, the gameplay loop becomes the level goal, and verification/report
+phases carry the requested acceptance and evidence contract.
+
 ## Example
 
 ```python
 skill_generate_playable_slice(
     brief="third-person dungeon demo with a slime, a skeleton, and a boss",
     mode="orchestrate",
+    asset_roles="hero, key pickup, boss",
+    gameplay_loop="collect the key, open the boss gate, win",
 )
 ```
 

@@ -79,6 +79,28 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertTrue(all(asset["smart_low_poly"] is True for asset in plan["assets"]))
         self.assertIn("skill_package_vertical_slice_report", plan["validation"]["report_tool"])
 
+    def test_plan_mode_uses_ui_intent_fields(self):
+        from skills.playable_slice.skill import skill_generate_playable_slice
+
+        result = skill_generate_playable_slice(
+            "make a gate arena",
+            asset_roles="power core pickup, exit gate, arena marker prop",
+            gameplay_loop="collect the power core, open the exit gate, show completion HUD",
+            acceptance_criteria="pickup opens gate and HUD confirms completion",
+            required_evidence="compile report, PIE log, viewport screenshot",
+        )
+
+        _assert_structured(self, result, "plan_ready")
+        plan = result["outputs"]["plan"]
+        self.assertEqual(plan["requested_asset_roles"], ["power core pickup", "exit gate", "arena marker prop"])
+        self.assertEqual(plan["gameplay"]["requested_loop"], "collect the power core, open the exit gate, show completion HUD")
+        self.assertEqual(plan["gameplay"]["level_goal"], "collect the power core, open the exit gate, show completion HUD")
+        self.assertEqual(plan["validation"]["acceptance_criteria"], "pickup opens gate and HUD confirms completion")
+        self.assertEqual(plan["validation"]["required_runtime_evidence"], ["compile report", "PIE log", "viewport screenshot"])
+        prompts = " ".join(asset["prompt"] for asset in plan["assets"])
+        self.assertIn("power core pickup", prompts)
+        self.assertIn("exit gate", prompts)
+
     def test_submit_assets_requires_tripo_api_key(self):
         from skills.playable_slice.skill import skill_generate_playable_slice
 
@@ -248,6 +270,10 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertIn("D7 Playable Slice Skill", kb_text)
         self.assertIn("D.7 - Playable slice skill", changelog_text)
         self.assertEqual(schema["title"], "Unreal MCP Playable Slice Plan")
+        self.assertIn("requested_asset_roles", schema["required"])
+        self.assertIn("description", schema["properties"]["assets"]["items"]["required"])
+        self.assertIn("requested_loop", schema["properties"]["gameplay"]["required"])
+        self.assertIn("acceptance_criteria", schema["properties"]["validation"]["required"])
         self.assertEqual(schema["properties"]["assets"]["items"]["properties"]["smart_low_poly"]["const"], True)
 
 

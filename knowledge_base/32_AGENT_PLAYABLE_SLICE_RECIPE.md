@@ -57,6 +57,12 @@ the headline generative demo. It converts a one-sentence brief into a validated
 `unreal_mcp_playable_slice_plan.v1` plan using
 `knowledge_base/v5/PLAYABLE_SLICE_SCHEMA.json`.
 
+All modes also accept optional `asset_roles`, `gameplay_loop`,
+`acceptance_criteria`, and `required_evidence`. The Unreal Playable Slice UI
+passes these fields through so asset prompts, the level goal, validation, and
+the final report match the user's stated intent instead of relying on the brief
+alone.
+
 Mode `plan` is offline and safe. It returns:
 
 - one hero asset, two prop assets, and one enemy asset planned for Tripo
@@ -96,6 +102,8 @@ Example:
 skill_generate_playable_slice(
     brief="third-person dungeon demo with a slime, a skeleton, and a boss",
     mode="plan",
+    asset_roles="hero, key pickup, boss",
+    gameplay_loop="collect the key, open the boss gate, win",
 )
 
 skill_generate_playable_slice(
@@ -135,8 +143,9 @@ The dialog captures:
 
 The inserted workflow prompt should:
 
-1. Call `skill_generate_playable_slice(mode="plan")` and use the returned
-   `unreal_mcp_playable_slice_plan.v1` as the source of truth.
+1. Call `skill_generate_playable_slice(mode="plan")` with the brief, asset
+   roles, gameplay loop, acceptance criteria, and required evidence, then use
+   the returned `unreal_mcp_playable_slice_plan.v1` as the source of truth.
 2. Discover project state with `get_project_context`,
    `scan_project_assets(path="/Game", depth=3)`, `list_available_tools`, and
    onboarding context for Blueprints, world building, and UMG.
