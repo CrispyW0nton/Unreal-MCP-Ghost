@@ -96,6 +96,7 @@ private:
 	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
 	FReply HandleToggleTelemetryClicked();
 	FReply HandleOpenPlayableSliceClicked();
+	FReply HandleInsertPlayableSlicePreflightPromptClicked();
 	FReply HandleInsertPlayableSlicePromptClicked();
 	FReply HandleOpenGameplayBuilderClicked();
 	FReply HandleInsertGameplayBuilderPromptClicked();
@@ -227,7 +228,9 @@ private:
 	FString BuildRenamedSessionName() const;
 	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
 	FString BuildPlayableSlicePrompt() const;
+	FString BuildPlayableSlicePreflightPrompt() const;
 	FText GetPlayableSlicePreviewText() const;
+	FText GetPlayableSlicePreflightStatusText() const;
 	EVisibility GetPlayableSliceDialogVisibility() const;
 	FString BuildGameplayBuilderPrompt() const;
 	FText GetGameplayBuilderPreviewText() const;

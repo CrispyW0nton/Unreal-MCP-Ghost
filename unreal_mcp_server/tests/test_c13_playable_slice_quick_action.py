@@ -25,10 +25,13 @@ class PlayableSliceQuickActionTest(unittest.TestCase):
     def test_playable_slice_surface_is_declared(self) -> None:
         for symbol in (
             "HandleOpenPlayableSliceClicked",
+            "HandleInsertPlayableSlicePreflightPromptClicked",
             "HandleInsertPlayableSlicePromptClicked",
             "BuildPlayableSliceDialog",
+            "BuildPlayableSlicePreflightPrompt",
             "BuildPlayableSlicePrompt",
             "GetPlayableSlicePreviewText",
+            "GetPlayableSlicePreflightStatusText",
             "GetPlayableSliceDialogVisibility",
             "bPlayableSliceDialogVisible",
             "PlayableSliceBriefInput",
@@ -46,9 +49,12 @@ class PlayableSliceQuickActionTest(unittest.TestCase):
             "PlayableSliceQuickAction",
             "BuildPlayableSliceDialog()",
             "Playable Slice quick action",
+            "Preflight",
+            "BuildPlayableSlicePreflightPrompt()",
+            "playable_slice_preflight_prompt_inserted",
             "BuildPlayableSlicePrompt()",
             "playable_slice_workflow_prompt_inserted",
-            "Add a Tripo API key before generating a playable slice",
+            "Inserted preflight-first workflow; add a Tripo API key before paid execution",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp)
@@ -57,6 +63,9 @@ class PlayableSliceQuickActionTest(unittest.TestCase):
         for token in (
             "in-editor AI IDE",
             "one-sentence brief",
+            "Run the no-spend Playable Slice preflight",
+            "Preflight gates:",
+            "tripo_api_key, credit_budget, unreal_build_tooling, packaged_plugin, and unreal_bridge",
             "generated_asset_roles",
             "skill_generate_playable_slice",
             "mode=\\\"preflight\\\"",

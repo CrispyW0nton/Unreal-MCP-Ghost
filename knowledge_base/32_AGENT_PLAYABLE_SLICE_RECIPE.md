@@ -185,7 +185,17 @@ The dialog captures:
 - a one-sentence playable game brief;
 - generated asset roles for Smart Mesh Tripo assets;
 - the intended gameplay loop;
-- acceptance criteria and required evidence.
+- acceptance criteria and required evidence;
+- visible preflight gate status for auth, remaining credits, package checks, and
+  bridge readiness.
+
+The **Preflight** button inserts a no-spend prompt that only calls
+`skill_generate_playable_slice(mode="preflight")`. It is intentionally available
+before a Tripo key is configured so users can diagnose missing auth, credit,
+packaging, or Unreal bridge gates without starting paid generation. The full
+workflow prompt is also preflight-first and may be inserted when auth is
+missing; `submit_assets` remains blocked until auth, budget, bridge readiness,
+and explicit spend confirmation are satisfied.
 
 The inserted workflow prompt should:
 

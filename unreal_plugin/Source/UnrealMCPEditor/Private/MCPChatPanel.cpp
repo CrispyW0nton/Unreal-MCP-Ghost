@@ -760,17 +760,25 @@ FReply SMCPChatPanel::HandleInsertPlayableSlicePromptClicked()
 	if (!IsGenerativeApiKeyConfigured())
 	{
 		bGenerativeSettingsVisible = true;
-		SetStatus(LOCTEXT("StatusPlayableSliceMissingKey", "Add a Tripo API key before generating a playable slice"), ErrorStatusColor);
-		return FReply::Handled();
 	}
 
 	InsertComposerText(BuildPlayableSlicePrompt());
 	bPlayableSliceDialogVisible = false;
 	RecordTelemetryEvent(TEXT("playable_slice_workflow_prompt_inserted"));
 	SetStatus(
-		bGenerativeSpendConfirmed ? LOCTEXT("StatusPlayableSliceInsertedConfirmed", "Inserted playable-slice generation workflow") : LOCTEXT("StatusPlayableSliceInsertedNeedsSpend", "Inserted playable-slice workflow; confirm spend before paid execution"),
-		bGenerativeSpendConfirmed ? OkStatusColor : PendingStatusColor
+		!IsGenerativeApiKeyConfigured()
+			? LOCTEXT("StatusPlayableSliceInsertedNeedsKey", "Inserted preflight-first workflow; add a Tripo API key before paid execution")
+			: (bGenerativeSpendConfirmed ? LOCTEXT("StatusPlayableSliceInsertedConfirmed", "Inserted playable-slice generation workflow") : LOCTEXT("StatusPlayableSliceInsertedNeedsSpend", "Inserted playable-slice workflow; confirm spend before paid execution")),
+		(!IsGenerativeApiKeyConfigured() || !bGenerativeSpendConfirmed) ? PendingStatusColor : OkStatusColor
 	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleInsertPlayableSlicePreflightPromptClicked()
+{
+	InsertComposerText(BuildPlayableSlicePreflightPrompt());
+	RecordTelemetryEvent(TEXT("playable_slice_preflight_prompt_inserted"));
+	SetStatus(LOCTEXT("StatusPlayableSlicePreflightInserted", "Inserted no-spend playable-slice preflight"), PendingStatusColor);
 	return FReply::Handled();
 }
 
@@ -2611,15 +2619,40 @@ TSharedRef<SWidget> SMCPChatPanel::BuildPlayableSliceDialog()
 						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 						.AutoWrapText(true)
 					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetPlayableSlicePreflightStatusText)
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.AutoWrapText(true)
+					]
 				]
 			]
 
 			+ SVerticalBox::Slot()
 			.AutoHeight()
 			[
-				SNew(SButton)
-				.Text(LOCTEXT("InsertPlayableSlicePrompt", "Insert Workflow Prompt"))
-				.OnClicked(this, &SMCPChatPanel::HandleInsertPlayableSlicePromptClicked)
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("InsertPlayableSlicePreflight", "Preflight"))
+					.OnClicked(this, &SMCPChatPanel::HandleInsertPlayableSlicePreflightPromptClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("InsertPlayableSlicePrompt", "Insert Workflow Prompt"))
+					.OnClicked(this, &SMCPChatPanel::HandleInsertPlayableSlicePromptClicked)
+				]
 			]
 		];
 }
@@ -4963,12 +4996,39 @@ FString SMCPChatPanel::BuildPlayableSlicePrompt() const
 	);
 }
 
+FString SMCPChatPanel::BuildPlayableSlicePreflightPrompt() const
+{
+	auto Escape = [](const FString& Value) -> FString
+	{
+		return Value.Replace(TEXT("\""), TEXT("'"));
+	};
+
+	const FString SessionName = CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName;
+
+	return FString::Printf(
+		TEXT("Run the no-spend Playable Slice preflight before any paid Tripo or Unreal mutation work.\n")
+		TEXT("Call `skill_generate_playable_slice` with mode=\"preflight\" and session_name=\"%s\". This should make no Tripo request, not mutate Unreal, and not reserve credits.\n")
+		TEXT("Report the live-readiness gates in a compact table: tripo_api_key, credit_budget, unreal_build_tooling, packaged_plugin, and unreal_bridge. Include `ready_for_live_spend`, `next_actions`, configured auth source, remaining generative credits, latest packaged plugin path, and bridge host/port. Do not continue to mode=\"submit_assets\" unless all gates are ready and the user has confirmed spend."),
+		*Escape(SessionName)
+	);
+}
+
 FText SMCPChatPanel::GetPlayableSlicePreviewText() const
 {
 	return FText::Format(
 		LOCTEXT("PlayableSlicePreview", "Preview: one brief -> Smart Mesh Tripo assets -> import -> Blueprint/UMG/level build -> compile -> PIE/log/screenshot evidence. Auth: {0}. Confirmed spend: {1}."),
 		IsGenerativeApiKeyConfigured() ? LOCTEXT("PlayableSliceAuthReady", "ready") : LOCTEXT("PlayableSliceAuthMissing", "missing"),
 		bGenerativeSpendConfirmed ? LOCTEXT("PlayableSliceSpendYes", "yes") : LOCTEXT("PlayableSliceSpendNo", "no")
+	);
+}
+
+FText SMCPChatPanel::GetPlayableSlicePreflightStatusText() const
+{
+	const int32 RemainingCredits = FMath::Max(0, GenerativeSessionCreditBudget - GenerativeSessionCreditsUsed);
+	return FText::Format(
+		LOCTEXT("PlayableSlicePreflightStatus", "Preflight gates: auth {0} | credits remaining {1} | package + bridge checked by no-spend preflight | paid work requires confirmed spend"),
+		IsGenerativeApiKeyConfigured() ? LOCTEXT("PlayableSlicePreflightAuthReady", "ready") : LOCTEXT("PlayableSlicePreflightAuthMissing", "missing"),
+		FText::AsNumber(RemainingCredits)
 	);
 }
 
