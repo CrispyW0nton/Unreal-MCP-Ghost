@@ -132,6 +132,11 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "credit_usage_by_session",
             "Remaining",
             "Next spend",
+            "Check Wallet",
+            "BuildTripoWalletBalancePrompt",
+            "HandleInsertTripoWalletBalancePromptClicked",
+            "gen_tripo_get_wallet_balance",
+            "tripo_wallet_balance_prompt_inserted",
             "Generate Asset **Preflight** action",
         ):
             with self.subTest(token=token):

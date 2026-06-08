@@ -27,9 +27,11 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "HandleOpenGenerateAssetClicked",
             "HandleInsertGenerateAssetPreflightPromptClicked",
             "HandleInsertGenerateAssetToolCallClicked",
+            "HandleInsertTripoWalletBalancePromptClicked",
             "BuildGenerateAssetDialog",
             "BuildGenerateAssetPreflightPrompt",
             "BuildGenerateAssetToolCallPrompt",
+            "BuildTripoWalletBalancePrompt",
             "GetGenerateAssetPreviewText",
             "GetGenerateAssetPreflightStatusText",
             "GetGenerateAssetDialogVisibility",
@@ -43,6 +45,7 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
     def test_generate_asset_dialog_inserts_tripo_tool_call(self) -> None:
         for token in (
             "Generate Asset",
+            "Check Wallet",
             "GenerateAssetQuickAction",
             "BuildGenerateAssetDialog()",
             "gen_tripo_text_to_model",
@@ -56,6 +59,7 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "InsertComposerText(BuildGenerateAssetToolCallPrompt())",
             "generate_asset_preflight_prompt_inserted",
             "generate_asset_quick_action_inserted",
+            "tripo_wallet_balance_prompt_inserted",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp)
@@ -75,6 +79,8 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "Smart Mesh/good topology",
             "gen_tripo_get_wallet_balance",
             "wallet balance/frozen credits",
+            "Run the no-spend live Tripo wallet balance check",
+            "must not create a generation task",
             "Preflight gates: auth",
             "paid work requires confirmed spend",
             "Use Preflight or add a Tripo API key before paid generation",

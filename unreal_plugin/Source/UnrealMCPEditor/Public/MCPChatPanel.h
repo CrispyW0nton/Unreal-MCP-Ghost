@@ -119,6 +119,7 @@ private:
 	FReply HandleSaveGenerativeSettingsClicked();
 	FReply HandleClearGenerativeApiKeyClicked();
 	FReply HandleConfirmGenerativeSpendClicked();
+	FReply HandleInsertTripoWalletBalancePromptClicked();
 	FReply HandleOnboardingNextClicked();
 	FReply HandleOnboardingDismissClicked();
 	FReply HandleToggleSamplePromptsClicked();
@@ -243,6 +244,7 @@ private:
 	EVisibility GetGameplayBuilderDialogVisibility() const;
 	FString BuildGenerateAssetPreflightPrompt() const;
 	FString BuildGenerateAssetToolCallPrompt() const;
+	FString BuildTripoWalletBalancePrompt() const;
 	FText GetGenerateAssetPreviewText() const;
 	FText GetGenerateAssetPreflightStatusText() const;
 	EVisibility GetGenerateAssetDialogVisibility() const;

@@ -1175,6 +1175,25 @@ FReply SMCPChatPanel::HandleConfirmGenerativeSpendClicked()
 	return FReply::Handled();
 }
 
+FReply SMCPChatPanel::HandleInsertTripoWalletBalancePromptClicked()
+{
+	if (GenerativeApiKeyInput.IsValid())
+	{
+		GenerativeApiKey = GenerativeApiKeyInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (!IsGenerativeApiKeyConfigured())
+	{
+		bGenerativeSettingsVisible = true;
+		SetStatus(LOCTEXT("StatusTripoWalletMissingKey", "Add or save a Tripo API key before checking live wallet balance"), ErrorStatusColor);
+		return FReply::Handled();
+	}
+
+	InsertComposerText(BuildTripoWalletBalancePrompt());
+	RecordTelemetryEvent(TEXT("tripo_wallet_balance_prompt_inserted"));
+	SetStatus(LOCTEXT("StatusTripoWalletPromptInserted", "Inserted no-spend Tripo wallet balance check"), PendingStatusColor);
+	return FReply::Handled();
+}
+
 FReply SMCPChatPanel::HandleOnboardingNextClicked()
 {
 	bOnboardingVisible = true;
@@ -3344,9 +3363,24 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("GenerativeCreditsDisplayTitle", "Generative Credits"))
-						.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GenerativeCreditsDisplayTitle", "Generative Credits"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("CheckTripoWalletBalance", "Check Wallet"))
+							.OnClicked(this, &SMCPChatPanel::HandleInsertTripoWalletBalancePromptClicked)
+						]
 					]
 
 					+ SVerticalBox::Slot()
@@ -3565,9 +3599,24 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerativeSettingsPanel()
 					+ SVerticalBox::Slot()
 					.AutoHeight()
 					[
-						SNew(STextBlock)
-						.Text(LOCTEXT("GenerativeSettingsCreditsTitle", "Generative Credits"))
-						.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						SNew(SHorizontalBox)
+
+						+ SHorizontalBox::Slot()
+						.FillWidth(1.0f)
+						.VAlign(VAlign_Center)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GenerativeSettingsCreditsTitle", "Generative Credits"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
+
+						+ SHorizontalBox::Slot()
+						.AutoWidth()
+						[
+							SNew(SButton)
+							.Text(LOCTEXT("CheckTripoWalletBalanceSettings", "Check Wallet"))
+							.OnClicked(this, &SMCPChatPanel::HandleInsertTripoWalletBalancePromptClicked)
+						]
 					]
 
 					+ SVerticalBox::Slot()
@@ -5744,6 +5793,22 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 		*ConfirmSpend,
 		*GenerativeOutputFolder,
 		*CleanAssetName
+	);
+}
+
+FString SMCPChatPanel::BuildTripoWalletBalancePrompt() const
+{
+	const FString SessionName = CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName;
+	return FString::Printf(
+		TEXT("Run the no-spend live Tripo wallet balance check before paid generation.\n")
+		TEXT("Call MCP tool `gen_tripo_get_wallet_balance` with timeout_s=30. This may contact Tripo but must not create a generation task, mutate Unreal, reserve credits, or spend credits.\n")
+		TEXT("Report wallet `balance`, `frozen` credits, trace_id if present, and compare it with the local Unreal session budget: session_name \"%s\", budget %d, used %d, remaining %d, next pending spend %d, confirmed spend %s. If the provider wallet is too low or auth fails, stop before paid generation and tell the user which setting to fix."),
+		*SessionName,
+		GenerativeSessionCreditBudget,
+		GenerativeSessionCreditsUsed,
+		FMath::Max(0, GenerativeSessionCreditBudget - GenerativeSessionCreditsUsed),
+		GenerativePendingSpendCredits,
+		bGenerativeSpendConfirmed ? TEXT("true") : TEXT("false")
 	);
 }
 
