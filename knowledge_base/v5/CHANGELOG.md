@@ -87,6 +87,7 @@
 - Added the direct `gen_generate_asset_preflight` MCP tool and `unreal_mcp_generate_asset_live_preflight.v1` schema so Generate Asset readiness no longer has to piggyback on Playable Slice preflight results.
 - Hardened the Tripo API-key UX with password-style entry, save/clear controls, local `Saved/MCPChat/secrets.json` persistence, and generation gating when auth is missing.
 - Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
+- Added no-spend `gen_compile_generate_asset_evidence` so Generate Asset runs can compile task status, credit reconciliation, import paths, validation, and thumbnail/screenshot evidence into `unreal_mcp_generate_asset_evidence.v1` before claiming an asset is proven in Unreal.
 - Documented the D.9 chat-dock workflow in the generative content pipeline KB and added static smoke coverage for the UI hooks.
 
 ### D.8 - Generative knowledge base runbooks

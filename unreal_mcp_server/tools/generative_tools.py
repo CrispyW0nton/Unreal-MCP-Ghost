@@ -1004,6 +1004,7 @@ def _build_generate_asset_preflight(
             "smart_mesh_required": smart_mesh_required,
             "smart_low_poly_default": True,
             "wallet_tool": "gen_tripo_get_wallet_balance",
+            "proof_tool": "gen_compile_generate_asset_evidence",
             "paid_tools": {
                 "text_to_model": "gen_tripo_text_to_model",
                 "image_to_model": "gen_tripo_image_to_model",
@@ -1020,6 +1021,206 @@ def _build_generate_asset_preflight(
                 "gen_tripo_magic_brush_apply",
             ],
         },
+        "gates": gates,
+        "next_actions": next_actions,
+    }
+
+
+def _coerce_json_object(value: Any, field_name: str, warnings: List[str]) -> Dict[str, Any]:
+    if not value:
+        return {}
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError as exc:
+            warnings.append(f"{field_name} was not valid JSON: {exc.msg}")
+            return {}
+        if isinstance(parsed, dict):
+            return parsed
+    warnings.append(f"{field_name} did not contain a JSON object")
+    return {}
+
+
+def _nested_dict(value: Any, *keys: str) -> Dict[str, Any]:
+    current = value
+    for key in keys:
+        if not isinstance(current, dict):
+            return {}
+        current = current.get(key)
+    return current if isinstance(current, dict) else {}
+
+
+def _extract_generated_asset_task(task_result: Dict[str, Any], import_result: Dict[str, Any]) -> Dict[str, Any]:
+    task = _nested_dict(task_result, "outputs", "task")
+    if not task:
+        task = _nested_dict(import_result, "outputs", "task")
+    return task
+
+
+def _extract_generated_asset_task_id(task: Dict[str, Any], task_result: Dict[str, Any], import_result: Dict[str, Any]) -> str:
+    for candidate in (
+        task.get("task_id"),
+        _nested_dict(task_result, "inputs").get("task_id"),
+        _nested_dict(task_result, "outputs").get("task_id"),
+        _nested_dict(import_result, "inputs").get("task_id"),
+        _nested_dict(import_result, "outputs").get("task_id"),
+    ):
+        if _clean_optional_text(str(candidate or "")):
+            return str(candidate)
+    return ""
+
+
+def _extract_generated_asset_paths(import_result: Dict[str, Any], asset_name: str, content_path: str) -> Dict[str, Any]:
+    outputs = _nested_dict(import_result, "outputs")
+    asset_paths = outputs.get("asset_paths")
+    if not isinstance(asset_paths, dict):
+        asset_paths = {}
+    import_outputs = _nested_dict(outputs, "import_result", "outputs")
+    manifest_expected = _nested_dict(outputs, "manifest", "expected_assets")
+    primary_asset = (
+        asset_paths.get("primary_asset")
+        or import_outputs.get("asset_path")
+        or manifest_expected.get("primary_asset")
+        or ""
+    )
+    if not primary_asset and _clean_optional_text(asset_name):
+        primary_asset = f"{_normalize_content_folder(content_path)}/{_safe_name(asset_name, 'GeneratedAsset')}"
+    return {
+        "primary_asset": primary_asset,
+        "material_instance": asset_paths.get("material_instance") or import_outputs.get("material_instance") or "",
+        "blueprint": asset_paths.get("blueprint") or import_outputs.get("blueprint") or "",
+        "imported_object_paths": asset_paths.get("imported_object_paths") or import_outputs.get("imported_object_paths") or [],
+    }
+
+
+def _extract_visual_evidence(import_result: Dict[str, Any], screenshot_result: Dict[str, Any]) -> Dict[str, Any]:
+    thumbnail = _nested_dict(import_result, "outputs", "thumbnail")
+    screenshot_outputs = _nested_dict(screenshot_result, "outputs")
+    screenshot = screenshot_outputs if screenshot_outputs else screenshot_result
+    thumbnail_path = str(thumbnail.get("path") or thumbnail.get("filepath") or "")
+    screenshot_path = str(
+        screenshot.get("path")
+        or screenshot.get("filepath")
+        or screenshot.get("filename")
+        or screenshot.get("screenshot_path")
+        or ""
+    )
+    return {
+        "thumbnail": thumbnail,
+        "screenshot": screenshot if isinstance(screenshot, dict) else {},
+        "thumbnail_path": thumbnail_path,
+        "screenshot_path": screenshot_path,
+        "has_visual_evidence": bool(thumbnail_path or screenshot_path),
+    }
+
+
+def _validation_success(validation_result: Dict[str, Any]) -> bool:
+    if not validation_result:
+        return False
+    outputs = _nested_dict(validation_result, "outputs")
+    return bool(
+        validation_result.get("success") is True
+        or outputs.get("exists") is True
+        or outputs.get("asset_exists") is True
+        or outputs.get("validated") is True
+    )
+
+
+def _build_generate_asset_evidence(
+    *,
+    task_result: Dict[str, Any],
+    import_result: Dict[str, Any],
+    validation_result: Dict[str, Any],
+    screenshot_result: Dict[str, Any],
+    session_name: str,
+    asset_name: str,
+    content_path: str,
+) -> Dict[str, Any]:
+    safe_session = (session_name or "default").strip() or "default"
+    safe_content_path = _normalize_content_folder(content_path)
+    task = _extract_generated_asset_task(task_result, import_result)
+    task_id = _extract_generated_asset_task_id(task, task_result, import_result)
+    asset_paths = _extract_generated_asset_paths(import_result, asset_name, safe_content_path)
+    visual = _extract_visual_evidence(import_result, screenshot_result)
+    credit_reconciliation = _nested_dict(task_result, "outputs", "credit_reconciliation")
+    credit_guard = _nested_dict(task_result, "outputs", "credit_guard")
+    if not credit_guard:
+        credit_guard = _nested_dict(import_result, "outputs", "credit_guard")
+    import_success = bool(import_result.get("success") is True and asset_paths.get("primary_asset"))
+    validation_ready = _validation_success(validation_result)
+    credit_ready = bool(credit_reconciliation.get("available") is True or credit_guard.get("approved") is True or credit_guard.get("reserved") is True)
+    gates = [
+        _readiness_gate(
+            "tripo_task_final_success",
+            "Tripo task reached final success before import",
+            task.get("status") == "success",
+            [f"task_id={task_id}", "status=success"] if task.get("status") == "success" else [f"status={task.get('status', 'unknown')}"],
+            ["gen_tripo_wait_for_task success result"] if task.get("status") != "success" else [],
+        ),
+        _readiness_gate(
+            "credit_reconciled",
+            "Tripo credit guard or consumed-credit reconciliation is present",
+            credit_ready,
+            [json.dumps(item, sort_keys=True) for item in (credit_reconciliation or credit_guard,) if item],
+            ["credit_reconciliation or credit_guard from Tripo task result"] if not credit_ready else [],
+        ),
+        _readiness_gate(
+            "import_asset_paths",
+            "Generated StaticMesh import returned a primary Unreal asset path",
+            import_success,
+            [str(asset_paths.get("primary_asset"))] if asset_paths.get("primary_asset") else [],
+            ["gen_tripo_import_to_project primary_asset"] if not import_success else [],
+        ),
+        _readiness_gate(
+            "import_validation",
+            "Imported Unreal asset was validated after import",
+            validation_ready,
+            [json.dumps(_nested_dict(validation_result, "outputs"), sort_keys=True)] if validation_ready else [],
+            ["validate_import_result for the imported primary asset"] if not validation_ready else [],
+        ),
+        _readiness_gate(
+            "visual_evidence",
+            "Thumbnail or viewport screenshot exists for review",
+            bool(visual["has_visual_evidence"]),
+            [path for path in (visual["thumbnail_path"], visual["screenshot_path"]) if path],
+            ["thumbnail from gen_tripo_import_to_project or viewport_capture_screenshot"] if not visual["has_visual_evidence"] else [],
+        ),
+    ]
+    next_actions = []
+    for gate in gates:
+        if gate["status"] == "ready":
+            continue
+        if gate["id"] == "tripo_task_final_success":
+            next_actions.append("Run gen_tripo_wait_for_task until the task status is success.")
+        elif gate["id"] == "credit_reconciled":
+            next_actions.append("Use the task result with credit_guard or poll status until consumed_credit reconciliation is available.")
+        elif gate["id"] == "import_asset_paths":
+            next_actions.append("Run gen_tripo_import_to_project with content_path and asset_name.")
+        elif gate["id"] == "import_validation":
+            next_actions.append("Run validate_import_result for the imported primary asset.")
+        elif gate["id"] == "visual_evidence":
+            next_actions.append("Capture a thumbnail during import or run viewport_capture_screenshot.")
+    proven = all(gate["status"] == "ready" for gate in gates)
+    return {
+        "schema": "unreal_mcp_generate_asset_evidence.v1",
+        "proven": proven,
+        "network_required": False,
+        "spend_required": False,
+        "session_name": safe_session,
+        "asset_name": asset_name,
+        "content_path": safe_content_path,
+        "task_id": task_id,
+        "task_status": task.get("status", ""),
+        "asset_paths": asset_paths,
+        "credit_reconciliation": credit_reconciliation,
+        "credit_guard": credit_guard,
+        "validation": validation_result,
+        "visual_evidence": visual,
         "gates": gates,
         "next_actions": next_actions,
     }
@@ -1794,6 +1995,57 @@ def register_generative_tools(mcp: FastMCP):
             inputs=inputs,
             outputs={"preflight": preflight},
             warnings=[] if ready else list(preflight.get("next_actions", [])),
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_compile_generate_asset_evidence(
+        ctx: Context,
+        task_result_json: str = "",
+        import_result_json: str = "",
+        validation_result_json: str = "",
+        screenshot_result_json: str = "",
+        session_name: str = "default",
+        asset_name: str = "",
+        content_path: str = "/Game/Generated",
+    ) -> str:
+        """Compile no-spend proof that a generated Tripo asset reached Unreal.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#auto-import-bridge
+        Example:
+            gen_compile_generate_asset_evidence(task_result_json="<gen_tripo_wait_for_task JSON>", import_result_json="<gen_tripo_import_to_project JSON>", validation_result_json="<validate_import_result JSON>")"""
+        t0 = time.monotonic()
+        warnings: List[str] = []
+        inputs = {
+            "task_result_json_supplied": bool(task_result_json.strip()),
+            "import_result_json_supplied": bool(import_result_json.strip()),
+            "validation_result_json_supplied": bool(validation_result_json.strip()),
+            "screenshot_result_json_supplied": bool(screenshot_result_json.strip()),
+            "session_name": session_name,
+            "asset_name": asset_name,
+            "content_path": content_path,
+        }
+        task_result = _coerce_json_object(task_result_json, "task_result_json", warnings)
+        import_result = _coerce_json_object(import_result_json, "import_result_json", warnings)
+        validation_result = _coerce_json_object(validation_result_json, "validation_result_json", warnings)
+        screenshot_result = _coerce_json_object(screenshot_result_json, "screenshot_result_json", warnings)
+        evidence = _build_generate_asset_evidence(
+            task_result=task_result,
+            import_result=import_result,
+            validation_result=validation_result,
+            screenshot_result=screenshot_result,
+            session_name=session_name,
+            asset_name=asset_name,
+            content_path=content_path,
+        )
+        proven = bool(evidence.get("proven"))
+        return _result_json(
+            success=proven,
+            stage="gen_compile_generate_asset_evidence",
+            message="Generated asset evidence is complete" if proven else "Generated asset evidence has missing gates",
+            inputs=inputs,
+            outputs={"evidence": evidence},
+            warnings=warnings + ([] if proven else list(evidence.get("next_actions", []))),
             t0=t0,
         )
 

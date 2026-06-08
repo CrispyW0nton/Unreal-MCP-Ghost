@@ -5564,7 +5564,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- smart_low_poly: true\n")
 			TEXT("- session_name: \"%s\"\n")
 			TEXT("- confirm_spend: %s\n")
-			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\". Then call `validate_import_result` for the imported primary asset. If the import did not return a thumbnail, call `viewport_capture_screenshot`. Finally call no-spend `gen_compile_generate_asset_evidence` with task_result_json, import_result_json, validation_result_json, screenshot_result_json, session_name, asset_name, and content_path; report `unreal_mcp_generate_asset_evidence.v1`, proven, gates, next_actions, asset paths, thumbnail/screenshot evidence, warnings, and errors."),
 			*ImageArgumentName(GenerateAssetImageInput),
 			*Escape(GenerateAssetImageInput),
 			*GenerativeModelVersion,
@@ -5598,7 +5598,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- smart_low_poly: true\n")
 			TEXT("- session_name: \"%s\"\n")
 			TEXT("- confirm_spend: %s\n")
-			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\". Then call `validate_import_result` for the imported primary asset. If the import did not return a thumbnail, call `viewport_capture_screenshot`. Finally call no-spend `gen_compile_generate_asset_evidence` with task_result_json, import_result_json, validation_result_json, screenshot_result_json, session_name, asset_name, and content_path; report `unreal_mcp_generate_asset_evidence.v1`, proven, gates, next_actions, asset paths, thumbnail/screenshot evidence, warnings, and errors."),
 			*ImagesJson,
 			*GenerativeModelVersion,
 			*GenerativeTextureQuality,
@@ -5725,7 +5725,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- texture_alignment: \"original_image\"\n")
 			TEXT("- session_name: \"%s\"\n")
 			TEXT("- confirm_spend: %s\n")
-			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\". Then call `validate_import_result` for the imported primary asset. If the import did not return a thumbnail, call `viewport_capture_screenshot`. Finally call no-spend `gen_compile_generate_asset_evidence` with task_result_json, import_result_json, validation_result_json, screenshot_result_json, session_name, asset_name, and content_path; report `unreal_mcp_generate_asset_evidence.v1`, proven, gates, next_actions, asset paths, thumbnail/screenshot evidence, warnings, and errors."),
 			*Escape(GenerateTextureTaskId),
 			*Escape(GenerateTexturePrompt),
 			*Escape(GenerateTextureReferenceImageInput),
@@ -5785,7 +5785,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 		TEXT("- smart_low_poly: true\n")
 		TEXT("- session_name: \"%s\"\n")
 		TEXT("- confirm_spend: %s\n")
-		TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+		TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\". Then call `validate_import_result` for the imported primary asset. If the import did not return a thumbnail, call `viewport_capture_screenshot`. Finally call no-spend `gen_compile_generate_asset_evidence` with task_result_json, import_result_json, validation_result_json, screenshot_result_json, session_name, asset_name, and content_path; report `unreal_mcp_generate_asset_evidence.v1`, proven, gates, next_actions, asset paths, thumbnail/screenshot evidence, warnings, and errors."),
 		*Escape(GenerateAssetPrompt),
 		*GenerativeModelVersion,
 		*GenerativeTextureQuality,

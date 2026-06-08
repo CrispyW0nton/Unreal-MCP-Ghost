@@ -49,6 +49,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_tripo_get_wallet_balance",
             "gen_check_credit_budget",
             "gen_generate_asset_preflight",
+            "gen_compile_generate_asset_evidence",
             "gen_prepare_texture_paint_session",
             "gen_record_texture_paint_stroke",
             "gen_compile_texture_paint_image_map",
@@ -205,6 +206,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(preflight["workspace"]["smart_low_poly_default"])
         self.assertIn("gen_tripo_multiview_to_model", preflight["workspace"]["paid_tools"].values())
         self.assertEqual(preflight["workspace"]["wallet_tool"], "gen_tripo_get_wallet_balance")
+        self.assertEqual(preflight["workspace"]["proof_tool"], "gen_compile_generate_asset_evidence")
         self.assertTrue(all(gate["status"] == "ready" for gate in preflight["gates"]))
         self.assertIn("smart_mesh_policy", {gate["id"] for gate in preflight["gates"]})
 
@@ -334,6 +336,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_save_provider_config",
             "gen_tripo_get_wallet_balance",
             "gen_check_credit_budget",
+            "gen_compile_generate_asset_evidence",
             "gen_prepare_texture_paint_session",
             "gen_record_texture_paint_stroke",
             "gen_compile_texture_paint_image_map",

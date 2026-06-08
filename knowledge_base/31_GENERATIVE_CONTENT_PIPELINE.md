@@ -53,6 +53,7 @@ verified in-editor.
 | Poll and collect Tripo outputs | `gen_tripo_get_task_status`, `gen_tripo_wait_for_task`, `gen_tripo_download_result` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
 | Import Tripo outputs into Unreal | `gen_tripo_import_to_project` |
+| Compile generated asset proof | `gen_compile_generate_asset_evidence` |
 | Import assets | asset import, batch import, texture/audio import tools |
 | Normalize materials | `material_create_master`, `material_create_instance_from_master`, texture tools |
 | Audit meshes/textures | mesh, texture, technical-art audit tools |
@@ -309,6 +310,16 @@ On success it returns:
 - `thumbnail`: viewport screenshot evidence when the editor connection can
   capture it.
 
+After import, use `validate_import_result` against the returned
+`asset_paths.primary_asset`. If the import did not capture a thumbnail, run
+`viewport_capture_screenshot`. Then call `gen_compile_generate_asset_evidence`
+with the JSON outputs from the Tripo wait/status step, import step, validation
+step, and optional screenshot step. The tool does not contact Tripo, mutate
+Unreal, reserve credits, or spend credits; it compiles those outputs into
+`unreal_mcp_generate_asset_evidence.v1` with proof gates for final Tripo task
+success, credit reconciliation, import asset paths, import validation, and
+visual evidence.
+
 `create_material_instance=True` creates a material instance only when the import
 produces an embedded base material to parent from. If Tripo/Interchange already
 embedded textures in a GLB/FBX, this preserves that imported material chain. If
@@ -383,6 +394,16 @@ material_set_instance_parameters_bulk(
         "NormalTexture": "/Game/Generated/Dungeon/Textures/T_MossyStone_Normal",
         "ORMTexture": "/Game/Generated/Dungeon/Textures/T_MossyStone_ORM",
     },
+)
+
+gen_compile_generate_asset_evidence(
+    task_result_json="<gen_tripo_wait_for_task result JSON>",
+    import_result_json="<gen_tripo_import_to_project result JSON>",
+    validation_result_json="<validate_import_result result JSON>",
+    screenshot_result_json="<viewport_capture_screenshot result JSON if needed>",
+    session_name="dungeon-demo",
+    asset_name="SM_Slime",
+    content_path="/Game/Generated/Enemies",
 )
 ```
 
@@ -523,9 +544,11 @@ material with BaseColor, Normal, and ORM channels.
 7. Convert downloads into Unreal expectations with `gen_prepare_import_manifest`.
 8. Import with `gen_tripo_import_to_project`, then assign or repair materials
    with the material tools.
-9. Place assets, compile/save touched Blueprints, validate imports, run PIE or
-   viewport evidence capture, and finish an execution journal or vertical-slice
-   report.
+9. Validate the imported primary asset, capture viewport evidence when no
+   thumbnail exists, and compile `unreal_mcp_generate_asset_evidence.v1` with
+   `gen_compile_generate_asset_evidence`.
+10. Place assets, compile/save touched Blueprints, run PIE/log evidence, and
+   finish an execution journal or vertical-slice report.
 
 ### Expected Runtime
 
@@ -662,6 +685,10 @@ Brush paid call is allowed.
 10. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
    inline progress bar in the chat tool card.
 11. Import successful outputs with `gen_tripo_import_to_project`.
+12. Validate the imported primary asset, capture a screenshot when needed, and
+   run `gen_compile_generate_asset_evidence` so the dock can report
+   `unreal_mcp_generate_asset_evidence.v1`, `proven`, gates, next actions,
+   imported asset paths, and thumbnail/screenshot evidence.
 
 Long-running Tripo waits should stream or post structured progress updates that
 include the tool name `gen_tripo_wait_for_task` and a numeric `progress` field.

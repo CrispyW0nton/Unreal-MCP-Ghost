@@ -42,6 +42,7 @@ class TestD4TripoAutoImport(unittest.IsolatedAsyncioTestCase):
 
     def test_d4_tool_registers(self):
         self.assertIn("gen_tripo_import_to_project", self.mcp.tools)
+        self.assertIn("gen_compile_generate_asset_evidence", self.mcp.tools)
 
     async def test_import_to_project_downloads_manifests_imports_and_captures_thumbnail(self):
         calls = {"downloads": [], "send": [], "imports": [], "thumbs": []}
@@ -147,6 +148,94 @@ class TestD4TripoAutoImport(unittest.IsolatedAsyncioTestCase):
         download.assert_not_called()
         import_mesh.assert_not_called()
 
+    async def test_compile_generate_asset_evidence_reports_complete_proof(self):
+        task_result = {
+            "success": True,
+            "stage": "gen_tripo_wait_for_task",
+            "inputs": {"task_id": "task-d4"},
+            "outputs": {
+                "task": {"task_id": "task-d4", "status": "success"},
+                "credit_reconciliation": {"available": True, "consumed_credits": 42},
+            },
+        }
+        import_result = {
+            "success": True,
+            "stage": "gen_tripo_import_to_project",
+            "inputs": {"task_id": "task-d4"},
+            "outputs": {
+                "asset_paths": {
+                    "primary_asset": "/Game/Generated/Enemies/SM_Slime",
+                    "material_instance": "/Game/Generated/Enemies/MI_SM_Slime",
+                    "blueprint": "",
+                    "imported_object_paths": ["/Game/Generated/Enemies/SM_Slime.SM_Slime"],
+                },
+                "thumbnail": {"success": True, "path": "C:/Repo/.mcp_artifacts/screenshots/slime.png"},
+            },
+        }
+        validation_result = {
+            "success": True,
+            "stage": "validate_import_result",
+            "outputs": {"asset_path": "/Game/Generated/Enemies/SM_Slime", "exists": True, "class": "StaticMesh"},
+        }
+
+        payload = json.loads(await self.mcp.tools["gen_compile_generate_asset_evidence"](
+            ctx=None,
+            task_result_json=json.dumps(task_result),
+            import_result_json=json.dumps(import_result),
+            validation_result_json=json.dumps(validation_result),
+            session_name="asset-session",
+            asset_name="SM_Slime",
+            content_path="/Game/Generated/Enemies",
+        ))
+
+        _assert_structured(self, payload, "gen_compile_generate_asset_evidence")
+        self.assertTrue(payload["success"])
+        evidence = payload["outputs"]["evidence"]
+        self.assertEqual(evidence["schema"], "unreal_mcp_generate_asset_evidence.v1")
+        self.assertTrue(evidence["proven"])
+        self.assertFalse(evidence["network_required"])
+        self.assertFalse(evidence["spend_required"])
+        self.assertEqual(evidence["task_id"], "task-d4")
+        self.assertEqual(evidence["asset_paths"]["primary_asset"], "/Game/Generated/Enemies/SM_Slime")
+        self.assertEqual(evidence["visual_evidence"]["thumbnail_path"], "C:/Repo/.mcp_artifacts/screenshots/slime.png")
+        self.assertTrue(all(gate["status"] == "ready" for gate in evidence["gates"]))
+
+    async def test_compile_generate_asset_evidence_reports_missing_followups(self):
+        task_result = {
+            "success": True,
+            "stage": "gen_tripo_wait_for_task",
+            "inputs": {"task_id": "task-d4"},
+            "outputs": {"task": {"task_id": "task-d4", "status": "success"}},
+        }
+        import_result = {
+            "success": True,
+            "stage": "gen_tripo_import_to_project",
+            "inputs": {"task_id": "task-d4"},
+            "outputs": {
+                "asset_paths": {"primary_asset": "/Game/Generated/Enemies/SM_Slime"},
+                "thumbnail": {},
+            },
+        }
+
+        payload = json.loads(await self.mcp.tools["gen_compile_generate_asset_evidence"](
+            ctx=None,
+            task_result_json=json.dumps(task_result),
+            import_result_json=json.dumps(import_result),
+            session_name="asset-session",
+            asset_name="SM_Slime",
+            content_path="/Game/Generated/Enemies",
+        ))
+
+        _assert_structured(self, payload, "gen_compile_generate_asset_evidence")
+        self.assertFalse(payload["success"])
+        evidence = payload["outputs"]["evidence"]
+        self.assertFalse(evidence["proven"])
+        gates = {gate["id"]: gate["status"] for gate in evidence["gates"]}
+        self.assertEqual(gates["import_validation"], "missing")
+        self.assertEqual(gates["visual_evidence"], "missing")
+        self.assertIn("validate_import_result", json.dumps(evidence["next_actions"]))
+        self.assertIn("viewport_capture_screenshot", json.dumps(evidence["next_actions"]))
+
     def test_d4_static_kb_and_changelog(self):
         kb_text = (REPO_ROOT / "knowledge_base" / "31_GENERATIVE_CONTENT_PIPELINE.md").read_text(encoding="utf-8")
         changelog_text = (REPO_ROOT / "knowledge_base" / "v5" / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -154,7 +243,9 @@ class TestD4TripoAutoImport(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Auto-Import Bridge", kb_text)
         self.assertIn("gen_tripo_import_to_project", kb_text)
+        self.assertIn("gen_compile_generate_asset_evidence", kb_text)
         self.assertIn("gen_tripo_import_to_project", generative_text)
+        self.assertIn("gen_compile_generate_asset_evidence", generative_text)
         self.assertIn("D.4 - Tripo auto-import bridge", changelog_text)
 
 
