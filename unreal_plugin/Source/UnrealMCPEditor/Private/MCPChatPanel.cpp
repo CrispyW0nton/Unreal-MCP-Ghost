@@ -725,9 +725,29 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	{
 		GenerateTextureViewAngle = GenerateTextureViewAngleInput->GetText().ToString().TrimStartAndEnd();
 	}
+	if (GenerateTextureBrushSizeInput.IsValid())
+	{
+		GenerateTextureBrushSize = GenerateTextureBrushSizeInput->GetText().ToString().TrimStartAndEnd();
+	}
 	if (GenerateTextureBrushStrengthInput.IsValid())
 	{
 		GenerateTextureBrushStrength = GenerateTextureBrushStrengthInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureBrushHardnessInput.IsValid())
+	{
+		GenerateTextureBrushHardness = GenerateTextureBrushHardnessInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureCreativityStrengthInput.IsValid())
+	{
+		GenerateTextureCreativityStrength = GenerateTextureCreativityStrengthInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintModeInput.IsValid())
+	{
+		GenerateTexturePaintMode = GenerateTexturePaintModeInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintColorInput.IsValid())
+	{
+		GenerateTexturePaintColor = GenerateTexturePaintColorInput->GetText().ToString().TrimStartAndEnd();
 	}
 	if (GenerateTextureBlendModeInput.IsValid())
 	{
@@ -736,6 +756,10 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	if (GenerateTextureSaveNameInput.IsValid())
 	{
 		GenerateTextureSaveName = GenerateTextureSaveNameInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureTripoProjectIdInput.IsValid())
+	{
+		GenerateTextureTripoProjectId = GenerateTextureTripoProjectIdInput->GetText().ToString().TrimStartAndEnd();
 	}
 	if (GenerateAssetPrompt.IsEmpty())
 	{
@@ -2462,6 +2486,66 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 			.AutoHeight()
 			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.16f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureBrushSizeInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureBrushSizeHint", "brush size"))
+					.Text(FText::FromString(GenerateTextureBrushSize))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.16f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureBrushHardnessInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureBrushHardnessHint", "hardness"))
+					.Text(FText::FromString(GenerateTextureBrushHardness))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.17f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureCreativityStrengthInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureCreativityHint", "creativity"))
+					.Text(FText::FromString(GenerateTextureCreativityStrength))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.16f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTexturePaintModeInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTexturePaintModeHint", "image or color"))
+					.Text(FText::FromString(GenerateTexturePaintMode))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.16f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTexturePaintColorInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTexturePaintColorHint", "#FFFFFF"))
+					.Text(FText::FromString(GenerateTexturePaintColor))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.19f)
+				[
+					SAssignNew(GenerateTextureTripoProjectIdInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureTripoProjectIdHint", "Tripo project_id"))
+					.Text(FText::FromString(GenerateTextureTripoProjectId))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
 				SNew(SBorder)
 				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
 				.Padding(6.0f)
@@ -4072,15 +4156,37 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TexturePrompt += FString::Printf(TEXT("; paint/blend notes: %s"), *GenerateTexturePaintNotes);
 		}
 		TexturePrompt += FString::Printf(
-			TEXT("; texture edit workspace controls: generate the high-fidelity texture image from the %s mesh view, paint it onto the visible model, rotate the model as needed, use brush strength %s, use %s, then save the satisfied result as %s"),
+			TEXT("; texture edit workspace controls: generate the high-fidelity texture image from the %s mesh view, paint it onto the visible model, rotate the model as needed, use brush size %s, strength %s, hardness %s, creativity %s, paint mode %s, paint color %s, use %s, then save the satisfied result as %s"),
 			*GenerateTextureViewAngle,
+			*GenerateTextureBrushSize,
 			*GenerateTextureBrushStrength,
+			*GenerateTextureBrushHardness,
+			*GenerateTextureCreativityStrength,
+			*GenerateTexturePaintMode,
+			*GenerateTexturePaintColor,
 			*GenerateTextureBlendMode,
 			*GenerateTextureSaveName
 		);
 		return FString::Printf(
-			TEXT("Use MCP tool `gen_tripo_texture_model` to create a new texture/paint pass for an existing Tripo model task, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
-			TEXT("Parameters:\n")
+			TEXT("First use MCP tool `gen_prepare_texture_paint_session` to record the no-spend Tripo Studio Magic Brush plan for the Texture/Paint workspace.\n")
+			TEXT("Plan parameters:\n")
+			TEXT("- model_task_id: \"%s\"\n")
+			TEXT("- texture_prompt: \"%s\"\n")
+			TEXT("- texture_reference_image: \"%s\"\n")
+			TEXT("- viewport_view: \"%s\"\n")
+			TEXT("- brush_size: %s\n")
+			TEXT("- brush_strength: %s\n")
+			TEXT("- brush_hardness: %s\n")
+			TEXT("- creativity_strength: %s\n")
+			TEXT("- paint_mode: \"%s\"\n")
+			TEXT("- paint_color: \"%s\"\n")
+			TEXT("- blend_mode: \"%s\"\n")
+			TEXT("- paint_notes: \"%s\"\n")
+			TEXT("- save_name: \"%s\"\n")
+			TEXT("- tripo_project_id: \"%s\"\n")
+			TEXT("- record_session: true\n")
+			TEXT("Then, only after spend approval, use MCP tool `gen_tripo_texture_model` to create the paid texture/paint pass for the existing Tripo model task, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
+			TEXT("Paid texture parameters:\n")
 			TEXT("- task_id: \"%s\"\n")
 			TEXT("- texture_prompt: \"%s\"\n")
 			TEXT("- model_version: \"v3.0-20250812\"\n")
@@ -4091,6 +4197,20 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- session_name: \"%s\"\n")
 			TEXT("- confirm_spend: %s\n")
 			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			*Escape(GenerateTextureTaskId),
+			*Escape(GenerateTexturePrompt),
+			*Escape(GenerateTextureReferenceImageInput),
+			*Escape(GenerateTextureViewAngle),
+			*Escape(GenerateTextureBrushSize),
+			*Escape(GenerateTextureBrushStrength),
+			*Escape(GenerateTextureBrushHardness),
+			*Escape(GenerateTextureCreativityStrength),
+			*Escape(GenerateTexturePaintMode),
+			*Escape(GenerateTexturePaintColor),
+			*Escape(GenerateTextureBlendMode),
+			*Escape(GenerateTexturePaintNotes),
+			*Escape(GenerateTextureSaveName),
+			*Escape(GenerateTextureTripoProjectId),
 			*Escape(GenerateTextureTaskId),
 			*Escape(TexturePrompt),
 			*GenerativeTextureQuality,

@@ -521,9 +521,11 @@ Unreal. Current Tripo workspace modes are:
 - Image to 3D: inserts `gen_tripo_image_to_model` with an image path or URL.
 - Multi-Image to 3D: inserts `gen_tripo_multiview_to_model` with ordered
   front, left, back, and right reference inputs.
-- Texture/Paint: inserts `gen_tripo_texture_model` for an existing model task
-  with texture direction, optional reference-image text, paint/blend notes,
-  viewport angle, brush strength, blend mode, and save-name intent. This mirrors
+- Texture/Paint: inserts `gen_prepare_texture_paint_session` first, then a
+  gated `gen_tripo_texture_model` for an existing model task. The planning call
+  captures texture direction, optional reference image, paint/blend notes,
+  viewport angle, brush size, strength, hardness, creativity strength, paint
+  mode/color, blend mode, Tripo project id, and save-name intent. This mirrors
   the Tripo edit workflow: generate a high-fidelity texture image from the mesh
   view and prompt, paint it onto the visible model, rotate the model to continue
   painting/blending, and save once the result is satisfactory.
@@ -533,11 +535,14 @@ Unreal. Current Tripo workspace modes are:
 3. Confirm the current model version, texture quality, output folder, and spend
    state shown from the existing Generate Asset Settings panel.
 4. Insert the generated Tripo request into the composer.
-5. Send only after the user has approved the spend gate. The inserted request
-   keeps `confirm_spend=false` until the panel spend confirmation is active.
-6. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
+5. For Texture/Paint, run the inserted `gen_prepare_texture_paint_session`
+   portion before spend approval; it records the no-spend Magic Brush plan.
+6. Send paid task calls only after the user has approved the spend gate. The
+   inserted request keeps `confirm_spend=false` until the panel spend
+   confirmation is active.
+7. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
    inline progress bar in the chat tool card.
-7. Import successful outputs with `gen_tripo_import_to_project`.
+8. Import successful outputs with `gen_tripo_import_to_project`.
 
 Long-running Tripo waits should stream or post structured progress updates that
 include the tool name `gen_tripo_wait_for_task` and a numeric `progress` field.

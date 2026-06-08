@@ -43,6 +43,7 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "GenerateAssetQuickAction",
             "BuildGenerateAssetDialog()",
             "gen_tripo_text_to_model",
+            "gen_prepare_texture_paint_session",
             "gen_tripo_wait_for_task",
             "gen_tripo_import_to_project",
             "confirm_spend",
@@ -52,6 +53,30 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp)
+
+    def test_texture_paint_mode_inserts_magic_brush_session_plan(self) -> None:
+        for token in (
+            "First use MCP tool `gen_prepare_texture_paint_session`",
+            "no-spend Tripo Studio Magic Brush plan",
+            "Plan parameters:",
+            "- brush_size: %s",
+            "- brush_hardness: %s",
+            "- creativity_strength: %s",
+            "- paint_mode:",
+            "- paint_color:",
+            "- tripo_project_id:",
+            "- record_session: true",
+            "Then, only after spend approval",
+            "Paid texture parameters:",
+            "GenerateTextureBrushSizeInput",
+            "GenerateTextureBrushHardnessInput",
+            "GenerateTextureCreativityStrengthInput",
+            "GenerateTexturePaintModeInput",
+            "GenerateTexturePaintColorInput",
+            "GenerateTextureTripoProjectIdInput",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header)
 
     def test_tripo_progress_cards_are_rendered_and_refreshed(self) -> None:
         for token in (

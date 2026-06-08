@@ -12,6 +12,7 @@
 - Expanded the Generate Asset surface into Tripo workspace modes for Text to 3D, Image to 3D, Multi-Image to 3D, and Texture/Paint existing-model passes.
 - Added Texture/Paint controls for texture reference, view angle, brush strength, blend mode, paint/blend notes, and save-name intent so Unreal mirrors Tripo's edit workflow.
 - Added `gen_prepare_texture_paint_session` to record offline Tripo Studio Magic Brush plans in `Saved/MCPChat/texture_paint_sessions.json` before any paid texture work.
+- Wired the Texture/Paint Generate Asset prompt to insert `gen_prepare_texture_paint_session` before the gated `gen_tripo_texture_model` call, and added Magic Brush fields for brush size, hardness, creativity strength, paint mode/color, and Tripo project id.
 - Documented the inspected Tripo `texture-edit` route, Magic Brush controls, and observed `retexture_generate` / `get_retexture` / `apply_retexture` flow for future dedicated endpoint wrappers.
 - Hardened the Tripo API-key UX with password-style entry, save/clear controls, local `Saved/MCPChat/secrets.json` persistence, and generation gating when auth is missing.
 - Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
