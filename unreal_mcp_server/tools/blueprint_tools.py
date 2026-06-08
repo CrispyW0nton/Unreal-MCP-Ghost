@@ -413,7 +413,10 @@ def register_blueprint_tools(mcp: FastMCP):
         blueprint_name: str,
         component_name: str,
         property_name: str,
-        property_value
+        property_value,
+        use_node_route: bool = False,
+        graph_name: str = "EventGraph",
+        node_position: List[float] = None
     ) -> Dict[str, Any]:
         """Set any property on a Blueprint component.
 
@@ -422,6 +425,9 @@ def register_blueprint_tools(mcp: FastMCP):
             component_name: Component name
             property_name: C++ property name (e.g., "TargetArmLength", "bUsePawnControlRotation")
             property_value: Value (bool, int, float, string, or [x,y,z] array for vectors)
+            use_node_route: Add a graph Set node for the component property instead of mutating the component default
+            graph_name: Graph for the native add_blueprint_set_component_property route
+            node_position: Optional [X, Y] position for the native graph node
 
         KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
         Example:
@@ -431,6 +437,14 @@ def register_blueprint_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
+            if use_node_route:
+                return unreal.send_command("add_blueprint_set_component_property", {
+                    "blueprint_name": blueprint_name,
+                    "graph_name": graph_name,
+                    "component_name": component_name,
+                    "property_name": property_name,
+                    "node_position": node_position or [0, 0]
+                }) or {}
             return unreal.send_command("set_component_property", {
                 "blueprint_name": blueprint_name,
                 "component_name": component_name,

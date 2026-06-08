@@ -3055,7 +3055,8 @@ def register_editor_tools(mcp: FastMCP):
         name: str,
         type: str,
         location: List[float] = [0.0, 0.0, 0.0],
-        rotation: List[float] = [0.0, 0.0, 0.0]
+        rotation: List[float] = [0.0, 0.0, 0.0],
+        use_create_actor_route: bool = False
     ) -> Dict[str, Any]:
         """Spawn a new actor in the current level.
 
@@ -3064,6 +3065,7 @@ def register_editor_tools(mcp: FastMCP):
             type: Actor type (StaticMeshActor, PointLight, Camera, etc.)
             location: [X, Y, Z] world location
             rotation: [Pitch, Yaw, Roll] in degrees
+            use_create_actor_route: Use the deprecated native create_actor alias for compatibility checks
 
         KB: see knowledge_base/10_WORLD_BUILDING.md#overview
         Example:
@@ -3079,7 +3081,10 @@ def register_editor_tools(mcp: FastMCP):
                 "location": [float(v) for v in location],
                 "rotation": [float(v) for v in rotation]
             }
-            response = unreal.send_command("spawn_actor", params)
+            if use_create_actor_route:
+                response = unreal.send_command("create_actor", params)
+            else:
+                response = unreal.send_command("spawn_actor", params)
             return response or {}
         except Exception as e:
             return {"success": False, "message": str(e)}

@@ -41,8 +41,8 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertGreater(commands["create_blueprint"]["python_references"], 0)
         self.assertGreater(commands["create_blueprint"]["cpp_routes"], 0)
         review = {entry["command"]: entry for entry in registry["cpp_unreferenced_review"]}
-        self.assertIn("set_material_instance_parameter", review)
-        self.assertEqual(review["set_material_instance_parameter"]["recommendation"], "legacy_or_superseded")
+        self.assertEqual(review, {})
+        self.assertEqual(registry["cpp_unreferenced_by_python"], [])
         self.assertNotIn("add_clear_blackboard_value_node", review)
         self.assertNotIn("add_finish_execute_node", review)
         self.assertNotIn("add_get_random_reachable_point_node", review)
@@ -95,10 +95,10 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
 
         self.assertIn("# Bridge Command Registry", markdown)
         self.assertIn("## Drift Summary", markdown)
-        self.assertIn("## C++-Only Route Review", markdown)
         self.assertIn("## Commands By Category", markdown)
         self.assertIn("Python missing C++ routes", markdown)
-        self.assertIn("set_material_instance_parameter", markdown)
+        self.assertNotIn("## C++-Only Route Review", markdown)
+        self.assertIn("C++ routes not referenced by Python: 0", markdown)
 
 
 if __name__ == "__main__":

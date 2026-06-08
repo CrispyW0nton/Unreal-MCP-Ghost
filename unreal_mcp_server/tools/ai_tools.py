@@ -876,7 +876,8 @@ def register_ai_tools(mcp: FastMCP):
         damage_variable: str = "Damage",
         default_damage: float = 0.25,
         target_key_variable: str = "TargetActorKey",
-        path: str = "/Game/AI"
+        path: str = "/Game/AI",
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Create a Behavior Tree Attack Task Blueprint.
 
@@ -892,10 +893,19 @@ def register_ai_tools(mcp: FastMCP):
             default_damage: Default damage amount (0.0-1.0 normalized or raw)
             target_key_variable: Name of the BlackboardKeySelector variable
             path: Content browser path
+            use_native_route: Return native compatibility guidance instead of building the richer task
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             create_bt_attack_task()"""
+        if use_native_route:
+            return _send("create_bt_attack_task", {
+                "name": name,
+                "damage_variable": damage_variable,
+                "default_damage": default_damage,
+                "target_key_variable": target_key_variable,
+                "path": path
+            })
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTTask_BlueprintBase"
@@ -931,7 +941,8 @@ def register_ai_tools(mcp: FastMCP):
         hearing_threshold: float = 1600.0,
         see_pawns_in_dark: bool = True,
         sight_radius: float = 2000.0,
-        peripheral_vision_angle: float = 45.0
+        peripheral_vision_angle: float = 45.0,
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Add a PawnSensing component to a Blueprint for AI perception.
 
@@ -947,10 +958,19 @@ def register_ai_tools(mcp: FastMCP):
             see_pawns_in_dark: Whether to detect pawns in dark areas
             sight_radius: Max sight detection radius
             peripheral_vision_angle: Half-angle of sight cone in degrees
+            use_native_route: Return native compatibility guidance instead of adding/configuring the component
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_pawn_sensing_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
+        if use_native_route:
+            return _send("add_pawn_sensing_component", {
+                "blueprint_name": blueprint_name,
+                "hearing_threshold": hearing_threshold,
+                "see_pawns_in_dark": see_pawns_in_dark,
+                "sight_radius": sight_radius,
+                "peripheral_vision_angle": peripheral_vision_angle
+            })
         result = _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "PawnSensingComponent",
@@ -1079,7 +1099,8 @@ def register_ai_tools(mcp: FastMCP):
         max_enemies: int = 5,
         spawn_interval: float = 5.0,
         spawn_radius: float = 500.0,
-        path: str = "/Game/Blueprints"
+        path: str = "/Game/Blueprints",
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Create an Enemy Spawner Blueprint.
 
@@ -1097,10 +1118,20 @@ def register_ai_tools(mcp: FastMCP):
             spawn_interval: Seconds between each spawn
             spawn_radius: Random placement radius around spawner
             path: Content browser path
+            use_native_route: Return native compatibility guidance instead of building the richer spawner
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             create_enemy_spawner_blueprint()"""
+        if use_native_route:
+            return _send("create_enemy_spawner_blueprint", {
+                "name": name,
+                "enemy_class": enemy_class,
+                "max_enemies": max_enemies,
+                "spawn_interval": spawn_interval,
+                "spawn_radius": spawn_radius,
+                "path": path
+            })
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "Actor"
@@ -1147,7 +1178,8 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         name: str = "BTTask_FindWanderPoint",
         wander_radius: float = 1000.0,
-        path: str = "/Game/AI"
+        path: str = "/Game/AI",
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Create a Behavior Tree Task for random wandering.
 
@@ -1161,10 +1193,17 @@ def register_ai_tools(mcp: FastMCP):
             name: Task Blueprint name
             wander_radius: Radius to search for random wander points
             path: Content browser path
+            use_native_route: Return native compatibility guidance instead of building the richer task
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             create_bt_wander_task()"""
+        if use_native_route:
+            return _send("create_bt_wander_task", {
+                "name": name,
+                "wander_radius": wander_radius,
+                "path": path
+            })
         result = _send("create_blueprint", {
             "name": name,
             "parent_class": "BTTask_BlueprintBase"
@@ -1349,7 +1388,11 @@ def register_ai_tools(mcp: FastMCP):
         sequence_name: str,
         blackboard_key: str,
         observer_aborts: str = "LowerPriority",
-        node_name: str = ""
+        node_name: str = "",
+        use_native_route: bool = False,
+        parent_node_index: int = -1,
+        class_name: str = "BTDecorator_Blackboard",
+        properties: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """Add a Blackboard Decorator to a Behavior Tree sequence/task node.
 
@@ -1362,10 +1405,22 @@ def register_ai_tools(mcp: FastMCP):
             blackboard_key: Blackboard key to monitor (e.g., "HasHeardSound", "bCanSeePlayer")
             observer_aborts: "None", "Self", "LowerPriority", "Both"
             node_name: Display name for the decorator node
+            use_native_route: Use the raw native attach_bt_sub_node route for direct BT graph sub-node attachment
+            parent_node_index: Native route parent node index; -1 means root composite
+            class_name: Native decorator class name or path
+            properties: Optional native route properties object
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_bt_blackboard_decorator(behavior_tree_name="ExampleName", sequence_name="ExampleName", blackboard_key="ExampleName")"""
+        if use_native_route:
+            return _send("attach_bt_sub_node", {
+                "behavior_tree_name": behavior_tree_name,
+                "sub_node_kind": "decorator",
+                "class_name": class_name,
+                "parent_node_index": parent_node_index,
+                "properties": properties or {}
+            })
         return _send("add_bt_blackboard_decorator", {
             "behavior_tree_name": behavior_tree_name,
             "sequence_name": sequence_name,
@@ -1384,7 +1439,8 @@ def register_ai_tools(mcp: FastMCP):
         has_hearing: bool = True,
         has_wandering: bool = True,
         attack_damage: float = 0.25,
-        hearing_distance: float = 1600.0
+        hearing_distance: float = 1600.0,
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Create a complete upgraded enemy AI setup from Ch.9-10.
 
@@ -1407,10 +1463,22 @@ def register_ai_tools(mcp: FastMCP):
             has_wandering: Include random wandering behavior
             attack_damage: Damage dealt per attack (0.25 = 25% of health)
             hearing_distance: PawnSensing hearing radius in cm
+            use_native_route: Return native compatibility guidance instead of building the richer setup
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             create_full_upgraded_enemy_ai(enemy_name="ExampleName")"""
+        if use_native_route:
+            return _send("create_full_upgraded_enemy_ai", {
+                "enemy_name": enemy_name,
+                "has_patrol": has_patrol,
+                "has_chase": has_chase,
+                "has_attack": has_attack,
+                "has_hearing": has_hearing,
+                "has_wandering": has_wandering,
+                "attack_damage": attack_damage,
+                "hearing_distance": hearing_distance
+            })
         results = {}
 
         # Create Blackboard with all keys

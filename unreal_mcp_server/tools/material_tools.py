@@ -228,6 +228,7 @@ def register_material_tools(mcp: FastMCP):
         vector_parameters: Optional[Dict[str, List[float]]] = None,
         texture_parameters: Optional[Dict[str, str]] = None,
         save: bool = True,
+        use_legacy_single_route: bool = False,
     ) -> Dict[str, Any]:
         """Set many Material Instance parameters in one bridge call.
 
@@ -237,15 +238,48 @@ def register_material_tools(mcp: FastMCP):
             vector_parameters: Mapping of vector parameter names to RGBA arrays
             texture_parameters: Mapping of texture parameter names to texture paths
             save: Save the material instance package immediately
+            use_legacy_single_route: Use native set_material_instance_parameter when exactly one parameter is provided
 
         KB: see knowledge_base/08_MATERIALS_AND_RENDERING.md#overview
         Example:
             material_set_instance_parameters_bulk(material_instance_path="/Game/MCP_Test/M_Example")"""
+        scalar_parameters = scalar_parameters or {}
+        vector_parameters = vector_parameters or {}
+        texture_parameters = texture_parameters or {}
+        if use_legacy_single_route:
+            single_parameters = (
+                [(name, "scalar", str(value)) for name, value in scalar_parameters.items()]
+                + [(name, "vector", ",".join(str(component) for component in value)) for name, value in vector_parameters.items()]
+                + [(name, "texture", value) for name, value in texture_parameters.items()]
+            )
+            if len(single_parameters) != 1:
+                return {
+                    "success": False,
+                    "stage": "set_material_instance_parameter",
+                    "message": "Legacy single-parameter route requires exactly one scalar, vector, or texture parameter",
+                    "inputs": {
+                        "material_instance_path": material_instance_path,
+                        "scalar_parameters": scalar_parameters,
+                        "vector_parameters": vector_parameters,
+                        "texture_parameters": texture_parameters,
+                    },
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Exactly one material parameter is required"],
+                    "log_tail": [],
+                }
+            parameter_name, parameter_type, value = single_parameters[0]
+            return _send("set_material_instance_parameter", {
+                "material_instance_path": material_instance_path,
+                "parameter_name": parameter_name,
+                "parameter_type": parameter_type,
+                "value": value,
+            })
         return _send("material_set_instance_parameters_bulk", {
             "material_instance_path": material_instance_path,
-            "scalar_parameters": scalar_parameters or {},
-            "vector_parameters": vector_parameters or {},
-            "texture_parameters": texture_parameters or {},
+            "scalar_parameters": scalar_parameters,
+            "vector_parameters": vector_parameters,
+            "texture_parameters": texture_parameters,
             "save": save,
         })
 

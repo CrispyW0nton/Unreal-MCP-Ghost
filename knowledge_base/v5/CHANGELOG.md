@@ -35,6 +35,12 @@
 - Reduced the tracked bridge audit's C++-only route backlog from 12 to 9, with no remaining routes classified as needing Python wrappers.
 - Left residual C++-only routes classified as aliases, internal helpers, legacy routes, or game-specific recipes rather than public wrapper gaps.
 
+### B.20 - Bridge audit closure
+
+- Added opt-in compatibility dispatch for the remaining native aliases, legacy routes, internal BT sub-node route, and sample AI recipe routes while preserving the richer public Python implementations as defaults.
+- Closed the tracked bridge audit to `python_missing_cpp=0` and `cpp_unreferenced_by_python=0` across 380 discovered bridge commands.
+- Updated offline parity tests so future changes keep Python and C++ bridge command references fully aligned.
+
 ### C.13 - Playable Slice quick action
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.

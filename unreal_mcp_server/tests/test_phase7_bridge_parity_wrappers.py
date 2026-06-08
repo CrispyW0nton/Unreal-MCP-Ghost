@@ -90,10 +90,20 @@ class TestBridgeParityWrappers(unittest.TestCase):
                 use_controller_rotation_yaw=True,
                 can_be_damaged=True,
             )
+            set_component_node = mcp.tools["set_component_property"](
+                None,
+                "/Game/MCP_Test/BP_Enemy",
+                "FloatingPawnMovement",
+                "MaxSpeed",
+                600.0,
+                use_node_route=True,
+                node_position=[420, 120],
+            )
 
         self.assertTrue(niagara["success"])
         self.assertTrue(parent["success"])
         self.assertTrue(pawn["success"])
+        self.assertTrue(set_component_node["success"])
         self.assertEqual(fake_unreal.calls[0][0], "add_niagara_component")
         self.assertEqual(fake_unreal.calls[0][1]["component_name"], "FX_Glow")
         self.assertEqual(fake_unreal.calls[1][0], "set_blueprint_parent_class")
@@ -102,6 +112,9 @@ class TestBridgeParityWrappers(unittest.TestCase):
         self.assertEqual(fake_unreal.calls[2][1]["auto_possess_ai"], "PlacedInWorldOrSpawned")
         self.assertTrue(fake_unreal.calls[2][1]["use_controller_rotation_yaw"])
         self.assertTrue(fake_unreal.calls[2][1]["can_be_damaged"])
+        self.assertEqual(fake_unreal.calls[3][0], "add_blueprint_set_component_property")
+        self.assertEqual(fake_unreal.calls[3][1]["component_name"], "FloatingPawnMovement")
+        self.assertEqual(fake_unreal.calls[3][1]["property_name"], "MaxSpeed")
 
     def test_node_native_wrappers_register_and_dispatch(self):
         from tools.node_tools import register_blueprint_node_tools
@@ -322,6 +335,27 @@ class TestBridgeParityWrappers(unittest.TestCase):
                 "PatrolLocation",
                 use_native_route=True,
             )
+            mcp.tools["create_bt_attack_task"](None, use_native_route=True)
+            mcp.tools["add_pawn_sensing_component"](
+                None,
+                "/Game/MCP_Test/BP_Enemy",
+                use_native_route=True,
+            )
+            mcp.tools["create_enemy_spawner_blueprint"](None, use_native_route=True)
+            mcp.tools["create_bt_wander_task"](None, use_native_route=True)
+            mcp.tools["add_bt_blackboard_decorator"](
+                None,
+                "BT_Enemy",
+                "Sequence",
+                "TargetActor",
+                use_native_route=True,
+                parent_node_index=0,
+            )
+            mcp.tools["create_full_upgraded_enemy_ai"](
+                None,
+                "Enemy",
+                use_native_route=True,
+            )
 
         self.assertEqual(calls[0][0], "add_blueprint_function_node")
         self.assertEqual(calls[0][1]["params"], {"Radius": 750.0})
@@ -332,6 +366,54 @@ class TestBridgeParityWrappers(unittest.TestCase):
         self.assertEqual(calls[4][0], "add_blueprint_function_node")
         self.assertEqual(calls[4][1]["params"], {"KeyName": "PatrolLocation"})
         self.assertEqual(calls[5][0], "add_clear_blackboard_value_node")
+        self.assertEqual(calls[6][0], "create_bt_attack_task")
+        self.assertEqual(calls[7][0], "add_pawn_sensing_component")
+        self.assertEqual(calls[8][0], "create_enemy_spawner_blueprint")
+        self.assertEqual(calls[9][0], "create_bt_wander_task")
+        self.assertEqual(calls[10][0], "attach_bt_sub_node")
+        self.assertEqual(calls[10][1]["sub_node_kind"], "decorator")
+        self.assertEqual(calls[11][0], "create_full_upgraded_enemy_ai")
+
+    def test_editor_and_material_legacy_routes_are_opt_in(self):
+        from tools.editor_tools import register_editor_tools
+        from tools.material_tools import register_material_tools
+
+        mcp = _MockMCP()
+        register_editor_tools(mcp)
+        register_material_tools(mcp)
+
+        editor_calls = []
+        material_calls = []
+
+        class FakeEditorUnreal:
+            def send_command(self, command, params):
+                editor_calls.append((command, params))
+                return {"success": True, "command": command, "params": params}
+
+        def fake_material_send(command, params):
+            material_calls.append((command, params))
+            return {"success": True, "command": command, "params": params}
+
+        with patch("unreal_mcp_server.get_unreal_connection", return_value=FakeEditorUnreal()):
+            mcp.tools["spawn_actor"](
+                None,
+                "LegacyPointLight",
+                "PointLight",
+                use_create_actor_route=True,
+            )
+        with patch("tools.material_tools._send", side_effect=fake_material_send):
+            mcp.tools["material_set_instance_parameters_bulk"](
+                None,
+                "/Game/MCP_Test/MI_Example",
+                scalar_parameters={"Glow": 2.0},
+                use_legacy_single_route=True,
+            )
+
+        self.assertEqual(editor_calls[0][0], "create_actor")
+        self.assertEqual(editor_calls[0][1]["type"], "POINTLIGHT")
+        self.assertEqual(material_calls[0][0], "set_material_instance_parameter")
+        self.assertEqual(material_calls[0][1]["parameter_name"], "Glow")
+        self.assertEqual(material_calls[0][1]["parameter_type"], "scalar")
 
 
 if __name__ == "__main__":
