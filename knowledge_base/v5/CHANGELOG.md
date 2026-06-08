@@ -23,6 +23,12 @@
 - Reduced the tracked bridge audit's C++-only route backlog from 21 to 14, with Python-missing-C++ routes still at 0.
 - Updated the Phase 7 roadmap and offline parity tests for the new graph and animation wrappers.
 
+### B.18 - Pawn and data bridge parity wrappers
+
+- Added a native-route Python wrapper for `set_pawn_properties` so generated Pawn/Character Blueprints can set possession, controller-rotation, and damage defaults through the routed C++ command.
+- Touched the native `add_map_variable` compatibility route while preserving the existing `add_blueprint_variable` creation path for real Map variable authoring.
+- Reduced the tracked bridge audit's C++-only route backlog from 14 to 12, with Python-missing-C++ routes still at 0.
+
 ### C.13 - Playable Slice quick action
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.

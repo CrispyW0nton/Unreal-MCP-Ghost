@@ -83,13 +83,25 @@ class TestBridgeParityWrappers(unittest.TestCase):
                 "/Game/MCP_Test/BP_Enemy",
                 "Character",
             )
+            pawn = mcp.tools["set_pawn_properties"](
+                None,
+                "/Game/MCP_Test/BP_Enemy",
+                auto_possess_ai="PlacedInWorldOrSpawned",
+                use_controller_rotation_yaw=True,
+                can_be_damaged=True,
+            )
 
         self.assertTrue(niagara["success"])
         self.assertTrue(parent["success"])
+        self.assertTrue(pawn["success"])
         self.assertEqual(fake_unreal.calls[0][0], "add_niagara_component")
         self.assertEqual(fake_unreal.calls[0][1]["component_name"], "FX_Glow")
         self.assertEqual(fake_unreal.calls[1][0], "set_blueprint_parent_class")
         self.assertEqual(fake_unreal.calls[1][1]["new_parent_class"], "Character")
+        self.assertEqual(fake_unreal.calls[2][0], "set_pawn_properties")
+        self.assertEqual(fake_unreal.calls[2][1]["auto_possess_ai"], "PlacedInWorldOrSpawned")
+        self.assertTrue(fake_unreal.calls[2][1]["use_controller_rotation_yaw"])
+        self.assertTrue(fake_unreal.calls[2][1]["can_be_damaged"])
 
     def test_node_native_wrappers_register_and_dispatch(self):
         from tools.node_tools import register_blueprint_node_tools
@@ -235,6 +247,36 @@ class TestBridgeParityWrappers(unittest.TestCase):
         self.assertEqual(calls[1][0], "connect_anim_graph_nodes")
         self.assertEqual(calls[1][1]["source_node_id"], "source-guid")
         self.assertEqual(calls[1][1]["target_node_id"], "target-guid")
+
+    def test_data_map_variable_references_native_alias_and_preserves_creation_route(self):
+        from tools.data_tools import register_data_tools
+
+        mcp = _MockMCP()
+        register_data_tools(mcp)
+
+        calls = []
+
+        def fake_send(command, params):
+            calls.append((command, params))
+            return {"success": True, "command": command, "params": params, "message": f"{command} ok"}
+
+        with patch("tools.data_tools._send", side_effect=fake_send):
+            result = mcp.tools["add_map_variable"](
+                None,
+                "/Game/MCP_Test/BP_Inventory",
+                "ItemCounts",
+                "Name",
+                "Integer",
+                is_exposed=True,
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(calls[0][0], "add_map_variable")
+        self.assertEqual(calls[0][1]["key_type"], "Name")
+        self.assertEqual(calls[0][1]["value_type"], "Integer")
+        self.assertEqual(calls[1][0], "add_blueprint_variable")
+        self.assertEqual(calls[1][1]["variable_type"], "Map:Name:Integer")
+        self.assertEqual(result["compatibility_route"], "add_map_variable")
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@ Blueprint Tools - Create/modify Blueprint classes and components.
 Ported from: https://github.com/chongdashu/unreal-mcp
 """
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
 
 logger = logging.getLogger("UnrealMCP")
@@ -322,6 +322,83 @@ def register_blueprint_tools(mcp: FastMCP):
             return {
                 "success": False,
                 "stage": "set_blueprint_parent_class",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
+    @mcp.tool()
+    def set_pawn_properties(
+        ctx: Context,
+        blueprint_name: str,
+        auto_possess_player: str = "",
+        auto_possess_ai: str = "",
+        use_controller_rotation_yaw: Optional[bool] = None,
+        use_controller_rotation_pitch: Optional[bool] = None,
+        use_controller_rotation_roll: Optional[bool] = None,
+        can_be_damaged: Optional[bool] = None,
+    ) -> Dict[str, Any]:
+        """Set common Pawn/Character class-default properties on a Blueprint.
+
+        Use this after creating or reparenting a playable slice pawn so spawned
+        characters have the right possession, controller-rotation, and damage
+        defaults before compile/save validation.
+
+        Args:
+            blueprint_name: Pawn or Character Blueprint asset name/path.
+            auto_possess_player: Optional AutoPossessPlayer enum string.
+            auto_possess_ai: Optional AutoPossessAI enum string.
+            use_controller_rotation_yaw: Optional bUseControllerRotationYaw.
+            use_controller_rotation_pitch: Optional bUseControllerRotationPitch.
+            use_controller_rotation_roll: Optional bUseControllerRotationRoll.
+            can_be_damaged: Optional bCanBeDamaged value.
+
+        KB: see knowledge_base/03_GAMEPLAY_FRAMEWORK.md#overview
+        Example:
+            set_pawn_properties(blueprint_name="/Game/MCP_Test/BP_Enemy", auto_possess_ai="PlacedInWorldOrSpawned", can_be_damaged=True)
+        """
+        from unreal_mcp_server import get_unreal_connection
+        inputs: Dict[str, Any] = {"blueprint_name": blueprint_name}
+        if auto_possess_player:
+            inputs["auto_possess_player"] = auto_possess_player
+        if auto_possess_ai:
+            inputs["auto_possess_ai"] = auto_possess_ai
+        if use_controller_rotation_yaw is not None:
+            inputs["use_controller_rotation_yaw"] = use_controller_rotation_yaw
+        if use_controller_rotation_pitch is not None:
+            inputs["use_controller_rotation_pitch"] = use_controller_rotation_pitch
+        if use_controller_rotation_roll is not None:
+            inputs["use_controller_rotation_roll"] = use_controller_rotation_roll
+        if can_be_damaged is not None:
+            inputs["can_be_damaged"] = can_be_damaged
+
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "set_pawn_properties",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("set_pawn_properties", inputs) or {}
+            return _structured_bridge_result(
+                raw,
+                stage="set_pawn_properties",
+                message=f"Set Pawn defaults on '{blueprint_name}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "set_pawn_properties",
                 "message": str(e),
                 "inputs": inputs,
                 "outputs": {},
