@@ -11,16 +11,19 @@ playable-slice workflow.
 - `submit_assets`: paid Tripo gate. Requires `TRIPO_API_KEY`, remaining credit
   budget, and `confirm_spend=True`; submits the hero, two props, and enemy
   `text_to_model` tasks and returns task IDs plus next steps.
+- `orchestrate`: offline, no network, no Unreal mutation. Returns a structured
+  import/gameplay/PIE/report execution package from the plan plus optional
+  submitted-task and imported-asset JSON arrays.
 
 ## Example
 
 ```python
 skill_generate_playable_slice(
     brief="third-person dungeon demo with a slime, a skeleton, and a boss",
-    mode="plan",
+    mode="orchestrate",
 )
 ```
 
-Continue from submitted task IDs with `gen_tripo_wait_for_task`,
-`gen_tripo_import_to_project`, Blueprint/AI/UMG tools, PIE evidence, and
-`skill_package_vertical_slice_report`.
+Use `submit_assets` only after spend approval. Continue from submitted task IDs
+with `gen_tripo_wait_for_task`, `gen_tripo_import_to_project`, Blueprint/AI/UMG
+tools, PIE evidence, and `skill_package_vertical_slice_report`.

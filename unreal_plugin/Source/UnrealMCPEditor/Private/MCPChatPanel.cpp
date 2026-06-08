@@ -4720,15 +4720,16 @@ FString SMCPChatPanel::BuildPlayableSlicePrompt() const
 		TEXT("- session_name: \"%s\"\n")
 		TEXT("- confirm_spend: %s\n")
 		TEXT("Workflow:\n")
-		TEXT("1. Discover current state with `get_project_context`, `scan_project_assets(path=\"/Game\", depth=3)`, `list_available_tools(domain=\"all\")`, and `get_onboarding_context(task=\"blueprints\")`, `get_onboarding_context(task=\"world_building\")`, and `get_onboarding_context(task=\"umg\")`.\n")
-		TEXT("2. Produce a short execution plan that maps each generated_asset_role to a concrete Unreal asset path under \"%s\" and lists the Blueprints, widgets, actors, or level assets to create or modify. Ask only before destructive overwrite.\n")
-		TEXT("3. For each missing 3D asset role, use MCP tool `gen_tripo_text_to_model` with texture=true, pbr=true, texture_quality=\"%s\", face_limit=12000, smart_low_poly=true, model_version=\"%s\", session_name=\"%s\", confirm_spend=%s, and a prompt that includes the role, the brief, clean game-ready topology, readable silhouette, collision-friendly proportions, and PBR material intent.\n")
-		TEXT("4. For each Tripo task, call `gen_tripo_wait_for_task` until complete, then call `gen_tripo_import_to_project` with content_path \"%s\" and a role-specific asset_name. Record task_id, credit usage, imported asset paths, materials, and warnings.\n")
-		TEXT("5. If a hero asset needs extra art direction, use the Texture/Paint path: first call `gen_prepare_texture_paint_session`, then use `gen_tripo_magic_brush_generate`, `gen_tripo_magic_brush_get_retexture`, optional `gen_tripo_magic_brush_list_images`, and `gen_tripo_magic_brush_apply` only when project/render/image_map data and spend approval are available.\n")
-		TEXT("6. Build the playable loop using the appropriate Blueprint, actor, component, UMG, AI, level, lighting, collision, and placement MCP tools. Prefer small searchable graph/function names, reusable Actor Components for repeated behavior, and visible player feedback.\n")
-		TEXT("7. Run `compile_blueprint_and_report` for every touched Blueprint or Widget Blueprint, save changed assets, and use readback/diagnostic tools to confirm generated meshes, materials, collision, references, and gameplay wiring are actually assigned.\n")
-		TEXT("8. Verify runtime with `pie_launch_session`, exercise the loop as much as tools allow, capture `pie_capture_log`, capture `viewport_capture_screenshot`, then run `pie_stop_session`.\n")
-		TEXT("9. Finish with a concise report containing changed asset paths, Tripo task ids, credit usage, compile status, PIE/log/screenshot evidence paths, unresolved warnings/errors, and what remains for human design review."),
+		TEXT("1. Call `skill_generate_playable_slice` with mode=\"plan\" for this brief and content_path \"%s\". Use the returned `unreal_mcp_playable_slice_plan.v1` as the source of truth for asset roles, paths, gameplay targets, and validation.\n")
+		TEXT("2. Discover current state with `get_project_context`, `scan_project_assets(path=\"/Game\", depth=3)`, `list_available_tools(domain=\"all\")`, and `get_onboarding_context(task=\"blueprints\")`, `get_onboarding_context(task=\"world_building\")`, and `get_onboarding_context(task=\"umg\")`.\n")
+		TEXT("3. Produce a short execution plan that maps each generated_asset_role to a concrete Unreal asset path under \"%s\" and lists the Blueprints, widgets, actors, or level assets to create or modify. Ask only before destructive overwrite.\n")
+		TEXT("4. For each missing 3D asset role, either call `skill_generate_playable_slice` with mode=\"submit_assets\" after spend approval, or use MCP tool `gen_tripo_text_to_model` with texture=true, pbr=true, texture_quality=\"%s\", face_limit=12000, smart_low_poly=true, model_version=\"%s\", session_name=\"%s\", confirm_spend=%s, and a prompt that includes the role, the brief, clean game-ready topology, readable silhouette, collision-friendly proportions, and PBR material intent.\n")
+		TEXT("5. Call `skill_generate_playable_slice` with mode=\"orchestrate\" and any submitted task JSON to get the import/gameplay/PIE/report execution package. For each Tripo task, call `gen_tripo_wait_for_task` until complete, then call `gen_tripo_import_to_project` with content_path \"%s\" and a role-specific asset_name. Record task_id, credit usage, imported asset paths, materials, and warnings.\n")
+		TEXT("6. If a hero asset needs extra art direction, use the Texture/Paint path: first call `gen_prepare_texture_paint_session`, then use `gen_tripo_magic_brush_generate`, `gen_tripo_magic_brush_get_retexture`, optional `gen_tripo_magic_brush_list_images`, and `gen_tripo_magic_brush_apply` only when project/render/image_map data and spend approval are available.\n")
+		TEXT("7. Build the playable loop using the appropriate Blueprint, actor, component, UMG, AI, level, lighting, collision, and placement MCP tools. Prefer small searchable graph/function names, reusable Actor Components for repeated behavior, and visible player feedback.\n")
+		TEXT("8. Run `compile_blueprint_and_report` for every touched Blueprint or Widget Blueprint, save changed assets, and use readback/diagnostic tools to confirm generated meshes, materials, collision, references, and gameplay wiring are actually assigned.\n")
+		TEXT("9. Verify runtime with `pie_launch_session`, exercise the loop as much as tools allow, capture `pie_capture_log`, capture `viewport_capture_screenshot`, then run `pie_stop_session`.\n")
+		TEXT("10. Finish with a concise report containing changed asset paths, Tripo task ids, credit usage, compile status, PIE/log/screenshot evidence paths, unresolved warnings/errors, and what remains for human design review."),
 		*Escape(PlayableSliceBrief),
 		*Escape(PlayableSliceAssetRoles),
 		*Escape(PlayableSliceGameplayLoop),
@@ -4737,6 +4738,7 @@ FString SMCPChatPanel::BuildPlayableSlicePrompt() const
 		*Escape(PlayableSliceEvidence),
 		*Escape(SessionName),
 		*ConfirmSpend,
+		*Escape(SliceContentPath),
 		*Escape(SliceContentPath),
 		*Escape(GenerativeTextureQuality),
 		*Escape(GenerativeModelVersion),

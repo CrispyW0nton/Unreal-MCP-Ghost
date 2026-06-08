@@ -16,7 +16,7 @@ logger = logging.getLogger("UnrealMCP.skills.playable_slice")
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SCHEMA_PATH = _REPO_ROOT / "knowledge_base" / "v5" / "PLAYABLE_SLICE_SCHEMA.json"
 _ASSET_ROLES = ("hero", "prop", "prop", "enemy")
-_VALID_MODES = {"plan", "submit_assets"}
+_VALID_MODES = {"plan", "submit_assets", "orchestrate"}
 
 
 def _structured(
@@ -110,6 +110,7 @@ def build_playable_slice_plan(brief: str, content_path: str = "/Game/Generated/P
             "pbr": True,
             "texture_quality": "standard",
             "face_limit": 12000,
+            "smart_low_poly": True,
         })
 
     return {
@@ -166,6 +167,8 @@ def validate_playable_slice_plan(plan: Dict[str, Any]) -> List[str]:
             for key in ("name", "prompt", "provider", "task_type", "content_path"):
                 if not str(asset.get(key, "")).strip():
                     errors.append(f"asset {asset.get('role', '?')} missing {key}")
+            if asset.get("smart_low_poly") is not True:
+                errors.append(f"asset {asset.get('role', '?')} must set smart_low_poly true")
     for key in ("gameplay", "tool_sequence", "validation"):
         if key not in plan:
             errors.append(f"{key} is required")
@@ -180,6 +183,25 @@ def _load_schema() -> Dict[str, Any]:
         return {}
 
 
+def _parse_json_list(value: str, field_name: str) -> tuple[List[Dict[str, Any]], List[str]]:
+    if not str(value or "").strip():
+        return [], []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        return [], [f"{field_name} must be JSON: {exc}"]
+    if not isinstance(parsed, list):
+        return [], [f"{field_name} must be a JSON array"]
+    normalized: List[Dict[str, Any]] = []
+    errors: List[str] = []
+    for index, item in enumerate(parsed):
+        if isinstance(item, dict):
+            normalized.append(item)
+        else:
+            errors.append(f"{field_name}[{index}] must be an object")
+    return normalized, errors
+
+
 def _asset_payload(asset: Dict[str, Any], model_version: str) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "type": "text_to_model",
@@ -188,10 +210,144 @@ def _asset_payload(asset: Dict[str, Any], model_version: str) -> Dict[str, Any]:
         "pbr": bool(asset.get("pbr", True)),
         "texture_quality": asset.get("texture_quality", "standard"),
         "face_limit": int(asset.get("face_limit", 12000)),
+        "smart_low_poly": bool(asset.get("smart_low_poly", True)),
     }
     if model_version:
         payload["model_version"] = model_version
     return payload
+
+
+def _find_role_record(records: List[Dict[str, Any]], role: str, asset_name: str) -> Dict[str, Any]:
+    for record in records:
+        if str(record.get("asset_name", "")).lower() == asset_name.lower():
+            return record
+    for record in records:
+        if str(record.get("asset_role", record.get("role", ""))).lower() == role.lower():
+            return record
+    return {}
+
+
+def _build_playable_slice_orchestration(
+    plan: Dict[str, Any],
+    task_submissions: List[Dict[str, Any]],
+    imported_assets: List[Dict[str, Any]],
+) -> Dict[str, Any]:
+    wait_and_import: List[Dict[str, Any]] = []
+    for asset in plan["assets"]:
+        submission = _find_role_record(task_submissions, asset["role"], asset["name"])
+        imported = _find_role_record(imported_assets, asset["role"], asset["name"])
+        task_id = str(submission.get("task_id", "<task_id_from_submit_assets>"))
+        wait_and_import.append({
+            "asset_role": asset["role"],
+            "asset_name": asset["name"],
+            "task_id": task_id,
+            "expected_content_path": asset["content_path"],
+            "imported_asset_path": imported.get("asset_path", imported.get("imported_asset_path", "")),
+            "tool_calls": [
+                {
+                    "tool": "gen_tripo_wait_for_task",
+                    "args": {"task_id": task_id, "timeout_s": 900, "poll_s": 10},
+                    "evidence": ["final task status", "progress", "downloadable output"],
+                },
+                {
+                    "tool": "gen_tripo_import_to_project",
+                    "args": {
+                        "task_id": task_id,
+                        "content_path": asset["content_path"],
+                        "asset_name": asset["name"],
+                        "create_material_instance": True,
+                        "create_blueprint": False,
+                    },
+                    "evidence": ["static mesh path", "material paths", "import warnings"],
+                },
+            ],
+        })
+
+    gameplay = plan["gameplay"]
+    base_path = plan["content_path"]
+    blueprint_phase = {
+        "phase": "assemble_playable_loop",
+        "goal": gameplay["level_goal"],
+        "tool_domains": [
+            "gameplay_framework",
+            "blueprint_asset",
+            "blueprint_graph",
+            "editor_actor_viewport",
+            "ui_umg",
+            "ai_behavior_tree",
+            "diagnostics",
+        ],
+        "target_assets": {
+            "player_blueprint": gameplay["player_blueprint"],
+            "enemy_blueprint": gameplay["enemy_blueprint"],
+            "behavior_tree": gameplay["behavior_tree"],
+            "blackboard": gameplay["blackboard"],
+            "hud_widget": gameplay["hud_widget"],
+            "level_folder": f"{base_path}/Level",
+        },
+        "required_actions": [
+            "Create or reuse a player pawn/controller and wire movement, camera, health, and interaction state.",
+            "Create pickup/goal actors that use generated meshes, collision, and readable feedback.",
+            "Create one enemy shell with patrol/chase behavior and assign Behavior Tree/Blackboard assets when AI is in scope.",
+            "Place player start, imported meshes, enemy, lighting, nav bounds, collision volumes, and objective trigger in a compact arena.",
+            "Create a compact HUD widget for objective, health, and completion feedback.",
+        ],
+        "compile_tools": ["compile_blueprint_and_report"],
+        "readback_tools": ["scan_project_assets", "get_blueprint_nodes", "get_project_context"],
+    }
+    verification_phase = {
+        "phase": "verify_and_report",
+        "tool_calls": [
+            {"tool": "compile_blueprint_and_report", "args": {"blueprint_path": "<each_touched_blueprint_or_widget>"}},
+            {"tool": "pie_launch_session", "args": {"map": "<current_or_created_level>"}},
+            {"tool": "pie_capture_log", "args": {"max_lines": 200}},
+            {"tool": "viewport_capture_screenshot", "args": {"label": "playable_slice_evidence"}},
+            {"tool": "pie_stop_session", "args": {}},
+            {
+                "tool": "skill_package_vertical_slice_report",
+                "args": {
+                    "brief": plan["brief"],
+                    "plan_schema": plan["schema"],
+                    "changed_assets": "<changed_asset_paths>",
+                    "evidence": "<compile_pie_log_screenshot_paths>",
+                },
+            },
+        ],
+        "green_report_requires": [
+            "all touched Blueprints/widgets compile",
+            "generated assets imported under the planned /Game path",
+            "PIE launches without blocking runtime errors",
+            "viewport screenshot shows the playable level",
+            "final report lists warnings and human design-review follow-ups",
+        ],
+    }
+    return {
+        "schema": "unreal_mcp_playable_slice_orchestration.v1",
+        "plan_schema": plan["schema"],
+        "brief": plan["brief"],
+        "content_path": plan["content_path"],
+        "phases": [
+            {
+                "phase": "context",
+                "tool_calls": [
+                    {"tool": "get_project_context", "args": {}},
+                    {"tool": "scan_project_assets", "args": {"path": "/Game", "depth": 3}},
+                    {"tool": "list_available_tools", "args": {"domain": "all"}},
+                    {"tool": "get_onboarding_context", "args": {"task": "blueprints"}},
+                    {"tool": "get_onboarding_context", "args": {"task": "world_building"}},
+                    {"tool": "get_onboarding_context", "args": {"task": "umg"}},
+                ],
+            },
+            {"phase": "wait_and_import_generated_assets", "assets": wait_and_import},
+            blueprint_phase,
+            verification_phase,
+        ],
+        "evidence_contract": {
+            "asset_generation": ["task_id", "credit_guard", "provider output", "import result"],
+            "gameplay": ["changed Blueprint/widget/map assets", "compile reports", "readback checks"],
+            "runtime": ["PIE log", "viewport screenshot", "warnings/errors"],
+        },
+    }
 
 
 def _submit_tripo_asset_tasks(plan: Dict[str, Any], session_name: str, confirm_spend: bool) -> Dict[str, Any]:
@@ -275,6 +431,8 @@ def skill_generate_playable_slice(
     content_path: str = "/Game/Generated/PlayableSlice",
     session_name: str = "playable-slice",
     confirm_spend: bool = False,
+    task_submissions_json: str = "",
+    imported_assets_json: str = "",
 ) -> Dict[str, Any]:
     """Plan or start a generated playable-slice workflow from one brief."""
 
@@ -286,14 +444,16 @@ def skill_generate_playable_slice(
         "content_path": content_path,
         "session_name": session_name,
         "confirm_spend": confirm_spend,
+        "task_submissions_json": task_submissions_json,
+        "imported_assets_json": imported_assets_json,
     }
     if safe_mode not in _VALID_MODES:
         return _structured(
             success=False,
             stage="invalid_mode",
-            message="mode must be one of: plan, submit_assets",
+            message="mode must be one of: plan, submit_assets, orchestrate",
             inputs=inputs,
-            errors=["mode must be one of: plan, submit_assets"],
+            errors=["mode must be one of: plan, submit_assets, orchestrate"],
             t0=t0,
         )
     if not str(brief or "").strip():
@@ -317,6 +477,38 @@ def skill_generate_playable_slice(
             inputs=inputs,
             outputs={"plan": plan, "schema_path": str(_SCHEMA_PATH), "schema_title": schema.get("title", "")},
             errors=validation_errors,
+            t0=t0,
+        )
+    if safe_mode == "orchestrate":
+        task_submissions, task_errors = _parse_json_list(task_submissions_json, "task_submissions_json")
+        imported_assets, import_errors = _parse_json_list(imported_assets_json, "imported_assets_json")
+        parse_errors = task_errors + import_errors
+        if parse_errors:
+            return _structured(
+                success=False,
+                stage="orchestration_input_invalid",
+                message="Playable-slice orchestration inputs were invalid",
+                inputs=inputs,
+                outputs={"plan": plan},
+                errors=parse_errors,
+                t0=t0,
+            )
+        orchestration = _build_playable_slice_orchestration(plan, task_submissions, imported_assets)
+        return _structured(
+            success=True,
+            stage="orchestration_ready",
+            message="Playable-slice orchestration package is ready for import, gameplay assembly, PIE, and report phases",
+            inputs=inputs,
+            outputs={
+                "plan": plan,
+                "orchestration": orchestration,
+                "network_required": False,
+                "unreal_mutation_required": False,
+                "execution_modes": sorted(_VALID_MODES),
+            },
+            warnings=[
+                "This mode does not mutate Unreal; execute the returned tool calls in order and stop on destructive overwrite or failed compile.",
+            ],
             t0=t0,
         )
     if safe_mode == "plan":
@@ -360,22 +552,28 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
         content_path: str = "/Game/Generated/PlayableSlice",
         session_name: str = "playable-slice",
         confirm_spend: bool = False,
+        task_submissions_json: str = "",
+        imported_assets_json: str = "",
     ) -> str:
         """Plan or start a generated playable slice from one brief.
 
         Mode `plan` validates the schema and returns the end-to-end tool
         sequence without network calls. Mode `submit_assets` requires
         TRIPO_API_KEY and confirm_spend=True before submitting paid Tripo tasks.
+        Mode `orchestrate` returns a no-spend import/gameplay/PIE/report package
+        from the plan plus optional submitted-task and imported-asset JSON arrays.
 
         KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#d7-playable-slice-skill
         Example:
-            skill_generate_playable_slice(brief="third-person dungeon demo with a slime and a boss", mode="plan")"""
+            skill_generate_playable_slice(brief="third-person dungeon demo with a slime and a boss", mode="orchestrate")"""
         result = _impl(
             brief=brief,
             mode=mode,
             content_path=content_path,
             session_name=session_name,
             confirm_spend=confirm_spend,
+            task_submissions_json=task_submissions_json,
+            imported_assets_json=imported_assets_json,
         )
         return json.dumps(result)
 

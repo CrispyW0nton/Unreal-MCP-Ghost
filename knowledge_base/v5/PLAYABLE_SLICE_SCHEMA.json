@@ -25,7 +25,7 @@
       "maxItems": 4,
       "items": {
         "type": "object",
-        "required": ["role", "name", "prompt", "provider", "task_type", "content_path"],
+        "required": ["role", "name", "prompt", "provider", "task_type", "content_path", "smart_low_poly"],
         "properties": {
           "role": {
             "enum": ["hero", "prop", "enemy"]
@@ -47,6 +47,9 @@
           "content_path": {
             "type": "string",
             "pattern": "^/Game"
+          },
+          "smart_low_poly": {
+            "const": true
           }
         }
       }

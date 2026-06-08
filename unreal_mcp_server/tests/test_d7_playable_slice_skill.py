@@ -76,6 +76,7 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertEqual(plan["schema"], "unreal_mcp_playable_slice_plan.v1")
         self.assertEqual(len(plan["assets"]), 4)
         self.assertEqual([asset["role"] for asset in plan["assets"]].count("prop"), 2)
+        self.assertTrue(all(asset["smart_low_poly"] is True for asset in plan["assets"]))
         self.assertIn("skill_package_vertical_slice_report", plan["validation"]["report_tool"])
 
     def test_submit_assets_requires_tripo_api_key(self):
@@ -134,8 +135,61 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertTrue(result["success"])
         self.assertEqual(len(submitted), 4)
         self.assertEqual([payload["type"] for payload in submitted], ["text_to_model"] * 4)
+        self.assertTrue(all(payload["smart_low_poly"] is True for payload in submitted))
         self.assertTrue(result["outputs"]["credit_guard"]["reserved"])
         self.assertEqual(len(result["outputs"]["task_submissions"]), 4)
+
+    def test_orchestrate_mode_returns_import_gameplay_and_pie_package(self):
+        from skills.playable_slice.skill import skill_generate_playable_slice
+
+        task_submissions = json.dumps([
+            {"asset_role": "hero", "asset_name": "Demo_Hero", "task_id": "task-hero"},
+            {"asset_role": "enemy", "asset_name": "Demo_Enemy", "task_id": "task-enemy"},
+        ])
+        imported_assets = json.dumps([
+            {"asset_role": "hero", "asset_path": "/Game/Generated/PlayableSlice/Assets/Demo_Hero"},
+        ])
+
+        result = skill_generate_playable_slice(
+            "third-person dungeon demo with a slime and a boss",
+            mode="orchestrate",
+            task_submissions_json=task_submissions,
+            imported_assets_json=imported_assets,
+        )
+
+        _assert_structured(self, result, "orchestration_ready")
+        self.assertTrue(result["success"])
+        orchestration = result["outputs"]["orchestration"]
+        self.assertEqual(orchestration["schema"], "unreal_mcp_playable_slice_orchestration.v1")
+        phase_names = [phase["phase"] for phase in orchestration["phases"]]
+        self.assertIn("wait_and_import_generated_assets", phase_names)
+        self.assertIn("assemble_playable_loop", phase_names)
+        self.assertIn("verify_and_report", phase_names)
+        serialized = json.dumps(orchestration)
+        for token in (
+            "gen_tripo_wait_for_task",
+            "gen_tripo_import_to_project",
+            "compile_blueprint_and_report",
+            "pie_launch_session",
+            "pie_capture_log",
+            "viewport_capture_screenshot",
+            "skill_package_vertical_slice_report",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, serialized)
+
+    def test_orchestrate_mode_rejects_invalid_json_inputs(self):
+        from skills.playable_slice.skill import skill_generate_playable_slice
+
+        result = skill_generate_playable_slice(
+            "third-person dungeon demo with a slime",
+            mode="orchestrate",
+            task_submissions_json="{not-json",
+        )
+
+        _assert_structured(self, result, "orchestration_input_invalid")
+        self.assertFalse(result["success"])
+        self.assertIn("task_submissions_json must be JSON", result["errors"][0])
 
     def test_registered_tool_returns_json(self):
         from skills.playable_slice.skill import register_playable_slice_skill
@@ -164,6 +218,7 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertIn("D7 Playable Slice Skill", kb_text)
         self.assertIn("D.7 - Playable slice skill", changelog_text)
         self.assertEqual(schema["title"], "Unreal MCP Playable Slice Plan")
+        self.assertEqual(schema["properties"]["assets"]["items"]["properties"]["smart_low_poly"]["const"], True)
 
 
 if __name__ == "__main__":

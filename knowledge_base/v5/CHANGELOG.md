@@ -10,6 +10,7 @@
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.
 - The inserted workflow prompt now links Smart Mesh Tripo assets, `gen_tripo_text_to_model`, `gen_tripo_import_to_project`, Blueprint/UMG/level assembly, compile checks, PIE/log/screenshot evidence, and credit reporting.
+- Added `skill_generate_playable_slice(mode="orchestrate")` to return a no-spend import/gameplay/PIE/report package, and made the playable-slice backend asset contract require `smart_low_poly=True`.
 - Documented the Chat Dock Playable Slice Builder in the playable-slice recipe KB so Generate Asset, Build Gameplay, and the new Playable Slice workspace form a clearer AI IDE progression inside Unreal.
 
 ### C.12 - Gameplay builder quick action

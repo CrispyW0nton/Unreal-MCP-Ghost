@@ -43,6 +43,7 @@ complete loop first, then expand.
 | Discover current project | `get_project_context`, `scan_project_assets`, `list_available_tools` |
 | Plan generated slice | `skill_generate_playable_slice(mode="plan")` |
 | Start paid asset generation | `skill_generate_playable_slice(mode="submit_assets", confirm_spend=True)` |
+| Package execution runbook | `skill_generate_playable_slice(mode="orchestrate")` |
 | Plan risk | `risk_evaluate_action` and a short execution journal |
 | Build gameplay | Blueprint, gameplay, data, UMG, AI, animation, material, and actor tools |
 | Verify editor state | compile/save/diagnostic tools and asset scans |
@@ -70,12 +71,19 @@ Mode `submit_assets` is the first paid execution gate. It requires:
 - enough remaining session credit budget;
 - `confirm_spend=True` after user approval.
 
-When those gates pass, the skill submits four Tripo `text_to_model` tasks and
-returns task IDs plus next steps. It does not pretend that asynchronous
-generation, import, Blueprint wiring, PIE, or report packaging have completed.
-Agents must continue through `gen_tripo_wait_for_task`,
-`gen_tripo_import_to_project`, Blueprint/AI/UMG tools, PIE evidence, and
-`skill_package_vertical_slice_report`.
+When those gates pass, the skill submits four Tripo `text_to_model` tasks with
+`smart_low_poly=True` and returns task IDs plus next steps. It does not pretend
+that asynchronous generation, import, Blueprint wiring, PIE, or report
+packaging have completed. Agents must continue through
+`gen_tripo_wait_for_task`, `gen_tripo_import_to_project`, Blueprint/AI/UMG
+tools, PIE evidence, and `skill_package_vertical_slice_report`.
+
+Mode `orchestrate` is the no-spend backend runbook for the full AI IDE flow. It
+returns `unreal_mcp_playable_slice_orchestration.v1` with context discovery,
+wait/import, Blueprint/UMG/AI/level assembly, PIE verification, and final report
+phases. Pass optional `task_submissions_json` and `imported_assets_json` arrays
+when generation or import has already happened so the runbook can bind task ids
+and asset paths to the planned roles.
 
 Example:
 
@@ -90,6 +98,13 @@ skill_generate_playable_slice(
     mode="submit_assets",
     session_name="dungeon-demo",
     confirm_spend=True,
+)
+
+skill_generate_playable_slice(
+    brief="third-person dungeon demo with a slime, a skeleton, and a boss",
+    mode="orchestrate",
+    session_name="dungeon-demo",
+    task_submissions_json="[ ... task records from submit_assets ... ]",
 )
 ```
 
@@ -115,21 +130,26 @@ The dialog captures:
 
 The inserted workflow prompt should:
 
-1. Discover project state with `get_project_context`,
+1. Call `skill_generate_playable_slice(mode="plan")` and use the returned
+   `unreal_mcp_playable_slice_plan.v1` as the source of truth.
+2. Discover project state with `get_project_context`,
    `scan_project_assets(path="/Game", depth=3)`, `list_available_tools`, and
    onboarding context for Blueprints, world building, and UMG.
-2. Map every generated asset role to a concrete `/Game/Generated/PlayableSlice`
+3. Map every generated asset role to a concrete `/Game/Generated/PlayableSlice`
    path and avoid destructive overwrites.
-3. Use `gen_tripo_text_to_model` for missing 3D roles with textures, PBR,
-   `face_limit=12000`, and `smart_low_poly=true`, then wait and import with
+4. Use `skill_generate_playable_slice(mode="submit_assets")` after spend
+   approval, or `gen_tripo_text_to_model` directly for missing 3D roles with
+   textures, PBR, `face_limit=12000`, and `smart_low_poly=true`.
+5. Use `skill_generate_playable_slice(mode="orchestrate")` to package the
+   wait/import, gameplay assembly, PIE, and report phases, then import with
    `gen_tripo_wait_for_task` and `gen_tripo_import_to_project`.
-4. Optionally route hero-art refinements through the Texture/Paint Magic Brush
+6. Optionally route hero-art refinements through the Texture/Paint Magic Brush
    path when project/render/image-map data exists and spend is approved.
-5. Build the playable loop with Blueprint, actor, component, UMG, AI, level,
+7. Build the playable loop with Blueprint, actor, component, UMG, AI, level,
    lighting, collision, and placement tools.
-6. Run `compile_blueprint_and_report`, save/read back touched assets, and verify
+8. Run `compile_blueprint_and_report`, save/read back touched assets, and verify
    runtime with PIE, `pie_capture_log`, and a viewport screenshot.
-7. Report changed assets, Tripo task ids, credit usage, evidence paths,
+9. Report changed assets, Tripo task ids, credit usage, evidence paths,
    unresolved warnings, and remaining human design-review work.
 
 ## Chat Dock Gameplay Builder
@@ -193,24 +213,27 @@ third-person prototype.
    credits, output folder, and that paid calls require `TRIPO_API_KEY`.
 5. `skill_generate_playable_slice(brief, mode="submit_assets",
    session_name="<slice-name>", confirm_spend=True)` only after approval.
-6. For each returned task id, `gen_tripo_wait_for_task(task_id, timeout_s=900,
+6. `skill_generate_playable_slice(brief, mode="orchestrate",
+   task_submissions_json="<returned task records>")` to package the concrete
+   import, gameplay, verification, and report phases.
+7. For each returned task id, `gen_tripo_wait_for_task(task_id, timeout_s=900,
    poll_s=10)`.
-7. For each completed model, `gen_tripo_import_to_project(task_id,
+8. For each completed model, `gen_tripo_import_to_project(task_id,
    content_path="/Game/Generated/PlayableSlice/<role>",
    create_material_instance=True, create_blueprint=False)`.
-8. Create or reuse a third-person player Blueprint, assign the hero mesh when
+9. Create or reuse a third-person player Blueprint, assign the hero mesh when
    suitable, and keep input/camera defaults readable.
-9. Create enemy Blueprint shells, one Behavior Tree, and one Blackboard with
+10. Create enemy Blueprint shells, one Behavior Tree, and one Blackboard with
    keys for target actor, patrol point, chase range, and attack range.
-10. Place the entrance, encounter space, boss trigger, generated props, enemy,
+11. Place the entrance, encounter space, boss trigger, generated props, enemy,
     player start, lights, nav bounds, and blocking volumes.
-11. Add a compact UMG HUD with objective text, player health, and boss-room
+12. Add a compact UMG HUD with objective text, player health, and boss-room
     trigger feedback.
-12. Compile and save every touched Blueprint/material/map asset, then run
+13. Compile and save every touched Blueprint/material/map asset, then run
     import validation and changed-asset scans.
-13. Launch PIE, run or simulate 60 seconds, capture log output and a viewport
+14. Launch PIE, run or simulate 60 seconds, capture log output and a viewport
     screenshot.
-14. Finish with `skill_package_vertical_slice_report`, including changed assets,
+15. Finish with `skill_package_vertical_slice_report`, including changed assets,
     task ids, screenshots, PIE logs, warnings, and follow-ups.
 
 ### Expected Runtime
