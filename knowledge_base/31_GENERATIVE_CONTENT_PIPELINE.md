@@ -49,6 +49,7 @@ verified in-editor.
 | Refine, texture, or export Tripo results | `gen_tripo_refine_model`, `gen_tripo_texture_model`, `gen_tripo_post_process` |
 | Poll and collect Tripo outputs | `gen_tripo_get_task_status`, `gen_tripo_wait_for_task`, `gen_tripo_download_result` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
+| Import Tripo outputs into Unreal | `gen_tripo_import_to_project` |
 | Import assets | asset import, batch import, texture/audio import tools |
 | Normalize materials | `material_create_master`, `material_create_instance_from_master`, texture tools |
 | Audit meshes/textures | mesh, texture, technical-art audit tools |
@@ -212,6 +213,45 @@ The returned `manifest` includes:
 - `options`: import flags that later tools should preserve.
 - `all_files_present`: false when planning references files that have not been
   downloaded yet.
+
+## Auto-Import Bridge
+
+`gen_tripo_import_to_project` is the D.4 bridge from a successful Tripo task to
+Unreal project assets. It queries the task, downloads signed output URLs into
+`Saved/MCPChat/tripo_downloads/<task_id>/` when no target folder is supplied,
+selects the first supported model output (`pbr_model`, `model`, then
+`base_model`), asks `gen_prepare_import_manifest` to normalize the destination,
+and imports the mesh as a StaticMesh using the same execution substrate as the
+asset import tools.
+
+On success it returns:
+
+- `downloads`: local files collected from the short-lived Tripo URLs.
+- `manifest`: normalized `/Game/...` destination and expected asset paths.
+- `asset_paths`: primary StaticMesh path plus optional material instance and
+  Blueprint shell paths.
+- `thumbnail`: viewport screenshot evidence when the editor connection can
+  capture it.
+
+`create_material_instance=True` creates a material instance only when the import
+produces an embedded base material to parent from. If Tripo/Interchange already
+embedded textures in a GLB/FBX, this preserves that imported material chain. If
+no base material exists, the tool reports a warning instead of inventing a
+misleading material. `create_blueprint=True` creates an Actor Blueprint shell;
+component wiring belongs to the playable-slice skill or Blueprint tools.
+
+Example:
+
+```python
+gen_tripo_import_to_project(
+    task_id="tripo_task_123",
+    content_path="/Game/Generated/Enemies",
+    asset_name="SM_Slime",
+    create_material_instance=True,
+    create_blueprint=False,
+    capture_thumbnail=True,
+)
+```
 
 ## Working Example
 

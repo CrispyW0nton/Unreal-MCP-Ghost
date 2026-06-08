@@ -24,6 +24,9 @@ _SETTINGS_PATH = _CHAT_DIR / "generative_settings.json"
 _TRIPO_BASE_URL = "https://api.tripo3d.ai/v2/openapi"
 _TRIPO_FINAL_STATUSES = {"success", "failed", "banned", "expired", "cancelled", "unknown"}
 _TRIPO_MODEL_OUTPUT_KEYS = ("model", "base_model", "pbr_model", "rendered_image", "generated_image")
+_TRIPO_IMPORT_OUTPUT_KEYS = ("pbr_model", "model", "base_model", "rendered_image", "generated_image")
+_TRIPO_MODEL_EXTS = {".fbx", ".obj", ".gltf", ".glb"}
+_TRIPO_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tga", ".exr", ".hdr", ".bmp", ".webp"}
 _DEFAULT_GENERATIVE_SETTINGS: Dict[str, Any] = {
     "provider": "tripo",
     "default_model_version": "tripo-default",
@@ -191,6 +194,80 @@ def _as_file_object(*, image_path: str = "", image_url: str = "", file_token: st
 
 def _file_input_count(*, image_path: str = "", image_url: str = "", file_token: str = "") -> int:
     return sum(bool(_clean_optional_text(value)) for value in (image_path, image_url, file_token))
+
+
+def _safe_name(value: str, default: str = "GeneratedAsset") -> str:
+    cleaned = "".join(ch if ch.isalnum() or ch == "_" else "_" for ch in (value or "").strip())
+    cleaned = cleaned.strip("_")
+    return cleaned or default
+
+
+def _default_tripo_download_folder(task_id: str) -> Path:
+    return _CHAT_DIR / "tripo_downloads" / _safe_name(task_id, "tripo_task")
+
+
+def _suffix_for_tripo_output(key: str, url: str) -> str:
+    parsed = urllib.parse.urlparse(url)
+    suffix = Path(parsed.path).suffix.lower()
+    if suffix:
+        return suffix
+    if key in {"model", "base_model", "pbr_model"}:
+        return ".glb"
+    if key in {"rendered_image", "generated_image"}:
+        return ".png"
+    return ".bin"
+
+
+def _download_tripo_output_files(
+    *,
+    task_id: str,
+    output: Dict[str, Any],
+    target_folder: Path,
+    output_keys: List[str],
+) -> List[Dict[str, Any]]:
+    downloads: List[Dict[str, Any]] = []
+    for key in output_keys:
+        url = output.get(key)
+        if not url:
+            continue
+        suffix = _suffix_for_tripo_output(key, str(url))
+        filename = f"{_safe_name(task_id, 'tripo_task')}_{key}{suffix}"
+        download = _download_url(str(url), target_folder / filename)
+        download["key"] = key
+        download["suffix"] = suffix
+        downloads.append(download)
+    return downloads
+
+
+def _select_primary_model_download(downloads: List[Dict[str, Any]]) -> Dict[str, Any]:
+    by_key = {item.get("key"): item for item in downloads}
+    for key in ("pbr_model", "model", "base_model"):
+        item = by_key.get(key)
+        if item and Path(str(item.get("path", ""))).suffix.lower() in _TRIPO_MODEL_EXTS:
+            return item
+    for item in downloads:
+        if Path(str(item.get("path", ""))).suffix.lower() in _TRIPO_MODEL_EXTS:
+            return item
+    return {}
+
+
+def _capture_import_thumbnail(task_id: str, asset_name: str) -> Dict[str, Any]:
+    artifact_dir = _REPO_ROOT / ".mcp_artifacts" / "screenshots"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"{int(time.time())}_{_safe_name(task_id, 'tripo_task')}_{_safe_name(asset_name, 'asset')}_thumbnail.png"
+    filepath = artifact_dir / filename
+    raw = _send("take_screenshot", {
+        "filepath": str(filepath),
+        "filename": str(filepath),
+        "show_ui": False,
+        "resolution": [1024, 1024],
+    })
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    return {
+        "success": not failed and filepath.exists(),
+        "path": str(filepath) if filepath.exists() else "",
+        "native_response": raw,
+    }
 
 
 def _get_tripo_api_key() -> str:
@@ -508,6 +585,132 @@ def _submit_guarded_tripo_task(
         )
 
 
+def _import_generated_static_mesh(
+    *,
+    file_path: str,
+    content_path: str,
+    asset_name: str,
+    create_material_instance: bool,
+    create_blueprint: bool,
+    overwrite_existing: bool,
+) -> Dict[str, Any]:
+    from tools.asset_import_tools import SUPPORTED_STATIC_MESH_EXTS, _get_substrate
+
+    source = Path(file_path)
+    if source.suffix.lower() not in SUPPORTED_STATIC_MESH_EXTS:
+        raise ValueError(f"Unsupported generated mesh extension for import: {source.suffix}")
+
+    safe_asset_name = _safe_name(asset_name or source.stem, "GeneratedAsset")
+    safe_content_path = _normalize_content_folder(content_path)
+    user_code = f"""
+import os
+import unreal
+
+file_path = {str(source)!r}
+destination_path = {safe_content_path!r}.rstrip("/") or "/Game/Generated"
+asset_name = {safe_asset_name!r}
+create_material_instance = {bool(create_material_instance)!r}
+create_blueprint = {bool(create_blueprint)!r}
+overwrite_existing = {bool(overwrite_existing)!r}
+
+unreal.EditorAssetLibrary.make_directory(destination_path)
+asset_tools = unreal.AssetToolsHelpers.get_asset_tools()
+
+with unreal.ScopedSlowTask(100, "MCP D.4 Tripo import: " + asset_name) as slow:
+    slow.make_dialog(True)
+    slow.enter_progress_frame(35, "Importing generated mesh")
+    with unreal.ScopedEditorTransaction("MCP D.4 Tripo import: " + asset_name):
+        task = unreal.AssetImportTask()
+        task.filename = file_path
+        task.destination_path = destination_path
+        task.destination_name = asset_name
+        task.automated = True
+        task.save = True
+        task.replace_existing = overwrite_existing
+
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext in (".fbx", ".obj"):
+            options = unreal.FbxImportUI()
+            options.set_editor_property("import_mesh", True)
+            options.set_editor_property("import_as_skeletal", False)
+            options.set_editor_property("import_materials", True)
+            options.set_editor_property("import_textures", True)
+            smd = options.static_mesh_import_data
+            smd.set_editor_property("combine_meshes", True)
+            smd.set_editor_property("generate_lightmap_u_vs", True)
+            smd.set_editor_property("auto_generate_collision", True)
+            task.set_editor_property("options", options)
+
+        asset_tools.import_asset_tasks([task])
+        imported = list(task.get_editor_property("imported_object_paths") or [])
+        if not imported:
+            raise RuntimeError("Generated mesh import returned no asset paths for: " + file_path)
+
+        asset_path_full = imported[0]
+        asset_path_clean = asset_path_full.split(".")[0] if "." in asset_path_full else asset_path_full
+        mesh = unreal.load_asset(asset_path_full)
+        if not (mesh and isinstance(mesh, unreal.StaticMesh)):
+            _warnings.append("Imported primary asset did not load as StaticMesh; verify in Content Browser")
+
+        material_instance_path = ""
+        if create_material_instance and mesh and isinstance(mesh, unreal.StaticMesh):
+            slow.enter_progress_frame(25, "Creating material instance")
+            base_material = None
+            static_materials = list(mesh.get_editor_property("static_materials") or [])
+            if static_materials:
+                base_material = static_materials[0].material_interface
+            if base_material:
+                mi_name = "MI_" + asset_name
+                mi_package = destination_path + "/" + mi_name
+                if overwrite_existing and unreal.EditorAssetLibrary.does_asset_exist(mi_package):
+                    unreal.EditorAssetLibrary.delete_asset(mi_package)
+                mi = unreal.load_asset(mi_package + "." + mi_name)
+                if not mi:
+                    factory = unreal.MaterialInstanceConstantFactoryNew()
+                    mi = asset_tools.create_asset(mi_name, destination_path, unreal.MaterialInstanceConstant, factory)
+                if mi:
+                    mi.set_editor_property("parent", base_material)
+                    mesh.set_material(0, mi)
+                    unreal.EditorAssetLibrary.save_loaded_asset(mi)
+                    unreal.EditorAssetLibrary.save_loaded_asset(mesh)
+                    material_instance_path = mi_package
+                else:
+                    _warnings.append("Material instance creation returned no asset")
+            else:
+                _warnings.append("No imported base material found; material instance creation skipped")
+
+        blueprint_path = ""
+        if create_blueprint:
+            slow.enter_progress_frame(25, "Creating Blueprint shell")
+            bp_name = "BP_" + asset_name
+            bp_package = destination_path + "/" + bp_name
+            if overwrite_existing and unreal.EditorAssetLibrary.does_asset_exist(bp_package):
+                unreal.EditorAssetLibrary.delete_asset(bp_package)
+            bp = unreal.load_asset(bp_package + "." + bp_name)
+            if not bp:
+                factory = unreal.BlueprintFactory()
+                factory.set_editor_property("parent_class", unreal.Actor)
+                bp = asset_tools.create_asset(bp_name, destination_path, unreal.Blueprint, factory)
+            if bp:
+                unreal.EditorAssetLibrary.save_loaded_asset(bp)
+                blueprint_path = bp_package
+                _warnings.append("Created Actor Blueprint shell; add a StaticMeshComponent before gameplay use")
+            else:
+                _warnings.append("Blueprint shell creation returned no asset")
+
+        slow.enter_progress_frame(15, "Saving generated import outputs")
+        _result["asset_path"] = asset_path_clean
+        _result["asset_type"] = "StaticMesh"
+        _result["imported_object_paths"] = imported
+        _result["material_instance"] = material_instance_path
+        _result["blueprint"] = blueprint_path
+        _result["content_path"] = destination_path
+        _result["asset_name"] = asset_name
+"""
+    exec_structured = _get_substrate()
+    return exec_structured(user_code, "gen_tripo_import_to_project")
+
+
 
 def _resolve_tripo_api_key() -> Dict[str, Any]:
     env_key = os.environ.get("TRIPO_API_KEY", "").strip()
@@ -597,6 +800,7 @@ def _provider_scaffold() -> List[Dict[str, Any]]:
                 "texture_model",
                 "post_process",
                 "download_result",
+                "import_to_project",
             ],
             "config": {
                 "api_key_configured": config["api_key_configured"],
@@ -606,7 +810,7 @@ def _provider_scaffold() -> List[Dict[str, Any]]:
                 "output_folder": config["output_folder"],
                 "session_credit_budget": config["session_credit_budget"],
             },
-            "next_milestones": ["D.2 config/auth", "D.3 Tripo task tools", "D.4 auto-import bridge"],
+            "next_milestones": ["D.5 provider abstraction", "D.6 texture-only path", "D.7 playable slice skill"],
         }
     ]
 
@@ -638,6 +842,12 @@ def register_generative_tools(mcp: FastMCP):
                     "native_route": "gen_prepare_import_manifest",
                     "status": "live",
                     "purpose": "Validate source files and normalize /Game import targets before D.4 imports.",
+                },
+                {
+                    "tool": "gen_tripo_import_to_project",
+                    "native_route": "gen_prepare_import_manifest",
+                    "status": "live",
+                    "purpose": "Download a successful Tripo task result, import the StaticMesh, and return viewport evidence.",
                 }
             ]
         return _result_json(
@@ -1216,19 +1426,159 @@ def register_generative_tools(mcp: FastMCP):
             if task.get("status") != "success":
                 return _result_json(success=False, stage="gen_tripo_download_result", message=f"Task is not successful: {task.get('status')}", inputs=inputs, outputs={"task": task}, errors=[f"Task is not successful: {task.get('status')}"], t0=t0)
             output = task.get("output") if isinstance(task.get("output"), dict) else {}
-            downloads = []
-            target = Path(target_folder)
-            for key in keys:
-                url = output.get(key)
-                if not url:
-                    continue
-                parsed = urllib.parse.urlparse(url)
-                suffix = Path(parsed.path).suffix or ".bin"
-                filename = f"{task_id}_{key}{suffix}"
-                downloads.append(_download_url(url, target / filename))
+            downloads = _download_tripo_output_files(task_id=task_id, output=output, target_folder=Path(target_folder), output_keys=keys)
             return _result_json(success=bool(downloads), stage="gen_tripo_download_result", message=f"Downloaded {len(downloads)} Tripo output file(s)", inputs=inputs, outputs={"task_id": task_id, "downloads": downloads, "source_output": output}, errors=[] if downloads else ["No requested output URLs were available to download"], t0=t0)
         except Exception as exc:
             return _result_json(success=False, stage="gen_tripo_download_result", message=str(exc), inputs=inputs, errors=[str(exc)], t0=t0)
+
+    @mcp.tool()
+    async def gen_tripo_import_to_project(
+        ctx: Context,
+        task_id: str,
+        content_path: str = "/Game/Generated",
+        create_material_instance: bool = True,
+        create_blueprint: bool = False,
+        target_folder: str = "",
+        asset_name: str = "",
+        output_keys: Optional[List[str]] = None,
+        overwrite_existing: bool = False,
+        capture_thumbnail: bool = True,
+    ) -> str:
+        """Download a successful Tripo task result, import it, and capture viewport evidence.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#auto-import-bridge
+        Example:
+            gen_tripo_import_to_project(task_id="model-task-id", content_path="/Game/Generated/Enemies", create_material_instance=True)"""
+        t0 = time.monotonic()
+        keys = output_keys or list(_TRIPO_IMPORT_OUTPUT_KEYS)
+        safe_content_path = _normalize_content_folder(content_path)
+        inputs = {
+            "task_id": task_id,
+            "content_path": safe_content_path,
+            "create_material_instance": create_material_instance,
+            "create_blueprint": create_blueprint,
+            "target_folder": target_folder,
+            "asset_name": asset_name,
+            "output_keys": keys,
+            "overwrite_existing": overwrite_existing,
+            "capture_thumbnail": capture_thumbnail,
+        }
+        try:
+            task_result = _tripo_get_task(task_id)
+            task = task_result["task"]
+            if task.get("status") != "success":
+                return _result_json(
+                    success=False,
+                    stage="gen_tripo_import_to_project",
+                    message=f"Task is not successful: {task.get('status')}",
+                    inputs=inputs,
+                    outputs={"task": task, "trace_id": task_result.get("trace_id", "")},
+                    errors=[f"Task is not successful: {task.get('status')}"],
+                    t0=t0,
+                )
+
+            output = task.get("output") if isinstance(task.get("output"), dict) else {}
+            download_folder = Path(target_folder) if target_folder else _default_tripo_download_folder(task_id)
+            downloads = _download_tripo_output_files(
+                task_id=task_id,
+                output=output,
+                target_folder=download_folder,
+                output_keys=keys,
+            )
+            primary_model = _select_primary_model_download(downloads)
+            if not primary_model:
+                return _result_json(
+                    success=False,
+                    stage="gen_tripo_import_to_project",
+                    message="No downloaded Tripo model output was available for import",
+                    inputs=inputs,
+                    outputs={"task": task, "downloads": downloads, "source_output": output},
+                    errors=["No downloaded output had a supported StaticMesh extension."],
+                    t0=t0,
+                )
+
+            local_files = [item["path"] for item in downloads if item.get("path")]
+            requested_asset_name = asset_name or Path(str(primary_model["path"])).stem
+            manifest_inputs = {
+                "task_id": task_id,
+                "local_files": local_files,
+                "content_path": safe_content_path,
+                "asset_name": requested_asset_name,
+                "provider": "tripo",
+                "create_material_instance": create_material_instance,
+                "create_blueprint": create_blueprint,
+                "overwrite_existing": overwrite_existing,
+            }
+            manifest_raw = _send("gen_prepare_import_manifest", manifest_inputs)
+            manifest_failed = manifest_raw.get("success") is False or manifest_raw.get("status") == "error" or bool(manifest_raw.get("error"))
+            if manifest_failed:
+                message = manifest_raw.get("error") or manifest_raw.get("message") or "Import manifest preparation failed"
+                return _result_json(
+                    success=False,
+                    stage="gen_tripo_import_to_project",
+                    message=message,
+                    inputs=inputs,
+                    outputs={"task": task, "downloads": downloads, "manifest_response": manifest_raw},
+                    errors=[message],
+                    t0=t0,
+                )
+            manifest = manifest_raw.get("manifest", manifest_raw)
+            safe_asset_name = str(manifest.get("asset_name") or _safe_name(requested_asset_name, "GeneratedAsset"))
+
+            import_result = _import_generated_static_mesh(
+                file_path=str(primary_model["path"]),
+                content_path=safe_content_path,
+                asset_name=safe_asset_name,
+                create_material_instance=create_material_instance,
+                create_blueprint=create_blueprint,
+                overwrite_existing=overwrite_existing,
+            )
+            if not import_result.get("success"):
+                return _result_json(
+                    success=False,
+                    stage="gen_tripo_import_to_project",
+                    message=import_result.get("message") or "Generated mesh import failed",
+                    inputs=inputs,
+                    outputs={"task": task, "downloads": downloads, "manifest": manifest, "import_result": import_result},
+                    errors=import_result.get("errors") or [import_result.get("message") or "Generated mesh import failed"],
+                    t0=t0,
+                )
+
+            thumbnail: Dict[str, Any] = {}
+            warnings = list(import_result.get("warnings") or [])
+            if capture_thumbnail:
+                thumbnail = _capture_import_thumbnail(task_id, safe_asset_name)
+                if not thumbnail.get("success"):
+                    warnings.append("Thumbnail screenshot was requested but could not be captured from the active viewport.")
+
+            import_outputs = import_result.get("outputs", {})
+            asset_paths = {
+                "primary_asset": import_outputs.get("asset_path") or manifest.get("expected_assets", {}).get("primary_asset", ""),
+                "material_instance": import_outputs.get("material_instance", ""),
+                "blueprint": import_outputs.get("blueprint", ""),
+                "imported_object_paths": import_outputs.get("imported_object_paths", []),
+            }
+            return _result_json(
+                success=True,
+                stage="gen_tripo_import_to_project",
+                message="Imported Tripo task result into Unreal project",
+                inputs=inputs,
+                outputs={
+                    "task_id": task_id,
+                    "task": task,
+                    "downloads": downloads,
+                    "primary_model": primary_model,
+                    "manifest": manifest,
+                    "import_result": import_result,
+                    "asset_paths": asset_paths,
+                    "thumbnail": thumbnail,
+                    "trace_id": task_result.get("trace_id", ""),
+                },
+                warnings=warnings,
+                t0=t0,
+            )
+        except Exception as exc:
+            return _result_json(success=False, stage="gen_tripo_import_to_project", message=str(exc), inputs=inputs, errors=[str(exc)], t0=t0)
 
     @mcp.tool()
     async def gen_prepare_import_manifest(

@@ -58,9 +58,10 @@ class TestD1GenerativeTools(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["outputs"]["network_required"])
         providers = payload["outputs"]["providers"]
         self.assertEqual(providers[0]["provider"], "tripo")
-        self.assertIn("D.3 Tripo task tools", providers[0]["next_milestones"])
+        self.assertIn("D.5 provider abstraction", providers[0]["next_milestones"])
         helpers = payload["outputs"]["import_helpers"]
         self.assertEqual(helpers[0]["native_route"], "gen_prepare_import_manifest")
+        self.assertEqual(helpers[1]["tool"], "gen_tripo_import_to_project")
 
     async def test_gen_prepare_import_manifest_calls_native_route(self):
         calls = []

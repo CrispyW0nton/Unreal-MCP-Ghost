@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### D.4 - Tripo auto-import bridge
+
+- Added `gen_tripo_import_to_project` to download successful Tripo task outputs, prepare an import manifest, import the primary StaticMesh, and capture viewport thumbnail evidence.
+- Reused the asset import execution substrate for generated mesh imports, with ScopedSlowTask and ScopedEditorTransaction coverage inside Unreal.
+- Updated the generative content KB with the D.4 auto-import sequence, return payload, material-instance behavior, and Blueprint-shell boundary.
+
 ### D.3 - Tripo task tools
 
 - Added Tripo task-family tools for text, image, multiview, refine, texture, conversion, status polling, waiting, and downloading signed outputs.
