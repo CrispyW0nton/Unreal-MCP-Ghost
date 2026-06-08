@@ -58,7 +58,7 @@ class TestD1GenerativeTools(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["outputs"]["network_required"])
         providers = payload["outputs"]["providers"]
         self.assertEqual(providers[0]["provider"], "tripo")
-        self.assertIn("D.6 texture-only path", providers[0]["next_milestones"])
+        self.assertIn("D.7 playable slice skill", providers[0]["next_milestones"])
         helpers = payload["outputs"]["import_helpers"]
         self.assertEqual(helpers[0]["native_route"], "gen_prepare_import_manifest")
         self.assertEqual(helpers[1]["tool"], "gen_tripo_import_to_project")

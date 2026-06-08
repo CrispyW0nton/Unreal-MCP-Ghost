@@ -47,6 +47,7 @@ verified in-editor.
 | Guard paid credit spend | `gen_check_credit_budget` |
 | Submit Tripo generation tasks | `gen_tripo_text_to_model`, `gen_tripo_image_to_model`, `gen_tripo_multiview_to_model` |
 | Refine, texture, or export Tripo results | `gen_tripo_refine_model`, `gen_tripo_texture_model`, `gen_tripo_post_process` |
+| Plan prompt-only texture sets | `gen_texture_from_prompt` |
 | Poll and collect Tripo outputs | `gen_tripo_get_task_status`, `gen_tripo_wait_for_task`, `gen_tripo_download_result` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
 | Import Tripo outputs into Unreal | `gen_tripo_import_to_project` |
@@ -70,6 +71,9 @@ with task-family coverage landing in later D milestones:
 - D.4 imports downloaded results into Unreal assets.
 - D.5 adds the provider abstraction used to describe and register future
   providers without changing the public MCP tool contract.
+- D.6 adds a texture-only path that reports Tripo's standalone texture
+  limitation and returns the Material Instance handoff expected once a texture
+  provider lands.
 
 Agents should use this provider list as a capability map, not as proof that a
 paid generation request has been sent. D.2 can resolve auth/config state, but it
@@ -287,6 +291,63 @@ gen_tripo_import_to_project(
     create_material_instance=True,
     create_blueprint=False,
     capture_thumbnail=True,
+)
+```
+
+## Texture-Only Path
+
+`gen_texture_from_prompt` is the D.6 prompt-to-material entry point. It accepts
+a material prompt, texture channels, resolution, destination content path, and a
+master material path. The supported channel names are `BaseColor`, `Normal`,
+`ORM`, and `Emissive`; aliases such as `albedo` and `diffuse` normalize to
+`BaseColor`. Valid resolutions are `512`, `1024`, `2048`, and `4096`.
+
+Tripo does not currently provide standalone prompt-only texture generation for
+BaseColor/Normal/ORM texture sets. Its `texture_model` task requires an
+existing `original_model_task_id`, so D.6 intentionally returns a structured
+unsupported result instead of sending a misleading paid request. The result
+includes:
+
+- `provider_support`: why the selected provider cannot satisfy the request.
+- `requested_texture_set`: normalized prompt, channels, and resolution.
+- `materialization_plan`: expected Texture2D paths, Material Instance path,
+  texture parameter names, and the material-tools sequence.
+- `tripo_model_task_alternative`: the existing `gen_tripo_texture_model`
+  route when a model task already exists.
+
+Use the returned `material_tool_handoff` after a future Stability, ComfyUI, or
+local texture provider produces actual Texture2D assets:
+
+```python
+gen_texture_from_prompt(
+    prompt="wet mossy dungeon stone, hand-painted fantasy style",
+    channels=["BaseColor", "Normal", "ORM"],
+    resolution=1024,
+    content_path="/Game/Generated/Dungeon",
+    asset_name="MossyStone",
+    master_material_path="/Game/Materials/M_Master_GeneratedTexture",
+)
+
+material_create_master(
+    material_name="M_Master_GeneratedTexture",
+    folder_path="/Game/Materials",
+    use_texture_parameters=True,
+    save=True,
+)
+
+material_create_instance_from_master(
+    instance_name="MI_MossyStone",
+    parent_material_path="/Game/Materials/M_Master_GeneratedTexture",
+    folder_path="/Game/Generated/Dungeon/Materials",
+)
+
+material_set_instance_parameters_bulk(
+    material_instance_path="/Game/Generated/Dungeon/Materials/MI_MossyStone",
+    texture_parameters={
+        "BaseColorTexture": "/Game/Generated/Dungeon/Textures/T_MossyStone_BaseColor",
+        "NormalTexture": "/Game/Generated/Dungeon/Textures/T_MossyStone_Normal",
+        "ORMTexture": "/Game/Generated/Dungeon/Textures/T_MossyStone_ORM",
+    },
 )
 ```
 

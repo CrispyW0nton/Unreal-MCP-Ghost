@@ -24,6 +24,10 @@ class TripoProvider:
         "import_to_project",
     )
     final_statuses = ("success", "failed", "banned", "expired", "cancelled", "unknown")
+    texture_from_prompt_reason = (
+        "Tripo texture_model retextures an existing model task and does not "
+        "create standalone BaseColor/Normal/ORM texture maps from only a prompt."
+    )
     output_policy = ProviderOutputPolicy(
         model_output_keys=("model", "base_model", "pbr_model", "rendered_image", "generated_image"),
         import_output_keys=("pbr_model", "model", "base_model", "rendered_image", "generated_image"),
@@ -44,6 +48,7 @@ class TripoProvider:
                 "model_extensions": list(self.output_policy.model_extensions),
                 "image_extensions": list(self.output_policy.image_extensions),
             },
+            "unsupported_capabilities": [self.texture_from_prompt_status()],
             "config": {
                 "api_key_configured": bool(config.get("api_key_configured")),
                 "api_key_source": config.get("api_key_source", "missing"),
@@ -52,7 +57,7 @@ class TripoProvider:
                 "output_folder": config.get("output_folder", "/Game/Generated"),
                 "session_credit_budget": config.get("session_credit_budget", 0),
             },
-            "next_milestones": ["D.6 texture-only path", "D.7 playable slice skill"],
+            "next_milestones": ["D.7 playable slice skill"],
         }
 
     def normalize_model_version(self, value: str | None) -> str:
@@ -120,6 +125,18 @@ class TripoProvider:
             if path_has_extension(str(item.get("path", "")), self.output_policy.model_extensions):
                 return item
         return {}
+
+    def supports_texture_from_prompt(self) -> bool:
+        return False
+
+    def texture_from_prompt_status(self) -> Dict[str, Any]:
+        return {
+            "capability": "texture_from_prompt",
+            "supported": False,
+            "reason": self.texture_from_prompt_reason,
+            "supported_alternative": "Use gen_tripo_texture_model when an original_model_task_id already exists.",
+            "future_provider": "Stability, ComfyUI, or a local texture provider",
+        }
 
 
 TRIPO_PROVIDER = TripoProvider()

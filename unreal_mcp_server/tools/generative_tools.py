@@ -205,6 +205,139 @@ def _safe_name(value: str, default: str = "GeneratedAsset") -> str:
     return cleaned or default
 
 
+_TEXTURE_CHANNEL_ALIASES = {
+    "basecolor": "BaseColor",
+    "base_color": "BaseColor",
+    "albedo": "BaseColor",
+    "diffuse": "BaseColor",
+    "normal": "Normal",
+    "normals": "Normal",
+    "orm": "ORM",
+    "occlusionroughnessmetallic": "ORM",
+    "occlusion_roughness_metallic": "ORM",
+    "emissive": "Emissive",
+    "emissivecolor": "Emissive",
+    "emissive_color": "Emissive",
+}
+_TEXTURE_PARAMETER_NAMES = {
+    "BaseColor": "BaseColorTexture",
+    "Normal": "NormalTexture",
+    "ORM": "ORMTexture",
+    "Emissive": "EmissiveTexture",
+}
+_TEXTURE_RESOLUTIONS = {512, 1024, 2048, 4096}
+
+
+def _normalize_texture_channels(channels: Optional[List[str]]) -> Dict[str, Any]:
+    requested = channels or ["BaseColor", "Normal", "ORM"]
+    normalized: List[str] = []
+    invalid: List[str] = []
+    for channel in requested:
+        raw = str(channel or "").strip()
+        key = raw.replace("-", "_").replace(" ", "_").lower()
+        canonical = _TEXTURE_CHANNEL_ALIASES.get(key)
+        if not canonical:
+            invalid.append(raw)
+            continue
+        if canonical not in normalized:
+            normalized.append(canonical)
+    return {
+        "channels": normalized,
+        "invalid_channels": invalid,
+    }
+
+
+def _normalize_texture_resolution(resolution: int) -> Dict[str, Any]:
+    value = _safe_int(resolution, 1024)
+    return {
+        "resolution": value,
+        "valid": value in _TEXTURE_RESOLUTIONS,
+        "allowed_resolutions": sorted(_TEXTURE_RESOLUTIONS),
+    }
+
+
+def _content_parent_and_name(asset_path: str, default_folder: str, default_name: str) -> Dict[str, str]:
+    normalized = _normalize_content_folder(asset_path) if asset_path.startswith("/Game") else ""
+    if not normalized:
+        return {"folder": default_folder, "name": default_name, "path": f"{default_folder}/{default_name}"}
+    parts = normalized.rsplit("/", 1)
+    if len(parts) == 1:
+        return {"folder": default_folder, "name": default_name, "path": f"{default_folder}/{default_name}"}
+    folder, name = parts
+    safe_name = _safe_name(name, default_name)
+    return {"folder": folder or default_folder, "name": safe_name, "path": f"{folder}/{safe_name}"}
+
+
+def _texture_from_prompt_plan(
+    *,
+    prompt: str,
+    channels: List[str],
+    resolution: int,
+    content_path: str,
+    asset_name: str,
+    master_material_path: str,
+) -> Dict[str, Any]:
+    safe_content_path = _normalize_content_folder(content_path)
+    safe_asset_name = _safe_name(asset_name or prompt[:48], "GeneratedTexture")
+    texture_folder = f"{safe_content_path}/Textures"
+    material_folder = f"{safe_content_path}/Materials"
+    master = _content_parent_and_name(
+        master_material_path or "/Game/Materials/M_Master_GeneratedTexture",
+        "/Game/Materials",
+        "M_Master_GeneratedTexture",
+    )
+    material_instance_path = f"{material_folder}/MI_{safe_asset_name}"
+    texture_paths = {
+        channel: f"{texture_folder}/T_{safe_asset_name}_{channel}"
+        for channel in channels
+    }
+    texture_parameters = {
+        _TEXTURE_PARAMETER_NAMES[channel]: texture_paths[channel]
+        for channel in channels
+        if channel in _TEXTURE_PARAMETER_NAMES
+    }
+    return {
+        "provider": "tripo",
+        "prompt": prompt,
+        "channels": channels,
+        "resolution": resolution,
+        "content_path": safe_content_path,
+        "texture_folder": texture_folder,
+        "texture_assets": texture_paths,
+        "master_material": master["path"],
+        "material_instance": material_instance_path,
+        "texture_parameters": texture_parameters,
+        "material_tool_handoff": [
+            {
+                "tool": "material_create_master",
+                "args": {
+                    "material_name": master["name"],
+                    "folder_path": master["folder"],
+                    "use_texture_parameters": True,
+                    "save": True,
+                },
+            },
+            {
+                "tool": "material_create_instance_from_master",
+                "args": {
+                    "instance_name": f"MI_{safe_asset_name}",
+                    "parent_material_path": master["path"],
+                    "folder_path": material_folder,
+                    "save": True,
+                },
+            },
+            {
+                "tool": "material_set_instance_parameters_bulk",
+                "args": {
+                    "material_instance_path": material_instance_path,
+                    "texture_parameters": texture_parameters,
+                    "save": True,
+                },
+            },
+        ],
+    }
+
+
 def _default_tripo_download_folder(task_id: str) -> Path:
     return _CHAT_DIR / "tripo_downloads" / _safe_name(task_id, "tripo_task")
 
@@ -953,6 +1086,125 @@ def register_generative_tools(mcp: FastMCP):
             outputs=outputs,
             warnings=warnings,
             errors=errors,
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_texture_from_prompt(
+        ctx: Context,
+        prompt: str,
+        channels: Optional[List[str]] = None,
+        resolution: int = 1024,
+        content_path: str = "/Game/Generated",
+        asset_name: str = "",
+        master_material_path: str = "/Game/Materials/M_Master_GeneratedTexture",
+        provider: str = "tripo",
+    ) -> str:
+        """Plan a prompt-only texture set and material instance handoff.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#texture-only-path
+        Example:
+            gen_texture_from_prompt(prompt="wet mossy stone", channels=["BaseColor", "Normal", "ORM"], resolution=1024)"""
+        t0 = time.monotonic()
+        selected_provider = (provider or "tripo").strip().lower() or "tripo"
+        channel_state = _normalize_texture_channels(channels)
+        resolution_state = _normalize_texture_resolution(resolution)
+        safe_prompt = _clean_optional_text(prompt)
+        inputs = {
+            "prompt": prompt,
+            "channels": channels or ["BaseColor", "Normal", "ORM"],
+            "resolution": resolution,
+            "content_path": content_path,
+            "asset_name": asset_name,
+            "master_material_path": master_material_path,
+            "provider": selected_provider,
+        }
+        if not safe_prompt:
+            return _result_json(
+                success=False,
+                stage="gen_texture_from_prompt",
+                message="prompt is required",
+                inputs=inputs,
+                errors=["prompt is required"],
+                t0=t0,
+            )
+        if channel_state["invalid_channels"] or not channel_state["channels"]:
+            return _result_json(
+                success=False,
+                stage="gen_texture_from_prompt",
+                message="Unsupported texture channel requested",
+                inputs=inputs,
+                outputs={"channel_state": channel_state},
+                errors=[f"Unsupported texture channel(s): {', '.join(channel_state['invalid_channels'])}"],
+                t0=t0,
+            )
+        if not resolution_state["valid"]:
+            allowed = ", ".join(str(item) for item in resolution_state["allowed_resolutions"])
+            return _result_json(
+                success=False,
+                stage="gen_texture_from_prompt",
+                message="Unsupported texture resolution requested",
+                inputs=inputs,
+                outputs={"resolution_state": resolution_state},
+                errors=[f"resolution must be one of: {allowed}"],
+                t0=t0,
+            )
+        try:
+            provider_obj = _PROVIDERS.get(selected_provider)
+        except KeyError as exc:
+            return _result_json(
+                success=False,
+                stage="gen_texture_from_prompt",
+                message=str(exc),
+                inputs=inputs,
+                errors=[str(exc)],
+                t0=t0,
+            )
+
+        material_plan = _texture_from_prompt_plan(
+            prompt=safe_prompt,
+            channels=channel_state["channels"],
+            resolution=resolution_state["resolution"],
+            content_path=content_path,
+            asset_name=asset_name,
+            master_material_path=master_material_path,
+        )
+        support = provider_obj.texture_from_prompt_status()
+        if not provider_obj.supports_texture_from_prompt():
+            return _result_json(
+                success=False,
+                stage="gen_texture_from_prompt",
+                message="Standalone prompt-to-texture generation is not supported by the selected provider",
+                inputs=inputs,
+                outputs={
+                    "provider_support": support,
+                    "requested_texture_set": {
+                        "prompt": safe_prompt,
+                        "channels": channel_state["channels"],
+                        "resolution": resolution_state["resolution"],
+                    },
+                    "materialization_plan": material_plan,
+                    "network_required": False,
+                    "tripo_model_task_alternative": {
+                        "tool": "gen_tripo_texture_model",
+                        "requires": "original_model_task_id",
+                    },
+                },
+                warnings=[
+                    "No paid provider request was sent.",
+                    "Use the material_tool_handoff once a future texture provider supplies Texture2D assets.",
+                ],
+                errors=[str(support.get("reason", "Provider does not support prompt-only texture generation."))],
+                t0=t0,
+            )
+
+        return _result_json(
+            success=False,
+            stage="gen_texture_from_prompt",
+            message="Provider support is declared, but no texture provider transport is wired yet",
+            inputs=inputs,
+            outputs={"provider_support": support, "materialization_plan": material_plan},
+            errors=["Texture provider transport is not implemented."],
             t0=t0,
         )
 

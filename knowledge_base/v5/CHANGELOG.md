@@ -4,6 +4,14 @@
 
 ---
 
+## 2026-06-08
+
+### D.6 - Texture-only path
+
+- Added `gen_texture_from_prompt` as the prompt-only texture entry point with channel/resolution validation and a Material Instance handoff plan.
+- Marked Tripo standalone prompt-to-texture generation as unsupported because `texture_model` requires an existing model task.
+- Documented the D.6 fallback path and the material-tools sequence for wiring future provider Texture2D outputs into a master material instance.
+
 ## 2026-06-07
 
 ### D.5 - Generative provider abstraction

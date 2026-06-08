@@ -60,6 +60,12 @@ class GenerativeProvider(Protocol):
     def select_primary_model_download(self, downloads: Iterable[Mapping[str, Any]]) -> Dict[str, Any]:
         """Choose the best downloaded model file for Unreal import."""
 
+    def supports_texture_from_prompt(self) -> bool:
+        """Return true when this provider can create standalone texture sets."""
+
+    def texture_from_prompt_status(self) -> Dict[str, Any]:
+        """Return provider status for standalone prompt-to-texture generation."""
+
 
 class ProviderRegistry:
     """Small in-process provider registry used by generative tools."""

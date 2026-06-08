@@ -35,7 +35,8 @@ class TestD5GenerativeProviderAbstraction(unittest.TestCase):
         self.assertIn("text_to_model", description["capabilities"])
         self.assertIn("import_to_project", description["capabilities"])
         self.assertIn(".glb", description["output_policy"]["model_extensions"])
-        self.assertIn("D.6 texture-only path", description["next_milestones"])
+        self.assertIn("D.7 playable slice skill", description["next_milestones"])
+        self.assertFalse(description["unsupported_capabilities"][0]["supported"])
 
     def test_tripo_provider_owns_credit_and_output_policy(self):
         from tools.generative.tripo import TRIPO_PROVIDER
