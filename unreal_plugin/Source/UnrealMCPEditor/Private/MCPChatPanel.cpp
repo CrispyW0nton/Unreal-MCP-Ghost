@@ -876,6 +876,19 @@ FReply SMCPChatPanel::HandleOpenGenerateAssetClicked()
 	return FReply::Handled();
 }
 
+FReply SMCPChatPanel::HandleInsertGenerateAssetPreflightPromptClicked()
+{
+	if (!IsGenerativeApiKeyConfigured())
+	{
+		bGenerativeSettingsVisible = true;
+	}
+
+	InsertComposerText(BuildGenerateAssetPreflightPrompt());
+	RecordTelemetryEvent(TEXT("generate_asset_preflight_prompt_inserted"));
+	SetStatus(LOCTEXT("StatusGenerateAssetPreflightInserted", "Inserted no-spend Tripo Generate Asset preflight"), PendingStatusColor);
+	return FReply::Handled();
+}
+
 FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 {
 	if (GenerateAssetPromptInput.IsValid())
@@ -993,7 +1006,7 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	if (!IsGenerativeApiKeyConfigured())
 	{
 		bGenerativeSettingsVisible = true;
-		SetStatus(LOCTEXT("StatusGenerateAssetMissingKey", "Add a Tripo API key before generating"), ErrorStatusColor);
+		SetStatus(LOCTEXT("StatusGenerateAssetMissingKey", "Use Preflight or add a Tripo API key before paid generation"), ErrorStatusColor);
 		return FReply::Handled();
 	}
 	if (GenerateAssetMode == TEXT("image_to_model") && GenerateAssetImageInput.IsEmpty())
@@ -3336,9 +3349,25 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
 				.Padding(6.0f)
 				[
-					SNew(STextBlock)
-					.Text(this, &SMCPChatPanel::GetGenerateAssetPreviewText)
-					.AutoWrapText(true)
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetGenerateAssetPreflightStatusText)
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.AutoWrapText(true)
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetGenerateAssetPreviewText)
+						.AutoWrapText(true)
+					]
 				]
 			]
 
@@ -3346,6 +3375,15 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 			.AutoHeight()
 			[
 				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("InsertGenerateAssetPreflightPrompt", "Preflight"))
+					.OnClicked(this, &SMCPChatPanel::HandleInsertGenerateAssetPreflightPromptClicked)
+				]
 
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -5310,6 +5348,24 @@ EVisibility SMCPChatPanel::GetGameplayBuilderDialogVisibility() const
 	return bGameplayBuilderDialogVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
+FString SMCPChatPanel::BuildGenerateAssetPreflightPrompt() const
+{
+	auto Escape = [](const FString& Value) -> FString
+	{
+		return Value.Replace(TEXT("\""), TEXT("'"));
+	};
+
+	const FString SessionName = CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName;
+
+	return FString::Printf(
+		TEXT("Run the no-spend Tripo Generate Asset preflight before paid generation.\n")
+		TEXT("Call `skill_generate_playable_slice` with mode=\"preflight\" and session_name=\"%s\" as the shared live-readiness checker. Treat this as Generate Asset readiness only: make no Tripo generation request, do not mutate Unreal, and do not reserve credits.\n")
+		TEXT("Report the readiness gates in a compact table: tripo_api_key, credit_budget, unreal_build_tooling, packaged_plugin, unreal_bridge, and smart_mesh_policy. Include `ready_for_live_spend`, `next_actions`, configured auth source, remaining generative credits, latest packaged plugin path, bridge host/port, active generation mode \"%s\", and confirm that paid text/image/multi-image model work will use Smart Mesh/good topology (`smart_low_poly: true`). Do not continue to gen_tripo_text_to_model, gen_tripo_image_to_model, gen_tripo_multiview_to_model, gen_tripo_texture_model, or Studio Magic Brush paid calls unless all gates are ready and the user has confirmed spend."),
+		*Escape(SessionName),
+		*Escape(GenerateAssetMode)
+	);
+}
+
 FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 {
 	auto Escape = [](const FString& Value) -> FString
@@ -5547,10 +5603,20 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 FText SMCPChatPanel::GetGenerateAssetPreviewText() const
 {
 	return FText::Format(
-		LOCTEXT("GenerateAssetPreview", "Preview: {0} -> gen_tripo_wait_for_task progress -> gen_tripo_import_to_project. Auth: {1}. Confirmed spend: {2}."),
+		LOCTEXT("GenerateAssetPreview", "Preview: {0} -> gen_tripo_wait_for_task progress -> gen_tripo_import_to_project. Auth: {1}. Confirmed spend: {2}. Smart Mesh: on for model generation."),
 		FText::FromString(GenerateAssetMode),
 		IsGenerativeApiKeyConfigured() ? LOCTEXT("GenerateAssetAuthReady", "ready") : LOCTEXT("GenerateAssetAuthMissing", "missing"),
 		bGenerativeSpendConfirmed ? LOCTEXT("GenerateAssetSpendYes", "yes") : LOCTEXT("GenerateAssetSpendNo", "no")
+	);
+}
+
+FText SMCPChatPanel::GetGenerateAssetPreflightStatusText() const
+{
+	const int32 RemainingCredits = FMath::Max(0, GenerativeSessionCreditBudget - GenerativeSessionCreditsUsed);
+	return FText::Format(
+		LOCTEXT("GenerateAssetPreflightStatus", "Preflight gates: auth {0} | credits remaining {1} | package + bridge checked by no-spend preflight | Smart Mesh required | paid work requires confirmed spend"),
+		IsGenerativeApiKeyConfigured() ? LOCTEXT("GenerateAssetPreflightAuthReady", "ready") : LOCTEXT("GenerateAssetPreflightAuthMissing", "missing"),
+		FText::AsNumber(RemainingCredits)
 	);
 }
 

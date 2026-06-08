@@ -79,6 +79,7 @@
 - Made Smart Mesh the default for new Tripo model generations by setting `smart_low_poly=True` in text/image/multiview task tools and inserting `smart_low_poly: true` from Unreal's Generate Asset workspace.
 - Documented the inspected Tripo `texture-edit` route, Magic Brush controls, and the `retexture_generate` / `get_retexture` / `apply_retexture` handoff now mirrored by MCP wrappers.
 - Added a visible Generative Credits display to the Generate Asset workspace and settings panel, including budget, used, remaining, next spend, and confirmed state while preserving `credit_usage_by_session`.
+- Added a Generate Asset **Preflight** action and readiness summary so users can check Tripo auth, credit budget, packaged plugin, Unreal bridge, and Smart Mesh policy through a no-spend prompt before inserting paid generation work.
 - Hardened the Tripo API-key UX with password-style entry, save/clear controls, local `Saved/MCPChat/secrets.json` persistence, and generation gating when auth is missing.
 - Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
 - Documented the D.9 chat-dock workflow in the generative content pipeline KB and added static smoke coverage for the UI hooks.

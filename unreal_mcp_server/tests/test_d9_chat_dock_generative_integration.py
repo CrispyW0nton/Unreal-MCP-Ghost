@@ -25,10 +25,13 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
     def test_generate_asset_quick_action_is_declared(self) -> None:
         for symbol in (
             "HandleOpenGenerateAssetClicked",
+            "HandleInsertGenerateAssetPreflightPromptClicked",
             "HandleInsertGenerateAssetToolCallClicked",
             "BuildGenerateAssetDialog",
+            "BuildGenerateAssetPreflightPrompt",
             "BuildGenerateAssetToolCallPrompt",
             "GetGenerateAssetPreviewText",
+            "GetGenerateAssetPreflightStatusText",
             "GetGenerateAssetDialogVisibility",
             "GenerateAssetPromptInput",
             "GenerateAssetNameInput",
@@ -48,9 +51,29 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "gen_tripo_import_to_project",
             "confirm_spend",
             "smart_low_poly: true",
+            "InsertComposerText(BuildGenerateAssetPreflightPrompt())",
             "bGenerativeSpendConfirmed ? TEXT(\"true\") : TEXT(\"false\")",
             "InsertComposerText(BuildGenerateAssetToolCallPrompt())",
+            "generate_asset_preflight_prompt_inserted",
             "generate_asset_quick_action_inserted",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp)
+
+    def test_generate_asset_preflight_is_no_spend_readiness_gate(self) -> None:
+        for token in (
+            "Run the no-spend Tripo Generate Asset preflight",
+            "mode=\\\"preflight\\\"",
+            "ready_for_live_spend",
+            "smart_mesh_policy",
+            "latest packaged plugin path",
+            "bridge host/port",
+            "do not reserve credits",
+            "do not mutate Unreal",
+            "Smart Mesh/good topology",
+            "Preflight gates: auth",
+            "paid work requires confirmed spend",
+            "Use Preflight or add a Tripo API key before paid generation",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp)
@@ -139,6 +162,9 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "gen_prepare_texture_paint_session",
             "retexture_generate",
             "apply_retexture",
+            "Generate Asset panel also includes a **Preflight** action",
+            "smart_mesh_policy",
+            "ready_for_live_spend",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.kb)
@@ -147,6 +173,7 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
         self.assertIn("Generate Asset quick action", self.changelog)
         self.assertIn("inline Tripo progress rendering", self.changelog)
         self.assertIn("gen_prepare_texture_paint_session", self.changelog)
+        self.assertIn("Generate Asset **Preflight** action", self.changelog)
 
 
 if __name__ == "__main__":

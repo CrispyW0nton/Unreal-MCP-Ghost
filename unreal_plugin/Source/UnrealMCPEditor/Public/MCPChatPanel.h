@@ -108,6 +108,7 @@ private:
 	FReply HandleGameplayModeHudClicked();
 	FReply HandleGameplayModeLevelFlowClicked();
 	FReply HandleOpenGenerateAssetClicked();
+	FReply HandleInsertGenerateAssetPreflightPromptClicked();
 	FReply HandleInsertGenerateAssetToolCallClicked();
 	FReply HandleGenerateModeTextToModelClicked();
 	FReply HandleGenerateModeImageToModelClicked();
@@ -239,8 +240,10 @@ private:
 	FString BuildGameplayBuilderPrompt() const;
 	FText GetGameplayBuilderPreviewText() const;
 	EVisibility GetGameplayBuilderDialogVisibility() const;
+	FString BuildGenerateAssetPreflightPrompt() const;
 	FString BuildGenerateAssetToolCallPrompt() const;
 	FText GetGenerateAssetPreviewText() const;
+	FText GetGenerateAssetPreflightStatusText() const;
 	EVisibility GetGenerateAssetDialogVisibility() const;
 	EVisibility GetGenerateTextToModelVisibility() const;
 	EVisibility GetGenerateImageToModelVisibility() const;

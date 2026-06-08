@@ -55,6 +55,10 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "gen_tripo_multiview_to_model",
             "gen_tripo_texture_model",
             "smart_low_poly: true",
+            "BuildGenerateAssetPreflightPrompt",
+            "GenerateAssetPreflightStatus",
+            "smart_mesh_policy",
+            "ready_for_live_spend",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header)
@@ -128,6 +132,7 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "credit_usage_by_session",
             "Remaining",
             "Next spend",
+            "Generate Asset **Preflight** action",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header + self.kb + self.changelog)
