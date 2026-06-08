@@ -51,6 +51,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_generate_asset_preflight",
             "gen_compile_generate_asset_evidence",
             "gen_prepare_texture_paint_session",
+            "gen_capture_texture_paint_snapshot",
             "gen_record_texture_paint_stroke",
             "gen_compile_texture_paint_image_map",
         }
@@ -246,9 +247,54 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertIn("retexture_generate", json.dumps(session["observed_studio_api_contract"]))
         self.assertIn("apply_retexture", json.dumps(session["observed_studio_api_contract"]))
         self.assertEqual(session["mcp_tool_sequence"][0]["tool"], "gen_tripo_texture_model")
+        self.assertIn("gen_capture_texture_paint_snapshot", [step["tool"] for step in session["mcp_tool_sequence"]])
         self.assertIn("gen_record_texture_paint_stroke", [step["tool"] for step in session["mcp_tool_sequence"]])
         self.assertIn("gen_compile_texture_paint_image_map", [step["tool"] for step in session["mcp_tool_sequence"]])
         self.assertEqual(saved["sessions"][0]["model_task_id"], "model-task-123")
+
+    async def test_texture_paint_snapshot_captures_and_uploads_without_spend(self):
+        import tools.generative_tools as generative_tools
+
+        def fake_send(command, params):
+            Path(params["filepath"]).parent.mkdir(parents=True, exist_ok=True)
+            Path(params["filepath"]).write_bytes(b"\x89PNG\r\n\x1a\n")
+            return {"success": True, "command": command, "filepath": params["filepath"]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            session_path = Path(tmp) / "Saved" / "MCPChat" / "texture_paint_sessions.json"
+            snapshot_folder = Path(tmp) / "snapshots"
+            with (
+                patch.object(generative_tools, "_TEXTURE_PAINT_SESSIONS_PATH", session_path),
+                patch("tools.generative_tools._send", side_effect=fake_send),
+                patch("tools.generative_tools._tripo_upload_file", return_value={"file_token": "uploaded-snapshot-token", "trace_id": "trace"}),
+            ):
+                prepared = json.loads(await self.mcp.tools["gen_prepare_texture_paint_session"](
+                    ctx=None,
+                    model_task_id="model-task-123",
+                    texture_prompt="weathered copper",
+                    tripo_project_id="project-456",
+                ))
+                session_id = prepared["outputs"]["session"]["session_id"]
+                payload = json.loads(await self.mcp.tools["gen_capture_texture_paint_snapshot"](
+                    ctx=None,
+                    session_id=session_id,
+                    viewport_view="front_three_quarter",
+                    target_folder=str(snapshot_folder),
+                    resolution=512,
+                    upload_to_tripo=True,
+                ))
+                saved = json.loads(session_path.read_text(encoding="utf-8"))
+                snapshot_exists = Path(payload["outputs"]["snapshot"]["path"]).exists()
+
+        _assert_structured(self, payload, "gen_capture_texture_paint_snapshot")
+        self.assertTrue(payload["success"])
+        self.assertFalse(payload["outputs"]["spend_required"])
+        self.assertTrue(payload["outputs"]["network_required"])
+        self.assertTrue(payload["outputs"]["attached_to_session"])
+        self.assertEqual(payload["outputs"]["render_image"]["file_token"], "uploaded-snapshot-token")
+        self.assertTrue(snapshot_exists)
+        self.assertEqual(saved["sessions"][0]["latest_render_image"]["file_token"], "uploaded-snapshot-token")
+        self.assertEqual(saved["sessions"][0]["viewport_snapshots"][0]["viewport_view"], "front_three_quarter")
 
     async def test_texture_paint_strokes_compile_apply_ready_image_map_without_spend(self):
         import tools.generative_tools as generative_tools
@@ -338,6 +384,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_check_credit_budget",
             "gen_compile_generate_asset_evidence",
             "gen_prepare_texture_paint_session",
+            "gen_capture_texture_paint_snapshot",
             "gen_record_texture_paint_stroke",
             "gen_compile_texture_paint_image_map",
         ):

@@ -50,6 +50,7 @@ verified in-editor.
 | Refine, texture, or export Tripo results | `gen_tripo_refine_model`, `gen_tripo_texture_model`, `gen_tripo_post_process` |
 | Plan prompt-only texture sets | `gen_texture_from_prompt` |
 | Plan Tripo Magic Brush paint sessions | `gen_prepare_texture_paint_session` |
+| Capture Magic Brush viewport snapshots | `gen_capture_texture_paint_snapshot` |
 | Poll and collect Tripo outputs | `gen_tripo_get_task_status`, `gen_tripo_wait_for_task`, `gen_tripo_download_result` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
 | Import Tripo outputs into Unreal | `gen_tripo_import_to_project` |
@@ -436,6 +437,10 @@ The observed Studio API flow is now represented by dedicated MCP wrappers:
   `camera_matrix`, `model_version`, `project_id`, `prompt`, `render_image`, and
   `strength`. `render_image` should be the uploaded viewport snapshot object
   observed in Studio, usually `{bucket, key}`.
+- `gen_capture_texture_paint_snapshot` captures the current Unreal viewport as
+  a local PNG for the prepared texture-paint session and, when
+  `upload_to_tripo=True`, uploads the PNG to Tripo without spending credits so
+  the returned `render_image` object can feed `gen_tripo_magic_brush_generate`.
 - `gen_tripo_magic_brush_get_retexture` fetches a completed generated texture
   image by `operator_id`.
 - `gen_tripo_magic_brush_list_images` calls `get_retexture_images` for the
@@ -471,10 +476,16 @@ gen_prepare_texture_paint_session(
 Once the snapshot upload and paint compile outputs are available, use:
 
 ```python
+gen_capture_texture_paint_snapshot(
+    session_id="<prepared_session_id>",
+    viewport_view="front_three_quarter",
+    upload_to_tripo=True,
+)
+
 gen_tripo_magic_brush_generate(
     project_id="studio-project-id",
     prompt="weathered copper with bright worn edges",
-    render_image={"bucket": "uploaded-bucket", "key": "viewport.png"},
+    render_image={"file_token": "<snapshot_upload_token>"},
     camera_matrix=[...],
     strength=0.7,
     confirm_spend=True,
@@ -605,8 +616,8 @@ Unreal. Current Tripo workspace modes are:
   front, left, back, and right reference inputs and `smart_low_poly: true`.
 - Texture/Paint: inserts `gen_prepare_texture_paint_session` first, then a
   gated Studio Magic Brush sequence when project and render data exist:
-  `gen_tripo_magic_brush_generate`, `gen_tripo_magic_brush_get_retexture`,
-  optional `gen_tripo_magic_brush_list_images`,
+  `gen_capture_texture_paint_snapshot`, `gen_tripo_magic_brush_generate`,
+  `gen_tripo_magic_brush_get_retexture`, optional `gen_tripo_magic_brush_list_images`,
   `gen_record_texture_paint_stroke`, `gen_compile_texture_paint_image_map`, and
   `gen_tripo_magic_brush_apply`. The planning call captures texture direction,
   optional reference image, paint/blend notes, viewport angle, render image
@@ -675,17 +686,21 @@ Brush paid call is allowed.
 6. Insert the generated Tripo request into the composer.
 7. For Texture/Paint, run the inserted `gen_prepare_texture_paint_session`
    portion before spend approval; it records the no-spend Magic Brush plan.
-8. Fill Paint Stroke with the target part name and generated paint-image
+8. Capture the current Unreal mesh view with `gen_capture_texture_paint_snapshot`.
+   Use `upload_to_tripo=True` when the user approves sending the snapshot to
+   Tripo as Magic Brush `render_image`; this contacts Tripo but does not spend
+   credits or create a generation task.
+9. Fill Paint Stroke with the target part name and generated paint-image
    bucket/key, URL, or file token, then record each painted/blended texture
    region with `gen_record_texture_paint_stroke`. Compile the saved strokes with
    `gen_compile_texture_paint_image_map` before the paid Studio apply call.
-9. Send paid task calls only after the user has approved the spend gate. The
+10. Send paid task calls only after the user has approved the spend gate. The
    inserted request keeps `confirm_spend=false` until the panel spend
    confirmation is active.
-10. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
+11. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
    inline progress bar in the chat tool card.
-11. Import successful outputs with `gen_tripo_import_to_project`.
-12. Validate the imported primary asset, capture a screenshot when needed, and
+12. Import successful outputs with `gen_tripo_import_to_project`.
+13. Validate the imported primary asset, capture a screenshot when needed, and
    run `gen_compile_generate_asset_evidence` so the dock can report
    `unreal_mcp_generate_asset_evidence.v1`, `proven`, gates, next actions,
    imported asset paths, and thumbnail/screenshot evidence.

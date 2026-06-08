@@ -465,6 +465,14 @@ def _build_texture_paint_session_plan(
             {"tool": "gen_tripo_wait_for_task", "args": {"task_id": "<texture_task_id>", "timeout_s": 900, "poll_s": 10}},
             {"tool": "gen_tripo_import_to_project", "args": {"task_id": "<texture_task_id>", "content_path": "/Game/Generated", "create_material_instance": True}},
             {
+                "tool": "gen_capture_texture_paint_snapshot",
+                "args": {
+                    "session_id": session_id,
+                    "viewport_view": clean_view,
+                    "upload_to_tripo": False,
+                },
+            },
+            {
                 "tool": "gen_record_texture_paint_stroke",
                 "args": {
                     "session_id": session_id,
@@ -607,6 +615,56 @@ def _capture_import_thumbnail(task_id: str, asset_name: str) -> Dict[str, Any]:
         "path": str(filepath) if filepath.exists() else "",
         "native_response": raw,
     }
+
+
+def _capture_texture_paint_snapshot(
+    *,
+    session_id: str,
+    viewport_view: str,
+    target_folder: str,
+    resolution: int,
+    show_ui: bool,
+) -> Dict[str, Any]:
+    artifact_dir = Path(target_folder) if _clean_optional_text(target_folder) else _REPO_ROOT / ".mcp_artifacts" / "texture_paint_snapshots"
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    safe_session = _safe_name(session_id or "texture_paint", "texture_paint")
+    safe_view = _safe_name(viewport_view or "current", "current")
+    filename = f"{int(time.time())}_{safe_session}_{safe_view}.png"
+    filepath = artifact_dir / filename
+    safe_resolution = max(256, min(4096, _safe_int(resolution, 1024)))
+    raw = _send("take_screenshot", {
+        "filepath": str(filepath),
+        "filename": str(filepath),
+        "show_ui": show_ui,
+        "resolution": [safe_resolution, safe_resolution],
+    })
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    return {
+        "success": not failed and filepath.exists(),
+        "path": str(filepath) if filepath.exists() else "",
+        "resolution": [safe_resolution, safe_resolution],
+        "viewport_view": viewport_view,
+        "native_response": raw,
+    }
+
+
+def _attach_snapshot_to_texture_paint_session(session_id: str, snapshot: Dict[str, Any]) -> bool:
+    safe_session_id = _clean_optional_text(session_id)
+    if not safe_session_id:
+        return False
+    sessions = _load_texture_paint_sessions()
+    session = _find_texture_paint_session(sessions, safe_session_id)
+    if session is None:
+        return False
+    snapshots = session.get("viewport_snapshots")
+    if not isinstance(snapshots, list):
+        snapshots = []
+    snapshots.append(snapshot)
+    session["viewport_snapshots"] = snapshots[-50:]
+    if isinstance(snapshot.get("render_image"), dict) and snapshot.get("render_image"):
+        session["latest_render_image"] = snapshot["render_image"]
+    _write_texture_paint_sessions(sessions)
+    return True
 
 
 def _get_tripo_api_key() -> str:
@@ -1013,6 +1071,7 @@ def _build_generate_asset_preflight(
             },
             "texture_paint_tools": [
                 "gen_prepare_texture_paint_session",
+                "gen_capture_texture_paint_snapshot",
                 "gen_tripo_magic_brush_generate",
                 "gen_tripo_magic_brush_get_retexture",
                 "gen_tripo_magic_brush_list_images",
@@ -2163,6 +2222,96 @@ def register_generative_tools(mcp: FastMCP):
                 "session_file": str(_TEXTURE_PAINT_SESSIONS_PATH) if record_session else "",
                 "estimated_credits": 0,
                 "spend_required": False,
+            },
+            warnings=warnings,
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_capture_texture_paint_snapshot(
+        ctx: Context,
+        session_id: str = "",
+        viewport_view: str = "current",
+        target_folder: str = "",
+        resolution: int = 1024,
+        show_ui: bool = False,
+        upload_to_tripo: bool = False,
+    ) -> str:
+        """Capture an Unreal viewport snapshot for Tripo Magic Brush texture painting.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_capture_texture_paint_snapshot(session_id="magic_brush_model_123", viewport_view="front_three_quarter", upload_to_tripo=False)"""
+        t0 = time.monotonic()
+        safe_session_id = _clean_optional_text(session_id)
+        safe_view = _clean_optional_text(viewport_view) or "current"
+        inputs = {
+            "session_id": session_id,
+            "viewport_view": safe_view,
+            "target_folder": target_folder,
+            "resolution": resolution,
+            "show_ui": show_ui,
+            "upload_to_tripo": upload_to_tripo,
+        }
+        snapshot = _capture_texture_paint_snapshot(
+            session_id=safe_session_id or "texture_paint",
+            viewport_view=safe_view,
+            target_folder=target_folder,
+            resolution=resolution,
+            show_ui=show_ui,
+        )
+        if not snapshot.get("success"):
+            return _result_json(
+                success=False,
+                stage="gen_capture_texture_paint_snapshot",
+                message="Failed to capture Unreal viewport snapshot for texture painting",
+                inputs=inputs,
+                outputs={
+                    "snapshot": snapshot,
+                    "network_required": False,
+                    "spend_required": False,
+                },
+                errors=[snapshot.get("native_response", {}).get("error") or snapshot.get("native_response", {}).get("message") or "Viewport screenshot capture failed"],
+                t0=t0,
+            )
+
+        warnings: List[str] = []
+        render_image: Dict[str, Any] = {}
+        upload: Dict[str, Any] = {}
+        if upload_to_tripo:
+            try:
+                upload = _tripo_upload_file(str(snapshot["path"]))
+                render_image = {"file_token": upload["file_token"]}
+                snapshot["render_image"] = render_image
+                snapshot["upload"] = upload
+            except Exception as exc:
+                warnings.append(f"Captured snapshot locally but Tripo upload failed: {exc}")
+        else:
+            warnings.append("Snapshot captured locally only; upload_to_tripo=True is required before Studio Magic Brush can use it as render_image.")
+
+        attached = _attach_snapshot_to_texture_paint_session(safe_session_id, snapshot)
+        if safe_session_id and not attached:
+            warnings.append(f"session_id was supplied but no texture paint session was found: {safe_session_id}")
+
+        next_actions = []
+        if render_image:
+            next_actions.append("Call gen_tripo_magic_brush_generate with render_image from this result after spend approval.")
+        else:
+            next_actions.append("Upload the snapshot or rerun with upload_to_tripo=True, then call gen_tripo_magic_brush_generate.")
+        return _result_json(
+            success=True,
+            stage="gen_capture_texture_paint_snapshot",
+            message="Captured Unreal viewport snapshot for texture painting",
+            inputs=inputs,
+            outputs={
+                "session_id": safe_session_id,
+                "snapshot": snapshot,
+                "render_image": render_image,
+                "upload": upload,
+                "attached_to_session": attached,
+                "network_required": bool(upload_to_tripo),
+                "spend_required": False,
+                "next_actions": next_actions,
             },
             warnings=warnings,
             t0=t0,

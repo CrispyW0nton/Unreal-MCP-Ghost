@@ -89,6 +89,7 @@
 - Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
 - Added no-spend `gen_compile_generate_asset_evidence` so Generate Asset runs can compile task status, credit reconciliation, import paths, validation, and thumbnail/screenshot evidence into `unreal_mcp_generate_asset_evidence.v1` before claiming an asset is proven in Unreal.
 - Rendered `unreal_mcp_generate_asset_evidence.v1` results in Chat Dock tool cards as inline **Generate Asset Proof** gates with task, asset path, thumbnail/screenshot, proven/incomplete, and next-action summaries.
+- Added no-spend `gen_capture_texture_paint_snapshot` so Texture/Paint sessions can capture the current Unreal viewport, optionally upload the snapshot to Tripo as Magic Brush `render_image`, and attach the snapshot handoff to the recorded paint session.
 - Documented the D.9 chat-dock workflow in the generative content pipeline KB and added static smoke coverage for the UI hooks.
 
 ### D.8 - Generative knowledge base runbooks

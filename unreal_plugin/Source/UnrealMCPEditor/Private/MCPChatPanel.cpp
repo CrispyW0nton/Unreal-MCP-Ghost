@@ -5879,12 +5879,13 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- paint_image_file_token: \"%s\"\n")
 			TEXT("- paint_image: %s\n")
 			TEXT("Then, only after spend approval, run the Studio Magic Brush sequence when a Tripo project_id and render snapshot are available:\n")
-			TEXT("1. Use MCP tool `gen_tripo_magic_brush_generate` with project_id, prompt, render_image, camera_matrix, strength, and confirm_spend.\n")
-			TEXT("2. Use MCP tool `gen_tripo_magic_brush_get_retexture` with the returned draft_id to inspect the generated texture image.\n")
-			TEXT("3. Optionally use MCP tool `gen_tripo_magic_brush_list_images` for the project texture image history before painting.\n")
-			TEXT("4. As the user paints/blends generated texture regions, call `gen_record_texture_paint_stroke` for each painted part with the session_id from the prepare result, part_name \"%s\", paint image %s, viewport_view \"%s\", brush size/strength/hardness, blend_mode \"%s\", and paint notes.\n")
-			TEXT("5. Call `gen_compile_texture_paint_image_map` to compile the recorded paint strokes into the final Magic Brush image_map.\n")
-			TEXT("6. After the user approves the saved paint result, use MCP tool `gen_tripo_magic_brush_apply` with project_id, compiled image_map, and confirm_spend.\n")
+			TEXT("1. Use no-spend MCP tool `gen_capture_texture_paint_snapshot` with the prepared session_id, viewport_view \"%s\", and upload_to_tripo=true when the user wants the current Unreal mesh view sent to Tripo as render_image.\n")
+			TEXT("2. Use MCP tool `gen_tripo_magic_brush_generate` with project_id, prompt, render_image from the snapshot result, camera_matrix, strength, and confirm_spend.\n")
+			TEXT("3. Use MCP tool `gen_tripo_magic_brush_get_retexture` with the returned draft_id to inspect the generated texture image.\n")
+			TEXT("4. Optionally use MCP tool `gen_tripo_magic_brush_list_images` for the project texture image history before painting.\n")
+			TEXT("5. As the user paints/blends generated texture regions, call `gen_record_texture_paint_stroke` for each painted part with the session_id from the prepare result, part_name \"%s\", paint image %s, viewport_view \"%s\", brush size/strength/hardness, blend_mode \"%s\", and paint notes.\n")
+			TEXT("6. Call `gen_compile_texture_paint_image_map` to compile the recorded paint strokes into the final Magic Brush image_map.\n")
+			TEXT("7. After the user approves the saved paint result, use MCP tool `gen_tripo_magic_brush_apply` with project_id, compiled image_map, and confirm_spend.\n")
 			TEXT("Studio Magic Brush parameters:\n")
 			TEXT("- project_id: \"%s\"\n")
 			TEXT("- prompt: \"%s\"\n")
@@ -5931,6 +5932,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			*Escape(GenerateTexturePaintImageUrl),
 			*Escape(GenerateTexturePaintImageFileToken),
 			*PaintImageForPrompt,
+			*Escape(GenerateTextureViewAngle),
 			*Escape(GenerateTexturePaintPartName),
 			*PaintImageForPrompt,
 			*Escape(GenerateTextureViewAngle),
