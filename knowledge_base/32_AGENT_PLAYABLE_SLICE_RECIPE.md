@@ -170,15 +170,22 @@ The inserted workflow prompt should:
    textures, PBR, `face_limit=12000`, and `smart_low_poly=true`.
 5. Use `skill_generate_playable_slice(mode="orchestrate")` to package the
    wait/import, gameplay assembly, PIE, and report phases, then import with
-   `gen_tripo_wait_for_task` and `gen_tripo_import_to_project`.
+   `gen_tripo_wait_for_task` and `gen_tripo_import_to_project`. Treat the
+   first `evidence_readiness` result as a missing-proof ledger, not a pass.
 6. Optionally route hero-art refinements through the Texture/Paint Magic Brush
    path when project/render/image-map data exists and spend is approved.
 7. Build the playable loop with Blueprint, actor, component, UMG, AI, level,
    lighting, collision, and placement tools.
 8. Run `compile_blueprint_and_report`, save/read back touched assets, and verify
    runtime with PIE, `pie_capture_log`, and a viewport screenshot.
-9. Report changed assets, Tripo task ids, credit usage, evidence paths,
-   unresolved warnings, and remaining human design-review work.
+9. Finish with `skill_package_vertical_slice_report`, then call
+   `skill_generate_playable_slice(mode="orchestrate")` again with
+   `task_submissions_json`, `imported_assets_json`, and `execution_evidence_json`
+   so `evidence_readiness.live_playable_slice_proven` records whether the live
+   run is truly proven.
+10. Report changed assets, Tripo task ids, credit usage, evidence paths,
+    incomplete evidence gates, unresolved warnings, and remaining human
+    design-review work.
 
 ## Chat Dock Gameplay Builder
 
