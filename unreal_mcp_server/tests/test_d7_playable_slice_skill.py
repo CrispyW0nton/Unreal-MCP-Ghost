@@ -79,6 +79,33 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertTrue(all(asset["smart_low_poly"] is True for asset in plan["assets"]))
         self.assertIn("skill_package_vertical_slice_report", plan["validation"]["report_tool"])
 
+    def test_preflight_mode_reports_live_readiness_without_brief_or_spend(self):
+        from skills.playable_slice.skill import skill_generate_playable_slice
+
+        fake_preflight = {
+            "schema": "unreal_mcp_playable_slice_live_preflight.v1",
+            "ready_for_live_spend": False,
+            "network_required": False,
+            "spend_required": False,
+            "next_actions": ["tripo_api_key: TRIPO_API_KEY env var or Saved/MCPChat/secrets.json"],
+            "gates": [
+                {"id": "tripo_api_key", "status": "missing"},
+                {"id": "packaged_plugin", "status": "ready"},
+            ],
+        }
+        with patch("skills.playable_slice.skill._run_live_preflight", return_value=fake_preflight) as preflight:
+            result = skill_generate_playable_slice("", mode="preflight", session_name="demo-preflight")
+
+        _assert_structured(self, result, "preflight_missing_gates")
+        self.assertFalse(result["success"])
+        self.assertFalse(result["outputs"]["network_required"])
+        self.assertFalse(result["outputs"]["unreal_mutation_required"])
+        self.assertFalse(result["outputs"]["spend_required"])
+        self.assertEqual(result["outputs"]["preflight"]["schema"], "unreal_mcp_playable_slice_live_preflight.v1")
+        self.assertIn("preflight", result["outputs"]["execution_modes"])
+        self.assertIn("tripo_api_key", result["warnings"][0])
+        preflight.assert_called_once_with(session_name="demo-preflight", estimated_credits=120)
+
     def test_plan_mode_uses_ui_intent_fields(self):
         from skills.playable_slice.skill import skill_generate_playable_slice
 
@@ -329,9 +356,12 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertIn('"skills.playable_slice.skill"', inventory_text)
         self.assertIn("skill_generate_playable_slice", skill_text)
         self.assertIn("execution_evidence_json", skill_text)
+        self.assertIn("_run_live_preflight", skill_text)
+        self.assertIn('"preflight"', skill_text)
         self.assertIn("evidence_readiness", skill_text)
         self.assertIn("D7 Playable Slice Skill", kb_text)
         self.assertIn("evidence readiness", kb_text)
+        self.assertIn("Live Preflight", kb_text)
         self.assertIn("D.7 - Playable slice skill", changelog_text)
         self.assertEqual(schema["title"], "Unreal MCP Playable Slice Plan")
         self.assertIn("requested_asset_roles", schema["required"])

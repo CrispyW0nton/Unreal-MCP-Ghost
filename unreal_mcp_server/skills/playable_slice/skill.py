@@ -6,6 +6,8 @@ import json
 import logging
 import re
 import time
+import importlib.util
+from argparse import Namespace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -15,8 +17,9 @@ logger = logging.getLogger("UnrealMCP.skills.playable_slice")
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 _SCHEMA_PATH = _REPO_ROOT / "knowledge_base" / "v5" / "PLAYABLE_SLICE_SCHEMA.json"
+_PREFLIGHT_SCRIPT_PATH = _REPO_ROOT / "scripts" / "playable_slice_live_preflight.py"
 _ASSET_ROLES = ("hero", "prop", "prop", "enemy")
-_VALID_MODES = {"plan", "submit_assets", "orchestrate"}
+_VALID_MODES = {"preflight", "plan", "submit_assets", "orchestrate"}
 
 
 def _structured(
@@ -222,6 +225,30 @@ def _load_schema() -> Dict[str, Any]:
     except Exception as exc:
         logger.warning("Failed to load playable slice schema: %s", exc)
         return {}
+
+
+def _load_preflight_module() -> Any:
+    spec = importlib.util.spec_from_file_location("playable_slice_live_preflight", _PREFLIGHT_SCRIPT_PATH)
+    if not spec or not spec.loader:
+        raise RuntimeError(f"Unable to load playable-slice preflight script: {_PREFLIGHT_SCRIPT_PATH}")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _run_live_preflight(session_name: str, estimated_credits: int = 120) -> Dict[str, Any]:
+    module = _load_preflight_module()
+    args = Namespace(
+        repo_root=str(_REPO_ROOT),
+        engine_root="",
+        package_root=r"C:\uebuild",
+        bridge_host="127.0.0.1",
+        bridge_port=55557,
+        bridge_timeout_s=1.0,
+        session_name=session_name or "playable-slice",
+        estimated_credits=estimated_credits,
+    )
+    return module.build_preflight(args)
 
 
 def _parse_json_list(value: str, field_name: str) -> tuple[List[Dict[str, Any]], List[str]]:
@@ -815,9 +842,30 @@ def skill_generate_playable_slice(
         return _structured(
             success=False,
             stage="invalid_mode",
-            message="mode must be one of: plan, submit_assets, orchestrate",
+            message="mode must be one of: preflight, plan, submit_assets, orchestrate",
             inputs=inputs,
-            errors=["mode must be one of: plan, submit_assets, orchestrate"],
+            errors=["mode must be one of: preflight, plan, submit_assets, orchestrate"],
+            t0=t0,
+        )
+    if safe_mode == "preflight":
+        preflight = _run_live_preflight(session_name=session_name, estimated_credits=120)
+        return _structured(
+            success=bool(preflight.get("ready_for_live_spend")),
+            stage="preflight_ready" if preflight.get("ready_for_live_spend") else "preflight_missing_gates",
+            message=(
+                "Playable-slice live preflight is ready for confirmed spend"
+                if preflight.get("ready_for_live_spend")
+                else "Playable-slice live preflight found missing readiness gates"
+            ),
+            inputs=inputs,
+            outputs={
+                "preflight": preflight,
+                "network_required": False,
+                "unreal_mutation_required": False,
+                "spend_required": False,
+                "execution_modes": sorted(_VALID_MODES),
+            },
+            warnings=[] if preflight.get("ready_for_live_spend") else list(preflight.get("next_actions", [])),
             t0=t0,
         )
     if not str(brief or "").strip():
@@ -934,6 +982,8 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
     ) -> str:
         """Plan or start a generated playable slice from one brief.
 
+        Mode `preflight` runs a no-spend live-readiness check for Tripo auth,
+        credit budget, packaged plugin build evidence, and bridge reachability.
         Mode `plan` validates the schema and returns the end-to-end tool
         sequence without network calls. Mode `submit_assets` requires
         TRIPO_API_KEY and confirm_spend=True before submitting paid Tripo tasks.
@@ -947,7 +997,7 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
 
         KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#d7-playable-slice-skill
         Example:
-            skill_generate_playable_slice(brief="third-person dungeon demo with a slime and a boss", mode="orchestrate", asset_roles="hero, key, boss")"""
+            skill_generate_playable_slice(brief="third-person dungeon demo with a slime and a boss", mode="preflight", asset_roles="hero, key, boss")"""
         result = _impl(
             brief=brief,
             mode=mode,

@@ -5,6 +5,9 @@ playable-slice workflow.
 
 ## Modes
 
+- `preflight`: offline, no network, no Unreal mutation, no spend. Reports
+  live-readiness gates for Tripo auth, credit budget, packaged plugin evidence,
+  and Unreal bridge reachability. Does not require a brief.
 - `plan`: offline, no network, no Unreal mutation. Builds and validates a
   `unreal_mcp_playable_slice_plan.v1` plan against
   `knowledge_base/v5/PLAYABLE_SLICE_SCHEMA.json`.
