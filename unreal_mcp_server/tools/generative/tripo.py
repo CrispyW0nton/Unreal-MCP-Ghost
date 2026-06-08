@@ -19,6 +19,10 @@ class TripoProvider:
         "multiview_to_model",
         "refine_model",
         "texture_model",
+        "magic_brush_retexture_generate",
+        "magic_brush_get_retexture",
+        "magic_brush_get_retexture_images",
+        "magic_brush_apply_retexture",
         "post_process",
         "download_result",
         "import_to_project",
@@ -77,6 +81,10 @@ class TripoProvider:
             credits = base + (10 if texture else 0)
         elif task_type == "texture_model":
             credits = 10
+        elif task_type == "magic_brush_retexture_generate":
+            credits = 10
+        elif task_type == "magic_brush_apply_retexture":
+            credits = 5
         elif task_type == "convert_model":
             advanced_keys = {
                 "quad",

@@ -200,6 +200,7 @@ private:
 	FText GetGenerativeSettingsToggleText() const;
 	FText GetGenerativeAuthStatusText() const;
 	FText GetGenerativeBudgetText() const;
+	FText GetGenerativeCreditsDisplayText() const;
 	FText GetOnboardingStepText() const;
 	FText GetOnboardingStepTitle() const;
 	FText GetOnboardingNextText() const;
@@ -261,6 +262,8 @@ private:
 	int32 TelemetryEventCount = 0;
 	int32 GenerativeSessionCreditBudget = 1000;
 	int32 GenerativePendingSpendCredits = 0;
+	int32 GenerativeSessionCreditsUsed = 0;
+	TSharedPtr<class FJsonObject> GenerativeCreditUsageBySession;
 	FString GenerativeApiKey;
 	FString GenerativeModelVersion = TEXT("tripo-default");
 	FString GenerativeTextureQuality = TEXT("standard");

@@ -13,7 +13,9 @@
 - Added Texture/Paint controls for texture reference, view angle, brush strength, blend mode, paint/blend notes, and save-name intent so Unreal mirrors Tripo's edit workflow.
 - Added `gen_prepare_texture_paint_session` to record offline Tripo Studio Magic Brush plans in `Saved/MCPChat/texture_paint_sessions.json` before any paid texture work.
 - Wired the Texture/Paint Generate Asset prompt to insert `gen_prepare_texture_paint_session` before the gated `gen_tripo_texture_model` call, and added Magic Brush fields for brush size, hardness, creativity strength, paint mode/color, and Tripo project id.
-- Documented the inspected Tripo `texture-edit` route, Magic Brush controls, and observed `retexture_generate` / `get_retexture` / `apply_retexture` flow for future dedicated endpoint wrappers.
+- Added Magic Brush Studio endpoint wrappers for `retexture_generate`, `get_retexture`, `get_retexture_images`, and `apply_retexture`, gated by Tripo spend confirmation where they can mutate or generate.
+- Documented the inspected Tripo `texture-edit` route, Magic Brush controls, and the `retexture_generate` / `get_retexture` / `apply_retexture` handoff now mirrored by MCP wrappers.
+- Added a visible Generative Credits display to the Generate Asset workspace and settings panel, including budget, used, remaining, next spend, and confirmed state while preserving `credit_usage_by_session`.
 - Hardened the Tripo API-key UX with password-style entry, save/clear controls, local `Saved/MCPChat/secrets.json` persistence, and generation gating when auth is missing.
 - Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
 - Documented the D.9 chat-dock workflow in the generative content pipeline KB and added static smoke coverage for the UI hooks.
@@ -23,7 +25,7 @@
 - Expanded `knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md` with canonical prompts, the expected Tripo/import/material/evidence tool sequence, runtime budgets, failure-mode recovery, and the generated-content evidence contract.
 - Expanded `knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md` with exact playable-slice prompts, the end-to-end D.8 tool sequence, runtime expectations, known failure modes, and the minimum green vertical-slice report contract.
 - Added static smoke coverage so the D.8 runbook sections remain present in future edits.
-- Synced the documented tracked MCP tool count to 620 so the CI smoke count guard remains green.
+- Synced the documented tracked MCP tool count to 625 so the CI smoke count guard remains green.
 
 ### D.7 - Playable slice skill
 

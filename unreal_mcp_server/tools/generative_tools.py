@@ -27,6 +27,7 @@ _TEXTURE_PAINT_SESSIONS_PATH = _CHAT_DIR / "texture_paint_sessions.json"
 _PROVIDERS = ProviderRegistry([TRIPO_PROVIDER])
 _TRIPO_PROVIDER = _PROVIDERS.get("tripo")
 _TRIPO_BASE_URL = _TRIPO_PROVIDER.base_url
+_TRIPO_STUDIO_BASE_URL = "https://api.tripo3d.ai"
 _TRIPO_FINAL_STATUSES = set(_TRIPO_PROVIDER.final_statuses)
 _TRIPO_MODEL_OUTPUT_KEYS = tuple(_TRIPO_PROVIDER.output_policy.model_output_keys)
 _TRIPO_IMPORT_OUTPUT_KEYS = tuple(_TRIPO_PROVIDER.output_policy.import_output_keys)
@@ -554,12 +555,18 @@ def _tripo_headers(api_key: str, *, content_type: str = "application/json") -> D
     return headers
 
 
-def _tripo_json_request(method: str, path: str, payload: Optional[Dict[str, Any]] = None, timeout_s: int = 60) -> Dict[str, Any]:
+def _tripo_json_request(
+    method: str,
+    path: str,
+    payload: Optional[Dict[str, Any]] = None,
+    timeout_s: int = 60,
+    base_url: Optional[str] = None,
+) -> Dict[str, Any]:
     api_key = _get_tripo_api_key()
     if not api_key:
         raise RuntimeError("TRIPO_API_KEY is not configured in the environment or Saved/MCPChat/secrets.json")
 
-    url = f"{_TRIPO_BASE_URL}{path}"
+    url = f"{base_url or _TRIPO_BASE_URL}{path}"
     body = None if payload is None else json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(
         url,
@@ -659,6 +666,49 @@ def _tripo_get_task(task_id: str, timeout_s: int = 30) -> Dict[str, Any]:
         "response": body,
         "trace_id": response.get("trace_id", ""),
     }
+
+
+def _tripo_response_data(response: Dict[str, Any], fallback_message: str) -> Dict[str, Any]:
+    body = response.get("body", {})
+    if response.get("http_status", 0) >= 400 or body.get("code", 0) != 0:
+        message = body.get("message") or body.get("suggestion") or fallback_message
+        raise RuntimeError(message)
+    data = body.get("data", body)
+    return {
+        "data": data if isinstance(data, dict) else {"value": data},
+        "response": body,
+        "trace_id": response.get("trace_id", ""),
+    }
+
+
+def _tripo_studio_operation(operation: str, payload: Dict[str, Any], timeout_s: int = 60) -> Dict[str, Any]:
+    response = _tripo_json_request(
+        "POST",
+        f"/v2/studio/operation/{operation}",
+        payload=payload,
+        timeout_s=timeout_s,
+        base_url=_TRIPO_STUDIO_BASE_URL,
+    )
+    return _tripo_response_data(response, f"Tripo Studio operation failed: {operation}")
+
+
+def _build_studio_render_image(
+    *,
+    render_image: Optional[Dict[str, Any]] = None,
+    render_image_bucket: str = "",
+    render_image_key: str = "",
+    render_image_url: str = "",
+) -> Dict[str, Any]:
+    if isinstance(render_image, dict) and render_image:
+        return dict(render_image)
+    bucket = _clean_optional_text(render_image_bucket)
+    key = _clean_optional_text(render_image_key)
+    url = _clean_optional_text(render_image_url)
+    if bucket and key:
+        return {"bucket": bucket, "key": key}
+    if url:
+        return {"url": url}
+    return {}
 
 
 def _download_url(url: str, target_path: Path, timeout_s: int = 120) -> Dict[str, Any]:
@@ -1326,7 +1376,7 @@ def register_generative_tools(mcp: FastMCP):
 
         warnings = [
             "This tool only prepares a Magic Brush texture-paint plan; it does not call Tripo, upload viewport images, paint pixels, or spend credits.",
-            "The public MCP execution handoff uses gen_tripo_texture_model until a dedicated Tripo Studio retexture/apply endpoint wrapper is implemented.",
+            "Use gen_tripo_magic_brush_generate, gen_tripo_magic_brush_get_retexture, and gen_tripo_magic_brush_apply after the viewport snapshot/image-map data is available.",
         ]
         if not safe_project_id:
             warnings.append("Tripo Studio apply_retexture uses project_id; provide tripo_project_id when mirroring the exact Studio Magic Brush save flow.")
@@ -1345,6 +1395,237 @@ def register_generative_tools(mcp: FastMCP):
             warnings=warnings,
             t0=t0,
         )
+
+    @mcp.tool()
+    async def gen_tripo_magic_brush_generate(
+        ctx: Context,
+        project_id: str,
+        prompt: str,
+        render_image: Optional[Dict[str, Any]] = None,
+        render_image_bucket: str = "",
+        render_image_key: str = "",
+        render_image_url: str = "",
+        camera_matrix: Optional[List[float]] = None,
+        model_version: str = "v3.0-20250812",
+        strength: float = 0.6,
+        session_name: str = "default",
+        confirm_spend: bool = False,
+    ) -> str:
+        """Submit the observed Tripo Studio Magic Brush retexture_generate operation.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_tripo_magic_brush_generate(project_id="studio-project-id", prompt="worn brass edges", render_image_bucket="bucket", render_image_key="snapshot.png", confirm_spend=True)"""
+        t0 = time.monotonic()
+        safe_project_id = _clean_optional_text(project_id)
+        safe_prompt = _clean_optional_text(prompt)
+        normalized_camera = [
+            _clamp_float(value, 0.0, -1000000.0, 1000000.0)
+            for value in (camera_matrix or [])
+        ]
+        normalized_strength = _clamp_float(strength, 0.6, 0.0, 1.0)
+        render_object = _build_studio_render_image(
+            render_image=render_image,
+            render_image_bucket=render_image_bucket,
+            render_image_key=render_image_key,
+            render_image_url=render_image_url,
+        )
+        payload = {
+            "camera_matrix": normalized_camera,
+            "model_version": model_version,
+            "project_id": safe_project_id,
+            "prompt": safe_prompt,
+            "render_image": render_object,
+            "strength": normalized_strength,
+        }
+        inputs = {
+            "project_id": project_id,
+            "prompt": prompt,
+            "render_image": render_image or {},
+            "render_image_bucket": render_image_bucket,
+            "render_image_key": render_image_key,
+            "render_image_url": render_image_url,
+            "camera_matrix": camera_matrix or [],
+            "model_version": model_version,
+            "strength": strength,
+            "session_name": session_name,
+            "confirm_spend": confirm_spend,
+        }
+        if not safe_project_id:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_generate", message="project_id is required", inputs=inputs, errors=["project_id is required"], t0=t0)
+        if not safe_prompt:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_generate", message="prompt is required", inputs=inputs, errors=["prompt is required"], t0=t0)
+        if not render_object:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_generate", message="render_image is required", inputs=inputs, errors=["Provide render_image or render_image_bucket/render_image_key from the viewport snapshot upload."], t0=t0)
+
+        credit_guard = _check_and_reserve_credit_budget(
+            estimated_credits=_estimate_tripo_credits("magic_brush_retexture_generate", payload),
+            session_name=session_name,
+            operation="magic_brush_retexture_generate",
+            confirm_spend=confirm_spend,
+            reserve_credits=True,
+        )
+        if not credit_guard["approved"]:
+            return _result_json(
+                success=False,
+                stage="gen_tripo_magic_brush_generate",
+                message="Tripo credit spend requires confirmation or exceeds the session budget",
+                inputs=inputs,
+                outputs={"request": payload, "credit_guard": credit_guard},
+                warnings=["Set confirm_spend=True after user approval to submit the Magic Brush generation."] if credit_guard["confirm_required"] else [],
+                errors=[] if credit_guard["confirm_required"] else ["Estimated credit spend exceeds the session budget."],
+                t0=t0,
+            )
+
+        try:
+            result = _tripo_studio_operation("retexture_generate", payload)
+            data = result["data"]
+            operator_id = data.get("operator_id") or data.get("id") or ""
+            return _result_json(
+                success=True,
+                stage="gen_tripo_magic_brush_generate",
+                message="Submitted Tripo Studio Magic Brush retexture generation",
+                inputs=inputs,
+                outputs={
+                    "provider": "tripo",
+                    "operator_id": operator_id,
+                    "request": payload,
+                    "credit_guard": credit_guard,
+                    "result": data,
+                    "trace_id": result.get("trace_id", ""),
+                    "raw_response": result.get("response", {}),
+                },
+                t0=t0,
+            )
+        except Exception as exc:
+            _release_credit_reservation(credit_guard)
+            return _result_json(success=False, stage="gen_tripo_magic_brush_generate", message=str(exc), inputs=inputs, outputs={"request": payload, "credit_guard": credit_guard}, errors=[str(exc)], t0=t0)
+
+    @mcp.tool()
+    async def gen_tripo_magic_brush_get_retexture(ctx: Context, operator_id: str) -> str:
+        """Fetch a completed Tripo Studio Magic Brush retexture result by operator id.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_tripo_magic_brush_get_retexture(operator_id="operator-id")"""
+        t0 = time.monotonic()
+        safe_operator_id = _clean_optional_text(operator_id)
+        inputs = {"operator_id": operator_id}
+        if not safe_operator_id:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_get_retexture", message="operator_id is required", inputs=inputs, errors=["operator_id is required"], t0=t0)
+        try:
+            request = {"operator_id": safe_operator_id}
+            result = _tripo_studio_operation("get_retexture", request)
+            return _result_json(
+                success=True,
+                stage="gen_tripo_magic_brush_get_retexture",
+                message="Fetched Tripo Studio Magic Brush retexture result",
+                inputs=inputs,
+                outputs={"provider": "tripo", "request": request, "result": result["data"], "trace_id": result.get("trace_id", ""), "raw_response": result.get("response", {})},
+                t0=t0,
+            )
+        except Exception as exc:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_get_retexture", message=str(exc), inputs=inputs, errors=[str(exc)], t0=t0)
+
+    @mcp.tool()
+    async def gen_tripo_magic_brush_list_images(ctx: Context, project_id: str) -> str:
+        """List Tripo Studio Magic Brush retexture images for a project.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_tripo_magic_brush_list_images(project_id="studio-project-id")"""
+        t0 = time.monotonic()
+        safe_project_id = _clean_optional_text(project_id)
+        inputs = {"project_id": project_id}
+        if not safe_project_id:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_list_images", message="project_id is required", inputs=inputs, errors=["project_id is required"], t0=t0)
+        try:
+            request = {"project_id": safe_project_id}
+            result = _tripo_studio_operation("get_retexture_images", request)
+            return _result_json(
+                success=True,
+                stage="gen_tripo_magic_brush_list_images",
+                message="Listed Tripo Studio Magic Brush retexture images",
+                inputs=inputs,
+                outputs={"provider": "tripo", "request": request, "result": result["data"], "trace_id": result.get("trace_id", ""), "raw_response": result.get("response", {})},
+                t0=t0,
+            )
+        except Exception as exc:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_list_images", message=str(exc), inputs=inputs, errors=[str(exc)], t0=t0)
+
+    @mcp.tool()
+    async def gen_tripo_magic_brush_apply(
+        ctx: Context,
+        project_id: str,
+        image_map: Optional[List[Dict[str, Any]]] = None,
+        model_version: str = "v3.0-20250812",
+        session_name: str = "default",
+        confirm_spend: bool = False,
+    ) -> str:
+        """Apply painted Magic Brush image parts to a Tripo Studio project.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_tripo_magic_brush_apply(project_id="studio-project-id", image_map=[{"part_name":"Body","image":{"bucket":"bucket","key":"paint.png"}}], confirm_spend=True)"""
+        t0 = time.monotonic()
+        safe_project_id = _clean_optional_text(project_id)
+        safe_image_map = image_map or []
+        payload = {
+            "image_map": safe_image_map,
+            "model_version": model_version,
+            "project_id": safe_project_id,
+        }
+        inputs = {
+            "project_id": project_id,
+            "image_map": safe_image_map,
+            "model_version": model_version,
+            "session_name": session_name,
+            "confirm_spend": confirm_spend,
+        }
+        if not safe_project_id:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_apply", message="project_id is required", inputs=inputs, errors=["project_id is required"], t0=t0)
+        if not safe_image_map:
+            return _result_json(success=False, stage="gen_tripo_magic_brush_apply", message="image_map is required", inputs=inputs, errors=["image_map must include painted image parts from the brush compile step."], t0=t0)
+
+        credit_guard = _check_and_reserve_credit_budget(
+            estimated_credits=_estimate_tripo_credits("magic_brush_apply_retexture", payload),
+            session_name=session_name,
+            operation="magic_brush_apply_retexture",
+            confirm_spend=confirm_spend,
+            reserve_credits=True,
+        )
+        if not credit_guard["approved"]:
+            return _result_json(
+                success=False,
+                stage="gen_tripo_magic_brush_apply",
+                message="Tripo credit spend requires confirmation or exceeds the session budget",
+                inputs=inputs,
+                outputs={"request": payload, "credit_guard": credit_guard},
+                warnings=["Set confirm_spend=True after user approval to apply the Magic Brush paint pass."] if credit_guard["confirm_required"] else [],
+                errors=[] if credit_guard["confirm_required"] else ["Estimated credit spend exceeds the session budget."],
+                t0=t0,
+            )
+
+        try:
+            result = _tripo_studio_operation("apply_retexture", payload)
+            return _result_json(
+                success=True,
+                stage="gen_tripo_magic_brush_apply",
+                message="Applied Tripo Studio Magic Brush texture paint",
+                inputs=inputs,
+                outputs={
+                    "provider": "tripo",
+                    "request": payload,
+                    "credit_guard": credit_guard,
+                    "result": result["data"],
+                    "trace_id": result.get("trace_id", ""),
+                    "raw_response": result.get("response", {}),
+                },
+                t0=t0,
+            )
+        except Exception as exc:
+            _release_credit_reservation(credit_guard)
+            return _result_json(success=False, stage="gen_tripo_magic_brush_apply", message=str(exc), inputs=inputs, outputs={"request": payload, "credit_guard": credit_guard}, errors=[str(exc)], t0=t0)
 
     @mcp.tool()
     async def gen_texture_from_prompt(

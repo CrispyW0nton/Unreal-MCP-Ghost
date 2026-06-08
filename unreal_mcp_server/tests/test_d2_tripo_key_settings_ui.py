@@ -72,6 +72,18 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header + self.kb + self.changelog)
 
+    def test_generative_credits_display_is_visible_and_preserves_usage(self) -> None:
+        for token in (
+            "Generative Credits",
+            "GetGenerativeCreditsDisplayText",
+            "GenerativeSessionCreditsUsed",
+            "credit_usage_by_session",
+            "Remaining",
+            "Next spend",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header + self.kb + self.changelog)
+
 
 if __name__ == "__main__":
     unittest.main()

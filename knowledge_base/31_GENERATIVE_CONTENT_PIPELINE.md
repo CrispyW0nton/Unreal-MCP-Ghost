@@ -384,16 +384,22 @@ The observed Studio UX is:
 4. Open the brush bar and adjust size, strength, and hardness.
 5. Paint/blend onto the model, rotate the viewport, repeat as needed, and save.
 
-The observed Studio API flow is:
+The observed Studio API flow is now represented by dedicated MCP wrappers:
 
-- `retexture_generate` with `camera_matrix`, `model_version`, `project_id`,
-  `prompt`, `render_image`, and `strength`.
-- Poll the returned operation id, then fetch with `get_retexture`; image history
-  uses `get_retexture_images`.
-- Save/apply calls `apply_retexture` with `image_map`, `model_version`, and
-  `project_id`.
+- `gen_tripo_magic_brush_generate` posts `retexture_generate` with
+  `camera_matrix`, `model_version`, `project_id`, `prompt`, `render_image`, and
+  `strength`. `render_image` should be the uploaded viewport snapshot object
+  observed in Studio, usually `{bucket, key}`.
+- `gen_tripo_magic_brush_get_retexture` fetches a completed generated texture
+  image by `operator_id`.
+- `gen_tripo_magic_brush_list_images` calls `get_retexture_images` for the
+  Studio project image history.
+- `gen_tripo_magic_brush_apply` saves/applies painted image parts through
+  `apply_retexture` with `image_map`, `model_version`, and `project_id`.
 
-Current MCP execution still uses the public task-model handoff:
+The planning step remains useful because Unreal still has to capture/upload the
+viewport snapshot and compile painted image parts before the Studio wrappers can
+run:
 
 ```python
 gen_prepare_texture_paint_session(
@@ -411,10 +417,32 @@ gen_prepare_texture_paint_session(
 )
 ```
 
-The returned `mcp_tool_sequence` starts with `gen_tripo_texture_model`, then
-`gen_tripo_wait_for_task`, then `gen_tripo_import_to_project`. Add a dedicated
-Studio `retexture_generate`/`apply_retexture` wrapper later if Tripo exposes
-those endpoints for API-key use outside the web workspace.
+Once the snapshot upload and paint compile outputs are available, use:
+
+```python
+gen_tripo_magic_brush_generate(
+    project_id="studio-project-id",
+    prompt="weathered copper with bright worn edges",
+    render_image={"bucket": "uploaded-bucket", "key": "viewport.png"},
+    camera_matrix=[...],
+    strength=0.7,
+    confirm_spend=True,
+)
+
+gen_tripo_magic_brush_get_retexture(operator_id="<operator_id>")
+
+gen_tripo_magic_brush_apply(
+    project_id="studio-project-id",
+    image_map=[
+        {"part_name": "Body", "image": {"bucket": "painted-bucket", "key": "body.png"}},
+    ],
+    confirm_spend=True,
+)
+```
+
+`gen_tripo_texture_model`, `gen_tripo_wait_for_task`, and
+`gen_tripo_import_to_project` remain the public OpenAPI fallback when Studio
+project ids, viewport snapshot uploads, or image-map paint data are unavailable.
 
 ## D8 Generative Runbook
 
@@ -529,6 +557,14 @@ Unreal. Current Tripo workspace modes are:
   the Tripo edit workflow: generate a high-fidelity texture image from the mesh
   view and prompt, paint it onto the visible model, rotate the model to continue
   painting/blending, and save once the result is satisfactory.
+
+The Generate Asset workspace and its settings panel include a **Generative
+Credits** display. It shows the per-session budget, credits used from
+`credit_usage_by_session`, remaining credits, the next pending spend, and whether
+that spend is confirmed. The UI preserves the server's
+`credit_usage_by_session` map when saving local settings so budget history is not
+lost when a user updates the Tripo key, model version, texture quality, or output
+folder.
 
 1. Open Generate Asset.
 2. Select the workspace mode and fill the active prompt/image/task fields.

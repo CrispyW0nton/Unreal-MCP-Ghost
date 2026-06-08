@@ -2486,6 +2486,36 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 			.AutoHeight()
 			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+				.Padding(6.0f)
+				[
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("GenerativeCreditsDisplayTitle", "Generative Credits"))
+						.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetGenerativeCreditsDisplayText)
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.AutoWrapText(true)
+					]
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
 				SNew(SHorizontalBox)
 
 				+ SHorizontalBox::Slot()
@@ -2624,6 +2654,36 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerativeSettingsPanel()
 				.Text(FText::Format(LOCTEXT("GenerativeSettingsFiles", "Settings: {0} | Secrets: {1}"), FText::FromString(GetGenerativeSettingsFilePath()), FText::FromString(GetGenerativeSecretsFilePath())))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 				.AutoWrapText(true)
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+				.Padding(6.0f)
+				[
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(LOCTEXT("GenerativeSettingsCreditsTitle", "Generative Credits"))
+						.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 2.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetGenerativeCreditsDisplayText)
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.AutoWrapText(true)
+					]
+				]
 			]
 
 			+ SVerticalBox::Slot()
@@ -3976,6 +4036,19 @@ FText SMCPChatPanel::GetGenerativeBudgetText() const
 	);
 }
 
+FText SMCPChatPanel::GetGenerativeCreditsDisplayText() const
+{
+	const int32 RemainingCredits = FMath::Max(0, GenerativeSessionCreditBudget - GenerativeSessionCreditsUsed);
+	return FText::Format(
+		LOCTEXT("GenerativeCreditsDisplay", "Budget {0} | Used {1} | Remaining {2} | Next spend {3} | Confirmed {4}"),
+		FText::AsNumber(GenerativeSessionCreditBudget),
+		FText::AsNumber(GenerativeSessionCreditsUsed),
+		FText::AsNumber(RemainingCredits),
+		FText::AsNumber(GenerativePendingSpendCredits),
+		bGenerativeSpendConfirmed ? LOCTEXT("GenerativeCreditsConfirmedYes", "yes") : LOCTEXT("GenerativeCreditsConfirmedNo", "no")
+	);
+}
+
 FText SMCPChatPanel::GetOnboardingStepTitle() const
 {
 	return FText::Format(LOCTEXT("OnboardingStepTitle", "MCP Chat Tour {0}/4"), FText::AsNumber(OnboardingStepIndex + 1));
@@ -4294,6 +4367,8 @@ void SMCPChatPanel::LoadGenerativeSettings()
 	GenerativeOutputFolder = TEXT("/Game/Generated");
 	GenerativeSessionCreditBudget = 1000;
 	GenerativePendingSpendCredits = 0;
+	GenerativeSessionCreditsUsed = 0;
+	GenerativeCreditUsageBySession = MakeShared<FJsonObject>();
 	GenerativeApiKey.Empty();
 	bGenerativeSpendConfirmed = false;
 
@@ -4316,6 +4391,16 @@ void SMCPChatPanel::LoadGenerativeSettings()
 			if (SettingsObject->TryGetNumberField(TEXT("pending_spend_credits"), NumberValue))
 			{
 				GenerativePendingSpendCredits = FMath::Max(0, FMath::RoundToInt(NumberValue));
+			}
+			const TSharedPtr<FJsonObject>* UsageObject = nullptr;
+			if (SettingsObject->TryGetObjectField(TEXT("credit_usage_by_session"), UsageObject) && UsageObject && UsageObject->IsValid())
+			{
+				GenerativeCreditUsageBySession = *UsageObject;
+				const FString SessionKey = CurrentSessionName.IsEmpty() ? TEXT("default") : CurrentSessionName;
+				if ((*UsageObject)->TryGetNumberField(SessionKey, NumberValue) || (*UsageObject)->TryGetNumberField(TEXT("default"), NumberValue))
+				{
+					GenerativeSessionCreditsUsed = FMath::Max(0, FMath::RoundToInt(NumberValue));
+				}
 			}
 			SettingsObject->TryGetBoolField(TEXT("spend_confirmed"), bGenerativeSpendConfirmed);
 		}
@@ -4366,6 +4451,7 @@ TSharedPtr<FJsonObject> SMCPChatPanel::BuildGenerativeSettingsJson() const
 	SettingsObject->SetStringField(TEXT("output_folder"), GenerativeOutputFolder.StartsWith(TEXT("/Game")) ? GenerativeOutputFolder : TEXT("/Game/Generated"));
 	SettingsObject->SetNumberField(TEXT("session_credit_budget"), FMath::Max(0, GenerativeSessionCreditBudget));
 	SettingsObject->SetNumberField(TEXT("pending_spend_credits"), FMath::Max(0, GenerativePendingSpendCredits));
+	SettingsObject->SetObjectField(TEXT("credit_usage_by_session"), GenerativeCreditUsageBySession.IsValid() ? GenerativeCreditUsageBySession : MakeShared<FJsonObject>());
 	SettingsObject->SetBoolField(TEXT("spend_confirmed"), bGenerativeSpendConfirmed);
 	return SettingsObject;
 }
