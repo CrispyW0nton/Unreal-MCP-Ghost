@@ -25,10 +25,15 @@ class InlineEvidenceTest(unittest.TestCase):
             "ScreenshotPaths",
             "LogSnippets",
             "PieResults",
+            "EvidenceReadinessSummary",
+            "ProofGateSummaries",
+            "bHasEvidenceReadiness",
+            "bLivePlayableSliceProven",
             "BuildEvidencePanel",
             "BuildScreenshotEvidenceWidget",
             "ExtractEvidenceFromJsonObject",
             "ExtractEvidenceFromJsonValue",
+            "ExtractEvidenceReadinessFromJsonObject",
             "EvidenceImageBrushes",
         ):
             with self.subTest(symbol=symbol):
@@ -40,6 +45,8 @@ class InlineEvidenceTest(unittest.TestCase):
         self.assertIn('LOCTEXT("InlinePieEvidence", "PIE: {0}")', self.cpp)
         self.assertIn('LOCTEXT("InlineLogEvidence", "Log: {0}")', self.cpp)
         self.assertIn('LOCTEXT("InlineScreenshotPath", "Screenshot: {0}")', self.cpp)
+        self.assertIn('LOCTEXT("PlayableSliceEvidenceReadinessStatus", "Playable Slice Proof: {0}")', self.cpp)
+        self.assertIn('LOCTEXT("PlayableSliceProofGate", "Proof gate: {0}")', self.cpp)
 
     def test_screenshots_render_as_image_widgets_when_present(self) -> None:
         self.assertIn('#include "Brushes/SlateDynamicImageBrush.h"', self.cpp)
@@ -60,6 +67,9 @@ class InlineEvidenceTest(unittest.TestCase):
             "log_snippet",
             "pie",
             "play_in_editor",
+            "evidence_readiness",
+            "live_playable_slice_proven",
+            "ProofGateSummaries",
             "ExtractEvidenceFromJsonObject(Object, OutToolCall)",
         ):
             with self.subTest(token=token):
@@ -70,6 +80,7 @@ class InlineEvidenceTest(unittest.TestCase):
         self.assertIn("Screenshots:", self.cpp)
         self.assertIn("PIE results:", self.cpp)
         self.assertIn("Log snippets:", self.cpp)
+        self.assertIn("Playable Slice Proof:", self.cpp)
 
     def test_changelog_records_c7(self) -> None:
         self.assertIn("### C.7 - PIE/log/viewport evidence inline", self.changelog)

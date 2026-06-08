@@ -49,6 +49,7 @@
 - Threaded the Playable Slice UI intent fields into `skill_generate_playable_slice` so asset roles, gameplay loop, acceptance criteria, and evidence requirements shape the backend plan and report contract.
 - Added an `evidence_readiness` ledger to playable-slice orchestration so agents can distinguish a ready runbook from a live-proven slice, with explicit gates for Tripo task ids, credit records, imported assets, gameplay assets, compile reports, PIE evidence, screenshot evidence, and final report packaging.
 - Updated the Playable Slice quick-action prompt to feed post-run `execution_evidence_json` back into orchestration and report `evidence_readiness.live_playable_slice_proven` plus incomplete gates before claiming the slice is proven.
+- Rendered playable-slice `evidence_readiness` results in Chat Dock tool cards so users can see proven/incomplete status and missing proof gates alongside PIE/log/screenshot evidence.
 - Documented the Chat Dock Playable Slice Builder in the playable-slice recipe KB so Generate Asset, Build Gameplay, and the new Playable Slice workspace form a clearer AI IDE progression inside Unreal.
 
 ### C.12 - Gameplay builder quick action

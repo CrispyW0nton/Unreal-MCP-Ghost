@@ -37,11 +37,15 @@ private:
 		FString ResultSummary;
 		FString DetailJson;
 		FString LogTail;
+		FString EvidenceReadinessSummary;
 		TArray<FString> ScreenshotPaths;
 		TArray<FString> LogSnippets;
 		TArray<FString> PieResults;
+		TArray<FString> ProofGateSummaries;
 		float ProgressFraction = 0.0f;
 		bool bHasProgress = false;
+		bool bHasEvidenceReadiness = false;
+		bool bLivePlayableSliceProven = false;
 		bool bError = false;
 	};
 
@@ -177,6 +181,7 @@ private:
 	void ExtractToolCallsFromMessage(const FChatMessage& ChatMessage, TArray<FToolCallView>& OutToolCalls) const;
 	void ExtractEvidenceFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void ExtractEvidenceFromJsonValue(const FString& FieldName, const TSharedPtr<class FJsonValue>& Value, FToolCallView& OutToolCall) const;
+	void ExtractEvidenceReadinessFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage);
 	bool TryBuildToolCallFromJsonObject(const TSharedPtr<class FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const;
 	FString JsonObjectToString(const TSharedPtr<class FJsonObject>& Object) const;

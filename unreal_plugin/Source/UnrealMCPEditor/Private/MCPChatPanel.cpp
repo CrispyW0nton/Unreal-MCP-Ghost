@@ -2032,7 +2032,7 @@ TSharedRef<SWidget> SMCPChatPanel::BuildTripoProgressPanel(const FToolCallView& 
 
 TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolCall)
 {
-	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty())
+	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness)
 	{
 		return SNew(SBox)
 			.Visibility(EVisibility::Collapsed);
@@ -2047,6 +2047,55 @@ TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolC
 		.Text(LOCTEXT("InlineEvidencePanel", "Evidence"))
 		.Font(FAppStyle::GetFontStyle("SmallFontBold"))
 	];
+
+	if (ToolCall.bHasEvidenceReadiness)
+	{
+		const FText ReadinessText = FText::Format(
+			LOCTEXT("PlayableSliceEvidenceReadinessStatus", "Playable Slice Proof: {0}"),
+			ToolCall.bLivePlayableSliceProven ? LOCTEXT("PlayableSliceEvidenceProven", "proven") : LOCTEXT("PlayableSliceEvidenceIncomplete", "incomplete")
+		);
+		EvidenceBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+			.Padding(6.0f)
+			[
+				SNew(SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text(ReadinessText)
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					.AutoWrapText(true)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(ToolCall.EvidenceReadinessSummary))
+					.AutoWrapText(true)
+				]
+			]
+		];
+
+		for (const FString& GateSummary : ToolCall.ProofGateSummaries)
+		{
+			EvidenceBox->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 1.0f, 0.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("PlayableSliceProofGate", "Proof gate: {0}"), FText::FromString(GateSummary)))
+				.AutoWrapText(true)
+			];
+		}
+	}
 
 	for (const FString& ScreenshotPath : ToolCall.ScreenshotPaths)
 	{
@@ -3991,6 +4040,19 @@ void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
 	if (ToolDetailBody.IsValid())
 	{
 		FString EvidenceText;
+		if (ToolCall.bHasEvidenceReadiness)
+		{
+			EvidenceText += FString::Printf(
+				TEXT("Playable Slice Proof: %s\n%s\n"),
+				ToolCall.bLivePlayableSliceProven ? TEXT("proven") : TEXT("incomplete"),
+				*ToolCall.EvidenceReadinessSummary
+			);
+			if (!ToolCall.ProofGateSummaries.IsEmpty())
+			{
+				EvidenceText += FString::Join(ToolCall.ProofGateSummaries, LINE_TERMINATOR);
+				EvidenceText += TEXT("\n\n");
+			}
+		}
 		if (!ToolCall.ScreenshotPaths.IsEmpty())
 		{
 			EvidenceText += TEXT("Screenshots:\n");
@@ -4267,6 +4329,11 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	const bool bPieField = LowerField.Contains(TEXT("pie")) ||
 		LowerField.Contains(TEXT("play_in_editor"));
 
+	if (LowerField == TEXT("evidence_readiness") && Value->Type == EJson::Object)
+	{
+		ExtractEvidenceReadinessFromJsonObject(Value->AsObject(), OutToolCall);
+	}
+
 	if (Value->Type == EJson::String)
 	{
 		FString StringValue = Value->AsString().TrimStartAndEnd();
@@ -4344,6 +4411,69 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	else if (bLogField)
 	{
 		OutToolCall.LogSnippets.AddUnique(TruncateForCard(JsonValueToString(Value), 480));
+	}
+}
+
+void SMCPChatPanel::ExtractEvidenceReadinessFromJsonObject(const TSharedPtr<FJsonObject>& Object, FToolCallView& OutToolCall) const
+{
+	if (!Object.IsValid())
+	{
+		return;
+	}
+
+	OutToolCall.bHasEvidenceReadiness = true;
+	Object->TryGetBoolField(TEXT("live_playable_slice_proven"), OutToolCall.bLivePlayableSliceProven);
+	OutToolCall.EvidenceReadinessSummary = GetStringField(Object, TEXT("summary"));
+	if (OutToolCall.EvidenceReadinessSummary.IsEmpty())
+	{
+		OutToolCall.EvidenceReadinessSummary = OutToolCall.bLivePlayableSliceProven
+			? TEXT("All playable-slice proof gates are satisfied.")
+			: TEXT("Playable-slice proof gates are incomplete.");
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* GateValues = nullptr;
+	if (!Object->TryGetArrayField(TEXT("gates"), GateValues) || !GateValues)
+	{
+		return;
+	}
+
+	for (const TSharedPtr<FJsonValue>& GateValue : *GateValues)
+	{
+		if (!GateValue.IsValid() || GateValue->Type != EJson::Object)
+		{
+			continue;
+		}
+
+		const TSharedPtr<FJsonObject> GateObject = GateValue->AsObject();
+		const FString GateId = GetStringField(GateObject, TEXT("id"));
+		const FString GateStatus = GetStringField(GateObject, TEXT("status"));
+		FString MissingSummary;
+		const TArray<TSharedPtr<FJsonValue>>* MissingValues = nullptr;
+		if (GateObject->TryGetArrayField(TEXT("missing"), MissingValues) && MissingValues)
+		{
+			TArray<FString> MissingParts;
+			for (const TSharedPtr<FJsonValue>& MissingValue : *MissingValues)
+			{
+				if (MissingValue.IsValid())
+				{
+					MissingParts.Add(TruncateForCard(JsonValueToString(MissingValue), 120));
+				}
+			}
+			MissingSummary = FString::Join(MissingParts, TEXT(", "));
+		}
+
+		const FString GateName = GateId.IsEmpty() ? FString(TEXT("unnamed_gate")) : GateId;
+		const FString GateState = GateStatus.IsEmpty() ? FString(TEXT("unknown")) : GateStatus;
+		FString GateLine = FString::Printf(
+			TEXT("%s = %s"),
+			*TruncateForCard(GateName, 72),
+			*TruncateForCard(GateState, 40)
+		);
+		if (!MissingSummary.IsEmpty())
+		{
+			GateLine += FString::Printf(TEXT(" | missing: %s"), *TruncateForCard(MissingSummary, 180));
+		}
+		OutToolCall.ProofGateSummaries.AddUnique(GateLine);
 	}
 }
 

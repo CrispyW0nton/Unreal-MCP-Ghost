@@ -182,7 +182,8 @@ The inserted workflow prompt should:
    `skill_generate_playable_slice(mode="orchestrate")` again with
    `task_submissions_json`, `imported_assets_json`, and `execution_evidence_json`
    so `evidence_readiness.live_playable_slice_proven` records whether the live
-   run is truly proven.
+   run is truly proven. The Chat Dock tool card surfaces this proof status and
+   incomplete gates in its inline Evidence area.
 10. Report changed assets, Tripo task ids, credit usage, evidence paths,
     incomplete evidence gates, unresolved warnings, and remaining human
     design-review work.
