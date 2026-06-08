@@ -16,6 +16,7 @@
 
 - Added a Generate Asset quick action in the MCP Chat dock that opens a Tripo prompt/settings/preview panel and inserts a `gen_tripo_text_to_model` request into the composer.
 - Expanded the Generate Asset surface into Tripo workspace modes for Text to 3D, Image to 3D, Multi-Image to 3D, and Texture/Paint existing-model passes.
+- Focused the Generate Asset panel by collapsing irrelevant mode-specific fields so Text, Image, Multi-Image, and Texture/Paint each present only their active controls inside Unreal.
 - Added Texture/Paint controls for texture reference, view angle, brush strength, blend mode, paint/blend notes, and save-name intent so Unreal mirrors Tripo's edit workflow.
 - Added `gen_prepare_texture_paint_session` to record offline Tripo Studio Magic Brush plans in `Saved/MCPChat/texture_paint_sessions.json` before any paid texture work.
 - Wired the Texture/Paint Generate Asset prompt to insert `gen_prepare_texture_paint_session` before the gated `gen_tripo_texture_model` call, and added Magic Brush fields for brush size, hardness, creativity strength, paint mode/color, and Tripo project id.

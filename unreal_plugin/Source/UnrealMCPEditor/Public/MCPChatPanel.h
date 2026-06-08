@@ -224,6 +224,10 @@ private:
 	FString BuildGenerateAssetToolCallPrompt() const;
 	FText GetGenerateAssetPreviewText() const;
 	EVisibility GetGenerateAssetDialogVisibility() const;
+	EVisibility GetGenerateTextToModelVisibility() const;
+	EVisibility GetGenerateImageToModelVisibility() const;
+	EVisibility GetGenerateMultiviewToModelVisibility() const;
+	EVisibility GetGenerateTextureModelVisibility() const;
 	FString GetGenerativeSettingsFilePath() const;
 	FString GetGenerativeSecretsFilePath() const;
 	FString GetGenerativeApiKeySource() const;

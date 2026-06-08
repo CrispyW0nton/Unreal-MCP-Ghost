@@ -569,6 +569,12 @@ Unreal. Current Tripo workspace modes are:
   data is unavailable, use the gated `gen_tripo_texture_model` fallback for an
   existing model task.
 
+The Generate Asset panel keeps the active mode focused: Text to 3D shows only
+the text prompt, Image to 3D shows the single reference-image field,
+Multi-Image to 3D shows the ordered view references, and Texture/Paint shows
+the Magic Brush controls. This avoids presenting every Tripo field at once in
+the Unreal dock.
+
 The Generate Asset workspace and its settings panel include a **Generative
 Credits** display. It shows the per-session budget, credits used from
 `credit_usage_by_session`, remaining credits, the next pending spend, and whether

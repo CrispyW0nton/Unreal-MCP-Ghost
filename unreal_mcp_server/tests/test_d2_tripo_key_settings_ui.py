@@ -42,6 +42,10 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "HandleGenerateModeImageToModelClicked",
             "HandleGenerateModeMultiviewToModelClicked",
             "HandleGenerateModeTextureModelClicked",
+            "GetGenerateTextToModelVisibility",
+            "GetGenerateImageToModelVisibility",
+            "GetGenerateMultiviewToModelVisibility",
+            "GetGenerateTextureModelVisibility",
             "Text to 3D",
             "Image to 3D",
             "Multi-Image to 3D",
@@ -51,6 +55,20 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "gen_tripo_multiview_to_model",
             "gen_tripo_texture_model",
             "smart_low_poly: true",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header)
+
+    def test_generate_workspace_collapses_irrelevant_mode_fields(self) -> None:
+        for token in (
+            "GenerateAssetMode == TEXT(\"text_to_model\") ? EVisibility::Visible : EVisibility::Collapsed",
+            "GenerateAssetMode == TEXT(\"image_to_model\") ? EVisibility::Visible : EVisibility::Collapsed",
+            "GenerateAssetMode == TEXT(\"multiview_to_model\") ? EVisibility::Visible : EVisibility::Collapsed",
+            "GenerateAssetMode == TEXT(\"texture_model\") ? EVisibility::Visible : EVisibility::Collapsed",
+            ".Visibility(this, &SMCPChatPanel::GetGenerateTextToModelVisibility)",
+            ".Visibility(this, &SMCPChatPanel::GetGenerateImageToModelVisibility)",
+            ".Visibility(this, &SMCPChatPanel::GetGenerateMultiviewToModelVisibility)",
+            ".Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header)
