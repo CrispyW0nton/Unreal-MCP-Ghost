@@ -6,6 +6,13 @@
 
 ## 2026-06-08
 
+### D.8 - Generative knowledge base runbooks
+
+- Expanded `knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md` with canonical prompts, the expected Tripo/import/material/evidence tool sequence, runtime budgets, failure-mode recovery, and the generated-content evidence contract.
+- Expanded `knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md` with exact playable-slice prompts, the end-to-end D.8 tool sequence, runtime expectations, known failure modes, and the minimum green vertical-slice report contract.
+- Added static smoke coverage so the D.8 runbook sections remain present in future edits.
+- Synced the documented tracked MCP tool count to 620 so the CI smoke count guard remains green.
+
 ### D.7 - Playable slice skill
 
 - Added `skill_generate_playable_slice` with offline plan mode and a Tripo-gated asset submission mode.

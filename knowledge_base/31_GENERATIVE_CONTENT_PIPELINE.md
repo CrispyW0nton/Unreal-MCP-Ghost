@@ -1,6 +1,6 @@
 # Generative Content Pipeline
 > Source: project notes, MCP import/tooling roadmap, Unreal asset pipeline practice
-> Last Updated: 2026-06-07 | UE 5.6
+> Last Updated: 2026-06-08 | UE 5.6
 
 ---
 
@@ -74,6 +74,10 @@ with task-family coverage landing in later D milestones:
 - D.6 adds a texture-only path that reports Tripo's standalone texture
   limitation and returns the Material Instance handoff expected once a texture
   provider lands.
+- D.7 adds the `skill_generate_playable_slice` planner and Tripo-gated asset
+  submission path.
+- D.8 turns this KB into the operational runbook for exact prompts, expected
+  tool sequencing, runtime budgets, and known failure modes.
 
 Agents should use this provider list as a capability map, not as proof that a
 paid generation request has been sent. D.2 can resolve auth/config state, but it
@@ -350,6 +354,101 @@ material_set_instance_parameters_bulk(
     },
 )
 ```
+
+## D8 Generative Runbook
+
+Use this section when the user asks for generated game content and the agent
+needs to choose the next safe tool call without guessing.
+
+### Canonical Prompts
+
+Asset prompt for a single mesh:
+
+```text
+Create a game-ready <asset role> for a UE5.6 <genre> playable slice. Style:
+<art direction>. Requirements: readable silhouette, centered pivot, real-world
+scale, clean UVs, simple collision-friendly proportions, PBR textures, no text
+or logos. Use this gameplay purpose: <purpose in the level>.
+```
+
+Playable-slice brief:
+
+```text
+Build me a third-person dungeon-crawler demo with a slime, a skeleton, and a
+boss room. Keep the level compact, readable, and playable in PIE.
+```
+
+Texture/material prompt:
+
+```text
+Wet mossy dungeon stone, hand-painted fantasy style, usable as a tiling UE5
+material with BaseColor, Normal, and ORM channels.
+```
+
+### Expected Tool Sequence
+
+1. Discover readiness with `gen_list_providers` and
+   `gen_get_provider_config(include_paths=True)`.
+2. If the request is only planning, use `skill_generate_playable_slice(mode="plan")`
+   or `gen_prepare_import_manifest` dry runs. These paths require no API key.
+3. If a paid Tripo request is needed, confirm `TRIPO_API_KEY` exists and run
+   `gen_check_credit_budget(..., confirm_spend=True, reserve_credits=True)`.
+4. Submit exactly the needed Tripo tasks with `gen_tripo_text_to_model`,
+   `gen_tripo_image_to_model`, `gen_tripo_multiview_to_model`,
+   `gen_tripo_refine_model`, `gen_tripo_texture_model`, or
+   `gen_tripo_post_process`.
+5. Poll with `gen_tripo_wait_for_task(timeout_s=900, poll_s=10)` for ordinary
+   assets. Use a longer timeout only after telling the user the wait changed.
+6. Download promptly with `gen_tripo_download_result`; signed provider URLs are
+   short-lived.
+7. Convert downloads into Unreal expectations with `gen_prepare_import_manifest`.
+8. Import with `gen_tripo_import_to_project`, then assign or repair materials
+   with the material tools.
+9. Place assets, compile/save touched Blueprints, validate imports, run PIE or
+   viewport evidence capture, and finish an execution journal or vertical-slice
+   report.
+
+### Expected Runtime
+
+| Stage | Expected local time | Notes |
+| --- | ---: | --- |
+| Provider/config checks | < 5 s | Offline unless reading local secrets/settings. |
+| Budget confirmation | < 5 s | Requires explicit user approval for paid calls. |
+| Tripo text/image/multiview task submission | 5-30 s | Network/API dependent after confirmation. |
+| Tripo model generation wait | 2-15 min per asset | Poll every 10 s; four slice assets may overlap. |
+| Download and manifest prep | 10-90 s | Depends on output size and signed URL validity. |
+| Unreal import/material handoff | 1-5 min | Depends on Interchange import and asset complexity. |
+| Slice assembly and evidence | 5-15 min | Blueprint, AI, level, HUD, PIE, screenshots, report. |
+
+A complete D.7-style playable slice should target the directive's under-30
+minute bar only when Tripo tasks run in parallel and the project already has
+usable third-person, AI, UMG, and report tooling available.
+
+### Known Failure Modes
+
+| Failure | Symptom | Recovery |
+| --- | --- | --- |
+| Missing API key | `auth_required` or provider config shows no key | Set `TRIPO_API_KEY` or `Saved/MCPChat/secrets.json`, then retry the paid step only. |
+| Spend not confirmed | `spend_confirmation_required` or unapproved budget | Ask for confirmation and rerun with `confirm_spend=True`. |
+| Budget exhausted | Credit guard denies reservation | Lower asset count/quality or increase the session budget after approval. |
+| Provider task failed | Wait/status returns a final failed state | Preserve task id, prompt, and provider response in the journal; retry with a simpler prompt. |
+| Signed URL expired | Download returns 403/404 or missing output | Re-query task status and download immediately; if no URL remains, rerun post-process. |
+| Unsupported texture-only request | `gen_texture_from_prompt` returns unsupported | Use the material handoff plan or texture an existing model with `gen_tripo_texture_model`. |
+| Import creates poor scale/pivot/collision | Asset appears huge, tiny, offset, or nonblocking | Normalize import settings, create collision, and document art follow-up. |
+| Material instance cannot be created | No imported base material or texture slots | Keep imported material chain, warn, and use material tools once Texture2D assets exist. |
+| PIE evidence fails | Logs show BP/runtime errors | Run compile/report tools, repair Blueprints, rerun PIE, then update the report. |
+
+### Evidence Contract
+
+Every generated content run should leave these records in the final result or
+execution journal:
+
+- original prompt and any negative constraints;
+- provider, model version, task id, credit estimate, and confirmation state;
+- downloaded file paths and expected `/Game/...` asset paths;
+- import result, warnings, material/collision notes, and touched assets;
+- compile/PIE/log/screenshot evidence for playable use;
+- known follow-ups for human art, design, licensing, or optimization review.
 
 ## Working Example
 
