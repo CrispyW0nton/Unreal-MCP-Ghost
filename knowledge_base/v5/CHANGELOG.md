@@ -76,6 +76,7 @@
 - Added Magic Brush Studio endpoint wrappers for `retexture_generate`, `get_retexture`, `get_retexture_images`, and `apply_retexture`, gated by Tripo spend confirmation where they can mutate or generate.
 - Added Studio Magic Brush render snapshot and `image_map` fields to the Texture/Paint workspace so inserted prompts can run `gen_tripo_magic_brush_generate`, inspect/list generated texture images, and apply painted regions before falling back to `gen_tripo_texture_model`.
 - Refined the Texture/Paint workspace into Texture Target, Texture Direction, and Paint Controls sections, with raw Studio project/render/camera/`image_map` fields kept in a collapsed Studio Snapshot area for a cleaner Unreal-facing workflow.
+- Added no-spend `gen_record_texture_paint_stroke` and `gen_compile_texture_paint_image_map` tools so Unreal Texture/Paint sessions can accumulate Magic Brush paint/blend strokes and compile an apply-ready `image_map` before paid Studio apply.
 - Made Smart Mesh the default for new Tripo model generations by setting `smart_low_poly=True` in text/image/multiview task tools and inserting `smart_low_poly: true` from Unreal's Generate Asset workspace.
 - Documented the inspected Tripo `texture-edit` route, Magic Brush controls, and the `retexture_generate` / `get_retexture` / `apply_retexture` handoff now mirrored by MCP wrappers.
 - Added a visible Generative Credits display to the Generate Asset workspace and settings panel, including budget, used, remaining, next spend, and confirmed state while preserving `credit_usage_by_session`.

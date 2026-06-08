@@ -401,6 +401,11 @@ The observed Studio API flow is now represented by dedicated MCP wrappers:
   image by `operator_id`.
 - `gen_tripo_magic_brush_list_images` calls `get_retexture_images` for the
   Studio project image history.
+- `gen_record_texture_paint_stroke` records each no-spend paint/blend stroke
+  into the prepared session with the selected part, generated paint image
+  bucket/key or URL, brush controls, and blend notes.
+- `gen_compile_texture_paint_image_map` compiles recorded strokes into the
+  `image_map` payload expected by Studio `apply_retexture`.
 - `gen_tripo_magic_brush_apply` saves/applies painted image parts through
   `apply_retexture` with `image_map`, `model_version`, and `project_id`.
 
@@ -560,7 +565,8 @@ Unreal. Current Tripo workspace modes are:
 - Texture/Paint: inserts `gen_prepare_texture_paint_session` first, then a
   gated Studio Magic Brush sequence when project and render data exist:
   `gen_tripo_magic_brush_generate`, `gen_tripo_magic_brush_get_retexture`,
-  optional `gen_tripo_magic_brush_list_images`, and
+  optional `gen_tripo_magic_brush_list_images`,
+  `gen_record_texture_paint_stroke`, `gen_compile_texture_paint_image_map`, and
   `gen_tripo_magic_brush_apply`. The planning call captures texture direction,
   optional reference image, paint/blend notes, viewport angle, render image
   bucket/key or URL, camera matrix JSON, brush size, strength, hardness,
@@ -615,12 +621,15 @@ Brush paid call is allowed.
 5. Insert the generated Tripo request into the composer.
 6. For Texture/Paint, run the inserted `gen_prepare_texture_paint_session`
    portion before spend approval; it records the no-spend Magic Brush plan.
-7. Send paid task calls only after the user has approved the spend gate. The
+7. Record each painted/blended texture region with
+   `gen_record_texture_paint_stroke`, then compile the saved strokes with
+   `gen_compile_texture_paint_image_map` before the paid Studio apply call.
+8. Send paid task calls only after the user has approved the spend gate. The
    inserted request keeps `confirm_spend=false` until the panel spend
    confirmation is active.
-8. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
+9. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
    inline progress bar in the chat tool card.
-9. Import successful outputs with `gen_tripo_import_to_project`.
+10. Import successful outputs with `gen_tripo_import_to_project`.
 
 Long-running Tripo waits should stream or post structured progress updates that
 include the tool name `gen_tripo_wait_for_task` and a numeric `progress` field.

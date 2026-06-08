@@ -463,6 +463,24 @@ def _build_texture_paint_session_plan(
             },
             {"tool": "gen_tripo_wait_for_task", "args": {"task_id": "<texture_task_id>", "timeout_s": 900, "poll_s": 10}},
             {"tool": "gen_tripo_import_to_project", "args": {"task_id": "<texture_task_id>", "content_path": "/Game/Generated", "create_material_instance": True}},
+            {
+                "tool": "gen_record_texture_paint_stroke",
+                "args": {
+                    "session_id": session_id,
+                    "part_name": "Body",
+                    "image_bucket": "<painted_texture_bucket>",
+                    "image_key": "<painted_texture_key>",
+                    "brush_strength": brush_strength,
+                    "blend_mode": clean_blend,
+                },
+            },
+            {
+                "tool": "gen_compile_texture_paint_image_map",
+                "args": {
+                    "session_id": session_id,
+                    "prefer_latest_per_part": True,
+                },
+            },
         ],
     }
     return plan
@@ -476,6 +494,66 @@ def _save_texture_paint_session(plan: Dict[str, Any]) -> None:
     items.append(plan)
     sessions["sessions"] = items[-50:]
     _write_json_file(_TEXTURE_PAINT_SESSIONS_PATH, sessions)
+
+
+def _load_texture_paint_sessions() -> Dict[str, Any]:
+    sessions = _read_json_file(_TEXTURE_PAINT_SESSIONS_PATH)
+    items = sessions.get("sessions")
+    sessions["sessions"] = items if isinstance(items, list) else []
+    return sessions
+
+
+def _write_texture_paint_sessions(sessions: Dict[str, Any]) -> None:
+    items = sessions.get("sessions")
+    sessions["sessions"] = (items if isinstance(items, list) else [])[-50:]
+    _write_json_file(_TEXTURE_PAINT_SESSIONS_PATH, sessions)
+
+
+def _find_texture_paint_session(sessions: Dict[str, Any], session_id: str) -> Optional[Dict[str, Any]]:
+    safe_session_id = _clean_optional_text(session_id)
+    for session in sessions.get("sessions", []):
+        if isinstance(session, dict) and session.get("session_id") == safe_session_id:
+            return session
+    return None
+
+
+def _build_magic_brush_image(
+    *,
+    image_bucket: str = "",
+    image_key: str = "",
+    image_url: str = "",
+    image_file_token: str = "",
+) -> Dict[str, Any]:
+    bucket = _clean_optional_text(image_bucket)
+    key = _clean_optional_text(image_key)
+    url = _clean_optional_text(image_url)
+    file_token = _clean_optional_text(image_file_token)
+    if bucket and key:
+        return {"bucket": bucket, "key": key}
+    if url:
+        return {"url": url}
+    if file_token:
+        return {"file_token": file_token}
+    return {}
+
+
+def _session_image_map_from_strokes(session: Dict[str, Any]) -> List[Dict[str, Any]]:
+    strokes = session.get("paint_strokes")
+    if not isinstance(strokes, list):
+        return []
+
+    latest_by_part: Dict[str, Dict[str, Any]] = {}
+    for stroke in strokes:
+        if not isinstance(stroke, dict):
+            continue
+        part_name = _clean_optional_text(str(stroke.get("part_name", ""))) or "Body"
+        image = stroke.get("image")
+        if isinstance(image, dict) and image:
+            latest_by_part[part_name] = {
+                "part_name": part_name,
+                "image": image,
+            }
+    return [latest_by_part[key] for key in sorted(latest_by_part.keys())]
 
 
 def _default_tripo_download_folder(task_id: str) -> Path:
@@ -1639,6 +1717,155 @@ def register_generative_tools(mcp: FastMCP):
                 "session": plan,
                 "session_file": str(_TEXTURE_PAINT_SESSIONS_PATH) if record_session else "",
                 "estimated_credits": 0,
+                "spend_required": False,
+            },
+            warnings=warnings,
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_record_texture_paint_stroke(
+        ctx: Context,
+        session_id: str,
+        part_name: str = "Body",
+        image_bucket: str = "",
+        image_key: str = "",
+        image_url: str = "",
+        image_file_token: str = "",
+        viewport_view: str = "current",
+        brush_size: float = 0.03,
+        brush_strength: float = 0.2,
+        brush_hardness: float = 0.0,
+        blend_mode: str = "normal",
+        paint_notes: str = "",
+    ) -> str:
+        """Record a no-spend Magic Brush paint/blend stroke in a texture-paint session.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_record_texture_paint_stroke(session_id="magic_brush_model_123", part_name="Body", image_bucket="bucket", image_key="paint/body.png", brush_strength=0.35)"""
+        t0 = time.monotonic()
+        safe_session_id = _clean_optional_text(session_id)
+        image = _build_magic_brush_image(
+            image_bucket=image_bucket,
+            image_key=image_key,
+            image_url=image_url,
+            image_file_token=image_file_token,
+        )
+        inputs = {
+            "session_id": session_id,
+            "part_name": part_name,
+            "image_bucket": image_bucket,
+            "image_key": image_key,
+            "image_url": image_url,
+            "image_file_token_supplied": bool(_clean_optional_text(image_file_token)),
+            "viewport_view": viewport_view,
+            "brush_size": brush_size,
+            "brush_strength": brush_strength,
+            "brush_hardness": brush_hardness,
+            "blend_mode": blend_mode,
+            "paint_notes": paint_notes,
+        }
+        if not safe_session_id:
+            return _result_json(success=False, stage="gen_record_texture_paint_stroke", message="session_id is required", inputs=inputs, errors=["session_id is required"], t0=t0)
+        if not image:
+            return _result_json(success=False, stage="gen_record_texture_paint_stroke", message="paint image is required", inputs=inputs, errors=["Provide image_bucket/image_key, image_url, or image_file_token for the painted texture region."], t0=t0)
+
+        sessions = _load_texture_paint_sessions()
+        session = _find_texture_paint_session(sessions, safe_session_id)
+        if session is None:
+            return _result_json(success=False, stage="gen_record_texture_paint_stroke", message="texture paint session not found", inputs=inputs, errors=[f"session_id not found: {safe_session_id}"], t0=t0)
+
+        strokes = session.get("paint_strokes")
+        if not isinstance(strokes, list):
+            strokes = []
+        stroke = {
+            "stroke_id": f"stroke_{int(time.time() * 1000)}_{len(strokes) + 1}",
+            "part_name": _clean_optional_text(part_name) or "Body",
+            "image": image,
+            "viewport_view": _clean_optional_text(viewport_view) or "current",
+            "brush": {
+                "size": _clamp_float(brush_size, 0.03, 0.001, 0.1),
+                "strength": _clamp_float(brush_strength, 0.2, 0.01, 1.0),
+                "hardness": _clamp_float(brush_hardness, 0.0, 0.0, 1.0),
+                "blend_mode": _clean_optional_text(blend_mode) or "normal",
+                "notes": _clean_optional_text(paint_notes),
+            },
+            "recorded_at": int(time.time()),
+        }
+        strokes.append(stroke)
+        session["paint_strokes"] = strokes[-200:]
+        session["image_map"] = _session_image_map_from_strokes(session)
+        _write_texture_paint_sessions(sessions)
+
+        return _result_json(
+            success=True,
+            stage="gen_record_texture_paint_stroke",
+            message="Recorded Magic Brush paint stroke without spending credits",
+            inputs=inputs,
+            outputs={
+                "session_id": safe_session_id,
+                "stroke": stroke,
+                "stroke_count": len(session["paint_strokes"]),
+                "image_map": session["image_map"],
+                "spend_required": False,
+            },
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_compile_texture_paint_image_map(
+        ctx: Context,
+        session_id: str,
+        prefer_latest_per_part: bool = True,
+    ) -> str:
+        """Compile recorded Magic Brush paint strokes into an apply_retexture image_map.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#magic-brush-texture-edit-sessions
+        Example:
+            gen_compile_texture_paint_image_map(session_id="magic_brush_model_123", prefer_latest_per_part=True)"""
+        t0 = time.monotonic()
+        safe_session_id = _clean_optional_text(session_id)
+        inputs = {"session_id": session_id, "prefer_latest_per_part": prefer_latest_per_part}
+        if not safe_session_id:
+            return _result_json(success=False, stage="gen_compile_texture_paint_image_map", message="session_id is required", inputs=inputs, errors=["session_id is required"], t0=t0)
+
+        sessions = _load_texture_paint_sessions()
+        session = _find_texture_paint_session(sessions, safe_session_id)
+        if session is None:
+            return _result_json(success=False, stage="gen_compile_texture_paint_image_map", message="texture paint session not found", inputs=inputs, errors=[f"session_id not found: {safe_session_id}"], t0=t0)
+
+        if prefer_latest_per_part:
+            image_map = _session_image_map_from_strokes(session)
+        else:
+            strokes = session.get("paint_strokes")
+            image_map = [
+                {"part_name": _clean_optional_text(str(stroke.get("part_name", ""))) or "Body", "image": stroke.get("image")}
+                for stroke in (strokes if isinstance(strokes, list) else [])
+                if isinstance(stroke, dict) and isinstance(stroke.get("image"), dict) and stroke.get("image")
+            ]
+        session["image_map"] = image_map
+        _write_texture_paint_sessions(sessions)
+
+        warnings: List[str] = []
+        if not image_map:
+            warnings.append("No paint strokes with images have been recorded yet.")
+        return _result_json(
+            success=bool(image_map),
+            stage="gen_compile_texture_paint_image_map",
+            message="Compiled Magic Brush image_map from recorded paint strokes" if image_map else "No Magic Brush paint strokes are ready to apply",
+            inputs=inputs,
+            outputs={
+                "session_id": safe_session_id,
+                "project_id": session.get("tripo_project_id", ""),
+                "image_map": image_map,
+                "stroke_count": len(session.get("paint_strokes", [])) if isinstance(session.get("paint_strokes"), list) else 0,
+                "apply_tool": "gen_tripo_magic_brush_apply",
+                "apply_args": {
+                    "project_id": session.get("tripo_project_id", ""),
+                    "image_map": image_map,
+                    "confirm_spend": False,
+                },
                 "spend_required": False,
             },
             warnings=warnings,

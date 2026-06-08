@@ -49,6 +49,8 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_check_credit_budget",
             "gen_generate_asset_preflight",
             "gen_prepare_texture_paint_session",
+            "gen_record_texture_paint_stroke",
+            "gen_compile_texture_paint_image_map",
         }
         self.assertTrue(expected.issubset(set(self.mcp.tools)))
 
@@ -239,7 +241,51 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertIn("retexture_generate", json.dumps(session["observed_studio_api_contract"]))
         self.assertIn("apply_retexture", json.dumps(session["observed_studio_api_contract"]))
         self.assertEqual(session["mcp_tool_sequence"][0]["tool"], "gen_tripo_texture_model")
+        self.assertIn("gen_record_texture_paint_stroke", [step["tool"] for step in session["mcp_tool_sequence"]])
+        self.assertIn("gen_compile_texture_paint_image_map", [step["tool"] for step in session["mcp_tool_sequence"]])
         self.assertEqual(saved["sessions"][0]["model_task_id"], "model-task-123")
+
+    async def test_texture_paint_strokes_compile_apply_ready_image_map_without_spend(self):
+        import tools.generative_tools as generative_tools
+
+        with tempfile.TemporaryDirectory() as tmp:
+            session_path = Path(tmp) / "Saved" / "MCPChat" / "texture_paint_sessions.json"
+            with patch.object(generative_tools, "_TEXTURE_PAINT_SESSIONS_PATH", session_path):
+                prepared = json.loads(await self.mcp.tools["gen_prepare_texture_paint_session"](
+                    ctx=None,
+                    model_task_id="model-task-123",
+                    texture_prompt="weathered copper",
+                    tripo_project_id="project-456",
+                ))
+                session_id = prepared["outputs"]["session"]["session_id"]
+                stroke = json.loads(await self.mcp.tools["gen_record_texture_paint_stroke"](
+                    ctx=None,
+                    session_id=session_id,
+                    part_name="Body",
+                    image_bucket="paint-bucket",
+                    image_key="body.png",
+                    viewport_view="front",
+                    brush_strength=0.35,
+                    blend_mode="soft_overlay",
+                    paint_notes="blend across shoulder seam",
+                ))
+                compiled = json.loads(await self.mcp.tools["gen_compile_texture_paint_image_map"](
+                    ctx=None,
+                    session_id=session_id,
+                ))
+                saved = json.loads(session_path.read_text(encoding="utf-8"))
+
+        _assert_structured(self, stroke, "gen_record_texture_paint_stroke")
+        self.assertTrue(stroke["success"])
+        self.assertFalse(stroke["outputs"]["spend_required"])
+        self.assertEqual(stroke["outputs"]["image_map"][0]["image"]["bucket"], "paint-bucket")
+        _assert_structured(self, compiled, "gen_compile_texture_paint_image_map")
+        self.assertTrue(compiled["success"])
+        self.assertFalse(compiled["outputs"]["spend_required"])
+        self.assertEqual(compiled["outputs"]["project_id"], "project-456")
+        self.assertEqual(compiled["outputs"]["apply_tool"], "gen_tripo_magic_brush_apply")
+        self.assertEqual(compiled["outputs"]["apply_args"]["image_map"][0]["part_name"], "Body")
+        self.assertEqual(saved["sessions"][0]["image_map"][0]["image"]["key"], "body.png")
 
     def test_d2_static_chat_panel_and_kb_wiring(self):
         panel_header = (REPO_ROOT / "unreal_plugin" / "Source" / "UnrealMCPEditor" / "Public" / "MCPChatPanel.h").read_text(encoding="utf-8")
@@ -285,6 +331,8 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_save_provider_config",
             "gen_check_credit_budget",
             "gen_prepare_texture_paint_session",
+            "gen_record_texture_paint_stroke",
+            "gen_compile_texture_paint_image_map",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, kb_text)
