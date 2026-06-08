@@ -595,15 +595,16 @@ lost when a user updates the Tripo key, model version, texture quality, or outpu
 folder.
 
 The Generate Asset panel also includes a **Preflight** action. It inserts a
-no-spend Tripo Generate Asset preflight prompt that reuses the shared
-`skill_generate_playable_slice(mode="preflight")` live-readiness checker while
-treating the result as asset-generation readiness only. The preflight reports
-`tripo_api_key`, `credit_budget`, `unreal_build_tooling`, `packaged_plugin`,
-`unreal_bridge`, `smart_mesh_policy`, `ready_for_live_spend`, `next_actions`,
-auth source, remaining credits, latest packaged plugin path, and bridge
-host/port before any `gen_tripo_text_to_model`, `gen_tripo_image_to_model`,
-`gen_tripo_multiview_to_model`, `gen_tripo_texture_model`, or Studio Magic Brush
-paid call is allowed.
+no-spend Tripo Generate Asset preflight prompt that calls
+`gen_generate_asset_preflight`. The tool returns
+`unreal_mcp_generate_asset_live_preflight.v1` and reports `tripo_api_key`,
+`mode_supported`, `credit_budget`, `smart_mesh_policy`,
+`unreal_build_tooling`, `packaged_plugin`, `unreal_bridge`,
+`ready_for_live_spend`, `next_actions`, auth source, remaining credits, latest
+packaged plugin path, and bridge host/port before any
+`gen_tripo_text_to_model`, `gen_tripo_image_to_model`,
+`gen_tripo_multiview_to_model`, `gen_tripo_texture_model`, or Studio Magic
+Brush paid call is allowed.
 
 1. Open Generate Asset.
 2. Select the workspace mode and fill the active prompt/image/task fields.

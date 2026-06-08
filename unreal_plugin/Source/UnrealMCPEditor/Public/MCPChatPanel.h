@@ -37,6 +37,7 @@ private:
 		FString ResultSummary;
 		FString DetailJson;
 		FString LogTail;
+		FString PreflightLabel;
 		FString PreflightSummary;
 		FString EvidenceReadinessSummary;
 		TArray<FString> ScreenshotPaths;
@@ -45,8 +46,8 @@ private:
 		TArray<FString> ProofGateSummaries;
 		float ProgressFraction = 0.0f;
 		bool bHasProgress = false;
-		bool bHasPlayableSlicePreflight = false;
-		bool bPlayableSlicePreflightReady = false;
+		bool bHasPreflight = false;
+		bool bPreflightReady = false;
 		bool bHasEvidenceReadiness = false;
 		bool bLivePlayableSliceProven = false;
 		bool bError = false;
@@ -187,7 +188,7 @@ private:
 	void ExtractEvidenceFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void ExtractEvidenceFromJsonValue(const FString& FieldName, const TSharedPtr<class FJsonValue>& Value, FToolCallView& OutToolCall) const;
 	void ExtractEvidenceReadinessFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
-	void ExtractPlayableSlicePreflightFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
+	void ExtractPreflightFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage);
 	bool TryBuildToolCallFromJsonObject(const TSharedPtr<class FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const;
 	FString JsonObjectToString(const TSharedPtr<class FJsonObject>& Object) const;

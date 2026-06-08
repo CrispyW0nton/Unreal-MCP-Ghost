@@ -2053,7 +2053,7 @@ TSharedRef<SWidget> SMCPChatPanel::BuildTripoProgressPanel(const FToolCallView& 
 
 TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolCall)
 {
-	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness && !ToolCall.bHasPlayableSlicePreflight)
+	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness && !ToolCall.bHasPreflight)
 	{
 		return SNew(SBox)
 			.Visibility(EVisibility::Collapsed);
@@ -2069,11 +2069,12 @@ TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolC
 		.Font(FAppStyle::GetFontStyle("SmallFontBold"))
 	];
 
-	if (ToolCall.bHasPlayableSlicePreflight)
+	if (ToolCall.bHasPreflight)
 	{
 		const FText PreflightText = FText::Format(
-			LOCTEXT("PlayableSlicePreflightEvidenceStatus", "Playable Slice Preflight: {0}"),
-			ToolCall.bPlayableSlicePreflightReady ? LOCTEXT("PlayableSlicePreflightReady", "ready") : LOCTEXT("PlayableSlicePreflightMissing", "missing gates")
+			LOCTEXT("PreflightEvidenceStatus", "{0}: {1}"),
+			ToolCall.PreflightLabel.IsEmpty() ? LOCTEXT("PreflightEvidenceFallbackLabel", "Preflight") : FText::FromString(ToolCall.PreflightLabel),
+			ToolCall.bPreflightReady ? LOCTEXT("PreflightReady", "ready") : LOCTEXT("PreflightMissing", "missing gates")
 		);
 		EvidenceBox->AddSlot()
 		.AutoHeight()
@@ -4160,11 +4161,12 @@ void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
 	if (ToolDetailBody.IsValid())
 	{
 		FString EvidenceText;
-		if (ToolCall.bHasPlayableSlicePreflight)
+		if (ToolCall.bHasPreflight)
 		{
 			EvidenceText += FString::Printf(
-				TEXT("Playable Slice Preflight: %s\n%s\n"),
-				ToolCall.bPlayableSlicePreflightReady ? TEXT("ready") : TEXT("missing gates"),
+				TEXT("%s: %s\n%s\n"),
+				*(ToolCall.PreflightLabel.IsEmpty() ? FString(TEXT("Preflight")) : ToolCall.PreflightLabel),
+				ToolCall.bPreflightReady ? TEXT("ready") : TEXT("missing gates"),
 				*ToolCall.PreflightSummary
 			);
 			if (!ToolCall.ProofGateSummaries.IsEmpty())
@@ -4468,7 +4470,7 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	}
 	if (LowerField == TEXT("preflight") && Value->Type == EJson::Object)
 	{
-		ExtractPlayableSlicePreflightFromJsonObject(Value->AsObject(), OutToolCall);
+		ExtractPreflightFromJsonObject(Value->AsObject(), OutToolCall);
 	}
 
 	if (Value->Type == EJson::String)
@@ -4551,7 +4553,7 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	}
 }
 
-void SMCPChatPanel::ExtractPlayableSlicePreflightFromJsonObject(const TSharedPtr<FJsonObject>& Object, FToolCallView& OutToolCall) const
+void SMCPChatPanel::ExtractPreflightFromJsonObject(const TSharedPtr<FJsonObject>& Object, FToolCallView& OutToolCall) const
 {
 	if (!Object.IsValid())
 	{
@@ -4559,13 +4561,21 @@ void SMCPChatPanel::ExtractPlayableSlicePreflightFromJsonObject(const TSharedPtr
 	}
 
 	const FString Schema = GetStringField(Object, TEXT("schema"));
-	if (Schema != TEXT("unreal_mcp_playable_slice_live_preflight.v1"))
+	if (Schema == TEXT("unreal_mcp_playable_slice_live_preflight.v1"))
+	{
+		OutToolCall.PreflightLabel = TEXT("Playable Slice Preflight");
+	}
+	else if (Schema == TEXT("unreal_mcp_generate_asset_live_preflight.v1"))
+	{
+		OutToolCall.PreflightLabel = TEXT("Generate Asset Preflight");
+	}
+	else
 	{
 		return;
 	}
 
-	OutToolCall.bHasPlayableSlicePreflight = true;
-	Object->TryGetBoolField(TEXT("ready_for_live_spend"), OutToolCall.bPlayableSlicePreflightReady);
+	OutToolCall.bHasPreflight = true;
+	Object->TryGetBoolField(TEXT("ready_for_live_spend"), OutToolCall.bPreflightReady);
 
 	FString AuthSource = TEXT("missing");
 	const TSharedPtr<FJsonObject>* ApiKeyObject = nullptr;
@@ -5359,10 +5369,10 @@ FString SMCPChatPanel::BuildGenerateAssetPreflightPrompt() const
 
 	return FString::Printf(
 		TEXT("Run the no-spend Tripo Generate Asset preflight before paid generation.\n")
-		TEXT("Call `skill_generate_playable_slice` with mode=\"preflight\" and session_name=\"%s\" as the shared live-readiness checker. Treat this as Generate Asset readiness only: make no Tripo generation request, do not mutate Unreal, and do not reserve credits.\n")
-		TEXT("Report the readiness gates in a compact table: tripo_api_key, credit_budget, unreal_build_tooling, packaged_plugin, unreal_bridge, and smart_mesh_policy. Include `ready_for_live_spend`, `next_actions`, configured auth source, remaining generative credits, latest packaged plugin path, bridge host/port, active generation mode \"%s\", and confirm that paid text/image/multi-image model work will use Smart Mesh/good topology (`smart_low_poly: true`). Do not continue to gen_tripo_text_to_model, gen_tripo_image_to_model, gen_tripo_multiview_to_model, gen_tripo_texture_model, or Studio Magic Brush paid calls unless all gates are ready and the user has confirmed spend."),
-		*Escape(SessionName),
-		*Escape(GenerateAssetMode)
+		TEXT("Call MCP tool `gen_generate_asset_preflight` with mode=\"%s\" and session_name=\"%s\". Requirements: make no Tripo generation request, do not mutate Unreal, and do not reserve credits.\n")
+		TEXT("Report the `unreal_mcp_generate_asset_live_preflight.v1` readiness gates in a compact table: tripo_api_key, mode_supported, credit_budget, smart_mesh_policy, unreal_build_tooling, packaged_plugin, and unreal_bridge. Include `ready_for_live_spend`, `next_actions`, configured auth source, remaining generative credits, latest packaged plugin path, bridge host/port, active generation mode, and confirm that paid text/image/multi-image model work will use Smart Mesh/good topology (`smart_low_poly: true`). Do not continue to gen_tripo_text_to_model, gen_tripo_image_to_model, gen_tripo_multiview_to_model, gen_tripo_texture_model, or Studio Magic Brush paid calls unless all gates are ready and the user has confirmed spend."),
+		*Escape(GenerateAssetMode),
+		*Escape(SessionName)
 	);
 }
 

@@ -47,6 +47,7 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
             "gen_get_provider_config",
             "gen_save_provider_config",
             "gen_check_credit_budget",
+            "gen_generate_asset_preflight",
             "gen_prepare_texture_paint_session",
         }
         self.assertTrue(expected.issubset(set(self.mcp.tools)))
@@ -156,6 +157,51 @@ class TestD2GenerativeConfigAuth(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(approved["outputs"]["remaining_after"], 40)
         self.assertFalse(overage["success"])
         self.assertFalse(overage["outputs"]["within_budget"])
+
+    async def test_generate_asset_preflight_reports_no_spend_readiness_schema(self):
+        import tools.generative_tools as generative_tools
+
+        with tempfile.TemporaryDirectory() as tmp, patch.dict(os.environ, {"TRIPO_API_KEY": ""}):
+            settings_path = Path(tmp) / "Saved" / "MCPChat" / "generative_settings.json"
+            secrets_path = Path(tmp) / "Saved" / "MCPChat" / "secrets.json"
+            settings_path.parent.mkdir(parents=True, exist_ok=True)
+            settings_path.write_text(json.dumps({
+                "session_credit_budget": 100,
+                "credit_usage_by_session": {"asset-session": 20},
+                "output_folder": "/Game/Generated",
+            }), encoding="utf-8")
+            secrets_path.write_text(json.dumps({"TRIPO_API_KEY": "tsk_test_secret_123456"}), encoding="utf-8")
+            with (
+                patch.object(generative_tools, "_SETTINGS_PATH", settings_path),
+                patch.object(generative_tools, "_SECRETS_PATH", secrets_path),
+                patch.object(generative_tools, "_find_runuat", return_value="C:\\UE\\RunUAT.bat"),
+                patch.object(generative_tools, "_latest_plugin_package", return_value={
+                    "found": True,
+                    "path": "C:\\uebuild\\UnrealMCPBuild_test",
+                    "has_descriptor": True,
+                    "has_win64_binaries": True,
+                }),
+                patch.object(generative_tools, "_check_bridge_reachable", return_value={"reachable": True, "host": "127.0.0.1", "port": 55557}),
+            ):
+                payload = json.loads(await self.mcp.tools["gen_generate_asset_preflight"](
+                    ctx=None,
+                    mode="multiview_to_model",
+                    session_name="asset-session",
+                    estimated_credits=60,
+                    bridge_timeout_s=0.01,
+                ))
+
+        _assert_structured(self, payload, "gen_generate_asset_preflight")
+        self.assertTrue(payload["success"])
+        preflight = payload["outputs"]["preflight"]
+        self.assertEqual(preflight["schema"], "unreal_mcp_generate_asset_live_preflight.v1")
+        self.assertFalse(preflight["network_required"])
+        self.assertFalse(preflight["spend_required"])
+        self.assertEqual(preflight["settings"]["session_credits_remaining"], 80)
+        self.assertTrue(preflight["workspace"]["smart_low_poly_default"])
+        self.assertIn("gen_tripo_multiview_to_model", preflight["workspace"]["paid_tools"].values())
+        self.assertTrue(all(gate["status"] == "ready" for gate in preflight["gates"]))
+        self.assertIn("smart_mesh_policy", {gate["id"] for gate in preflight["gates"]})
 
     async def test_prepare_texture_paint_session_records_magic_brush_plan_without_spend(self):
         import tools.generative_tools as generative_tools

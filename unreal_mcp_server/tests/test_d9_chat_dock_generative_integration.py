@@ -63,7 +63,9 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
     def test_generate_asset_preflight_is_no_spend_readiness_gate(self) -> None:
         for token in (
             "Run the no-spend Tripo Generate Asset preflight",
-            "mode=\\\"preflight\\\"",
+            "gen_generate_asset_preflight",
+            "unreal_mcp_generate_asset_live_preflight.v1",
+            "mode_supported",
             "ready_for_live_spend",
             "smart_mesh_policy",
             "latest packaged plugin path",
@@ -163,6 +165,8 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             "retexture_generate",
             "apply_retexture",
             "Generate Asset panel also includes a **Preflight** action",
+            "gen_generate_asset_preflight",
+            "unreal_mcp_generate_asset_live_preflight.v1",
             "smart_mesh_policy",
             "ready_for_live_spend",
         ):
@@ -174,6 +178,7 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
         self.assertIn("inline Tripo progress rendering", self.changelog)
         self.assertIn("gen_prepare_texture_paint_session", self.changelog)
         self.assertIn("Generate Asset **Preflight** action", self.changelog)
+        self.assertIn("gen_generate_asset_preflight", self.changelog)
 
 
 if __name__ == "__main__":

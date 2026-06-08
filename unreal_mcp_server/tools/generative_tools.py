@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import os
+import socket
 import time
 import urllib.error
 import urllib.parse
@@ -727,6 +728,205 @@ def _estimate_tripo_credits(task_type: str, payload: Dict[str, Any]) -> int:
     return _TRIPO_PROVIDER.estimate_credits(task_type, payload)
 
 
+def _find_runuat(engine_root: str = "") -> str:
+    roots = [engine_root] if engine_root else [
+        r"C:\Program Files\Epic Games\UE_5.6",
+        r"C:\Program Files\Epic Games\UE_5.5",
+        r"C:\Program Files\Epic Games\UE_5.4",
+    ]
+    for root in roots:
+        if not root:
+            continue
+        candidate = Path(root) / "Engine" / "Build" / "BatchFiles" / "RunUAT.bat"
+        if candidate.exists():
+            return str(candidate)
+    return ""
+
+
+def _latest_plugin_package(package_root: Path) -> Dict[str, Any]:
+    if not package_root.exists():
+        return {"found": False, "path": "", "has_descriptor": False, "has_win64_binaries": False}
+
+    candidates = sorted(
+        [path for path in package_root.glob("UnrealMCPBuild*") if path.is_dir()],
+        key=lambda path: path.stat().st_mtime,
+        reverse=True,
+    )
+    for candidate in candidates:
+        descriptor = candidate / "UnrealMCP.uplugin"
+        binaries = candidate / "Binaries" / "Win64"
+        if descriptor.exists() or binaries.exists():
+            return {
+                "found": descriptor.exists() and binaries.exists(),
+                "path": str(candidate),
+                "has_descriptor": descriptor.exists(),
+                "has_win64_binaries": binaries.exists(),
+            }
+    return {"found": False, "path": "", "has_descriptor": False, "has_win64_binaries": False}
+
+
+def _check_bridge_reachable(host: str, port: int, timeout_s: float) -> Dict[str, Any]:
+    try:
+        with socket.create_connection((host, port), timeout=max(0.01, timeout_s)):
+            return {"reachable": True, "host": host, "port": port}
+    except Exception as exc:
+        return {"reachable": False, "host": host, "port": port, "error": str(exc)}
+
+
+def _readiness_gate(
+    gate_id: str,
+    label: str,
+    passed: bool,
+    observed: Optional[List[str]] = None,
+    missing: Optional[List[str]] = None,
+) -> Dict[str, Any]:
+    return {
+        "id": gate_id,
+        "label": label,
+        "status": "ready" if passed else "missing",
+        "observed": observed or [],
+        "missing": missing or [],
+    }
+
+
+def _build_generate_asset_preflight(
+    *,
+    mode: str,
+    session_name: str,
+    estimated_credits: int,
+    engine_root: str,
+    package_root: str,
+    bridge_host: str,
+    bridge_port: int,
+    bridge_timeout_s: float,
+) -> Dict[str, Any]:
+    safe_mode = (mode or "text_to_model").strip() or "text_to_model"
+    safe_session = (session_name or "default").strip() or "default"
+    safe_estimate = max(0, _safe_int(estimated_credits, 0))
+    supported_modes = {"text_to_model", "image_to_model", "multiview_to_model", "texture_model"}
+    settings = _load_generative_settings()
+    key_state = _resolve_tripo_api_key()
+    budget = max(0, _safe_int(settings.get("session_credit_budget"), 0))
+    usage = settings.setdefault("credit_usage_by_session", {})
+    used = max(0, _safe_int(usage.get(safe_session), 0))
+    remaining = max(0, budget - used)
+    runuat = _find_runuat(engine_root or os.environ.get("UE_ENGINE_ROOT", ""))
+    wrapper = _REPO_ROOT / "scripts" / "build_unreal_plugin.ps1"
+    plugin = _REPO_ROOT / "unreal_plugin" / "UnrealMCP.uplugin"
+    package = _latest_plugin_package(Path(package_root or r"C:\uebuild"))
+    safe_bridge_port = _safe_int(bridge_port, 55557)
+    bridge = _check_bridge_reachable(bridge_host or "127.0.0.1", safe_bridge_port, bridge_timeout_s)
+    smart_mesh_required = safe_mode in {"text_to_model", "image_to_model", "multiview_to_model"}
+    smart_mesh_ready = True
+
+    gates = [
+        _readiness_gate(
+            "tripo_api_key",
+            "Tripo API key is configured without exposing the secret",
+            bool(key_state["configured"]),
+            [key_state["source"]] if key_state["configured"] else [],
+            ["TRIPO_API_KEY env var or Saved/MCPChat/secrets.json"] if not key_state["configured"] else [],
+        ),
+        _readiness_gate(
+            "mode_supported",
+            "Generate Asset mode is supported by the Tripo workspace",
+            safe_mode in supported_modes,
+            [safe_mode] if safe_mode in supported_modes else [],
+            [f"mode must be one of {', '.join(sorted(supported_modes))}"] if safe_mode not in supported_modes else [],
+        ),
+        _readiness_gate(
+            "credit_budget",
+            "Session credit budget can cover the estimated Generate Asset spend",
+            remaining >= safe_estimate and budget > 0,
+            [f"budget={budget}", f"used={used}", f"remaining={remaining}", f"estimated={safe_estimate}"],
+            [f"remaining credits < estimated credits ({remaining} < {safe_estimate})"] if remaining < safe_estimate else [],
+        ),
+        _readiness_gate(
+            "smart_mesh_policy",
+            "Smart Mesh/good topology policy is enforced for model generation",
+            smart_mesh_ready,
+            ["smart_low_poly=true for text/image/multi-image model generation"] if smart_mesh_required else ["texture_model reuses an existing model task"],
+            [],
+        ),
+        _readiness_gate(
+            "unreal_build_tooling",
+            "UE BuildPlugin tooling and wrapper are available",
+            bool(runuat) and wrapper.exists() and plugin.exists(),
+            [item for item in (runuat, str(wrapper) if wrapper.exists() else "", str(plugin) if plugin.exists() else "") if item],
+            [
+                item for item, ok in (
+                    ("RunUAT.bat", bool(runuat)),
+                    ("scripts/build_unreal_plugin.ps1", wrapper.exists()),
+                    ("unreal_plugin/UnrealMCP.uplugin", plugin.exists()),
+                ) if not ok
+            ],
+        ),
+        _readiness_gate(
+            "packaged_plugin",
+            "A packaged Win64 UnrealMCP plugin build is available",
+            bool(package["found"]),
+            [package["path"]] if package["found"] else [],
+            [
+                item for item, ok in (
+                    ("packaged UnrealMCP.uplugin", package["has_descriptor"]),
+                    ("packaged Binaries/Win64", package["has_win64_binaries"]),
+                ) if not ok
+            ],
+        ),
+        _readiness_gate(
+            "unreal_bridge",
+            "Unreal MCP bridge socket is reachable for import/viewport follow-up",
+            bool(bridge["reachable"]),
+            [f"{bridge['host']}:{bridge['port']}"] if bridge["reachable"] else [],
+            [f"{bridge['host']}:{bridge['port']}"] if not bridge["reachable"] else [],
+        ),
+    ]
+    ready_for_live_spend = all(item["status"] == "ready" for item in gates)
+    next_actions = [f"{item['id']}: {', '.join(item['missing'])}" for item in gates if item["status"] != "ready"]
+    return {
+        "schema": "unreal_mcp_generate_asset_live_preflight.v1",
+        "ready_for_live_spend": ready_for_live_spend,
+        "network_required": False,
+        "spend_required": False,
+        "repo_root": str(_REPO_ROOT),
+        "settings": {
+            "settings_path": str(_SETTINGS_PATH),
+            "output_folder": settings.get("output_folder", ""),
+            "default_model_version": settings.get("default_model_version", ""),
+            "default_texture_quality": settings.get("default_texture_quality", ""),
+            "session_name": safe_session,
+            "session_credit_budget": budget,
+            "session_credits_used": used,
+            "session_credits_remaining": remaining,
+            "estimated_credits": safe_estimate,
+        },
+        "api_key": key_state,
+        "build": {"runuat": runuat, "wrapper": str(wrapper), "plugin": str(plugin), "package": package},
+        "bridge": bridge,
+        "workspace": {
+            "mode": safe_mode,
+            "supported_modes": sorted(supported_modes),
+            "smart_mesh_required": smart_mesh_required,
+            "smart_low_poly_default": True,
+            "paid_tools": {
+                "text_to_model": "gen_tripo_text_to_model",
+                "image_to_model": "gen_tripo_image_to_model",
+                "multiview_to_model": "gen_tripo_multiview_to_model",
+                "texture_model": "gen_tripo_texture_model",
+            },
+            "texture_paint_tools": [
+                "gen_prepare_texture_paint_session",
+                "gen_tripo_magic_brush_generate",
+                "gen_tripo_magic_brush_get_retexture",
+                "gen_tripo_magic_brush_list_images",
+                "gen_tripo_magic_brush_apply",
+            ],
+        },
+        "gates": gates,
+        "next_actions": next_actions,
+    }
+
+
 def _check_and_reserve_credit_budget(
     *,
     estimated_credits: int,
@@ -1274,6 +1474,55 @@ def register_generative_tools(mcp: FastMCP):
             outputs=outputs,
             warnings=warnings,
             errors=errors,
+            t0=t0,
+        )
+
+    @mcp.tool()
+    async def gen_generate_asset_preflight(
+        ctx: Context,
+        mode: str = "text_to_model",
+        session_name: str = "default",
+        estimated_credits: int = 60,
+        engine_root: str = "",
+        package_root: str = r"C:\uebuild",
+        bridge_host: str = "127.0.0.1",
+        bridge_port: int = 55557,
+        bridge_timeout_s: float = 1.0,
+    ) -> str:
+        """Run a no-spend readiness check for the Unreal Generate Asset workspace.
+
+        KB: see knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md#d9-chat-dock-integration
+        Example:
+            gen_generate_asset_preflight(mode="multiview_to_model", session_name="demo", estimated_credits=80)"""
+        t0 = time.monotonic()
+        inputs = {
+            "mode": mode,
+            "session_name": session_name,
+            "estimated_credits": estimated_credits,
+            "engine_root": engine_root,
+            "package_root": package_root,
+            "bridge_host": bridge_host,
+            "bridge_port": bridge_port,
+            "bridge_timeout_s": bridge_timeout_s,
+        }
+        preflight = _build_generate_asset_preflight(
+            mode=mode,
+            session_name=session_name,
+            estimated_credits=estimated_credits,
+            engine_root=engine_root,
+            package_root=package_root,
+            bridge_host=bridge_host,
+            bridge_port=bridge_port,
+            bridge_timeout_s=bridge_timeout_s,
+        )
+        ready = bool(preflight.get("ready_for_live_spend"))
+        return _result_json(
+            success=ready,
+            stage="gen_generate_asset_preflight",
+            message="Generate Asset preflight is ready for confirmed spend" if ready else "Generate Asset preflight found missing readiness gates",
+            inputs=inputs,
+            outputs={"preflight": preflight},
+            warnings=[] if ready else list(preflight.get("next_actions", [])),
             t0=t0,
         )
 
