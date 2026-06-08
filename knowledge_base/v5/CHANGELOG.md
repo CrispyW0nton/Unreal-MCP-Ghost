@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### D.5 - Generative provider abstraction
+
+- Added `tools/generative/` with the `GenerativeProvider` protocol, output policy/result dataclasses, and a small provider registry.
+- Added `TripoProvider` as the first implementation and delegated Tripo credit estimates, output suffixes, model-version normalization, and primary-model selection through it.
+- Added `IGenerativeProvider.h` as the C++ import-side provider metadata interface and documented how to add future providers in the generative content KB.
+
 ### D.4 - Tripo auto-import bridge
 
 - Added `gen_tripo_import_to_project` to download successful Tripo task outputs, prepare an import manifest, import the primary StaticMesh, and capture viewport thumbnail evidence.

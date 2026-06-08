@@ -68,6 +68,8 @@ with task-family coverage landing in later D milestones:
 - D.3 mirrors the Tripo task model for prompt/image/multiview generation,
   refine, texture, post-process, status, wait, and download.
 - D.4 imports downloaded results into Unreal assets.
+- D.5 adds the provider abstraction used to describe and register future
+  providers without changing the public MCP tool contract.
 
 Agents should use this provider list as a capability map, not as proof that a
 paid generation request has been sent. D.2 can resolve auth/config state, but it
@@ -78,6 +80,41 @@ Example:
 ```python
 gen_list_providers(include_import_helpers=True)
 ```
+
+## Provider Abstraction
+
+D.5 defines the provider layer that future Meshy, Stability, ComfyUI, or local
+generator integrations must satisfy before they become public MCP tools.
+
+Python providers live under `unreal_mcp_server/tools/generative/`:
+
+- `__init__.py` defines `GenerativeProvider`, `ProviderOutputPolicy`,
+  `ProviderTaskResult`, and `ProviderRegistry`.
+- `tripo.py` is the first implementation. It owns Tripo identity, base URL,
+  capabilities, final statuses, output-key order, supported model/image
+  extensions, model-version normalization, output suffix inference, primary
+  model selection, and conservative credit estimates.
+- `generative_tools.py` uses the registry so provider metadata, credit
+  estimates, and output selection are provider-owned instead of hardcoded in
+  each MCP tool.
+
+The Unreal plugin has a matching C++ import-side shape in
+`unreal_plugin/Source/UnrealMCP/Public/Generative/IGenerativeProvider.h`.
+That interface exposes provider name, display name, base URL, capabilities,
+output-key policy, supported model extensions, final statuses, and a JSON
+description. It is intentionally metadata-focused; Python still owns remote API
+transport for Tripo.
+
+To add a provider:
+
+1. Add `tools/generative/<provider>.py` implementing `GenerativeProvider`.
+2. Register the provider in `generative_tools.py`'s `ProviderRegistry`.
+3. Add provider-specific config/auth fields without exposing secrets in result
+   payloads.
+4. Map task submission/status/download tools to the provider's task model.
+5. Add offline tests for provider description, credit/cost policy, output
+   selection, and any public MCP wrapper.
+6. Update this KB and the v5 changelog with provider-specific caveats.
 
 ## Config And Auth
 

@@ -14,6 +14,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from mcp.server.fastmcp import Context, FastMCP
+from tools.generative import ProviderRegistry
+from tools.generative.tripo import TRIPO_PROVIDER
 
 logger = logging.getLogger("UnrealMCP")
 
@@ -21,12 +23,14 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 _CHAT_DIR = _REPO_ROOT / "Saved" / "MCPChat"
 _SECRETS_PATH = _CHAT_DIR / "secrets.json"
 _SETTINGS_PATH = _CHAT_DIR / "generative_settings.json"
-_TRIPO_BASE_URL = "https://api.tripo3d.ai/v2/openapi"
-_TRIPO_FINAL_STATUSES = {"success", "failed", "banned", "expired", "cancelled", "unknown"}
-_TRIPO_MODEL_OUTPUT_KEYS = ("model", "base_model", "pbr_model", "rendered_image", "generated_image")
-_TRIPO_IMPORT_OUTPUT_KEYS = ("pbr_model", "model", "base_model", "rendered_image", "generated_image")
-_TRIPO_MODEL_EXTS = {".fbx", ".obj", ".gltf", ".glb"}
-_TRIPO_IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".tga", ".exr", ".hdr", ".bmp", ".webp"}
+_PROVIDERS = ProviderRegistry([TRIPO_PROVIDER])
+_TRIPO_PROVIDER = _PROVIDERS.get("tripo")
+_TRIPO_BASE_URL = _TRIPO_PROVIDER.base_url
+_TRIPO_FINAL_STATUSES = set(_TRIPO_PROVIDER.final_statuses)
+_TRIPO_MODEL_OUTPUT_KEYS = tuple(_TRIPO_PROVIDER.output_policy.model_output_keys)
+_TRIPO_IMPORT_OUTPUT_KEYS = tuple(_TRIPO_PROVIDER.output_policy.import_output_keys)
+_TRIPO_MODEL_EXTS = set(_TRIPO_PROVIDER.output_policy.model_extensions)
+_TRIPO_IMAGE_EXTS = set(_TRIPO_PROVIDER.output_policy.image_extensions)
 _DEFAULT_GENERATIVE_SETTINGS: Dict[str, Any] = {
     "provider": "tripo",
     "default_model_version": "tripo-default",
@@ -174,8 +178,7 @@ def _clean_optional_text(value: Optional[str]) -> str:
 
 
 def _clean_model_version(value: Optional[str]) -> str:
-    version = _clean_optional_text(value)
-    return "" if version in {"", "tripo-default", "api-default"} else version
+    return _TRIPO_PROVIDER.normalize_model_version(value)
 
 
 def _as_file_object(*, image_path: str = "", image_url: str = "", file_token: str = "") -> Dict[str, Any]:
@@ -207,15 +210,7 @@ def _default_tripo_download_folder(task_id: str) -> Path:
 
 
 def _suffix_for_tripo_output(key: str, url: str) -> str:
-    parsed = urllib.parse.urlparse(url)
-    suffix = Path(parsed.path).suffix.lower()
-    if suffix:
-        return suffix
-    if key in {"model", "base_model", "pbr_model"}:
-        return ".glb"
-    if key in {"rendered_image", "generated_image"}:
-        return ".png"
-    return ".bin"
+    return _TRIPO_PROVIDER.output_suffix(key, url)
 
 
 def _download_tripo_output_files(
@@ -240,15 +235,7 @@ def _download_tripo_output_files(
 
 
 def _select_primary_model_download(downloads: List[Dict[str, Any]]) -> Dict[str, Any]:
-    by_key = {item.get("key"): item for item in downloads}
-    for key in ("pbr_model", "model", "base_model"):
-        item = by_key.get(key)
-        if item and Path(str(item.get("path", ""))).suffix.lower() in _TRIPO_MODEL_EXTS:
-            return item
-    for item in downloads:
-        if Path(str(item.get("path", ""))).suffix.lower() in _TRIPO_MODEL_EXTS:
-            return item
-    return {}
+    return _TRIPO_PROVIDER.select_primary_model_download(downloads)
 
 
 def _capture_import_thumbnail(task_id: str, asset_name: str) -> Dict[str, Any]:
@@ -416,34 +403,7 @@ def _download_url(url: str, target_path: Path, timeout_s: int = 120) -> Dict[str
 
 
 def _estimate_tripo_credits(task_type: str, payload: Dict[str, Any]) -> int:
-    model_version = str(payload.get("model_version", ""))
-    is_p1 = model_version.startswith("P1")
-    texture = bool(payload.get("texture", True) or payload.get("pbr", True))
-    quality = str(payload.get("texture_quality", "standard")).lower()
-    if task_type == "text_to_model":
-        base = 30 if is_p1 else 10
-        credits = base + (10 if texture and not is_p1 else (10 if texture else 0))
-    elif task_type in {"image_to_model", "multiview_to_model"}:
-        base = 40 if is_p1 else 20
-        credits = base + (10 if texture and not is_p1 else (10 if texture else 0))
-    elif task_type == "texture_model":
-        credits = 10
-    elif task_type == "convert_model":
-        advanced_keys = {"quad", "face_limit", "flatten_bottom", "flatten_bottom_threshold", "texture_size", "texture_format", "pivot_to_center_bottom", "scale_factor"}
-        credits = 5 + (5 if any(key in payload and payload.get(key) not in (None, False, "", 0) for key in advanced_keys) else 0)
-    elif task_type == "refine_model":
-        credits = 20
-    else:
-        credits = 0
-    if task_type in {"text_to_model", "image_to_model", "multiview_to_model", "texture_model"}:
-        credits += {"standard": 10, "detailed": 20, "extreme": 30}.get(quality, 0) if texture else 0
-        if payload.get("smart_low_poly"):
-            credits += 10
-        if payload.get("quad"):
-            credits += 5
-        if payload.get("generate_parts"):
-            credits += 20
-    return max(0, credits)
+    return _TRIPO_PROVIDER.estimate_credits(task_type, payload)
 
 
 def _check_and_reserve_credit_budget(
@@ -788,31 +748,7 @@ def _provider_config_outputs() -> Dict[str, Any]:
 
 def _provider_scaffold() -> List[Dict[str, Any]]:
     config = _provider_config_outputs()
-    return [
-        {
-            "provider": "tripo",
-            "status": "configured" if config["api_key_configured"] else "auth_missing",
-            "capabilities": [
-                "text_to_model",
-                "image_to_model",
-                "multiview_to_model",
-                "refine_model",
-                "texture_model",
-                "post_process",
-                "download_result",
-                "import_to_project",
-            ],
-            "config": {
-                "api_key_configured": config["api_key_configured"],
-                "api_key_source": config["api_key_source"],
-                "default_model_version": config["default_model_version"],
-                "default_texture_quality": config["default_texture_quality"],
-                "output_folder": config["output_folder"],
-                "session_credit_budget": config["session_credit_budget"],
-            },
-            "next_milestones": ["D.5 provider abstraction", "D.6 texture-only path", "D.7 playable slice skill"],
-        }
-    ]
+    return [provider.describe(config) for provider in _PROVIDERS.list()]
 
 
 def register_generative_tools(mcp: FastMCP):
