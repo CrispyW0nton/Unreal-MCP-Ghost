@@ -40,6 +40,8 @@ private:
 		TArray<FString> ScreenshotPaths;
 		TArray<FString> LogSnippets;
 		TArray<FString> PieResults;
+		float ProgressFraction = 0.0f;
+		bool bHasProgress = false;
 		bool bError = false;
 	};
 
@@ -89,6 +91,8 @@ private:
 	void HandleCommandPaletteTextChanged(const FText& Text);
 	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
 	FReply HandleToggleTelemetryClicked();
+	FReply HandleOpenGenerateAssetClicked();
+	FReply HandleInsertGenerateAssetToolCallClicked();
 	FReply HandleToggleGenerativeSettingsClicked();
 	FReply HandleSaveGenerativeSettingsClicked();
 	FReply HandleConfirmGenerativeSpendClicked();
@@ -135,12 +139,14 @@ private:
 	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
 	TSharedRef<SWidget> BuildToolCallCard(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildTripoProgressPanel(const FToolCallView& ToolCall);
 	TSharedRef<SWidget> BuildEvidencePanel(const FToolCallView& ToolCall);
 	TSharedRef<SWidget> BuildScreenshotEvidenceWidget(const FString& ScreenshotPath);
 	TSharedRef<SWidget> BuildSessionSidebar();
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildCommandPalette();
+	TSharedRef<SWidget> BuildGenerateAssetDialog();
 	TSharedRef<SWidget> BuildGenerativeSettingsPanel();
 	TSharedRef<SWidget> BuildOnboardingOverlay();
 	TSharedRef<SWidget> BuildSamplePrompts();
@@ -199,6 +205,9 @@ private:
 	FString BuildNewSessionName() const;
 	FString BuildRenamedSessionName() const;
 	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	FString BuildGenerateAssetToolCallPrompt() const;
+	FText GetGenerateAssetPreviewText() const;
+	EVisibility GetGenerateAssetDialogVisibility() const;
 	FString GetGenerativeSettingsFilePath() const;
 	FString GetGenerativeSecretsFilePath() const;
 	FString GetGenerativeApiKeySource() const;
@@ -226,6 +235,7 @@ private:
 	bool bToolPaletteVisible = true;
 	bool bToolPaletteLoaded = false;
 	bool bCommandPaletteVisible = false;
+	bool bGenerateAssetDialogVisible = false;
 	bool bGenerativeSettingsVisible = false;
 	bool bGenerativeSpendConfirmed = false;
 	bool bTelemetryEnabled = false;
@@ -249,6 +259,8 @@ private:
 	FString GenerativeModelVersion = TEXT("tripo-default");
 	FString GenerativeTextureQuality = TEXT("standard");
 	FString GenerativeOutputFolder = TEXT("/Game/Generated");
+	FString GenerateAssetPrompt = TEXT("stylized slime enemy, game-ready proportions, clean silhouette, PBR textures");
+	FString GenerateAssetName = TEXT("SM_GeneratedAsset");
 	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
 	TArray<FChatSessionEntry> ChatSessions;
 	TArray<FCommandPaletteItem> CommandPaletteItems;
@@ -263,6 +275,8 @@ private:
 	TSharedPtr<SEditableTextBox> GenerativeOutputFolderInput;
 	TSharedPtr<SEditableTextBox> GenerativeCreditBudgetInput;
 	TSharedPtr<SEditableTextBox> GenerativePendingSpendInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetPromptInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetNameInput;
 	TSharedPtr<SEditableTextBox> CommandPaletteInput;
 	TSharedPtr<SMultiLineEditableTextBox> MessageInput;
 	TSharedPtr<STextBlock> StatusText;

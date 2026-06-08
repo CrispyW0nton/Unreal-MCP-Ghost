@@ -50,6 +50,7 @@
 #include "Widgets/Layout/SWrapBox.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SEditableTextBox.h"
+#include "Widgets/Notifications/SProgressBar.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "SMCPChatPanel"
@@ -146,6 +147,15 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
 				SNew(SButton)
+				.Text(LOCTEXT("GenerateAssetQuickAction", "Generate Asset"))
+				.OnClicked(this, &SMCPChatPanel::HandleOpenGenerateAssetClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
 				.Text(this, &SMCPChatPanel::GetGenerativeSettingsToggleText)
 				.OnClicked(this, &SMCPChatPanel::HandleToggleGenerativeSettingsClicked)
 			]
@@ -196,6 +206,17 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Visibility(this, &SMCPChatPanel::GetSamplePromptsVisibility)
 			[
 				BuildSamplePrompts()
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBox)
+			.Visibility(this, &SMCPChatPanel::GetGenerateAssetDialogVisibility)
+			[
+				BuildGenerateAssetDialog()
 			]
 		]
 
@@ -637,6 +658,49 @@ FReply SMCPChatPanel::HandleToggleTelemetryClicked()
 	{
 		SetStatus(LOCTEXT("StatusTelemetryDisabled", "Metrics disabled"), PendingStatusColor);
 	}
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleOpenGenerateAssetClicked()
+{
+	bGenerateAssetDialogVisible = !bGenerateAssetDialogVisible;
+	if (bGenerateAssetDialogVisible)
+	{
+		LoadGenerativeSettings();
+	}
+	SetStatus(
+		bGenerateAssetDialogVisible ? LOCTEXT("StatusGenerateAssetOpen", "Generate Asset quick action open") : LOCTEXT("StatusGenerateAssetClosed", "Generate Asset quick action hidden"),
+		PendingStatusColor
+	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
+{
+	if (GenerateAssetPromptInput.IsValid())
+	{
+		GenerateAssetPrompt = GenerateAssetPromptInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateAssetNameInput.IsValid())
+	{
+		GenerateAssetName = GenerateAssetNameInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateAssetPrompt.IsEmpty())
+	{
+		GenerateAssetPrompt = TEXT("game-ready stylized prop, clean silhouette, PBR textures");
+	}
+	if (GenerateAssetName.IsEmpty())
+	{
+		GenerateAssetName = TEXT("SM_GeneratedAsset");
+	}
+
+	InsertComposerText(BuildGenerateAssetToolCallPrompt());
+	bGenerateAssetDialogVisible = false;
+	RecordTelemetryEvent(TEXT("generate_asset_quick_action_inserted"));
+	SetStatus(
+		bGenerativeSpendConfirmed ? LOCTEXT("StatusGenerateAssetInsertedConfirmed", "Inserted Tripo asset generation call") : LOCTEXT("StatusGenerateAssetInsertedNeedsSpend", "Inserted Tripo call; confirm spend before paid execution"),
+		bGenerativeSpendConfirmed ? OkStatusColor : PendingStatusColor
+	);
 	return FReply::Handled();
 }
 
@@ -1535,6 +1599,13 @@ TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCa
 				.AutoHeight()
 				.Padding(0.0f, 6.0f, 0.0f, 0.0f)
 				[
+					BuildTripoProgressPanel(ToolCall)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 6.0f, 0.0f, 0.0f)
+				[
 					BuildEvidencePanel(ToolCall)
 				]
 
@@ -1563,6 +1634,39 @@ TSharedRef<SWidget> SMCPChatPanel::BuildToolCallCard(const FToolCallView& ToolCa
 						.OnClicked(this, &SMCPChatPanel::HandleRepairToolClicked, ToolCall)
 					]
 				]
+			]
+	];
+}
+
+TSharedRef<SWidget> SMCPChatPanel::BuildTripoProgressPanel(const FToolCallView& ToolCall)
+{
+	if (!ToolCall.bHasProgress)
+	{
+		return SNew(SBox)
+			.Visibility(EVisibility::Collapsed);
+	}
+
+	const int32 ProgressPercent = FMath::Clamp(FMath::RoundToInt(ToolCall.ProgressFraction * 100.0f), 0, 100);
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+		.Padding(6.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("TripoProgressLabel", "Tripo progress: {0}%"), FText::AsNumber(ProgressPercent)))
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SProgressBar)
+				.Percent(TOptional<float>(ToolCall.ProgressFraction))
 			]
 		];
 }
@@ -1988,6 +2092,114 @@ TSharedRef<SWidget> SMCPChatPanel::BuildCommandPalette()
 		];
 }
 
+TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("GenerateAssetDialogTitle", "Generate Asset"))
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetGenerativeAuthStatusText)
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GenerateAssetPromptInput, SEditableTextBox)
+				.HintText(LOCTEXT("GenerateAssetPromptHint", "Prompt for Tripo text_to_model"))
+				.Text(FText::FromString(GenerateAssetPrompt))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.5f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateAssetNameInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateAssetNameHint", "Unreal asset name, for example SM_SlimeEnemy"))
+					.Text(FText::FromString(GenerateAssetName))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.5f)
+				[
+					SNew(STextBlock)
+					.Text(FText::Format(LOCTEXT("GenerateAssetSettingsSummary", "Model {0} | Texture {1} | Folder {2}"), FText::FromString(GenerativeModelVersion), FText::FromString(GenerativeTextureQuality), FText::FromString(GenerativeOutputFolder)))
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.AutoWrapText(true)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+				.Padding(6.0f)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetGenerateAssetPreviewText)
+					.AutoWrapText(true)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("InsertGenerateAssetToolCall", "Insert Tool Call"))
+					.OnClicked(this, &SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetGenerativeBudgetText)
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+					.AutoWrapText(true)
+				]
+			]
+		];
+}
+
 TSharedRef<SWidget> SMCPChatPanel::BuildGenerativeSettingsPanel()
 {
 	return SNew(SBorder)
@@ -2138,6 +2350,12 @@ void SMCPChatPanel::RefreshCommandPaletteItems()
 		TEXT("Slash command"),
 		TEXT("Run the repair_tools chain for the most recent failed MCP action and explain the fix."),
 		TEXT("slash")
+	);
+	AddCommandPaletteItem(
+		TEXT("Generate Asset quick action"),
+		TEXT("Open the Tripo generate-asset dialog"),
+		TEXT("Open Generate Asset and insert a gen_tripo_text_to_model request using the current generative settings."),
+		TEXT("generative")
 	);
 
 	AddCommandPaletteItem(
@@ -2614,6 +2832,11 @@ void SMCPChatPanel::AppendStreamingDelta(const FString& MessageId, const FString
 				{
 					(*ExistingTextBlock)->SetText(FText::FromString(Message.Message));
 				}
+			}
+			if (Delta.Contains(TEXT("gen_tripo_wait_for_task"), ESearchCase::IgnoreCase) ||
+				Delta.Contains(TEXT("\"progress\""), ESearchCase::IgnoreCase))
+			{
+				RebuildMessageList();
 			}
 			return;
 		}
@@ -3120,6 +3343,51 @@ bool SMCPChatPanel::TryBuildToolCallFromJsonObject(const TSharedPtr<FJsonObject>
 		LogTail = FString::Join(LogLines, LINE_TERMINATOR);
 	}
 
+	bool bHasProgress = false;
+	float ProgressFraction = 0.0f;
+	const auto TryReadProgress = [&bHasProgress, &ProgressFraction](const TSharedPtr<FJsonObject>& Candidate)
+	{
+		if (!Candidate.IsValid() || bHasProgress)
+		{
+			return;
+		}
+
+		double ProgressValue = 0.0;
+		if (Candidate->TryGetNumberField(TEXT("progress"), ProgressValue))
+		{
+			ProgressFraction = ProgressValue > 1.0 ? static_cast<float>(ProgressValue / 100.0) : static_cast<float>(ProgressValue);
+			ProgressFraction = FMath::Clamp(ProgressFraction, 0.0f, 1.0f);
+			bHasProgress = true;
+			return;
+		}
+
+		const TSharedPtr<FJsonObject>* NestedTask = nullptr;
+		if (Candidate->TryGetObjectField(TEXT("task"), NestedTask) && NestedTask && NestedTask->IsValid())
+		{
+			double NestedProgress = 0.0;
+			if ((*NestedTask)->TryGetNumberField(TEXT("progress"), NestedProgress))
+			{
+				ProgressFraction = NestedProgress > 1.0 ? static_cast<float>(NestedProgress / 100.0) : static_cast<float>(NestedProgress);
+				ProgressFraction = FMath::Clamp(ProgressFraction, 0.0f, 1.0f);
+				bHasProgress = true;
+			}
+		}
+	};
+
+	if (ToolName.Contains(TEXT("tripo"), ESearchCase::IgnoreCase))
+	{
+		TryReadProgress(Object);
+		if (OutputsObject && OutputsObject->IsValid())
+		{
+			TryReadProgress(*OutputsObject);
+		}
+		const TSharedPtr<FJsonObject>* ResultObject = nullptr;
+		if (Object->TryGetObjectField(TEXT("result"), ResultObject) && ResultObject && ResultObject->IsValid())
+		{
+			TryReadProgress(*ResultObject);
+		}
+	}
+
 	OutToolCall.MessageId = MessageId;
 	OutToolCall.ToolName = ToolName;
 	OutToolCall.ArgsSummary = ArgsSummary;
@@ -3127,6 +3395,8 @@ bool SMCPChatPanel::TryBuildToolCallFromJsonObject(const TSharedPtr<FJsonObject>
 	OutToolCall.ResultSummary = TruncateForCard(ResultSummary, 240);
 	OutToolCall.DetailJson = JsonObjectToString(Object);
 	OutToolCall.LogTail = LogTail;
+	OutToolCall.ProgressFraction = ProgressFraction;
+	OutToolCall.bHasProgress = bHasProgress;
 	OutToolCall.bError = bError;
 	ExtractEvidenceFromJsonObject(Object, OutToolCall);
 	if (!LogTail.IsEmpty() && LogTail != TEXT("(empty)"))
@@ -3392,6 +3662,43 @@ FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) co
 
 	Template += TEXT("Return the StructuredResult and summarize warnings/errors.");
 	return Template;
+}
+
+FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
+{
+	return FString::Printf(
+		TEXT("Use MCP tool `gen_tripo_text_to_model` to generate an asset, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
+		TEXT("Parameters:\n")
+		TEXT("- prompt: \"%s\"\n")
+		TEXT("- model_version: \"%s\"\n")
+		TEXT("- texture: true\n")
+		TEXT("- pbr: true\n")
+		TEXT("- texture_quality: \"%s\"\n")
+		TEXT("- face_limit: 12000\n")
+		TEXT("- session_name: \"%s\"\n")
+		TEXT("- confirm_spend: %s\n")
+		TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+		*GenerateAssetPrompt.Replace(TEXT("\""), TEXT("'")),
+		*GenerativeModelVersion,
+		*GenerativeTextureQuality,
+		*(CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName),
+		bGenerativeSpendConfirmed ? TEXT("true") : TEXT("false"),
+		*GenerativeOutputFolder,
+		*GenerateAssetName.Replace(TEXT("\""), TEXT(""))
+	);
+}
+
+FText SMCPChatPanel::GetGenerateAssetPreviewText() const
+{
+	return FText::Format(
+		LOCTEXT("GenerateAssetPreview", "Preview: gen_tripo_text_to_model -> gen_tripo_wait_for_task progress -> gen_tripo_import_to_project. Confirmed spend: {0}."),
+		bGenerativeSpendConfirmed ? LOCTEXT("GenerateAssetSpendYes", "yes") : LOCTEXT("GenerateAssetSpendNo", "no")
+	);
+}
+
+EVisibility SMCPChatPanel::GetGenerateAssetDialogVisibility() const
+{
+	return bGenerateAssetDialogVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 FString SMCPChatPanel::GetGenerativeSettingsFilePath() const

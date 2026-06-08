@@ -6,6 +6,12 @@
 
 ## 2026-06-08
 
+### D.9 - Chat dock generative integration
+
+- Added a Generate Asset quick action in the MCP Chat dock that opens a Tripo prompt/settings/preview panel and inserts a `gen_tripo_text_to_model` request into the composer.
+- Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
+- Documented the D.9 chat-dock workflow in the generative content pipeline KB and added static smoke coverage for the UI hooks.
+
 ### D.8 - Generative knowledge base runbooks
 
 - Expanded `knowledge_base/31_GENERATIVE_CONTENT_PIPELINE.md` with canonical prompts, the expected Tripo/import/material/evidence tool sequence, runtime budgets, failure-mode recovery, and the generated-content evidence contract.

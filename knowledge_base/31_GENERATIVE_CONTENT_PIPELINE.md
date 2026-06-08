@@ -78,6 +78,8 @@ with task-family coverage landing in later D milestones:
   submission path.
 - D.8 turns this KB into the operational runbook for exact prompts, expected
   tool sequencing, runtime budgets, and known failure modes.
+- D.9 adds the MCP Chat dock quick action for Tripo asset generation and inline
+  progress rendering for long-running Tripo waits.
 
 Agents should use this provider list as a capability map, not as proof that a
 paid generation request has been sent. D.2 can resolve auth/config state, but it
@@ -449,6 +451,28 @@ execution journal:
 - import result, warnings, material/collision notes, and touched assets;
 - compile/PIE/log/screenshot evidence for playable use;
 - known follow-ups for human art, design, licensing, or optimization review.
+
+## D9 Chat Dock Integration
+
+The in-editor MCP Chat dock is the preferred surface for user-facing generated
+asset work. Use the top-bar Generate Asset action for a single Tripo
+`text_to_model` asset request:
+
+1. Open Generate Asset.
+2. Enter the prompt and target Unreal asset name.
+3. Confirm the current model version, texture quality, output folder, and spend
+   state shown from the existing Generate Asset Settings panel.
+4. Insert the generated `gen_tripo_text_to_model` request into the composer.
+5. Send only after the user has approved the spend gate. The inserted request
+   keeps `confirm_spend=false` until the panel spend confirmation is active.
+6. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an
+   inline progress bar in the chat tool card.
+7. Import successful outputs with `gen_tripo_import_to_project`.
+
+Long-running Tripo waits should stream or post structured progress updates that
+include the tool name `gen_tripo_wait_for_task` and a numeric `progress` field.
+The chat panel accepts either `0.0-1.0` or `0-100` progress values and clamps
+them before rendering.
 
 ## Working Example
 
