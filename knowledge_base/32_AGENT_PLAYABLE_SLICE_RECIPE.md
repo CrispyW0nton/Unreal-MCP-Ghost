@@ -83,7 +83,12 @@ returns `unreal_mcp_playable_slice_orchestration.v1` with context discovery,
 wait/import, Blueprint/UMG/AI/level assembly, PIE verification, and final report
 phases. Pass optional `task_submissions_json` and `imported_assets_json` arrays
 when generation or import has already happened so the runbook can bind task ids
-and asset paths to the planned roles.
+and asset paths to the planned roles. Its final report call uses the real
+`skill_package_vertical_slice_report` argument shape: `title`, `summary`,
+`journal_path`, `report_dir`, `project_name`, `artifacts`, and `verification`.
+The orchestration also starts and finishes an execution journal with
+`execution_journal_start` and `execution_journal_finish`, so the final report can
+include the same evidence trail used during autonomous work.
 
 Example:
 

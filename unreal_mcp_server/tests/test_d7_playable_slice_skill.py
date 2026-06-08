@@ -177,6 +177,36 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         ):
             with self.subTest(token=token):
                 self.assertIn(token, serialized)
+        report_phase = next(phase for phase in orchestration["phases"] if phase["phase"] == "verify_and_report")
+        context_phase = next(phase for phase in orchestration["phases"] if phase["phase"] == "context")
+        journal_start = next(call for call in context_phase["tool_calls"] if call["tool"] == "execution_journal_start")
+        for key in ("title", "goal", "project_name", "tags"):
+            with self.subTest(journal_start_arg=key):
+                self.assertIn(key, journal_start["args"])
+        journal_finish = next(call for call in report_phase["tool_calls"] if call["tool"] == "execution_journal_finish")
+        for key in ("journal_path", "status", "summary", "artifacts", "verification"):
+            with self.subTest(journal_finish_arg=key):
+                self.assertIn(key, journal_finish["args"])
+        self.assertNotIn("final_artifacts_json", journal_finish["args"])
+        self.assertNotIn("verification_json", journal_finish["args"])
+        report_call = next(call for call in report_phase["tool_calls"] if call["tool"] == "skill_package_vertical_slice_report")
+        report_args = report_call["args"]
+        for key in (
+            "title",
+            "summary",
+            "journal_path",
+            "report_dir",
+            "project_name",
+            "artifacts",
+            "verification",
+            "include_journal_entries",
+            "max_entries",
+        ):
+            with self.subTest(report_arg=key):
+                self.assertIn(key, report_args)
+        self.assertIn("brief", report_args["verification"])
+        self.assertIn("plan_schema", report_args["verification"])
+        self.assertNotIn("changed_assets", report_args)
 
     def test_orchestrate_mode_rejects_invalid_json_inputs(self):
         from skills.playable_slice.skill import skill_generate_playable_slice
