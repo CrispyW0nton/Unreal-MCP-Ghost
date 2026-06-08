@@ -137,6 +137,114 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertTrue(result["outputs"]["credit_guard"]["reserved"])
         self.assertEqual(len(result["outputs"]["task_submissions"]), 4)
 
+    def test_assemble_requires_imported_assets_without_requiring_tripo_key(self):
+        from skills.playable_slice.skill import skill_generate_playable_slice
+
+        tmp, settings_patch, secrets_patch, env_patch = self._settings_context(api_key="")
+        with tmp, settings_patch, secrets_patch, env_patch, patch("tools.generative_tools._tripo_submit_task") as submit:
+            result = skill_generate_playable_slice(
+                "third-person dungeon demo with a slime",
+                mode="assemble",
+                run_pie_seconds=0,
+            )
+
+        _assert_structured(self, result, "asset_inputs_required")
+        self.assertFalse(result["success"])
+        self.assertIn("imported_asset_paths", result["outputs"])
+        submit.assert_not_called()
+
+    def test_assemble_with_imported_assets_runs_blueprint_ai_hud_pie_and_report_chain(self):
+        import skills.playable_slice.skill as playable_slice
+
+        commands = []
+
+        def fake_send(command, params):
+            commands.append((command, params))
+            if command == "take_screenshot":
+                return {"success": True, "filepath": str(Path(params["filepath"]))}
+            if command in {"create_blueprint", "create_blackboard", "create_behavior_tree", "create_umg_widget_blueprint"}:
+                name = params.get("name") or params.get("widget_name") or params.get("behavior_tree_name")
+                return {"success": True, "command": command, "params": params, "path": f"/Game/Test/{name}"}
+            return {"success": True, "command": command, "params": params}
+
+        def fake_exec_transactional(code, transaction_name):
+            return {
+                "success": True,
+                "stage": "ue_exec_transact",
+                "message": "assembled",
+                "outputs": {"placed_actor_count": 6, "transaction_name": transaction_name},
+                "warnings": [],
+                "errors": [],
+            }
+
+        def fake_pie(seconds):
+            return {
+                "success": True,
+                "stage": "playable_slice_pie_smoke",
+                "message": "PIE smoke passed",
+                "outputs": {"requested_seconds": seconds, "entered_pie": True},
+                "warnings": [],
+                "errors": [],
+            }
+
+        def fake_report(plan, artifacts, verification):
+            return {
+                "success": True,
+                "stage": "skill_package_vertical_slice_report",
+                "message": "report written",
+                "outputs": {"report_path": "knowledge_base/Reports/playable_slice.md", "verification_keys": sorted(verification)},
+                "warnings": [],
+                "errors": [],
+            }
+
+        imported_assets = [
+            "/Game/Generated/PlayableSlice/Assets/SM_Hero",
+            "/Game/Generated/PlayableSlice/Assets/SM_Prop1",
+            "/Game/Generated/PlayableSlice/Assets/SM_Prop2",
+            "/Game/Generated/PlayableSlice/Assets/SM_Enemy",
+        ]
+        with tempfile.TemporaryDirectory() as tmp, \
+            patch.object(playable_slice, "_REPO_ROOT", Path(tmp)), \
+            patch.object(playable_slice, "_send", side_effect=fake_send), \
+            patch.object(playable_slice, "_exec_transactional", side_effect=fake_exec_transactional), \
+            patch.object(playable_slice, "_run_pie_smoke", side_effect=fake_pie), \
+            patch.object(playable_slice, "_package_slice_report", side_effect=fake_report):
+            result = playable_slice.skill_generate_playable_slice(
+                "third-person dungeon demo with a slime and boss",
+                mode="assemble",
+                imported_asset_paths=imported_assets,
+                run_pie_seconds=0,
+            )
+
+        _assert_structured(self, result, "assembled")
+        self.assertTrue(result["success"])
+        command_names = [name for name, _params in commands]
+        for expected in (
+            "create_blueprint",
+            "create_blackboard",
+            "create_behavior_tree",
+            "build_behavior_tree",
+            "create_umg_widget_blueprint",
+            "add_component_to_blueprint",
+            "set_static_mesh_properties",
+            "compile_blueprint",
+            "setup_navmesh",
+            "take_screenshot",
+        ):
+            self.assertIn(expected, command_names)
+        mesh_assignments = [
+            params for name, params in commands
+            if name == "set_static_mesh_properties"
+        ]
+        self.assertEqual(mesh_assignments[0]["static_mesh"], imported_assets[0])
+        self.assertEqual(mesh_assignments[1]["static_mesh"], imported_assets[3])
+        hud_text = [params for name, params in commands if name == "add_text_block_to_widget"][0]
+        self.assertEqual(hud_text["blueprint_name"], result["outputs"]["verification"]["hud_widget"].rsplit("/", 1)[-1])
+        self.assertEqual(hud_text["widget_name"], "ObjectiveText")
+        self.assertIn("skill_package_vertical_slice_report", result["outputs"]["report"]["stage"])
+        self.assertIn("pie_smoke", result["outputs"]["verification"])
+        self.assertIn("generated_mesh_assignments", result["outputs"]["verification"])
+
     def test_registered_tool_returns_json(self):
         from skills.playable_slice.skill import register_playable_slice_skill
 
@@ -161,6 +269,9 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertIn("register_playable_slice_skill", server_text)
         self.assertIn('"skills.playable_slice.skill"', inventory_text)
         self.assertIn("skill_generate_playable_slice", skill_text)
+        self.assertIn('"assemble"', skill_text)
+        self.assertIn("task_ids", skill_text)
+        self.assertIn("imported_asset_paths", skill_text)
         self.assertIn("D7 Playable Slice Skill", kb_text)
         self.assertIn("D.7 - Playable slice skill", changelog_text)
         self.assertEqual(schema["title"], "Unreal MCP Playable Slice Plan")

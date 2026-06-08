@@ -77,6 +77,24 @@ Agents must continue through `gen_tripo_wait_for_task`,
 `gen_tripo_import_to_project`, Blueprint/AI/UMG tools, PIE evidence, and
 `skill_package_vertical_slice_report`.
 
+Mode `assemble` is the execution bridge after generated assets exist. It
+accepts either:
+
+- `task_ids`: four completed Tripo task ids in plan asset order; the skill
+  imports those successful task outputs before assembly; or
+- `imported_asset_paths`: four already imported `/Game/...` generated assets.
+
+It then creates the player, enemy, AI Controller, Blackboard, Behavior Tree,
+HUD widget, nav bounds, level placement, viewport screenshot, PIE smoke, and
+vertical-slice report chain. The generated hero and enemy StaticMeshes are
+assigned to visible StaticMesh components on the player and enemy Blueprints.
+Native Blueprint and Widget routes currently write to their default
+`/Game/Blueprints` and `/Game/Widgets` locations, so agents should read the
+returned `created_artifacts` paths instead of assuming the requested
+`content_path` was used for those asset classes. If any required step fails, the
+skill stops at that stage and returns the completed steps plus raw bridge
+evidence.
+
 Example:
 
 ```python
@@ -90,6 +108,18 @@ skill_generate_playable_slice(
     mode="submit_assets",
     session_name="dungeon-demo",
     confirm_spend=True,
+)
+
+skill_generate_playable_slice(
+    brief="third-person dungeon demo with a slime, a skeleton, and a boss",
+    mode="assemble",
+    imported_asset_paths=[
+        "/Game/Generated/PlayableSlice/Assets/SM_Hero",
+        "/Game/Generated/PlayableSlice/Assets/SM_Prop1",
+        "/Game/Generated/PlayableSlice/Assets/SM_Prop2",
+        "/Game/Generated/PlayableSlice/Assets/SM_Enemy",
+    ],
+    run_pie_seconds=60,
 )
 ```
 
@@ -141,20 +171,13 @@ third-person prototype.
 7. For each completed model, `gen_tripo_import_to_project(task_id,
    content_path="/Game/Generated/PlayableSlice/<role>",
    create_material_instance=True, create_blueprint=False)`.
-8. Create or reuse a third-person player Blueprint, assign the hero mesh when
-   suitable, and keep input/camera defaults readable.
-9. Create enemy Blueprint shells, one Behavior Tree, and one Blackboard with
-   keys for target actor, patrol point, chase range, and attack range.
-10. Place the entrance, encounter space, boss trigger, generated props, enemy,
-    player start, lights, nav bounds, and blocking volumes.
-11. Add a compact UMG HUD with objective text, player health, and boss-room
-    trigger feedback.
-12. Compile and save every touched Blueprint/material/map asset, then run
-    import validation and changed-asset scans.
-13. Launch PIE, run or simulate 60 seconds, capture log output and a viewport
-    screenshot.
-14. Finish with `skill_package_vertical_slice_report`, including changed assets,
-    task ids, screenshots, PIE logs, warnings, and follow-ups.
+8. Call `skill_generate_playable_slice(brief, mode="assemble", task_ids=[...])`
+   or pass `imported_asset_paths=[...]` if the imports already happened.
+9. Confirm the returned `assembled` result includes player, enemy generated-mesh
+   assignment, enemy AI, HUD, nav/level placement, screenshot, PIE smoke, and
+   report packaging evidence.
+10. If assembly stops early, fix the named `stage` first, then rerun assemble
+    with the same asset paths.
 
 ### Expected Runtime
 
@@ -178,6 +201,8 @@ calling the Unreal-side automation slow.
 | No `TRIPO_API_KEY` | `auth_required` from submit mode | Stop paid execution and ask for a key/config update; keep the plan result. |
 | User has not approved credits | `spend_confirmation_required` | Explain estimated spend and rerun only after `confirm_spend=True`. |
 | Generation task stalls | Wait times out before final status | Keep task ids, report partial state, and continue only with completed assets or a smaller retry. |
+| Assemble has no assets | `asset_inputs_required` | Wait/import Tripo tasks first, or pass four imported `/Game/...` asset paths. |
+| Tripo task is not final | `asset_import_pending` | Continue polling with `gen_tripo_wait_for_task`; rerun assemble after task status is `success`. |
 | Generated mesh is unsuitable | Bad silhouette, scale, holes, or material slots | Import into a review folder, mark warning, and swap to primitive/blockout stand-ins for PIE. |
 | AI cannot navigate | Enemy stands still or BT fails movement | Verify nav bounds, capsule radius, movement component, Blackboard keys, and BT task names. |
 | HUD exists but does not update | Widget displays stale objective/health | Check PlayerController ownership and binding source; prefer explicit event updates. |

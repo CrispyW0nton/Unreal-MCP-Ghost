@@ -6,6 +6,13 @@
 
 ## 2026-06-08
 
+### D.7 follow-up - Playable slice assembly mode
+
+- Extended `skill_generate_playable_slice` with `mode="assemble"` so completed Tripo task ids or imported generated assets can drive the Blueprint, enemy AI, HUD, nav/level, screenshot, PIE smoke, and vertical-slice report chain.
+- Added generated StaticMesh assignment for the player/enemy Blueprints and aligned the HUD calls with the native UMG route parameters.
+- Kept paid generation gated to `mode="submit_assets"`; assembly can run from existing generated assets without requiring a fresh Tripo API call.
+- Updated the playable-slice recipe and smoke coverage for the assembly path and failure stages.
+
 ### D.9 - Chat dock generative integration
 
 - Added a Generate Asset quick action in the MCP Chat dock that opens a Tripo prompt/settings/preview panel and inserts a `gen_tripo_text_to_model` request into the composer.
