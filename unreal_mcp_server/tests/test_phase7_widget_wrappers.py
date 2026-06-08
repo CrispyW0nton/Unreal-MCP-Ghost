@@ -9,6 +9,8 @@ from pathlib import Path
 
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
+REPO_ROOT = SERVER_ROOT.parent
+UMG_COMMANDS = REPO_ROOT / "unreal_plugin" / "Source" / "UnrealMCP" / "Private" / "Commands" / "UnrealMCPUMGCommands.cpp"
 if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
@@ -122,6 +124,13 @@ class TestPhase7WidgetWrappers(unittest.TestCase):
         self.assertEqual(connection.calls[1][1]["property_value"], "Hello")
         self.assertEqual(connection.calls[2][1]["size_x"], 320.0)
         self.assertEqual(connection.calls[3][1]["parent_name"], "RootCanvas")
+
+    def test_image_brush_size_uses_ue56_desired_size_override(self):
+        cpp = UMG_COMMANDS.read_text(encoding="utf-8")
+
+        self.assertIn('PropertyName.Equals(TEXT("BrushSize"), ESearchCase::IgnoreCase)', cpp)
+        self.assertIn("Image->SetDesiredSizeOverride(ParseVector2D(PropertyValue));", cpp)
+        self.assertNotIn("Image->SetBrushSize", cpp)
 
 
 if __name__ == "__main__":

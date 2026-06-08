@@ -57,6 +57,7 @@
 - Rendered `unreal_mcp_playable_slice_live_preflight.v1` results in Chat Dock tool cards as inline Playable Slice Preflight gates, including auth source, credit readiness, package path, bridge reachability, and next actions.
 - Verified the preflight-mode Chat Dock update with a UE 5.6 Win64 `BuildPlugin` package at `C:\uebuild\UnrealMCPBuild_preflightmode_20260608_034711`.
 - Documented the Chat Dock Playable Slice Builder in the playable-slice recipe KB so Generate Asset, Build Gameplay, and the new Playable Slice workspace form a clearer AI IDE progression inside Unreal.
+- Replaced deprecated `UImage::SetBrushSize` usage in UMG property handling with `SetDesiredSizeOverride` so generated HUD/widget workflows keep the `BrushSize` contract while reducing UE 5.6 package warnings.
 
 ### C.12 - Gameplay builder quick action
 

@@ -1006,7 +1006,7 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleWidgetSetProperty(const TSh
 	{
 		if (UImage* Image = Cast<UImage>(Widget))
 		{
-			Image->SetBrushSize(ParseVector2D(PropertyValue));
+			Image->SetDesiredSizeOverride(ParseVector2D(PropertyValue));
 		}
 		else
 		{
