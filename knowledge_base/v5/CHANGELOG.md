@@ -6,6 +6,12 @@
 
 ## 2026-06-08
 
+### C.12 - Gameplay builder quick action
+
+- Added a Build Gameplay quick action in the MCP Chat dock for guided Mechanic, AI, HUD, and Level Flow development prompts.
+- The inserted workflow prompt now tells the agent to discover project context, choose relevant tool domains, compile touched Blueprints, run PIE/log/screenshot evidence, and report changed assets and remaining design-review risks.
+- Documented the Chat Dock Gameplay Builder in the playable-slice recipe KB so the chat box can steer gameplay mechanics and development while Generate Asset handles model/texture creation.
+
 ### D.9 - Chat dock generative integration
 
 - Added a Generate Asset quick action in the MCP Chat dock that opens a Tripo prompt/settings/preview panel and inserts a `gen_tripo_text_to_model` request into the composer.

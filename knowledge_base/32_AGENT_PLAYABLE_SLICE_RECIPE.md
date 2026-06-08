@@ -98,6 +98,29 @@ skill_generate_playable_slice(
 This is the canonical D.8 prompt-and-tool recipe for the headline demo. Use it
 as the first pass before adding project-specific flourish.
 
+## Chat Dock Gameplay Builder
+
+The MCP Chat dock now has a **Build Gameplay** quick action for development
+work that is not primarily asset generation. It turns the chat box into a
+guided AI development surface for Mechanic, AI, HUD, and Level Flow requests.
+Use it when a non-programmer wants to direct gameplay systems from inside
+Unreal without knowing individual tool names.
+
+The inserted workflow prompt should:
+
+1. Discover project state with `get_project_context`,
+   `scan_project_assets(path="/Game", depth=2)`, `list_available_tools`, and
+   `get_onboarding_context`.
+2. Build the smallest playable change using the relevant tool domains:
+   Blueprint/gameplay tools for mechanics, `ai_tools` for behavior,
+   UMG/widget tools for HUD, and editor/procedural tools for level flow.
+3. Run `compile_blueprint_and_report` for touched Blueprints, save changed
+   assets, and verify the graph/widget/readback state.
+4. Run PIE evidence with `pie_launch_session`, `pie_capture_log`,
+   `viewport_capture_screenshot`, and `pie_stop_session` when possible.
+5. Report changed asset paths, warnings/errors, evidence paths, and remaining
+   human design-review decisions.
+
 ### Exact Prompts
 
 Primary user prompt:

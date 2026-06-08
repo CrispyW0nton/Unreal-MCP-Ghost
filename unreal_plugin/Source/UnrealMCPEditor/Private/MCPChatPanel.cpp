@@ -156,6 +156,15 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
 				SNew(SButton)
+				.Text(LOCTEXT("BuildGameplayQuickAction", "Build Gameplay"))
+				.OnClicked(this, &SMCPChatPanel::HandleOpenGameplayBuilderClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
 				.Text(this, &SMCPChatPanel::GetGenerativeSettingsToggleText)
 				.OnClicked(this, &SMCPChatPanel::HandleToggleGenerativeSettingsClicked)
 			]
@@ -206,6 +215,17 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Visibility(this, &SMCPChatPanel::GetSamplePromptsVisibility)
 			[
 				BuildSamplePrompts()
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBox)
+			.Visibility(this, &SMCPChatPanel::GetGameplayBuilderDialogVisibility)
+			[
+				BuildGameplayBuilderDialog()
 			]
 		]
 
@@ -658,6 +678,86 @@ FReply SMCPChatPanel::HandleToggleTelemetryClicked()
 	{
 		SetStatus(LOCTEXT("StatusTelemetryDisabled", "Metrics disabled"), PendingStatusColor);
 	}
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleOpenGameplayBuilderClicked()
+{
+	bGameplayBuilderDialogVisible = !bGameplayBuilderDialogVisible;
+	SetStatus(
+		bGameplayBuilderDialogVisible ? LOCTEXT("StatusGameplayBuilderOpen", "Build Gameplay quick action open") : LOCTEXT("StatusGameplayBuilderClosed", "Build Gameplay quick action hidden"),
+		PendingStatusColor
+	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleInsertGameplayBuilderPromptClicked()
+{
+	if (GameplayBuilderBriefInput.IsValid())
+	{
+		GameplayBuilderBrief = GameplayBuilderBriefInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GameplayBuilderTargetInput.IsValid())
+	{
+		GameplayBuilderTarget = GameplayBuilderTargetInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GameplayBuilderAcceptanceInput.IsValid())
+	{
+		GameplayBuilderAcceptance = GameplayBuilderAcceptanceInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GameplayBuilderEvidenceInput.IsValid())
+	{
+		GameplayBuilderEvidence = GameplayBuilderEvidenceInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GameplayBuilderBrief.IsEmpty())
+	{
+		GameplayBuilderBrief = TEXT("add a small gameplay mechanic with clear player feedback");
+	}
+	if (GameplayBuilderTarget.IsEmpty())
+	{
+		GameplayBuilderTarget = TEXT("@selected");
+	}
+	if (GameplayBuilderAcceptance.IsEmpty())
+	{
+		GameplayBuilderAcceptance = TEXT("compile touched Blueprints, run PIE/log smoke, capture screenshot evidence, and list changed assets");
+	}
+	if (GameplayBuilderEvidence.IsEmpty())
+	{
+		GameplayBuilderEvidence = TEXT("PIE log plus viewport screenshot");
+	}
+
+	InsertComposerText(BuildGameplayBuilderPrompt());
+	bGameplayBuilderDialogVisible = false;
+	RecordTelemetryEvent(TEXT("gameplay_builder_prompt_inserted"));
+	SetStatus(LOCTEXT("StatusGameplayBuilderInserted", "Inserted gameplay development workflow prompt"), OkStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGameplayModeMechanicClicked()
+{
+	GameplayBuilderMode = TEXT("mechanic");
+	SetStatus(LOCTEXT("StatusGameplayModeMechanic", "Gameplay mode: Mechanic"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGameplayModeAIClicked()
+{
+	GameplayBuilderMode = TEXT("ai");
+	SetStatus(LOCTEXT("StatusGameplayModeAI", "Gameplay mode: AI"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGameplayModeHudClicked()
+{
+	GameplayBuilderMode = TEXT("hud");
+	SetStatus(LOCTEXT("StatusGameplayModeHud", "Gameplay mode: HUD"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGameplayModeLevelFlowClicked()
+{
+	GameplayBuilderMode = TEXT("level_flow");
+	SetStatus(LOCTEXT("StatusGameplayModeLevelFlow", "Gameplay mode: Level Flow"), PendingStatusColor);
 	return FReply::Handled();
 }
 
@@ -2258,6 +2358,131 @@ TSharedRef<SWidget> SMCPChatPanel::BuildCommandPalette()
 		];
 }
 
+TSharedRef<SWidget> SMCPChatPanel::BuildGameplayBuilderDialog()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("GameplayBuilderDialogTitle", "Build Gameplay"))
+				.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GameplayModeMechanic", "Mechanic"))
+					.OnClicked(this, &SMCPChatPanel::HandleGameplayModeMechanicClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GameplayModeAI", "AI"))
+					.OnClicked(this, &SMCPChatPanel::HandleGameplayModeAIClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GameplayModeHud", "HUD"))
+					.OnClicked(this, &SMCPChatPanel::HandleGameplayModeHudClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GameplayModeLevelFlow", "Level Flow"))
+					.OnClicked(this, &SMCPChatPanel::HandleGameplayModeLevelFlowClicked)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GameplayBuilderBriefInput, SEditableTextBox)
+				.HintText(LOCTEXT("GameplayBuilderBriefHint", "gameplay feature brief"))
+				.Text(FText::FromString(GameplayBuilderBrief))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.5f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GameplayBuilderTargetInput, SEditableTextBox)
+					.HintText(LOCTEXT("GameplayBuilderTargetHint", "@selected, @asset:/Game/..., or actor name"))
+					.Text(FText::FromString(GameplayBuilderTarget))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.5f)
+				[
+					SAssignNew(GameplayBuilderEvidenceInput, SEditableTextBox)
+					.HintText(LOCTEXT("GameplayBuilderEvidenceHint", "required evidence"))
+					.Text(FText::FromString(GameplayBuilderEvidence))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GameplayBuilderAcceptanceInput, SEditableTextBox)
+				.HintText(LOCTEXT("GameplayBuilderAcceptanceHint", "acceptance criteria"))
+				.Text(FText::FromString(GameplayBuilderAcceptance))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+				.Padding(6.0f)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetGameplayBuilderPreviewText)
+					.AutoWrapText(true)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("InsertGameplayBuilderPrompt", "Insert Workflow Prompt"))
+				.OnClicked(this, &SMCPChatPanel::HandleInsertGameplayBuilderPromptClicked)
+			]
+		];
+}
+
 TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 {
 	return SNew(SBorder)
@@ -2886,6 +3111,12 @@ void SMCPChatPanel::RefreshCommandPaletteItems()
 		TEXT("Open the Tripo generate-asset dialog"),
 		TEXT("Open Generate Asset and insert a gen_tripo_text_to_model request using the current generative settings."),
 		TEXT("generative")
+	);
+	AddCommandPaletteItem(
+		TEXT("Build Gameplay quick action"),
+		TEXT("Insert a guided gameplay/AI/HUD/level development workflow"),
+		BuildGameplayBuilderPrompt(),
+		TEXT("gameplay")
 	);
 
 	AddCommandPaletteItem(
@@ -4205,6 +4436,80 @@ FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) co
 
 	Template += TEXT("Return the StructuredResult and summarize warnings/errors.");
 	return Template;
+}
+
+FString SMCPChatPanel::BuildGameplayBuilderPrompt() const
+{
+	auto Escape = [](const FString& Value) -> FString
+	{
+		return Value.Replace(TEXT("\""), TEXT("'"));
+	};
+
+	FString ModeLabel = TEXT("Gameplay Mechanic");
+	FString OnboardingTask = TEXT("blueprints");
+	FString ToolDomains = TEXT("blueprints, gameplay_framework, blueprint_graph, data_systems, diagnostics, execution_substrate");
+	FString BuildDirection = TEXT("Use Blueprint/component/gameplay tools to create or modify the target feature, keep graphs named and readable, and prefer reusable Actor Components when the mechanic should attach to multiple actors.");
+	if (GameplayBuilderMode == TEXT("ai"))
+	{
+		ModeLabel = TEXT("AI Behavior");
+		OnboardingTask = TEXT("ai");
+		ToolDomains = TEXT("ai_behavior_tree, gameplay_framework, editor_actor_viewport, diagnostics, execution_substrate");
+		BuildDirection = TEXT("Use AI, Blackboard, Behavior Tree, navigation, and editor placement tools to create an inspectable enemy/NPC behavior loop with clear patrol/chase/attack or interaction states.");
+	}
+	else if (GameplayBuilderMode == TEXT("hud"))
+	{
+		ModeLabel = TEXT("HUD/UI");
+		OnboardingTask = TEXT("umg");
+		ToolDomains = TEXT("ui_umg, blueprint_graph, gameplay_framework, diagnostics, execution_substrate");
+		BuildDirection = TEXT("Use UMG/widget tools and Blueprint binding/event tools to create player-facing feedback that is owned by the correct PlayerController, Pawn, or HUD flow.");
+	}
+	else if (GameplayBuilderMode == TEXT("level_flow"))
+	{
+		ModeLabel = TEXT("Level Flow");
+		OnboardingTask = TEXT("world_building");
+		ToolDomains = TEXT("editor_actor_viewport, procedural_world, gameplay_framework, blueprint_graph, diagnostics, execution_substrate");
+		BuildDirection = TEXT("Use editor placement, actor, trigger, lighting, navigation, and Blueprint tools to create a compact playable level flow with clear start, interaction, and completion feedback.");
+	}
+
+	return FString::Printf(
+		TEXT("Use the MCP Chat dock as the in-editor AI development workspace to build this %s request.\n")
+		TEXT("Request parameters:\n")
+		TEXT("- mode: \"%s\"\n")
+		TEXT("- feature_brief: \"%s\"\n")
+		TEXT("- target_reference: \"%s\"\n")
+		TEXT("- acceptance_criteria: \"%s\"\n")
+		TEXT("- required_evidence: \"%s\"\n")
+		TEXT("Workflow:\n")
+		TEXT("1. Discover current state with `get_project_context`, `scan_project_assets(path=\"/Game\", depth=2)`, `list_available_tools(domain=\"all\")`, and `get_onboarding_context(task=\"%s\")`.\n")
+		TEXT("2. Identify the smallest playable change, list the assets you expect to touch, and proceed unless a destructive overwrite or missing target requires a question.\n")
+		TEXT("3. Tool-domain focus: %s.\n")
+		TEXT("4. Build direction: %s\n")
+		TEXT("5. After mutations, run `compile_blueprint_and_report` for every touched Blueprint, save changed assets, and use diagnostic/readback tools to confirm the graph or widget state.\n")
+		TEXT("6. Verify runtime with `pie_launch_session`, `pie_capture_log`, `viewport_capture_screenshot`, then `pie_stop_session` when possible.\n")
+		TEXT("7. Finish with a concise report containing changed asset paths, tool results, warnings/errors, evidence paths, and what remains for human design review."),
+		*ModeLabel,
+		*Escape(GameplayBuilderMode),
+		*Escape(GameplayBuilderBrief),
+		*Escape(GameplayBuilderTarget),
+		*Escape(GameplayBuilderAcceptance),
+		*Escape(GameplayBuilderEvidence),
+		*OnboardingTask,
+		*ToolDomains,
+		*BuildDirection
+	);
+}
+
+FText SMCPChatPanel::GetGameplayBuilderPreviewText() const
+{
+	return FText::Format(
+		LOCTEXT("GameplayBuilderPreview", "Preview: {0} workflow -> context/tools -> build -> compile -> PIE/log/screenshot evidence."),
+		FText::FromString(GameplayBuilderMode)
+	);
+}
+
+EVisibility SMCPChatPanel::GetGameplayBuilderDialogVisibility() const
+{
+	return bGameplayBuilderDialogVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const

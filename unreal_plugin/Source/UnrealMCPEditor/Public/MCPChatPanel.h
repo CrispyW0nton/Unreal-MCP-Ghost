@@ -91,6 +91,12 @@ private:
 	void HandleCommandPaletteTextChanged(const FText& Text);
 	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
 	FReply HandleToggleTelemetryClicked();
+	FReply HandleOpenGameplayBuilderClicked();
+	FReply HandleInsertGameplayBuilderPromptClicked();
+	FReply HandleGameplayModeMechanicClicked();
+	FReply HandleGameplayModeAIClicked();
+	FReply HandleGameplayModeHudClicked();
+	FReply HandleGameplayModeLevelFlowClicked();
 	FReply HandleOpenGenerateAssetClicked();
 	FReply HandleInsertGenerateAssetToolCallClicked();
 	FReply HandleGenerateModeTextToModelClicked();
@@ -151,6 +157,7 @@ private:
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildCommandPalette();
+	TSharedRef<SWidget> BuildGameplayBuilderDialog();
 	TSharedRef<SWidget> BuildGenerateAssetDialog();
 	TSharedRef<SWidget> BuildGenerativeSettingsPanel();
 	TSharedRef<SWidget> BuildOnboardingOverlay();
@@ -211,6 +218,9 @@ private:
 	FString BuildNewSessionName() const;
 	FString BuildRenamedSessionName() const;
 	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	FString BuildGameplayBuilderPrompt() const;
+	FText GetGameplayBuilderPreviewText() const;
+	EVisibility GetGameplayBuilderDialogVisibility() const;
 	FString BuildGenerateAssetToolCallPrompt() const;
 	FText GetGenerateAssetPreviewText() const;
 	EVisibility GetGenerateAssetDialogVisibility() const;
@@ -242,6 +252,7 @@ private:
 	bool bToolPaletteVisible = true;
 	bool bToolPaletteLoaded = false;
 	bool bCommandPaletteVisible = false;
+	bool bGameplayBuilderDialogVisible = false;
 	bool bGenerateAssetDialogVisible = false;
 	bool bGenerativeSettingsVisible = false;
 	bool bGenerativeSpendConfirmed = false;
@@ -268,6 +279,11 @@ private:
 	FString GenerativeModelVersion = TEXT("tripo-default");
 	FString GenerativeTextureQuality = TEXT("standard");
 	FString GenerativeOutputFolder = TEXT("/Game/Generated");
+	FString GameplayBuilderMode = TEXT("mechanic");
+	FString GameplayBuilderBrief = TEXT("add an interactable pickup that restores health and gives clear player feedback");
+	FString GameplayBuilderTarget = TEXT("@selected");
+	FString GameplayBuilderAcceptance = TEXT("compile touched Blueprints, run PIE/log smoke, capture screenshot evidence, and list changed assets");
+	FString GameplayBuilderEvidence = TEXT("PIE log plus viewport screenshot");
 	FString GenerateAssetMode = TEXT("text_to_model");
 	FString GenerateAssetPrompt = TEXT("stylized slime enemy, game-ready proportions, clean silhouette, PBR textures");
 	FString GenerateAssetName = TEXT("SM_GeneratedAsset");
@@ -309,6 +325,10 @@ private:
 	TSharedPtr<SEditableTextBox> GenerativeOutputFolderInput;
 	TSharedPtr<SEditableTextBox> GenerativeCreditBudgetInput;
 	TSharedPtr<SEditableTextBox> GenerativePendingSpendInput;
+	TSharedPtr<SEditableTextBox> GameplayBuilderBriefInput;
+	TSharedPtr<SEditableTextBox> GameplayBuilderTargetInput;
+	TSharedPtr<SEditableTextBox> GameplayBuilderAcceptanceInput;
+	TSharedPtr<SEditableTextBox> GameplayBuilderEvidenceInput;
 	TSharedPtr<SEditableTextBox> GenerateAssetPromptInput;
 	TSharedPtr<SEditableTextBox> GenerateAssetNameInput;
 	TSharedPtr<SEditableTextBox> GenerateAssetImageInputBox;
