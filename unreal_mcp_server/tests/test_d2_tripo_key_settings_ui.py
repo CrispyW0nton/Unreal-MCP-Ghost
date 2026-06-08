@@ -103,6 +103,23 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header + self.kb + self.changelog)
 
+    def test_texture_paint_workspace_is_guided_and_keeps_studio_fields_advanced(self) -> None:
+        for token in (
+            "Texture Target",
+            "Texture Direction",
+            "Paint Controls",
+            "Studio Snapshot",
+            "SExpandableArea",
+            ".InitiallyCollapsed(true)",
+            "GenerateTextureStudioSnapshotTitle",
+            "GenerateTextureTripoProjectIdInput",
+            "GenerateTextureRenderImageBucketInput",
+            "GenerateTextureImageMapJsonInput",
+            "collapsed Studio Snapshot",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header + self.kb + self.changelog)
+
     def test_generative_credits_display_is_visible_and_preserves_usage(self) -> None:
         for token in (
             "Generative Credits",

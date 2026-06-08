@@ -571,9 +571,13 @@ Unreal. Current Tripo workspace modes are:
 
 The Generate Asset panel keeps the active mode focused: Text to 3D shows only
 the text prompt, Image to 3D shows the single reference-image field,
-Multi-Image to 3D shows the ordered view references, and Texture/Paint shows
-the Magic Brush controls. This avoids presenting every Tripo field at once in
-the Unreal dock.
+Multi-Image to 3D shows the ordered view references, and Texture/Paint groups
+the Magic Brush flow into **Texture Target**, **Texture Direction**, and
+**Paint Controls**. Raw Studio project, render-image, camera-matrix, and
+`image_map` fields stay in a collapsed **Studio Snapshot** area so artists can
+work from the common paint controls while technical users can still mirror the
+exact Tripo Studio handoff when needed. This avoids presenting every Tripo field
+at once in the Unreal dock.
 
 The top-bar **Playable Slice** action is the higher-level generative workspace
 entry point. It captures a one-sentence game brief, generated asset roles,

@@ -2879,32 +2879,43 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 				SNew(SBox)
 				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.34f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					SNew(SBorder)
+					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+					.Padding(6.0f)
 					[
-						SAssignNew(GenerateTextureTaskIdInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureTaskIdHint", "existing model task_id"))
-						.Text(FText::FromString(GenerateTextureTaskId))
-					]
+						SNew(SVerticalBox)
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.33f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTexturePromptInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTexturePromptHint", "texture or paint prompt"))
-						.Text(FText::FromString(GenerateTexturePrompt))
-					]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GenerateTextureTargetTitle", "Texture Target"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.33f)
-					[
-						SAssignNew(GenerateTextureReferenceImageInputBox, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureReferenceImageHint", "texture reference image path or URL"))
-						.Text(FText::FromString(GenerateTextureReferenceImageInput))
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureTaskIdInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureTaskIdHint", "existing model task_id"))
+								.Text(FText::FromString(GenerateTextureTaskId))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							[
+								SAssignNew(GenerateTextureSaveNameInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureSaveNameHint", "save asset name"))
+								.Text(FText::FromString(GenerateTextureSaveName))
+							]
+						]
 					]
 				]
 			]
@@ -2916,9 +2927,53 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 				SNew(SBox)
 				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
 				[
-					SAssignNew(GenerateTexturePaintNotesInput, SEditableTextBox)
-					.HintText(LOCTEXT("GenerateTexturePaintNotesHint", "paint and blend notes"))
-					.Text(FText::FromString(GenerateTexturePaintNotes))
+					SNew(SBorder)
+					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+					.Padding(6.0f)
+					[
+						SNew(SVerticalBox)
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GenerateTextureDirectionTitle", "Texture Direction"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTexturePromptInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePromptHint", "texture or paint prompt"))
+								.Text(FText::FromString(GenerateTexturePrompt))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							[
+								SAssignNew(GenerateTextureReferenceImageInputBox, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureReferenceImageHint", "texture reference image path or URL"))
+								.Text(FText::FromString(GenerateTextureReferenceImageInput))
+							]
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SAssignNew(GenerateTexturePaintNotesInput, SEditableTextBox)
+							.HintText(LOCTEXT("GenerateTexturePaintNotesHint", "paint and blend notes"))
+							.Text(FText::FromString(GenerateTexturePaintNotes))
+						]
+					]
 				]
 			]
 
@@ -2929,41 +2984,103 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 				SNew(SBox)
 				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					SNew(SBorder)
+					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+					.Padding(6.0f)
 					[
-						SAssignNew(GenerateTextureViewAngleInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureViewAngleHint", "view angle"))
-						.Text(FText::FromString(GenerateTextureViewAngle))
-					]
+						SNew(SVerticalBox)
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureBrushStrengthInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureBrushStrengthHint", "brush strength"))
-						.Text(FText::FromString(GenerateTextureBrushStrength))
-					]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GenerateTexturePaintControlsTitle", "Paint Controls"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureBlendModeInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureBlendModeHint", "blend mode"))
-						.Text(FText::FromString(GenerateTextureBlendMode))
-					]
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+						[
+							SNew(SHorizontalBox)
 
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					[
-						SAssignNew(GenerateTextureSaveNameInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureSaveNameHint", "save asset name"))
-						.Text(FText::FromString(GenerateTextureSaveName))
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureViewAngleInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureViewAngleHint", "view angle"))
+								.Text(FText::FromString(GenerateTextureViewAngle))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureBrushSizeInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureBrushSizeHint", "brush size"))
+								.Text(FText::FromString(GenerateTextureBrushSize))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureBrushStrengthInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureBrushStrengthHint", "brush strength"))
+								.Text(FText::FromString(GenerateTextureBrushStrength))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							[
+								SAssignNew(GenerateTextureBrushHardnessInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureBrushHardnessHint", "hardness"))
+								.Text(FText::FromString(GenerateTextureBrushHardness))
+							]
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureCreativityStrengthInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureCreativityHint", "creativity"))
+								.Text(FText::FromString(GenerateTextureCreativityStrength))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTexturePaintModeInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintModeHint", "image or color"))
+								.Text(FText::FromString(GenerateTexturePaintMode))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTexturePaintColorInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintColorHint", "#FFFFFF"))
+								.Text(FText::FromString(GenerateTexturePaintColor))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.25f)
+							[
+								SAssignNew(GenerateTextureBlendModeInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureBlendModeHint", "blend mode"))
+								.Text(FText::FromString(GenerateTextureBlendMode))
+							]
+						]
 					]
 				]
 			]
@@ -3005,119 +3122,78 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 				SNew(SBox)
 				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
 				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.16f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+					SNew(SExpandableArea)
+					.InitiallyCollapsed(true)
+					.AreaTitle(LOCTEXT("GenerateTextureStudioSnapshotTitle", "Studio Snapshot"))
+					.BodyContent()
 					[
-						SAssignNew(GenerateTextureBrushSizeInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureBrushSizeHint", "brush size"))
-						.Text(FText::FromString(GenerateTextureBrushSize))
+						SNew(SVerticalBox)
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureTripoProjectIdInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureTripoProjectIdHint", "Tripo project_id"))
+								.Text(FText::FromString(GenerateTextureTripoProjectId))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							[
+								SAssignNew(GenerateTextureCameraMatrixInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureCameraMatrixHint", "camera matrix JSON"))
+								.Text(FText::FromString(GenerateTextureCameraMatrix))
+							]
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.34f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureRenderImageBucketInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureRenderImageBucketHint", "render image bucket"))
+								.Text(FText::FromString(GenerateTextureRenderImageBucket))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.33f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTextureRenderImageKeyInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureRenderImageKeyHint", "render image key"))
+								.Text(FText::FromString(GenerateTextureRenderImageKey))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.33f)
+							[
+								SAssignNew(GenerateTextureRenderImageUrlInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTextureRenderImageUrlHint", "render image URL"))
+								.Text(FText::FromString(GenerateTextureRenderImageUrl))
+							]
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SAssignNew(GenerateTextureImageMapJsonInput, SEditableTextBox)
+							.HintText(LOCTEXT("GenerateTextureImageMapJsonHint", "Magic Brush image_map JSON for final painted apply"))
+							.Text(FText::FromString(GenerateTextureImageMapJson))
+						]
 					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.16f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureBrushHardnessInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureBrushHardnessHint", "hardness"))
-						.Text(FText::FromString(GenerateTextureBrushHardness))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.17f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureCreativityStrengthInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureCreativityHint", "creativity"))
-						.Text(FText::FromString(GenerateTextureCreativityStrength))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.16f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTexturePaintModeInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTexturePaintModeHint", "image or color"))
-						.Text(FText::FromString(GenerateTexturePaintMode))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.16f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTexturePaintColorInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTexturePaintColorHint", "#FFFFFF"))
-						.Text(FText::FromString(GenerateTexturePaintColor))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.19f)
-					[
-						SAssignNew(GenerateTextureTripoProjectIdInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureTripoProjectIdHint", "Tripo project_id"))
-						.Text(FText::FromString(GenerateTextureTripoProjectId))
-					]
-				]
-			]
-
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
-			[
-				SNew(SBox)
-				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
-				[
-					SNew(SHorizontalBox)
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureRenderImageBucketInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureRenderImageBucketHint", "render image bucket"))
-						.Text(FText::FromString(GenerateTextureRenderImageBucket))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureRenderImageKeyInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureRenderImageKeyHint", "render image key"))
-						.Text(FText::FromString(GenerateTextureRenderImageKey))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					.Padding(0.0f, 0.0f, 6.0f, 0.0f)
-					[
-						SAssignNew(GenerateTextureRenderImageUrlInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureRenderImageUrlHint", "render image URL"))
-						.Text(FText::FromString(GenerateTextureRenderImageUrl))
-					]
-
-					+ SHorizontalBox::Slot()
-					.FillWidth(0.25f)
-					[
-						SAssignNew(GenerateTextureCameraMatrixInput, SEditableTextBox)
-						.HintText(LOCTEXT("GenerateTextureCameraMatrixHint", "camera matrix JSON"))
-						.Text(FText::FromString(GenerateTextureCameraMatrix))
-					]
-				]
-			]
-
-			+ SVerticalBox::Slot()
-			.AutoHeight()
-			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
-			[
-				SNew(SBox)
-				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
-				[
-					SAssignNew(GenerateTextureImageMapJsonInput, SEditableTextBox)
-					.HintText(LOCTEXT("GenerateTextureImageMapJsonHint", "Magic Brush image_map JSON for final painted apply"))
-					.Text(FText::FromString(GenerateTextureImageMapJson))
 				]
 			]
 

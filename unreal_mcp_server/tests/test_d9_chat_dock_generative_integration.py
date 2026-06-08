@@ -94,6 +94,24 @@ class D9ChatDockGenerativeIntegrationTest(unittest.TestCase):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header)
 
+    def test_texture_paint_mode_keeps_common_and_advanced_controls_separate(self) -> None:
+        for token in (
+            "Texture Target",
+            "Texture Direction",
+            "Paint Controls",
+            "Studio Snapshot",
+            "SExpandableArea",
+            ".InitiallyCollapsed(true)",
+            "GenerateTextureTaskIdInput",
+            "GenerateTexturePromptInput",
+            "GenerateTextureBrushSizeInput",
+            "GenerateTextureTripoProjectIdInput",
+            "GenerateTextureCameraMatrixInput",
+            "GenerateTextureImageMapJsonInput",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header)
+
     def test_tripo_progress_cards_are_rendered_and_refreshed(self) -> None:
         for token in (
             '#include "Widgets/Notifications/SProgressBar.h"',
