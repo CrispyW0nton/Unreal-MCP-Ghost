@@ -156,6 +156,15 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
 			[
 				SNew(SButton)
+				.Text(LOCTEXT("PlayableSliceQuickAction", "Playable Slice"))
+				.OnClicked(this, &SMCPChatPanel::HandleOpenPlayableSliceClicked)
+			]
+
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+			[
+				SNew(SButton)
 				.Text(LOCTEXT("BuildGameplayQuickAction", "Build Gameplay"))
 				.OnClicked(this, &SMCPChatPanel::HandleOpenGameplayBuilderClicked)
 			]
@@ -215,6 +224,17 @@ void SMCPChatPanel::Construct(const FArguments& InArgs)
 			.Visibility(this, &SMCPChatPanel::GetSamplePromptsVisibility)
 			[
 				BuildSamplePrompts()
+			]
+		]
+
+		+ SVerticalBox::Slot()
+		.AutoHeight()
+		.Padding(8.0f, 0.0f, 8.0f, 4.0f)
+		[
+			SNew(SBox)
+			.Visibility(this, &SMCPChatPanel::GetPlayableSliceDialogVisibility)
+			[
+				BuildPlayableSliceDialog()
 			]
 		]
 
@@ -678,6 +698,79 @@ FReply SMCPChatPanel::HandleToggleTelemetryClicked()
 	{
 		SetStatus(LOCTEXT("StatusTelemetryDisabled", "Metrics disabled"), PendingStatusColor);
 	}
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleOpenPlayableSliceClicked()
+{
+	bPlayableSliceDialogVisible = !bPlayableSliceDialogVisible;
+	if (bPlayableSliceDialogVisible)
+	{
+		LoadGenerativeSettings();
+	}
+	SetStatus(
+		bPlayableSliceDialogVisible ? LOCTEXT("StatusPlayableSliceOpen", "Playable Slice workflow open") : LOCTEXT("StatusPlayableSliceClosed", "Playable Slice workflow hidden"),
+		PendingStatusColor
+	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleInsertPlayableSlicePromptClicked()
+{
+	if (PlayableSliceBriefInput.IsValid())
+	{
+		PlayableSliceBrief = PlayableSliceBriefInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (PlayableSliceAssetRolesInput.IsValid())
+	{
+		PlayableSliceAssetRoles = PlayableSliceAssetRolesInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (PlayableSliceGameplayLoopInput.IsValid())
+	{
+		PlayableSliceGameplayLoop = PlayableSliceGameplayLoopInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (PlayableSliceAcceptanceInput.IsValid())
+	{
+		PlayableSliceAcceptance = PlayableSliceAcceptanceInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (PlayableSliceEvidenceInput.IsValid())
+	{
+		PlayableSliceEvidence = PlayableSliceEvidenceInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (PlayableSliceBrief.IsEmpty())
+	{
+		PlayableSliceBrief = TEXT("make a tiny playable arena with one generated pickup and a clear win condition");
+	}
+	if (PlayableSliceAssetRoles.IsEmpty())
+	{
+		PlayableSliceAssetRoles = TEXT("pickup, gate, arena prop");
+	}
+	if (PlayableSliceGameplayLoop.IsEmpty())
+	{
+		PlayableSliceGameplayLoop = TEXT("spawn player, collect pickup, trigger feedback, open gate, show completion");
+	}
+	if (PlayableSliceAcceptance.IsEmpty())
+	{
+		PlayableSliceAcceptance = TEXT("generated assets imported, Blueprint gameplay compiled, PIE smoke passes, screenshot evidence captured");
+	}
+	if (PlayableSliceEvidence.IsEmpty())
+	{
+		PlayableSliceEvidence = TEXT("Tripo task ids, imported asset paths, compile reports, PIE log, viewport screenshot");
+	}
+	if (!IsGenerativeApiKeyConfigured())
+	{
+		bGenerativeSettingsVisible = true;
+		SetStatus(LOCTEXT("StatusPlayableSliceMissingKey", "Add a Tripo API key before generating a playable slice"), ErrorStatusColor);
+		return FReply::Handled();
+	}
+
+	InsertComposerText(BuildPlayableSlicePrompt());
+	bPlayableSliceDialogVisible = false;
+	RecordTelemetryEvent(TEXT("playable_slice_workflow_prompt_inserted"));
+	SetStatus(
+		bGenerativeSpendConfirmed ? LOCTEXT("StatusPlayableSliceInsertedConfirmed", "Inserted playable-slice generation workflow") : LOCTEXT("StatusPlayableSliceInsertedNeedsSpend", "Inserted playable-slice workflow; confirm spend before paid execution"),
+		bGenerativeSpendConfirmed ? OkStatusColor : PendingStatusColor
+	);
 	return FReply::Handled();
 }
 
@@ -2358,6 +2451,130 @@ TSharedRef<SWidget> SMCPChatPanel::BuildCommandPalette()
 		];
 }
 
+TSharedRef<SWidget> SMCPChatPanel::BuildPlayableSliceDialog()
+{
+	return SNew(SBorder)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
+		.Padding(8.0f)
+		[
+			SNew(SVerticalBox)
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("PlayableSliceDialogTitle", "Playable Slice"))
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					SNew(STextBlock)
+					.Text(this, &SMCPChatPanel::GetGenerativeAuthStatusText)
+					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(PlayableSliceBriefInput, SEditableTextBox)
+				.HintText(LOCTEXT("PlayableSliceBriefHint", "one-sentence playable game brief"))
+				.Text(FText::FromString(PlayableSliceBrief))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.5f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(PlayableSliceAssetRolesInput, SEditableTextBox)
+					.HintText(LOCTEXT("PlayableSliceAssetRolesHint", "generated asset roles"))
+					.Text(FText::FromString(PlayableSliceAssetRoles))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.5f)
+				[
+					SAssignNew(PlayableSliceEvidenceInput, SEditableTextBox)
+					.HintText(LOCTEXT("PlayableSliceEvidenceHint", "required evidence"))
+					.Text(FText::FromString(PlayableSliceEvidence))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(PlayableSliceGameplayLoopInput, SEditableTextBox)
+				.HintText(LOCTEXT("PlayableSliceGameplayLoopHint", "core playable loop"))
+				.Text(FText::FromString(PlayableSliceGameplayLoop))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(PlayableSliceAcceptanceInput, SEditableTextBox)
+				.HintText(LOCTEXT("PlayableSliceAcceptanceHint", "acceptance criteria"))
+				.Text(FText::FromString(PlayableSliceAcceptance))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+				.Padding(6.0f)
+				[
+					SNew(SVerticalBox)
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetPlayableSlicePreviewText)
+						.AutoWrapText(true)
+					]
+
+					+ SVerticalBox::Slot()
+					.AutoHeight()
+					.Padding(0.0f, 4.0f, 0.0f, 0.0f)
+					[
+						SNew(STextBlock)
+						.Text(this, &SMCPChatPanel::GetGenerativeCreditsDisplayText)
+						.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+						.AutoWrapText(true)
+					]
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SButton)
+				.Text(LOCTEXT("InsertPlayableSlicePrompt", "Insert Workflow Prompt"))
+				.OnClicked(this, &SMCPChatPanel::HandleInsertPlayableSlicePromptClicked)
+			]
+		];
+}
+
 TSharedRef<SWidget> SMCPChatPanel::BuildGameplayBuilderDialog()
 {
 	return SNew(SBorder)
@@ -3147,6 +3364,12 @@ void SMCPChatPanel::RefreshCommandPaletteItems()
 		TEXT("Open the Tripo generate-asset dialog"),
 		TEXT("Open Generate Asset and insert a gen_tripo_text_to_model request using the current generative settings."),
 		TEXT("generative")
+	);
+	AddCommandPaletteItem(
+		TEXT("Playable Slice quick action"),
+		TEXT("Insert a guided asset generation plus gameplay workflow"),
+		BuildPlayableSlicePrompt(),
+		TEXT("gameplay")
 	);
 	AddCommandPaletteItem(
 		TEXT("Build Gameplay quick action"),
@@ -4472,6 +4695,69 @@ FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) co
 
 	Template += TEXT("Return the StructuredResult and summarize warnings/errors.");
 	return Template;
+}
+
+FString SMCPChatPanel::BuildPlayableSlicePrompt() const
+{
+	auto Escape = [](const FString& Value) -> FString
+	{
+		return Value.Replace(TEXT("\""), TEXT("'"));
+	};
+
+	const FString SessionName = CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName;
+	const FString ConfirmSpend = bGenerativeSpendConfirmed ? TEXT("true") : TEXT("false");
+	const FString SliceContentPath = FString::Printf(TEXT("%s/PlayableSlice"), *GenerativeOutputFolder);
+
+	return FString::Printf(
+		TEXT("Use the MCP Chat dock as the in-editor AI IDE to turn this one-sentence brief into a playable Unreal vertical slice.\n")
+		TEXT("Playable-slice parameters:\n")
+		TEXT("- brief: \"%s\"\n")
+		TEXT("- generated_asset_roles: \"%s\"\n")
+		TEXT("- gameplay_loop: \"%s\"\n")
+		TEXT("- output_folder: \"%s\"\n")
+		TEXT("- acceptance_criteria: \"%s\"\n")
+		TEXT("- required_evidence: \"%s\"\n")
+		TEXT("- session_name: \"%s\"\n")
+		TEXT("- confirm_spend: %s\n")
+		TEXT("Workflow:\n")
+		TEXT("1. Discover current state with `get_project_context`, `scan_project_assets(path=\"/Game\", depth=3)`, `list_available_tools(domain=\"all\")`, and `get_onboarding_context(task=\"blueprints\")`, `get_onboarding_context(task=\"world_building\")`, and `get_onboarding_context(task=\"umg\")`.\n")
+		TEXT("2. Produce a short execution plan that maps each generated_asset_role to a concrete Unreal asset path under \"%s\" and lists the Blueprints, widgets, actors, or level assets to create or modify. Ask only before destructive overwrite.\n")
+		TEXT("3. For each missing 3D asset role, use MCP tool `gen_tripo_text_to_model` with texture=true, pbr=true, texture_quality=\"%s\", face_limit=12000, smart_low_poly=true, model_version=\"%s\", session_name=\"%s\", confirm_spend=%s, and a prompt that includes the role, the brief, clean game-ready topology, readable silhouette, collision-friendly proportions, and PBR material intent.\n")
+		TEXT("4. For each Tripo task, call `gen_tripo_wait_for_task` until complete, then call `gen_tripo_import_to_project` with content_path \"%s\" and a role-specific asset_name. Record task_id, credit usage, imported asset paths, materials, and warnings.\n")
+		TEXT("5. If a hero asset needs extra art direction, use the Texture/Paint path: first call `gen_prepare_texture_paint_session`, then use `gen_tripo_magic_brush_generate`, `gen_tripo_magic_brush_get_retexture`, optional `gen_tripo_magic_brush_list_images`, and `gen_tripo_magic_brush_apply` only when project/render/image_map data and spend approval are available.\n")
+		TEXT("6. Build the playable loop using the appropriate Blueprint, actor, component, UMG, AI, level, lighting, collision, and placement MCP tools. Prefer small searchable graph/function names, reusable Actor Components for repeated behavior, and visible player feedback.\n")
+		TEXT("7. Run `compile_blueprint_and_report` for every touched Blueprint or Widget Blueprint, save changed assets, and use readback/diagnostic tools to confirm generated meshes, materials, collision, references, and gameplay wiring are actually assigned.\n")
+		TEXT("8. Verify runtime with `pie_launch_session`, exercise the loop as much as tools allow, capture `pie_capture_log`, capture `viewport_capture_screenshot`, then run `pie_stop_session`.\n")
+		TEXT("9. Finish with a concise report containing changed asset paths, Tripo task ids, credit usage, compile status, PIE/log/screenshot evidence paths, unresolved warnings/errors, and what remains for human design review."),
+		*Escape(PlayableSliceBrief),
+		*Escape(PlayableSliceAssetRoles),
+		*Escape(PlayableSliceGameplayLoop),
+		*Escape(SliceContentPath),
+		*Escape(PlayableSliceAcceptance),
+		*Escape(PlayableSliceEvidence),
+		*Escape(SessionName),
+		*ConfirmSpend,
+		*Escape(SliceContentPath),
+		*Escape(GenerativeTextureQuality),
+		*Escape(GenerativeModelVersion),
+		*Escape(SessionName),
+		*ConfirmSpend,
+		*Escape(SliceContentPath)
+	);
+}
+
+FText SMCPChatPanel::GetPlayableSlicePreviewText() const
+{
+	return FText::Format(
+		LOCTEXT("PlayableSlicePreview", "Preview: one brief -> Smart Mesh Tripo assets -> import -> Blueprint/UMG/level build -> compile -> PIE/log/screenshot evidence. Auth: {0}. Confirmed spend: {1}."),
+		IsGenerativeApiKeyConfigured() ? LOCTEXT("PlayableSliceAuthReady", "ready") : LOCTEXT("PlayableSliceAuthMissing", "missing"),
+		bGenerativeSpendConfirmed ? LOCTEXT("PlayableSliceSpendYes", "yes") : LOCTEXT("PlayableSliceSpendNo", "no")
+	);
+}
+
+EVisibility SMCPChatPanel::GetPlayableSliceDialogVisibility() const
+{
+	return bPlayableSliceDialogVisible ? EVisibility::Visible : EVisibility::Collapsed;
 }
 
 FString SMCPChatPanel::BuildGameplayBuilderPrompt() const

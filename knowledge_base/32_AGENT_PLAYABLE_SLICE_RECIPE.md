@@ -98,6 +98,40 @@ skill_generate_playable_slice(
 This is the canonical D.8 prompt-and-tool recipe for the headline demo. Use it
 as the first pass before adding project-specific flourish.
 
+## Chat Dock Playable Slice Builder
+
+The MCP Chat dock now has a **Playable Slice** quick action for the headline
+one-brief-to-game workflow. It sits between Generate Asset and Build Gameplay:
+Generate Asset handles single Tripo jobs, Build Gameplay handles mechanic/UI/AI
+work, and Playable Slice stitches both into a guided vertical-slice workflow
+inside Unreal.
+
+The dialog captures:
+
+- a one-sentence playable game brief;
+- generated asset roles for Smart Mesh Tripo assets;
+- the intended gameplay loop;
+- acceptance criteria and required evidence.
+
+The inserted workflow prompt should:
+
+1. Discover project state with `get_project_context`,
+   `scan_project_assets(path="/Game", depth=3)`, `list_available_tools`, and
+   onboarding context for Blueprints, world building, and UMG.
+2. Map every generated asset role to a concrete `/Game/Generated/PlayableSlice`
+   path and avoid destructive overwrites.
+3. Use `gen_tripo_text_to_model` for missing 3D roles with textures, PBR,
+   `face_limit=12000`, and `smart_low_poly=true`, then wait and import with
+   `gen_tripo_wait_for_task` and `gen_tripo_import_to_project`.
+4. Optionally route hero-art refinements through the Texture/Paint Magic Brush
+   path when project/render/image-map data exists and spend is approved.
+5. Build the playable loop with Blueprint, actor, component, UMG, AI, level,
+   lighting, collision, and placement tools.
+6. Run `compile_blueprint_and_report`, save/read back touched assets, and verify
+   runtime with PIE, `pie_capture_log`, and a viewport screenshot.
+7. Report changed assets, Tripo task ids, credit usage, evidence paths,
+   unresolved warnings, and remaining human design-review work.
+
 ## Chat Dock Gameplay Builder
 
 The MCP Chat dock now has a **Build Gameplay** quick action for development

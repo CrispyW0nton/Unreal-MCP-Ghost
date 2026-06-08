@@ -575,6 +575,13 @@ Multi-Image to 3D shows the ordered view references, and Texture/Paint shows
 the Magic Brush controls. This avoids presenting every Tripo field at once in
 the Unreal dock.
 
+The top-bar **Playable Slice** action is the higher-level generative workspace
+entry point. It captures a one-sentence game brief, generated asset roles,
+gameplay loop, acceptance criteria, and evidence requirements, then inserts a
+workflow that creates Smart Mesh Tripo assets, imports them into
+`/Game/Generated/PlayableSlice`, builds Blueprint/UMG/level gameplay around
+them, and verifies the result with compile, PIE, log, and screenshot evidence.
+
 The Generate Asset workspace and its settings panel include a **Generative
 Credits** display. It shows the per-session budget, credits used from
 `credit_usage_by_session`, remaining credits, the next pending spend, and whether

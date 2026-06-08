@@ -6,6 +6,12 @@
 
 ## 2026-06-08
 
+### C.13 - Playable Slice quick action
+
+- Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.
+- The inserted workflow prompt now links Smart Mesh Tripo assets, `gen_tripo_text_to_model`, `gen_tripo_import_to_project`, Blueprint/UMG/level assembly, compile checks, PIE/log/screenshot evidence, and credit reporting.
+- Documented the Chat Dock Playable Slice Builder in the playable-slice recipe KB so Generate Asset, Build Gameplay, and the new Playable Slice workspace form a clearer AI IDE progression inside Unreal.
+
 ### C.12 - Gameplay builder quick action
 
 - Added a Build Gameplay quick action in the MCP Chat dock for guided Mechanic, AI, HUD, and Level Flow development prompts.

@@ -91,6 +91,8 @@ private:
 	void HandleCommandPaletteTextChanged(const FText& Text);
 	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
 	FReply HandleToggleTelemetryClicked();
+	FReply HandleOpenPlayableSliceClicked();
+	FReply HandleInsertPlayableSlicePromptClicked();
 	FReply HandleOpenGameplayBuilderClicked();
 	FReply HandleInsertGameplayBuilderPromptClicked();
 	FReply HandleGameplayModeMechanicClicked();
@@ -157,6 +159,7 @@ private:
 	TSharedRef<SWidget> BuildToolPalette();
 	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
 	TSharedRef<SWidget> BuildCommandPalette();
+	TSharedRef<SWidget> BuildPlayableSliceDialog();
 	TSharedRef<SWidget> BuildGameplayBuilderDialog();
 	TSharedRef<SWidget> BuildGenerateAssetDialog();
 	TSharedRef<SWidget> BuildGenerativeSettingsPanel();
@@ -218,6 +221,9 @@ private:
 	FString BuildNewSessionName() const;
 	FString BuildRenamedSessionName() const;
 	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	FString BuildPlayableSlicePrompt() const;
+	FText GetPlayableSlicePreviewText() const;
+	EVisibility GetPlayableSliceDialogVisibility() const;
 	FString BuildGameplayBuilderPrompt() const;
 	FText GetGameplayBuilderPreviewText() const;
 	EVisibility GetGameplayBuilderDialogVisibility() const;
@@ -256,6 +262,7 @@ private:
 	bool bToolPaletteVisible = true;
 	bool bToolPaletteLoaded = false;
 	bool bCommandPaletteVisible = false;
+	bool bPlayableSliceDialogVisible = false;
 	bool bGameplayBuilderDialogVisible = false;
 	bool bGenerateAssetDialogVisible = false;
 	bool bGenerativeSettingsVisible = false;
@@ -283,6 +290,11 @@ private:
 	FString GenerativeModelVersion = TEXT("tripo-default");
 	FString GenerativeTextureQuality = TEXT("standard");
 	FString GenerativeOutputFolder = TEXT("/Game/Generated");
+	FString PlayableSliceBrief = TEXT("make a tiny playable arena where the player collects a generated power core and opens an exit gate");
+	FString PlayableSliceAssetRoles = TEXT("power core pickup, exit gate, arena marker prop");
+	FString PlayableSliceGameplayLoop = TEXT("spawn player, collect generated pickup, trigger feedback, open gate, show completion HUD");
+	FString PlayableSliceAcceptance = TEXT("generated assets imported, Blueprint gameplay compiled, PIE smoke passes, screenshot evidence captured");
+	FString PlayableSliceEvidence = TEXT("Tripo task ids, imported asset paths, compile reports, PIE log, viewport screenshot");
 	FString GameplayBuilderMode = TEXT("mechanic");
 	FString GameplayBuilderBrief = TEXT("add an interactable pickup that restores health and gives clear player feedback");
 	FString GameplayBuilderTarget = TEXT("@selected");
@@ -329,6 +341,11 @@ private:
 	TSharedPtr<SEditableTextBox> GenerativeOutputFolderInput;
 	TSharedPtr<SEditableTextBox> GenerativeCreditBudgetInput;
 	TSharedPtr<SEditableTextBox> GenerativePendingSpendInput;
+	TSharedPtr<SEditableTextBox> PlayableSliceBriefInput;
+	TSharedPtr<SEditableTextBox> PlayableSliceAssetRolesInput;
+	TSharedPtr<SEditableTextBox> PlayableSliceGameplayLoopInput;
+	TSharedPtr<SEditableTextBox> PlayableSliceAcceptanceInput;
+	TSharedPtr<SEditableTextBox> PlayableSliceEvidenceInput;
 	TSharedPtr<SEditableTextBox> GameplayBuilderBriefInput;
 	TSharedPtr<SEditableTextBox> GameplayBuilderTargetInput;
 	TSharedPtr<SEditableTextBox> GameplayBuilderAcceptanceInput;
