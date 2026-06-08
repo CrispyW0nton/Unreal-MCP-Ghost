@@ -243,6 +243,18 @@ def _parse_json_list(value: str, field_name: str) -> tuple[List[Dict[str, Any]],
     return normalized, errors
 
 
+def _parse_json_object(value: str, field_name: str) -> tuple[Dict[str, Any], List[str]]:
+    if not str(value or "").strip():
+        return {}, []
+    try:
+        parsed = json.loads(value)
+    except json.JSONDecodeError as exc:
+        return {}, [f"{field_name} must be JSON: {exc}"]
+    if not isinstance(parsed, dict):
+        return {}, [f"{field_name} must be a JSON object"]
+    return parsed, []
+
+
 def _asset_payload(asset: Dict[str, Any], model_version: str) -> Dict[str, Any]:
     payload: Dict[str, Any] = {
         "type": "text_to_model",
@@ -268,15 +280,266 @@ def _find_role_record(records: List[Dict[str, Any]], role: str, asset_name: str)
     return {}
 
 
+def _match_asset_records(assets: List[Dict[str, Any]], records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    matches: List[Dict[str, Any]] = []
+    used: set[int] = set()
+    for asset in assets:
+        match_index = -1
+        asset_name = str(asset.get("name", "")).lower()
+        role = str(asset.get("role", "")).lower()
+        for index, record in enumerate(records):
+            if index in used:
+                continue
+            if str(record.get("asset_name", "")).lower() == asset_name:
+                match_index = index
+                break
+        if match_index == -1:
+            for index, record in enumerate(records):
+                if index in used:
+                    continue
+                if str(record.get("asset_role", record.get("role", ""))).lower() == role:
+                    match_index = index
+                    break
+        if match_index == -1:
+            matches.append({})
+            continue
+        used.add(match_index)
+        matches.append(records[match_index])
+    return matches
+
+
+def _as_list(value: Any) -> List[Any]:
+    if isinstance(value, list):
+        return value
+    if value in (None, "", {}):
+        return []
+    return [value]
+
+
+def _is_present(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        stripped = value.strip()
+        return bool(stripped) and not stripped.startswith("<")
+    if isinstance(value, (list, dict)):
+        return bool(value)
+    return True
+
+
+def _compile_reports_clean(reports: List[Any], explicit_clean: Any) -> bool:
+    if explicit_clean is True:
+        return True
+    if not reports:
+        return False
+    for report in reports:
+        if isinstance(report, dict):
+            if report.get("success") is False or report.get("compiled") is False or report.get("errors"):
+                return False
+            status = str(report.get("status", "")).strip().lower()
+            if (
+                report.get("success") is not True
+                and report.get("compiled") is not True
+                and status not in {"ok", "clean", "passed", "success", "compiled"}
+            ):
+                return False
+            continue
+        if not _is_present(report):
+            return False
+    return True
+
+
+def _gate_status(observed: List[Any], missing: List[str]) -> str:
+    if not missing:
+        return "proven"
+    if observed:
+        return "partial"
+    return "missing"
+
+
+def _build_evidence_readiness(
+    plan: Dict[str, Any],
+    task_submissions: List[Dict[str, Any]],
+    imported_assets: List[Dict[str, Any]],
+    execution_evidence: Dict[str, Any],
+) -> Dict[str, Any]:
+    assets = plan["assets"]
+    submission_matches = _match_asset_records(assets, task_submissions)
+    import_matches = _match_asset_records(assets, imported_assets)
+    asset_rows: List[Dict[str, Any]] = []
+    missing_tasks: List[str] = []
+    missing_imports: List[str] = []
+    observed_tasks: List[str] = []
+    observed_imports: List[str] = []
+    for asset, submission, imported in zip(assets, submission_matches, import_matches):
+        task_id = str(submission.get("task_id", "")).strip()
+        imported_path = imported.get("asset_path", imported.get("imported_asset_path", ""))
+        if _is_present(task_id):
+            observed_tasks.append(task_id)
+        else:
+            missing_tasks.append(asset["name"])
+        if _is_present(imported_path):
+            observed_imports.append(str(imported_path))
+        else:
+            missing_imports.append(asset["name"])
+        asset_rows.append({
+            "asset_role": asset["role"],
+            "asset_name": asset["name"],
+            "task_id": task_id,
+            "imported_asset_path": imported_path,
+            "task_proven": _is_present(task_id),
+            "import_proven": _is_present(imported_path),
+        })
+
+    credit_observed = []
+    if _is_present(execution_evidence.get("credit_guard")):
+        credit_observed.append("credit_guard")
+    if _is_present(execution_evidence.get("credit_usage")):
+        credit_observed.append("credit_usage")
+    credit_missing = [] if credit_observed else ["credit guard or usage summary"]
+    if not credit_observed and observed_tasks:
+        credit_observed.append("task submissions without credit summary")
+
+    gameplay_assets = execution_evidence.get("gameplay_assets", {})
+    if not isinstance(gameplay_assets, dict):
+        gameplay_assets = {}
+    required_gameplay = {
+        "player_blueprint": plan["gameplay"]["player_blueprint"],
+        "enemy_blueprint": plan["gameplay"]["enemy_blueprint"],
+        "hud_widget": plan["gameplay"]["hud_widget"],
+        "level_or_map": f"{plan['content_path']}/Level",
+    }
+    changed_assets = _as_list(execution_evidence.get("changed_assets") or execution_evidence.get("touched_assets"))
+    gameplay_observed = [f"{key}: {value}" for key, value in gameplay_assets.items() if _is_present(value)]
+    if changed_assets:
+        gameplay_observed.append("changed_assets")
+    gameplay_missing = [key for key in required_gameplay if not _is_present(gameplay_assets.get(key))]
+
+    compile_reports = _as_list(execution_evidence.get("compile_reports"))
+    compile_clean = _compile_reports_clean(compile_reports, execution_evidence.get("compile_clean"))
+    compile_observed = compile_reports or (["compile_clean"] if execution_evidence.get("compile_clean") is True else [])
+    compile_missing = [] if compile_clean else ["clean compile reports for touched Blueprints/widgets"]
+
+    pie_log_path = execution_evidence.get("pie_log_path", execution_evidence.get("pie_log"))
+    pie_duration = execution_evidence.get("pie_duration_s", execution_evidence.get("pie_seconds"))
+    pie_observed = []
+    if _is_present(pie_log_path):
+        pie_observed.append(str(pie_log_path))
+    if isinstance(pie_duration, (int, float)) and pie_duration > 0:
+        pie_observed.append(f"{pie_duration}s")
+    pie_missing = []
+    if not _is_present(pie_log_path):
+        pie_missing.append("PIE log path or captured log")
+    if not isinstance(pie_duration, (int, float)) or pie_duration < 60:
+        pie_missing.append("PIE duration >= 60 seconds or explicit smoke exception")
+
+    screenshot_path = execution_evidence.get(
+        "viewport_screenshot_path",
+        execution_evidence.get("screenshot_path", execution_evidence.get("viewport_screenshot")),
+    )
+    screenshot_observed = [str(screenshot_path)] if _is_present(screenshot_path) else []
+    screenshot_missing = [] if screenshot_observed else ["viewport screenshot path"]
+
+    report_path = execution_evidence.get(
+        "vertical_slice_report_path",
+        execution_evidence.get("report_path", execution_evidence.get("final_report_path")),
+    )
+    report_observed = [str(report_path)] if _is_present(report_path) else []
+    report_missing = [] if report_observed else ["skill_package_vertical_slice_report output path"]
+
+    gates = [
+        {
+            "id": "tripo_asset_tasks",
+            "label": "Tripo Smart Mesh task ids for all planned assets",
+            "status": _gate_status(observed_tasks, missing_tasks),
+            "observed": observed_tasks,
+            "missing": missing_tasks,
+            "proof_tools": ["skill_generate_playable_slice(mode='submit_assets')", "gen_tripo_text_to_model"],
+        },
+        {
+            "id": "tripo_credit_record",
+            "label": "Confirmed Tripo credit guard or usage summary",
+            "status": _gate_status(credit_observed, credit_missing),
+            "observed": credit_observed,
+            "missing": credit_missing,
+            "proof_tools": ["gen_check_credit_budget", "skill_generate_playable_slice(mode='submit_assets')"],
+        },
+        {
+            "id": "imported_generated_assets",
+            "label": "Imported generated asset paths for all planned assets",
+            "status": _gate_status(observed_imports, missing_imports),
+            "observed": observed_imports,
+            "missing": missing_imports,
+            "proof_tools": ["gen_tripo_wait_for_task", "gen_tripo_import_to_project"],
+        },
+        {
+            "id": "gameplay_assets_built",
+            "label": "Player, enemy, HUD, and level/map assets built or updated",
+            "status": _gate_status(gameplay_observed, gameplay_missing),
+            "observed": gameplay_observed,
+            "missing": gameplay_missing,
+            "proof_tools": ["create_blueprint", "build_behavior_tree", "create_widget_blueprint", "spawn_actor"],
+        },
+        {
+            "id": "compile_reports_clean",
+            "label": "Touched Blueprint/widget compile reports are clean",
+            "status": _gate_status(compile_observed, compile_missing),
+            "observed": compile_observed,
+            "missing": compile_missing,
+            "proof_tools": ["compile_blueprint_and_report"],
+        },
+        {
+            "id": "pie_runtime_log",
+            "label": "PIE runtime evidence captured",
+            "status": _gate_status(pie_observed, pie_missing),
+            "observed": pie_observed,
+            "missing": pie_missing,
+            "proof_tools": ["pie_launch_session", "pie_capture_log"],
+        },
+        {
+            "id": "viewport_screenshot",
+            "label": "Viewport screenshot evidence captured",
+            "status": _gate_status(screenshot_observed, screenshot_missing),
+            "observed": screenshot_observed,
+            "missing": screenshot_missing,
+            "proof_tools": ["viewport_capture_screenshot"],
+        },
+        {
+            "id": "final_vertical_slice_report",
+            "label": "Final vertical-slice evidence report packaged",
+            "status": _gate_status(report_observed, report_missing),
+            "observed": report_observed,
+            "missing": report_missing,
+            "proof_tools": ["execution_journal_finish", "skill_package_vertical_slice_report"],
+        },
+    ]
+    live_proven = all(gate["status"] == "proven" for gate in gates)
+    next_steps = [
+        f"{gate['id']}: {', '.join(gate['missing'])}"
+        for gate in gates
+        if gate["status"] != "proven"
+    ]
+    return {
+        "schema": "unreal_mcp_playable_slice_evidence_readiness.v1",
+        "live_playable_slice_proven": live_proven,
+        "summary": "Live playable slice is proven." if live_proven else "Orchestration is ready, but live playable-slice proof is incomplete.",
+        "asset_evidence": asset_rows,
+        "gates": gates,
+        "next_proof_steps": next_steps,
+        "provided_evidence_keys": sorted(execution_evidence.keys()),
+    }
+
+
 def _build_playable_slice_orchestration(
     plan: Dict[str, Any],
     task_submissions: List[Dict[str, Any]],
     imported_assets: List[Dict[str, Any]],
+    execution_evidence: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     wait_and_import: List[Dict[str, Any]] = []
-    for asset in plan["assets"]:
-        submission = _find_role_record(task_submissions, asset["role"], asset["name"])
-        imported = _find_role_record(imported_assets, asset["role"], asset["name"])
+    submission_matches = _match_asset_records(plan["assets"], task_submissions)
+    import_matches = _match_asset_records(plan["assets"], imported_assets)
+    for asset, submission, imported in zip(plan["assets"], submission_matches, import_matches):
         task_id = str(submission.get("task_id", "<task_id_from_submit_assets>"))
         wait_and_import.append({
             "asset_role": asset["role"],
@@ -431,10 +694,13 @@ def _build_playable_slice_orchestration(
             verification_phase,
         ],
         "evidence_contract": {
+            "schema": "unreal_mcp_playable_slice_evidence_contract.v1",
             "asset_generation": ["task_id", "credit_guard", "provider output", "import result"],
             "gameplay": ["changed Blueprint/widget/map assets", "compile reports", "readback checks"],
-            "runtime": ["PIE log", "viewport screenshot", "warnings/errors"],
+            "runtime": ["PIE log", "PIE duration", "viewport screenshot", "warnings/errors"],
+            "report": ["execution journal finish", "vertical slice report path"],
         },
+        "evidence_readiness": _build_evidence_readiness(plan, task_submissions, imported_assets, execution_evidence or {}),
     }
 
 
@@ -521,6 +787,7 @@ def skill_generate_playable_slice(
     confirm_spend: bool = False,
     task_submissions_json: str = "",
     imported_assets_json: str = "",
+    execution_evidence_json: str = "",
     asset_roles: str = "",
     gameplay_loop: str = "",
     acceptance_criteria: str = "",
@@ -542,6 +809,7 @@ def skill_generate_playable_slice(
         "required_evidence": required_evidence,
         "task_submissions_json": task_submissions_json,
         "imported_assets_json": imported_assets_json,
+        "execution_evidence_json": execution_evidence_json,
     }
     if safe_mode not in _VALID_MODES:
         return _structured(
@@ -585,7 +853,8 @@ def skill_generate_playable_slice(
     if safe_mode == "orchestrate":
         task_submissions, task_errors = _parse_json_list(task_submissions_json, "task_submissions_json")
         imported_assets, import_errors = _parse_json_list(imported_assets_json, "imported_assets_json")
-        parse_errors = task_errors + import_errors
+        execution_evidence, evidence_errors = _parse_json_object(execution_evidence_json, "execution_evidence_json")
+        parse_errors = task_errors + import_errors + evidence_errors
         if parse_errors:
             return _structured(
                 success=False,
@@ -596,7 +865,7 @@ def skill_generate_playable_slice(
                 errors=parse_errors,
                 t0=t0,
             )
-        orchestration = _build_playable_slice_orchestration(plan, task_submissions, imported_assets)
+        orchestration = _build_playable_slice_orchestration(plan, task_submissions, imported_assets, execution_evidence)
         return _structured(
             success=True,
             stage="orchestration_ready",
@@ -657,6 +926,7 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
         confirm_spend: bool = False,
         task_submissions_json: str = "",
         imported_assets_json: str = "",
+        execution_evidence_json: str = "",
         asset_roles: str = "",
         gameplay_loop: str = "",
         acceptance_criteria: str = "",
@@ -668,7 +938,9 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
         sequence without network calls. Mode `submit_assets` requires
         TRIPO_API_KEY and confirm_spend=True before submitting paid Tripo tasks.
         Mode `orchestrate` returns a no-spend import/gameplay/PIE/report package
-        from the plan plus optional submitted-task and imported-asset JSON arrays.
+        from the plan plus optional submitted-task, imported-asset, and execution
+        evidence JSON. Execution evidence is used only to mark proof gates as
+        satisfied; orchestration itself never mutates Unreal.
         Optional asset_roles, gameplay_loop, acceptance_criteria, and
         required_evidence inputs let the Unreal Playable Slice UI steer the
         generated plan instead of relying on brief-only inference.
@@ -688,6 +960,7 @@ def register_playable_slice_skill(mcp: FastMCP) -> None:
             required_evidence=required_evidence,
             task_submissions_json=task_submissions_json,
             imported_assets_json=imported_assets_json,
+            execution_evidence_json=execution_evidence_json,
         )
         return json.dumps(result)
 

@@ -229,6 +229,57 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertIn("brief", report_args["verification"])
         self.assertIn("plan_schema", report_args["verification"])
         self.assertNotIn("changed_assets", report_args)
+        readiness = orchestration["evidence_readiness"]
+        self.assertEqual(readiness["schema"], "unreal_mcp_playable_slice_evidence_readiness.v1")
+        self.assertFalse(readiness["live_playable_slice_proven"])
+        gate_status = {gate["id"]: gate["status"] for gate in readiness["gates"]}
+        self.assertEqual(gate_status["tripo_asset_tasks"], "partial")
+        self.assertEqual(gate_status["imported_generated_assets"], "partial")
+        self.assertEqual(gate_status["compile_reports_clean"], "missing")
+        self.assertIn("compile_reports_clean", json.dumps(readiness["next_proof_steps"]))
+
+    def test_orchestrate_mode_marks_live_proof_only_when_all_evidence_gates_pass(self):
+        from skills.playable_slice.skill import skill_generate_playable_slice
+
+        plan_result = skill_generate_playable_slice("third-person dungeon demo with a slime")
+        plan = plan_result["outputs"]["plan"]
+        task_submissions = [
+            {"asset_role": asset["role"], "asset_name": asset["name"], "task_id": f"task-{index}"}
+            for index, asset in enumerate(plan["assets"], start=1)
+        ]
+        imported_assets = [
+            {"asset_role": asset["role"], "asset_name": asset["name"], "asset_path": f"{asset['content_path']}/{asset['name']}"}
+            for asset in plan["assets"]
+        ]
+        execution_evidence = {
+            "credit_guard": {"approved": True, "reserved": True},
+            "gameplay_assets": {
+                "player_blueprint": plan["gameplay"]["player_blueprint"],
+                "enemy_blueprint": plan["gameplay"]["enemy_blueprint"],
+                "hud_widget": plan["gameplay"]["hud_widget"],
+                "level_or_map": f"{plan['content_path']}/Level/L_PlayableSlice",
+            },
+            "compile_reports": [{"blueprint": plan["gameplay"]["player_blueprint"], "success": True}],
+            "compile_clean": True,
+            "pie_log_path": "Saved/MCPChat/Evidence/pie.log",
+            "pie_duration_s": 60,
+            "viewport_screenshot_path": "Saved/MCPChat/Evidence/playable_slice.png",
+            "vertical_slice_report_path": "knowledge_base/Reports/playable_slice.md",
+        }
+
+        result = skill_generate_playable_slice(
+            plan["brief"],
+            mode="orchestrate",
+            task_submissions_json=json.dumps(task_submissions),
+            imported_assets_json=json.dumps(imported_assets),
+            execution_evidence_json=json.dumps(execution_evidence),
+        )
+
+        _assert_structured(self, result, "orchestration_ready")
+        readiness = result["outputs"]["orchestration"]["evidence_readiness"]
+        self.assertTrue(readiness["live_playable_slice_proven"])
+        self.assertEqual(readiness["next_proof_steps"], [])
+        self.assertTrue(all(gate["status"] == "proven" for gate in readiness["gates"]))
 
     def test_orchestrate_mode_rejects_invalid_json_inputs(self):
         from skills.playable_slice.skill import skill_generate_playable_slice
@@ -242,6 +293,16 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         _assert_structured(self, result, "orchestration_input_invalid")
         self.assertFalse(result["success"])
         self.assertIn("task_submissions_json must be JSON", result["errors"][0])
+
+        result = skill_generate_playable_slice(
+            "third-person dungeon demo with a slime",
+            mode="orchestrate",
+            execution_evidence_json="[]",
+        )
+
+        _assert_structured(self, result, "orchestration_input_invalid")
+        self.assertFalse(result["success"])
+        self.assertIn("execution_evidence_json must be a JSON object", result["errors"][0])
 
     def test_registered_tool_returns_json(self):
         from skills.playable_slice.skill import register_playable_slice_skill
@@ -267,7 +328,10 @@ class TestD7PlayableSliceSkill(unittest.TestCase):
         self.assertIn("register_playable_slice_skill", server_text)
         self.assertIn('"skills.playable_slice.skill"', inventory_text)
         self.assertIn("skill_generate_playable_slice", skill_text)
+        self.assertIn("execution_evidence_json", skill_text)
+        self.assertIn("evidence_readiness", skill_text)
         self.assertIn("D7 Playable Slice Skill", kb_text)
+        self.assertIn("evidence readiness", kb_text)
         self.assertIn("D.7 - Playable slice skill", changelog_text)
         self.assertEqual(schema["title"], "Unreal MCP Playable Slice Plan")
         self.assertIn("requested_asset_roles", schema["required"])

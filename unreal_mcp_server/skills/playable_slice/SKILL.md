@@ -13,13 +13,20 @@ playable-slice workflow.
   `text_to_model` tasks and returns task IDs plus next steps.
 - `orchestrate`: offline, no network, no Unreal mutation. Returns a structured
   import/gameplay/PIE/report execution package from the plan plus optional
-  submitted-task and imported-asset JSON arrays.
+  submitted-task, imported-asset, and execution-evidence JSON.
 
 Optional `asset_roles`, `gameplay_loop`, `acceptance_criteria`, and
 `required_evidence` inputs are accepted by all modes. They let the Unreal
 Playable Slice UI shape the generated plan: asset prompts use requested role
 descriptions, the gameplay loop becomes the level goal, and verification/report
 phases carry the requested acceptance and evidence contract.
+
+`execution_evidence_json` is accepted by `orchestrate` mode only. Pass a JSON
+object with completed artifacts such as `credit_guard`, `gameplay_assets`,
+`compile_reports`, `pie_log_path`, `pie_duration_s`,
+`viewport_screenshot_path`, and `vertical_slice_report_path`. The returned
+`evidence_readiness` ledger stays `live_playable_slice_proven=false` until every
+required proof gate is satisfied.
 
 ## Example
 

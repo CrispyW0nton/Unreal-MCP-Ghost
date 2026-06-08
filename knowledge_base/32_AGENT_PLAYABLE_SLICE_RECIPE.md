@@ -96,6 +96,18 @@ The orchestration also starts and finishes an execution journal with
 `execution_journal_start` and `execution_journal_finish`, so the final report can
 include the same evidence trail used during autonomous work.
 
+`orchestrate` also returns an `evidence_readiness` ledger. The ledger provides
+evidence readiness as the machine-readable answer to whether the slice is merely
+ready to execute or actually proven live. It remains
+`live_playable_slice_proven=false` until all proof gates are satisfied: Tripo
+task ids, credit record, imported generated asset paths, gameplay asset paths,
+clean compile reports, PIE log/duration, viewport screenshot, and packaged
+vertical-slice report. After a live run, pass `execution_evidence_json` with
+completed artifacts such as `credit_guard`, `gameplay_assets`,
+`compile_reports`, `pie_log_path`, `pie_duration_s`,
+`viewport_screenshot_path`, and `vertical_slice_report_path` to make the
+readiness verdict explicit instead of relying on a loose checklist.
+
 Example:
 
 ```python
@@ -118,6 +130,8 @@ skill_generate_playable_slice(
     mode="orchestrate",
     session_name="dungeon-demo",
     task_submissions_json="[ ... task records from submit_assets ... ]",
+    imported_assets_json="[ ... import records from gen_tripo_import_to_project ... ]",
+    execution_evidence_json="{ ... compile, PIE, screenshot, and report evidence ... }",
 )
 ```
 
