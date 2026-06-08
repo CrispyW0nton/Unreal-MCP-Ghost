@@ -689,6 +689,9 @@ Brush paid call is allowed.
    run `gen_compile_generate_asset_evidence` so the dock can report
    `unreal_mcp_generate_asset_evidence.v1`, `proven`, gates, next actions,
    imported asset paths, and thumbnail/screenshot evidence.
+   The chat card renders this schema as **Generate Asset Proof** with compact
+   gate rows, so users can see whether the generated asset is proven in Unreal
+   without opening raw JSON.
 
 Long-running Tripo waits should stream or post structured progress updates that
 include the tool name `gen_tripo_wait_for_task` and a numeric `progress` field.

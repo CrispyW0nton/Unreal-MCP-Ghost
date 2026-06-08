@@ -2092,7 +2092,7 @@ TSharedRef<SWidget> SMCPChatPanel::BuildTripoProgressPanel(const FToolCallView& 
 
 TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolCall)
 {
-	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness && !ToolCall.bHasPreflight)
+	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness && !ToolCall.bHasGeneratedAssetEvidence && !ToolCall.bHasPreflight)
 	{
 		return SNew(SBox)
 			.Visibility(EVisibility::Collapsed);
@@ -2202,6 +2202,55 @@ TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolC
 			[
 				SNew(STextBlock)
 				.Text(FText::Format(LOCTEXT("PlayableSliceProofGate", "Proof gate: {0}"), FText::FromString(GateSummary)))
+				.AutoWrapText(true)
+			];
+		}
+	}
+
+	if (ToolCall.bHasGeneratedAssetEvidence)
+	{
+		const FText GeneratedAssetText = FText::Format(
+			LOCTEXT("GeneratedAssetEvidenceStatus", "Generate Asset Proof: {0}"),
+			ToolCall.bGeneratedAssetProven ? LOCTEXT("GeneratedAssetEvidenceProven", "proven") : LOCTEXT("GeneratedAssetEvidenceIncomplete", "incomplete")
+		);
+		EvidenceBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+			.Padding(6.0f)
+			[
+				SNew(SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text(GeneratedAssetText)
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					.AutoWrapText(true)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(ToolCall.GeneratedAssetEvidenceSummary))
+					.AutoWrapText(true)
+				]
+			]
+		];
+
+		for (const FString& GateSummary : ToolCall.ProofGateSummaries)
+		{
+			EvidenceBox->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 1.0f, 0.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("GeneratedAssetProofGate", "Asset proof gate: {0}"), FText::FromString(GateSummary)))
 				.AutoWrapText(true)
 			];
 		}
@@ -4338,6 +4387,19 @@ void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
 				EvidenceText += TEXT("\n\n");
 			}
 		}
+		if (ToolCall.bHasGeneratedAssetEvidence)
+		{
+			EvidenceText += FString::Printf(
+				TEXT("Generate Asset Proof: %s\n%s\n"),
+				ToolCall.bGeneratedAssetProven ? TEXT("proven") : TEXT("incomplete"),
+				*ToolCall.GeneratedAssetEvidenceSummary
+			);
+			if (!ToolCall.ProofGateSummaries.IsEmpty())
+			{
+				EvidenceText += FString::Join(ToolCall.ProofGateSummaries, LINE_TERMINATOR);
+				EvidenceText += TEXT("\n\n");
+			}
+		}
 		if (!ToolCall.ScreenshotPaths.IsEmpty())
 		{
 			EvidenceText += TEXT("Screenshots:\n");
@@ -4589,6 +4651,8 @@ void SMCPChatPanel::ExtractEvidenceFromJsonObject(const TSharedPtr<FJsonObject>&
 		return;
 	}
 
+	ExtractGeneratedAssetEvidenceFromJsonObject(Object, OutToolCall);
+
 	for (const TPair<FString, TSharedPtr<FJsonValue>>& Field : Object->Values)
 	{
 		ExtractEvidenceFromJsonValue(Field.Key, Field.Value, OutToolCall);
@@ -4621,6 +4685,15 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	if (LowerField == TEXT("preflight") && Value->Type == EJson::Object)
 	{
 		ExtractPreflightFromJsonObject(Value->AsObject(), OutToolCall);
+	}
+	if (LowerField == TEXT("evidence") && Value->Type == EJson::Object)
+	{
+		const bool bHadGeneratedAssetEvidence = OutToolCall.bHasGeneratedAssetEvidence;
+		ExtractGeneratedAssetEvidenceFromJsonObject(Value->AsObject(), OutToolCall);
+		if (!bHadGeneratedAssetEvidence && OutToolCall.bHasGeneratedAssetEvidence)
+		{
+			return;
+		}
 	}
 
 	if (Value->Type == EJson::String)
@@ -4790,6 +4863,112 @@ void SMCPChatPanel::ExtractPreflightFromJsonObject(const TSharedPtr<FJsonObject>
 		*TruncateForCard(CreditSummary, 80),
 		*TruncateForCard(PackageSummary, 120),
 		*TruncateForCard(BridgeSummary, 80)
+	);
+
+	const TArray<TSharedPtr<FJsonValue>>* GateValues = nullptr;
+	if (Object->TryGetArrayField(TEXT("gates"), GateValues) && GateValues)
+	{
+		for (const TSharedPtr<FJsonValue>& GateValue : *GateValues)
+		{
+			if (!GateValue.IsValid() || GateValue->Type != EJson::Object)
+			{
+				continue;
+			}
+
+			const TSharedPtr<FJsonObject> GateObject = GateValue->AsObject();
+			const FString GateId = GetStringField(GateObject, TEXT("id"));
+			const FString GateStatus = GetStringField(GateObject, TEXT("status"));
+			TArray<FString> MissingParts;
+			const TArray<TSharedPtr<FJsonValue>>* MissingValues = nullptr;
+			if (GateObject->TryGetArrayField(TEXT("missing"), MissingValues) && MissingValues)
+			{
+				for (const TSharedPtr<FJsonValue>& MissingValue : *MissingValues)
+				{
+					if (MissingValue.IsValid())
+					{
+						MissingParts.Add(TruncateForCard(JsonValueToString(MissingValue), 120));
+					}
+				}
+			}
+
+			FString GateLine = FString::Printf(
+				TEXT("%s = %s"),
+				*TruncateForCard(GateId.IsEmpty() ? TEXT("unnamed_gate") : GateId, 72),
+				*TruncateForCard(GateStatus.IsEmpty() ? TEXT("unknown") : GateStatus, 40)
+			);
+			if (!MissingParts.IsEmpty())
+			{
+				GateLine += FString::Printf(TEXT(" | missing: %s"), *TruncateForCard(FString::Join(MissingParts, TEXT(", ")), 180));
+			}
+			OutToolCall.ProofGateSummaries.AddUnique(GateLine);
+		}
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* NextActionValues = nullptr;
+	if (Object->TryGetArrayField(TEXT("next_actions"), NextActionValues) && NextActionValues)
+	{
+		for (const TSharedPtr<FJsonValue>& NextActionValue : *NextActionValues)
+		{
+			if (NextActionValue.IsValid())
+			{
+				OutToolCall.ProofGateSummaries.AddUnique(FString::Printf(TEXT("next: %s"), *TruncateForCard(JsonValueToString(NextActionValue), 180)));
+			}
+		}
+	}
+}
+
+void SMCPChatPanel::ExtractGeneratedAssetEvidenceFromJsonObject(const TSharedPtr<FJsonObject>& Object, FToolCallView& OutToolCall) const
+{
+	if (!Object.IsValid() || GetStringField(Object, TEXT("schema")) != TEXT("unreal_mcp_generate_asset_evidence.v1"))
+	{
+		return;
+	}
+
+	OutToolCall.bHasGeneratedAssetEvidence = true;
+	Object->TryGetBoolField(TEXT("proven"), OutToolCall.bGeneratedAssetProven);
+
+	const FString TaskId = GetStringField(Object, TEXT("task_id"));
+	const FString TaskStatus = GetStringField(Object, TEXT("task_status"));
+	const FString AssetName = GetStringField(Object, TEXT("asset_name"));
+	const FString ContentPath = GetStringField(Object, TEXT("content_path"));
+
+	FString PrimaryAsset = TEXT("asset path missing");
+	const TSharedPtr<FJsonObject>* AssetPathsObject = nullptr;
+	if (Object->TryGetObjectField(TEXT("asset_paths"), AssetPathsObject) && AssetPathsObject && AssetPathsObject->IsValid())
+	{
+		const FString Candidate = GetStringField(*AssetPathsObject, TEXT("primary_asset"));
+		if (!Candidate.IsEmpty())
+		{
+			PrimaryAsset = Candidate;
+		}
+	}
+
+	FString VisualSummary = TEXT("visual evidence missing");
+	const TSharedPtr<FJsonObject>* VisualObject = nullptr;
+	if (Object->TryGetObjectField(TEXT("visual_evidence"), VisualObject) && VisualObject && VisualObject->IsValid())
+	{
+		const FString ThumbnailPath = GetStringField(*VisualObject, TEXT("thumbnail_path"));
+		const FString ScreenshotPath = GetStringField(*VisualObject, TEXT("screenshot_path"));
+		if (!ThumbnailPath.IsEmpty())
+		{
+			VisualSummary = FString::Printf(TEXT("thumbnail %s"), *TruncateForCard(ThumbnailPath, 100));
+			OutToolCall.ScreenshotPaths.AddUnique(ThumbnailPath);
+		}
+		else if (!ScreenshotPath.IsEmpty())
+		{
+			VisualSummary = FString::Printf(TEXT("screenshot %s"), *TruncateForCard(ScreenshotPath, 100));
+			OutToolCall.ScreenshotPaths.AddUnique(ScreenshotPath);
+		}
+	}
+
+	OutToolCall.GeneratedAssetEvidenceSummary = FString::Printf(
+		TEXT("Task: %s (%s) | Asset: %s | Name: %s | Folder: %s | %s"),
+		TaskId.IsEmpty() ? TEXT("unknown") : *TruncateForCard(TaskId, 80),
+		TaskStatus.IsEmpty() ? TEXT("unknown") : *TruncateForCard(TaskStatus, 40),
+		*TruncateForCard(PrimaryAsset, 120),
+		AssetName.IsEmpty() ? TEXT("unknown") : *TruncateForCard(AssetName, 80),
+		ContentPath.IsEmpty() ? TEXT("unknown") : *TruncateForCard(ContentPath, 100),
+		*VisualSummary
 	);
 
 	const TArray<TSharedPtr<FJsonValue>>* GateValues = nullptr;

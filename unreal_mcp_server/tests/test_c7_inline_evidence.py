@@ -26,6 +26,7 @@ class InlineEvidenceTest(unittest.TestCase):
             "LogSnippets",
             "PieResults",
             "EvidenceReadinessSummary",
+            "GeneratedAssetEvidenceSummary",
             "PreflightLabel",
             "PreflightSummary",
             "ProofGateSummaries",
@@ -33,11 +34,14 @@ class InlineEvidenceTest(unittest.TestCase):
             "bPreflightReady",
             "bHasEvidenceReadiness",
             "bLivePlayableSliceProven",
+            "bHasGeneratedAssetEvidence",
+            "bGeneratedAssetProven",
             "BuildEvidencePanel",
             "BuildScreenshotEvidenceWidget",
             "ExtractEvidenceFromJsonObject",
             "ExtractEvidenceFromJsonValue",
             "ExtractEvidenceReadinessFromJsonObject",
+            "ExtractGeneratedAssetEvidenceFromJsonObject",
             "ExtractPreflightFromJsonObject",
             "EvidenceImageBrushes",
         ):
@@ -52,6 +56,8 @@ class InlineEvidenceTest(unittest.TestCase):
         self.assertIn('LOCTEXT("InlineScreenshotPath", "Screenshot: {0}")', self.cpp)
         self.assertIn('LOCTEXT("PlayableSliceEvidenceReadinessStatus", "Playable Slice Proof: {0}")', self.cpp)
         self.assertIn('LOCTEXT("PlayableSliceProofGate", "Proof gate: {0}")', self.cpp)
+        self.assertIn('LOCTEXT("GeneratedAssetEvidenceStatus", "Generate Asset Proof: {0}")', self.cpp)
+        self.assertIn('LOCTEXT("GeneratedAssetProofGate", "Asset proof gate: {0}")', self.cpp)
         self.assertIn('LOCTEXT("PreflightEvidenceStatus", "{0}: {1}")', self.cpp)
         self.assertIn('LOCTEXT("PlayableSlicePreflightGate", "Preflight gate: {0}")', self.cpp)
 
@@ -77,6 +83,10 @@ class InlineEvidenceTest(unittest.TestCase):
             "evidence_readiness",
             "unreal_mcp_playable_slice_live_preflight.v1",
             "unreal_mcp_generate_asset_live_preflight.v1",
+            "unreal_mcp_generate_asset_evidence.v1",
+            "Generate Asset Proof",
+            "bGeneratedAssetProven",
+            "GeneratedAssetEvidenceSummary",
             "Generate Asset Preflight",
             "ready_for_live_spend",
             "next_actions",
@@ -94,6 +104,7 @@ class InlineEvidenceTest(unittest.TestCase):
         self.assertIn("PIE results:", self.cpp)
         self.assertIn("Log snippets:", self.cpp)
         self.assertIn("Playable Slice Proof:", self.cpp)
+        self.assertIn("Generate Asset Proof:", self.cpp)
         self.assertIn("PreflightLabel", self.cpp)
 
     def test_changelog_records_c7(self) -> None:

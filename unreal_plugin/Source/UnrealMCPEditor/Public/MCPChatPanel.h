@@ -40,6 +40,7 @@ private:
 		FString PreflightLabel;
 		FString PreflightSummary;
 		FString EvidenceReadinessSummary;
+		FString GeneratedAssetEvidenceSummary;
 		TArray<FString> ScreenshotPaths;
 		TArray<FString> LogSnippets;
 		TArray<FString> PieResults;
@@ -50,6 +51,8 @@ private:
 		bool bPreflightReady = false;
 		bool bHasEvidenceReadiness = false;
 		bool bLivePlayableSliceProven = false;
+		bool bHasGeneratedAssetEvidence = false;
+		bool bGeneratedAssetProven = false;
 		bool bError = false;
 	};
 
@@ -189,6 +192,7 @@ private:
 	void ExtractEvidenceFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void ExtractEvidenceFromJsonValue(const FString& FieldName, const TSharedPtr<class FJsonValue>& Value, FToolCallView& OutToolCall) const;
 	void ExtractEvidenceReadinessFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
+	void ExtractGeneratedAssetEvidenceFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void ExtractPreflightFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
 	void UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage);
 	bool TryBuildToolCallFromJsonObject(const TSharedPtr<class FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const;
