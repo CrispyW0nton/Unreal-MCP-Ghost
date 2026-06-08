@@ -1,6 +1,7 @@
 import sys
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
 _SERVER_ROOT = Path(__file__).resolve().parents[1]
@@ -48,6 +49,34 @@ class TestAIToolsRegistration(unittest.TestCase):
         self.assertIn("crowd_configure_rvo", names)
         self.assertIn("crowd_configure_detour", names)
         self.assertIn("gameplay_debugger_capture_ai", names)
+
+    def test_native_bridge_parity_ai_wrappers_register_and_dispatch(self):
+        from tools.ai_tools import register_ai_tools
+
+        mcp = _MockMCP()
+        register_ai_tools(mcp)
+
+        names = set(mcp.list_tool_names())
+        self.assertIn("set_behavior_tree_blackboard", names)
+        self.assertIn("bt_get_info", names)
+
+        calls = []
+
+        def fake_send(command, params):
+            calls.append((command, params))
+            return {"success": True, "command": command, "params": params}
+
+        with patch("tools.ai_tools._send", side_effect=fake_send):
+            assign = mcp.tools["set_behavior_tree_blackboard"](None, "BT_Enemy", "BB_Enemy")
+            info = mcp.tools["bt_get_info"](None, "BT_Enemy")
+
+        self.assertTrue(assign["success"])
+        self.assertTrue(info["success"])
+        self.assertEqual(calls[0][0], "set_behavior_tree_blackboard")
+        self.assertEqual(calls[0][1]["behavior_tree_name"], "BT_Enemy")
+        self.assertEqual(calls[0][1]["blackboard_name"], "BB_Enemy")
+        self.assertEqual(calls[1][0], "bt_get_info")
+        self.assertEqual(calls[1][1]["behavior_tree_name"], "BT_Enemy")
 
 
 if __name__ == "__main__":

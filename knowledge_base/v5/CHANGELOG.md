@@ -6,6 +6,11 @@
 
 ## 2026-06-08
 
+### B.15 - AI bridge parity wrappers
+
+- Added native-route Python wrappers for `set_behavior_tree_blackboard` and `bt_get_info` so playable-slice enemy AI workflows can assign Blackboard assets and inspect Behavior Trees through the same command names routed by C++.
+- Updated the AI systems KB with the Blackboard handoff and BT inspection mapping, reducing the bridge audit's C++-only route backlog.
+
 ### C.13 - Playable Slice quick action
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.

@@ -138,6 +138,14 @@ LastKnownPlayerLoc  → Vector: player's last seen location
 AlertLevel          → Float: 0-1 awareness meter
 ```
 
+### MCP Blackboard Handoff
+
+After creating a Behavior Tree and Blackboard, use
+`set_behavior_tree_blackboard` to assign the Blackboard asset to the tree before
+adding MoveTo nodes, Blackboard decorators, services, or generated enemy logic.
+Use `bt_get_info` as the native route-name inspection wrapper when verifying
+bridge parity or auditing the exact graph state that C++ sees.
+
 ---
 
 ## 5. Behavior Tree

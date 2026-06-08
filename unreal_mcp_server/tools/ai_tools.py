@@ -81,6 +81,30 @@ def register_ai_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def set_behavior_tree_blackboard(
+        ctx: Context,
+        behavior_tree_name: str,
+        blackboard_name: str,
+    ) -> Dict[str, Any]:
+        """Assign a Blackboard asset to an existing Behavior Tree.
+
+        Use this after `create_behavior_tree` and `create_blackboard` so the BT
+        editor, MoveTo nodes, decorators, services, and generated enemy AI all
+        resolve the same Blackboard keys.
+
+        Args:
+            behavior_tree_name: Existing Behavior Tree asset name
+            blackboard_name: Existing Blackboard asset name
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            set_behavior_tree_blackboard(behavior_tree_name="BT_Enemy", blackboard_name="BB_Enemy")"""
+        return _send("set_behavior_tree_blackboard", {
+            "behavior_tree_name": behavior_tree_name,
+            "blackboard_name": blackboard_name,
+        })
+
+    @mcp.tool()
     def create_ai_controller(
         ctx: Context,
         name: str,
@@ -1706,6 +1730,27 @@ def register_ai_tools(mcp: FastMCP):
         Example:
             get_bt_graph_info(behavior_tree_name="ExampleName")"""
         return _send("get_bt_graph_info", {
+            "behavior_tree_name": behavior_tree_name,
+        })
+
+    @mcp.tool()
+    def bt_get_info(
+        ctx: Context,
+        behavior_tree_name: str,
+    ) -> Dict[str, Any]:
+        """Inspect a Behavior Tree through the native `bt_get_info` bridge route.
+
+        This is an alias-level wrapper for bridge parity. Prefer it when auditing
+        native route coverage or when an orchestration package references the
+        C++ command name directly.
+
+        Args:
+            behavior_tree_name: Name of the BT asset to inspect
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            bt_get_info(behavior_tree_name="BT_Enemy")"""
+        return _send("bt_get_info", {
             "behavior_tree_name": behavior_tree_name,
         })
 
