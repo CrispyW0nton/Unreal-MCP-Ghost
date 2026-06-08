@@ -54,6 +54,7 @@
 - Added `scripts/playable_slice_live_preflight.py` to report no-spend readiness gates for live Tripo + Unreal playable-slice runs, including API-key presence, credit budget, packaged plugin evidence, and bridge reachability.
 - Exposed the same no-spend live-readiness checks through `skill_generate_playable_slice(mode="preflight")` and made the Playable Slice quick action run preflight before planning paid generation.
 - Added a dedicated Playable Slice **Preflight** action and visible readiness summary in the Unreal Chat Dock so users can diagnose Tripo auth, credit, package, and bridge gates before paid work; the full workflow prompt now remains preflight-first even when auth is missing.
+- Rendered `unreal_mcp_playable_slice_live_preflight.v1` results in Chat Dock tool cards as inline Playable Slice Preflight gates, including auth source, credit readiness, package path, bridge reachability, and next actions.
 - Verified the preflight-mode Chat Dock update with a UE 5.6 Win64 `BuildPlugin` package at `C:\uebuild\UnrealMCPBuild_preflightmode_20260608_034711`.
 - Documented the Chat Dock Playable Slice Builder in the playable-slice recipe KB so Generate Asset, Build Gameplay, and the new Playable Slice workspace form a clearer AI IDE progression inside Unreal.
 

@@ -197,6 +197,13 @@ workflow prompt is also preflight-first and may be inserted when auth is
 missing; `submit_assets` remains blocked until auth, budget, bridge readiness,
 and explicit spend confirmation are satisfied.
 
+When the preflight tool result returns
+`unreal_mcp_playable_slice_live_preflight.v1`, the Chat Dock tool card should
+render an inline **Playable Slice Preflight** evidence block. The block summarizes
+auth source, remaining versus estimated credits, latest package path, bridge
+reachability, every gate status, and any `next_actions`, so users can see why
+live spend is or is not ready without opening raw JSON.
+
 The inserted workflow prompt should:
 
 1. Call `skill_generate_playable_slice(mode="preflight")` with the current

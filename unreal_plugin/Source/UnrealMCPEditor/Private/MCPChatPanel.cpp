@@ -2040,7 +2040,7 @@ TSharedRef<SWidget> SMCPChatPanel::BuildTripoProgressPanel(const FToolCallView& 
 
 TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolCall)
 {
-	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness)
+	if (ToolCall.ScreenshotPaths.IsEmpty() && ToolCall.LogSnippets.IsEmpty() && ToolCall.PieResults.IsEmpty() && !ToolCall.bHasEvidenceReadiness && !ToolCall.bHasPlayableSlicePreflight)
 	{
 		return SNew(SBox)
 			.Visibility(EVisibility::Collapsed);
@@ -2055,6 +2055,55 @@ TSharedRef<SWidget> SMCPChatPanel::BuildEvidencePanel(const FToolCallView& ToolC
 		.Text(LOCTEXT("InlineEvidencePanel", "Evidence"))
 		.Font(FAppStyle::GetFontStyle("SmallFontBold"))
 	];
+
+	if (ToolCall.bHasPlayableSlicePreflight)
+	{
+		const FText PreflightText = FText::Format(
+			LOCTEXT("PlayableSlicePreflightEvidenceStatus", "Playable Slice Preflight: {0}"),
+			ToolCall.bPlayableSlicePreflightReady ? LOCTEXT("PlayableSlicePreflightReady", "ready") : LOCTEXT("PlayableSlicePreflightMissing", "missing gates")
+		);
+		EvidenceBox->AddSlot()
+		.AutoHeight()
+		.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+			.Padding(6.0f)
+			[
+				SNew(SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				[
+					SNew(STextBlock)
+					.Text(PreflightText)
+					.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+					.AutoWrapText(true)
+				]
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 3.0f, 0.0f, 0.0f)
+				[
+					SNew(STextBlock)
+					.Text(FText::FromString(ToolCall.PreflightSummary))
+					.AutoWrapText(true)
+				]
+			]
+		];
+
+		for (const FString& GateSummary : ToolCall.ProofGateSummaries)
+		{
+			EvidenceBox->AddSlot()
+			.AutoHeight()
+			.Padding(0.0f, 1.0f, 0.0f, 2.0f)
+			[
+				SNew(STextBlock)
+				.Text(FText::Format(LOCTEXT("PlayableSlicePreflightGate", "Preflight gate: {0}"), FText::FromString(GateSummary)))
+				.AutoWrapText(true)
+			];
+		}
+	}
 
 	if (ToolCall.bHasEvidenceReadiness)
 	{
@@ -4073,6 +4122,19 @@ void SMCPChatPanel::ShowToolDetailDrawer(const FToolCallView& ToolCall)
 	if (ToolDetailBody.IsValid())
 	{
 		FString EvidenceText;
+		if (ToolCall.bHasPlayableSlicePreflight)
+		{
+			EvidenceText += FString::Printf(
+				TEXT("Playable Slice Preflight: %s\n%s\n"),
+				ToolCall.bPlayableSlicePreflightReady ? TEXT("ready") : TEXT("missing gates"),
+				*ToolCall.PreflightSummary
+			);
+			if (!ToolCall.ProofGateSummaries.IsEmpty())
+			{
+				EvidenceText += FString::Join(ToolCall.ProofGateSummaries, LINE_TERMINATOR);
+				EvidenceText += TEXT("\n\n");
+			}
+		}
 		if (ToolCall.bHasEvidenceReadiness)
 		{
 			EvidenceText += FString::Printf(
@@ -4366,6 +4428,10 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	{
 		ExtractEvidenceReadinessFromJsonObject(Value->AsObject(), OutToolCall);
 	}
+	if (LowerField == TEXT("preflight") && Value->Type == EJson::Object)
+	{
+		ExtractPlayableSlicePreflightFromJsonObject(Value->AsObject(), OutToolCall);
+	}
 
 	if (Value->Type == EJson::String)
 	{
@@ -4444,6 +4510,139 @@ void SMCPChatPanel::ExtractEvidenceFromJsonValue(const FString& FieldName, const
 	else if (bLogField)
 	{
 		OutToolCall.LogSnippets.AddUnique(TruncateForCard(JsonValueToString(Value), 480));
+	}
+}
+
+void SMCPChatPanel::ExtractPlayableSlicePreflightFromJsonObject(const TSharedPtr<FJsonObject>& Object, FToolCallView& OutToolCall) const
+{
+	if (!Object.IsValid())
+	{
+		return;
+	}
+
+	const FString Schema = GetStringField(Object, TEXT("schema"));
+	if (Schema != TEXT("unreal_mcp_playable_slice_live_preflight.v1"))
+	{
+		return;
+	}
+
+	OutToolCall.bHasPlayableSlicePreflight = true;
+	Object->TryGetBoolField(TEXT("ready_for_live_spend"), OutToolCall.bPlayableSlicePreflightReady);
+
+	FString AuthSource = TEXT("missing");
+	const TSharedPtr<FJsonObject>* ApiKeyObject = nullptr;
+	if (Object->TryGetObjectField(TEXT("api_key"), ApiKeyObject) && ApiKeyObject && ApiKeyObject->IsValid())
+	{
+		AuthSource = GetStringField(*ApiKeyObject, TEXT("source"));
+		if (AuthSource.IsEmpty())
+		{
+			AuthSource = TEXT("unknown");
+		}
+	}
+
+	FString CreditSummary = TEXT("credits unknown");
+	const TSharedPtr<FJsonObject>* SettingsObject = nullptr;
+	if (Object->TryGetObjectField(TEXT("settings"), SettingsObject) && SettingsObject && SettingsObject->IsValid())
+	{
+		double Remaining = 0.0;
+		double Estimated = 0.0;
+		const bool bHasRemaining = (*SettingsObject)->TryGetNumberField(TEXT("session_credits_remaining"), Remaining);
+		const bool bHasEstimated = (*SettingsObject)->TryGetNumberField(TEXT("estimated_credits"), Estimated);
+		if (bHasRemaining || bHasEstimated)
+		{
+			CreditSummary = FString::Printf(TEXT("credits remaining %.0f / estimated %.0f"), Remaining, Estimated);
+		}
+	}
+
+	FString PackageSummary = TEXT("package unknown");
+	const TSharedPtr<FJsonObject>* BuildObject = nullptr;
+	if (Object->TryGetObjectField(TEXT("build"), BuildObject) && BuildObject && BuildObject->IsValid())
+	{
+		const TSharedPtr<FJsonObject>* PackageObject = nullptr;
+		if ((*BuildObject)->TryGetObjectField(TEXT("package"), PackageObject) && PackageObject && PackageObject->IsValid())
+		{
+			PackageSummary = GetStringField(*PackageObject, TEXT("path"));
+			if (PackageSummary.IsEmpty())
+			{
+				PackageSummary = TEXT("no packaged plugin path");
+			}
+		}
+	}
+
+	FString BridgeSummary = TEXT("bridge unknown");
+	const TSharedPtr<FJsonObject>* BridgeObject = nullptr;
+	if (Object->TryGetObjectField(TEXT("bridge"), BridgeObject) && BridgeObject && BridgeObject->IsValid())
+	{
+		const FString Host = GetStringField(*BridgeObject, TEXT("host"));
+		double Port = 0.0;
+		(*BridgeObject)->TryGetNumberField(TEXT("port"), Port);
+		bool bReachable = false;
+		(*BridgeObject)->TryGetBoolField(TEXT("reachable"), bReachable);
+		BridgeSummary = FString::Printf(
+			TEXT("%s:%d %s"),
+			Host.IsEmpty() ? TEXT("unknown") : *Host,
+			static_cast<int32>(Port),
+			bReachable ? TEXT("reachable") : TEXT("not reachable")
+		);
+	}
+
+	OutToolCall.PreflightSummary = FString::Printf(
+		TEXT("Auth: %s | %s | Package: %s | Bridge: %s"),
+		*TruncateForCard(AuthSource, 80),
+		*TruncateForCard(CreditSummary, 80),
+		*TruncateForCard(PackageSummary, 120),
+		*TruncateForCard(BridgeSummary, 80)
+	);
+
+	const TArray<TSharedPtr<FJsonValue>>* GateValues = nullptr;
+	if (Object->TryGetArrayField(TEXT("gates"), GateValues) && GateValues)
+	{
+		for (const TSharedPtr<FJsonValue>& GateValue : *GateValues)
+		{
+			if (!GateValue.IsValid() || GateValue->Type != EJson::Object)
+			{
+				continue;
+			}
+
+			const TSharedPtr<FJsonObject> GateObject = GateValue->AsObject();
+			const FString GateId = GetStringField(GateObject, TEXT("id"));
+			const FString GateStatus = GetStringField(GateObject, TEXT("status"));
+			TArray<FString> MissingParts;
+			const TArray<TSharedPtr<FJsonValue>>* MissingValues = nullptr;
+			if (GateObject->TryGetArrayField(TEXT("missing"), MissingValues) && MissingValues)
+			{
+				for (const TSharedPtr<FJsonValue>& MissingValue : *MissingValues)
+				{
+					if (MissingValue.IsValid())
+					{
+						MissingParts.Add(TruncateForCard(JsonValueToString(MissingValue), 120));
+					}
+				}
+			}
+
+			FString GateLine = FString::Printf(
+				TEXT("%s = %s"),
+				*TruncateForCard(GateId.IsEmpty() ? TEXT("unnamed_gate") : GateId, 72),
+				*TruncateForCard(GateStatus.IsEmpty() ? TEXT("unknown") : GateStatus, 40)
+			);
+			if (!MissingParts.IsEmpty())
+			{
+				GateLine += FString::Printf(TEXT(" | missing: %s"), *TruncateForCard(FString::Join(MissingParts, TEXT(", ")), 180));
+			}
+			OutToolCall.ProofGateSummaries.AddUnique(GateLine);
+		}
+	}
+
+	const TArray<TSharedPtr<FJsonValue>>* NextActionValues = nullptr;
+	if (Object->TryGetArrayField(TEXT("next_actions"), NextActionValues) && NextActionValues)
+	{
+		for (const TSharedPtr<FJsonValue>& NextActionValue : *NextActionValues)
+		{
+			if (NextActionValue.IsValid())
+			{
+				OutToolCall.ProofGateSummaries.AddUnique(FString::Printf(TEXT("next: %s"), *TruncateForCard(JsonValueToString(NextActionValue), 180)));
+			}
+		}
 	}
 }
 

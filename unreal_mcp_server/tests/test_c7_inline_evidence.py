@@ -26,7 +26,10 @@ class InlineEvidenceTest(unittest.TestCase):
             "LogSnippets",
             "PieResults",
             "EvidenceReadinessSummary",
+            "PreflightSummary",
             "ProofGateSummaries",
+            "bHasPlayableSlicePreflight",
+            "bPlayableSlicePreflightReady",
             "bHasEvidenceReadiness",
             "bLivePlayableSliceProven",
             "BuildEvidencePanel",
@@ -34,6 +37,7 @@ class InlineEvidenceTest(unittest.TestCase):
             "ExtractEvidenceFromJsonObject",
             "ExtractEvidenceFromJsonValue",
             "ExtractEvidenceReadinessFromJsonObject",
+            "ExtractPlayableSlicePreflightFromJsonObject",
             "EvidenceImageBrushes",
         ):
             with self.subTest(symbol=symbol):
@@ -47,6 +51,8 @@ class InlineEvidenceTest(unittest.TestCase):
         self.assertIn('LOCTEXT("InlineScreenshotPath", "Screenshot: {0}")', self.cpp)
         self.assertIn('LOCTEXT("PlayableSliceEvidenceReadinessStatus", "Playable Slice Proof: {0}")', self.cpp)
         self.assertIn('LOCTEXT("PlayableSliceProofGate", "Proof gate: {0}")', self.cpp)
+        self.assertIn('LOCTEXT("PlayableSlicePreflightEvidenceStatus", "Playable Slice Preflight: {0}")', self.cpp)
+        self.assertIn('LOCTEXT("PlayableSlicePreflightGate", "Preflight gate: {0}")', self.cpp)
 
     def test_screenshots_render_as_image_widgets_when_present(self) -> None:
         self.assertIn('#include "Brushes/SlateDynamicImageBrush.h"', self.cpp)
@@ -68,6 +74,10 @@ class InlineEvidenceTest(unittest.TestCase):
             "pie",
             "play_in_editor",
             "evidence_readiness",
+            "unreal_mcp_playable_slice_live_preflight.v1",
+            "ready_for_live_spend",
+            "next_actions",
+            "PreflightSummary",
             "live_playable_slice_proven",
             "ProofGateSummaries",
             "ExtractEvidenceFromJsonObject(Object, OutToolCall)",
@@ -81,6 +91,7 @@ class InlineEvidenceTest(unittest.TestCase):
         self.assertIn("PIE results:", self.cpp)
         self.assertIn("Log snippets:", self.cpp)
         self.assertIn("Playable Slice Proof:", self.cpp)
+        self.assertIn("Playable Slice Preflight:", self.cpp)
 
     def test_changelog_records_c7(self) -> None:
         self.assertIn("### C.7 - PIE/log/viewport evidence inline", self.changelog)
