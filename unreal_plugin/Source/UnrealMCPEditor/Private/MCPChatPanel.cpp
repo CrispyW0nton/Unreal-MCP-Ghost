@@ -971,6 +971,26 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	{
 		GenerateTextureSaveName = GenerateTextureSaveNameInput->GetText().ToString().TrimStartAndEnd();
 	}
+	if (GenerateTexturePaintPartNameInput.IsValid())
+	{
+		GenerateTexturePaintPartName = GenerateTexturePaintPartNameInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintImageBucketInput.IsValid())
+	{
+		GenerateTexturePaintImageBucket = GenerateTexturePaintImageBucketInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintImageKeyInput.IsValid())
+	{
+		GenerateTexturePaintImageKey = GenerateTexturePaintImageKeyInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintImageUrlInput.IsValid())
+	{
+		GenerateTexturePaintImageUrl = GenerateTexturePaintImageUrlInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintImageFileTokenInput.IsValid())
+	{
+		GenerateTexturePaintImageFileToken = GenerateTexturePaintImageFileTokenInput->GetText().ToString().TrimStartAndEnd();
+	}
 	if (GenerateTextureTripoProjectIdInput.IsValid())
 	{
 		GenerateTextureTripoProjectId = GenerateTextureTripoProjectIdInput->GetText().ToString().TrimStartAndEnd();
@@ -3224,6 +3244,87 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 								SAssignNew(GenerateTextureBlendModeInput, SEditableTextBox)
 								.HintText(LOCTEXT("GenerateTextureBlendModeHint", "blend mode"))
 								.Text(FText::FromString(GenerateTextureBlendMode))
+							]
+						]
+					]
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SBox)
+				.Visibility(this, &SMCPChatPanel::GetGenerateTextureModelVisibility)
+				[
+					SNew(SBorder)
+					.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+					.Padding(6.0f)
+					[
+						SNew(SVerticalBox)
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+						[
+							SNew(STextBlock)
+							.Text(LOCTEXT("GenerateTexturePaintStrokeTitle", "Paint Stroke"))
+							.Font(FAppStyle::GetFontStyle("SmallFontBold"))
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.34f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTexturePaintPartNameInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintPartNameHint", "part name, for example Body"))
+								.Text(FText::FromString(GenerateTexturePaintPartName))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.33f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTexturePaintImageBucketInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintImageBucketHint", "paint image bucket"))
+								.Text(FText::FromString(GenerateTexturePaintImageBucket))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.33f)
+							[
+								SAssignNew(GenerateTexturePaintImageKeyInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintImageKeyHint", "paint image key"))
+								.Text(FText::FromString(GenerateTexturePaintImageKey))
+							]
+						]
+
+						+ SVerticalBox::Slot()
+						.AutoHeight()
+						[
+							SNew(SHorizontalBox)
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+							[
+								SAssignNew(GenerateTexturePaintImageUrlInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintImageUrlHint", "paint image URL"))
+								.Text(FText::FromString(GenerateTexturePaintImageUrl))
+							]
+
+							+ SHorizontalBox::Slot()
+							.FillWidth(0.5f)
+							[
+								SAssignNew(GenerateTexturePaintImageFileTokenInput, SEditableTextBox)
+								.HintText(LOCTEXT("GenerateTexturePaintImageFileTokenHint", "paint image file_token"))
+								.Text(FText::FromString(GenerateTexturePaintImageFileToken))
 							]
 						]
 					]
@@ -5501,6 +5602,23 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 		const FString ImageMapForPrompt = GenerateTextureImageMapJson.TrimStartAndEnd().IsEmpty()
 			? FString(TEXT("[]"))
 			: GenerateTextureImageMapJson.TrimStartAndEnd();
+		FString PaintImageForPrompt = TEXT("{}");
+		if (!GenerateTexturePaintImageBucket.TrimStartAndEnd().IsEmpty() && !GenerateTexturePaintImageKey.TrimStartAndEnd().IsEmpty())
+		{
+			PaintImageForPrompt = FString::Printf(
+				TEXT("{\"bucket\":\"%s\",\"key\":\"%s\"}"),
+				*Escape(GenerateTexturePaintImageBucket),
+				*Escape(GenerateTexturePaintImageKey)
+			);
+		}
+		else if (!GenerateTexturePaintImageUrl.TrimStartAndEnd().IsEmpty())
+		{
+			PaintImageForPrompt = FString::Printf(TEXT("{\"url\":\"%s\"}"), *Escape(GenerateTexturePaintImageUrl));
+		}
+		else if (!GenerateTexturePaintImageFileToken.TrimStartAndEnd().IsEmpty())
+		{
+			PaintImageForPrompt = FString::Printf(TEXT("{\"file_token\":\"%s\"}"), *Escape(GenerateTexturePaintImageFileToken));
+		}
 		return FString::Printf(
 			TEXT("First use MCP tool `gen_prepare_texture_paint_session` to record the no-spend Tripo Studio Magic Brush plan for the Texture/Paint workspace.\n")
 			TEXT("Plan parameters:\n")
@@ -5525,11 +5643,18 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- tripo_project_id: \"%s\"\n")
 			TEXT("- image_map: %s\n")
 			TEXT("- record_session: true\n")
+			TEXT("Paint stroke controls:\n")
+			TEXT("- part_name: \"%s\"\n")
+			TEXT("- paint_image_bucket: \"%s\"\n")
+			TEXT("- paint_image_key: \"%s\"\n")
+			TEXT("- paint_image_url: \"%s\"\n")
+			TEXT("- paint_image_file_token: \"%s\"\n")
+			TEXT("- paint_image: %s\n")
 			TEXT("Then, only after spend approval, run the Studio Magic Brush sequence when a Tripo project_id and render snapshot are available:\n")
 			TEXT("1. Use MCP tool `gen_tripo_magic_brush_generate` with project_id, prompt, render_image, camera_matrix, strength, and confirm_spend.\n")
 			TEXT("2. Use MCP tool `gen_tripo_magic_brush_get_retexture` with the returned draft_id to inspect the generated texture image.\n")
 			TEXT("3. Optionally use MCP tool `gen_tripo_magic_brush_list_images` for the project texture image history before painting.\n")
-			TEXT("4. As the user paints/blends generated texture regions, call `gen_record_texture_paint_stroke` for each painted part with session_id, part_name, image bucket/key or URL, brush controls, and blend notes.\n")
+			TEXT("4. As the user paints/blends generated texture regions, call `gen_record_texture_paint_stroke` for each painted part with the session_id from the prepare result, part_name \"%s\", paint image %s, viewport_view \"%s\", brush size/strength/hardness, blend_mode \"%s\", and paint notes.\n")
 			TEXT("5. Call `gen_compile_texture_paint_image_map` to compile the recorded paint strokes into the final Magic Brush image_map.\n")
 			TEXT("6. After the user approves the saved paint result, use MCP tool `gen_tripo_magic_brush_apply` with project_id, compiled image_map, and confirm_spend.\n")
 			TEXT("Studio Magic Brush parameters:\n")
@@ -5572,6 +5697,16 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			*Escape(GenerateTextureSaveName),
 			*Escape(GenerateTextureTripoProjectId),
 			*ImageMapForPrompt,
+			*Escape(GenerateTexturePaintPartName),
+			*Escape(GenerateTexturePaintImageBucket),
+			*Escape(GenerateTexturePaintImageKey),
+			*Escape(GenerateTexturePaintImageUrl),
+			*Escape(GenerateTexturePaintImageFileToken),
+			*PaintImageForPrompt,
+			*Escape(GenerateTexturePaintPartName),
+			*PaintImageForPrompt,
+			*Escape(GenerateTextureViewAngle),
+			*Escape(GenerateTextureBlendMode),
 			*Escape(GenerateTextureTripoProjectId),
 			*Escape(TexturePrompt),
 			*RenderImageForPrompt,

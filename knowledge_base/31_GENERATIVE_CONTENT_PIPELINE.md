@@ -571,19 +571,24 @@ Unreal. Current Tripo workspace modes are:
   optional reference image, paint/blend notes, viewport angle, render image
   bucket/key or URL, camera matrix JSON, brush size, strength, hardness,
   creativity strength, paint mode/color, blend mode, Tripo project id,
-  `image_map` JSON, and save-name intent. If Studio project/snapshot/image-map
-  data is unavailable, use the gated `gen_tripo_texture_model` fallback for an
-  existing model task.
+  `image_map` JSON, and save-name intent. The Paint Stroke section captures the
+  target part plus generated texture image bucket/key, URL, or file token so the
+  inserted workflow can record each painted region through
+  `gen_record_texture_paint_stroke` and compile it through
+  `gen_compile_texture_paint_image_map` instead of requiring artists to hand
+  author Magic Brush JSON. If Studio project/snapshot/image-map data is
+  unavailable, use the gated `gen_tripo_texture_model` fallback for an existing
+  model task.
 
 The Generate Asset panel keeps the active mode focused: Text to 3D shows only
 the text prompt, Image to 3D shows the single reference-image field,
 Multi-Image to 3D shows the ordered view references, and Texture/Paint groups
-the Magic Brush flow into **Texture Target**, **Texture Direction**, and
-**Paint Controls**. Raw Studio project, render-image, camera-matrix, and
-`image_map` fields stay in a collapsed **Studio Snapshot** area so artists can
-work from the common paint controls while technical users can still mirror the
-exact Tripo Studio handoff when needed. This avoids presenting every Tripo field
-at once in the Unreal dock.
+the Magic Brush flow into **Texture Target**, **Texture Direction**, **Paint
+Controls**, and **Paint Stroke**. Raw Studio project, render-image,
+camera-matrix, and `image_map` fields stay in a collapsed **Studio Snapshot**
+area so artists can work from the common paint/stroke controls while technical
+users can still mirror the exact Tripo Studio handoff when needed. This avoids
+presenting every Tripo field at once in the Unreal dock.
 
 The top-bar **Playable Slice** action is the higher-level generative workspace
 entry point. It captures a one-sentence game brief, generated asset roles,
@@ -621,8 +626,9 @@ Brush paid call is allowed.
 5. Insert the generated Tripo request into the composer.
 6. For Texture/Paint, run the inserted `gen_prepare_texture_paint_session`
    portion before spend approval; it records the no-spend Magic Brush plan.
-7. Record each painted/blended texture region with
-   `gen_record_texture_paint_stroke`, then compile the saved strokes with
+7. Fill Paint Stroke with the target part name and generated paint-image
+   bucket/key, URL, or file token, then record each painted/blended texture
+   region with `gen_record_texture_paint_stroke`. Compile the saved strokes with
    `gen_compile_texture_paint_image_map` before the paid Studio apply call.
 8. Send paid task calls only after the user has approved the spend gate. The
    inserted request keeps `confirm_spend=false` until the panel spend

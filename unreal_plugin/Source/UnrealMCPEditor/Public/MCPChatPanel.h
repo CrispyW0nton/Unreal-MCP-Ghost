@@ -337,6 +337,11 @@ private:
 	FString GenerateTexturePaintColor = TEXT("#FFFFFF");
 	FString GenerateTextureBlendMode = TEXT("soft blend");
 	FString GenerateTextureSaveName = TEXT("MI_GeneratedPaintedTexture");
+	FString GenerateTexturePaintPartName = TEXT("Body");
+	FString GenerateTexturePaintImageBucket;
+	FString GenerateTexturePaintImageKey;
+	FString GenerateTexturePaintImageUrl;
+	FString GenerateTexturePaintImageFileToken;
 	FString GenerateTextureTripoProjectId;
 	FString GenerateTextureRenderImageBucket;
 	FString GenerateTextureRenderImageKey;
@@ -386,6 +391,11 @@ private:
 	TSharedPtr<SEditableTextBox> GenerateTexturePaintColorInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureBlendModeInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureSaveNameInput;
+	TSharedPtr<SEditableTextBox> GenerateTexturePaintPartNameInput;
+	TSharedPtr<SEditableTextBox> GenerateTexturePaintImageBucketInput;
+	TSharedPtr<SEditableTextBox> GenerateTexturePaintImageKeyInput;
+	TSharedPtr<SEditableTextBox> GenerateTexturePaintImageUrlInput;
+	TSharedPtr<SEditableTextBox> GenerateTexturePaintImageFileTokenInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureTripoProjectIdInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureRenderImageBucketInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureRenderImageKeyInput;
