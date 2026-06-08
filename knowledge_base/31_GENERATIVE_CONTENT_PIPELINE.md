@@ -145,7 +145,10 @@ reports whether a key exists and which source won precedence. Defaults live in
 
 The chat dock also exposes a Generate Asset Settings drawer for the same
 values. Use the environment variable for shared automation and the local
-secrets file for per-project editor sessions.
+secrets file for per-project editor sessions. In-editor users can paste the
+Tripo API key into the password-style `TRIPO_API_KEY` field, save it to
+`Saved/MCPChat/secrets.json`, or clear it from the same drawer. Generate Asset
+insertion is gated until the key is available from either source.
 
 Example:
 
@@ -455,14 +458,25 @@ execution journal:
 ## D9 Chat Dock Integration
 
 The in-editor MCP Chat dock is the preferred surface for user-facing generated
-asset work. Use the top-bar Generate Asset action for a single Tripo
-`text_to_model` asset request:
+asset work. Use the top-bar Generate Asset action as the Tripo workspace inside
+Unreal. Current Tripo workspace modes are:
+
+- Text to 3D: inserts `gen_tripo_text_to_model`.
+- Image to 3D: inserts `gen_tripo_image_to_model` with an image path or URL.
+- Multi-Image to 3D: inserts `gen_tripo_multiview_to_model` with ordered
+  front, left, back, and right reference inputs.
+- Texture/Paint: inserts `gen_tripo_texture_model` for an existing model task
+  with texture direction, optional reference-image text, paint/blend notes,
+  viewport angle, brush strength, blend mode, and save-name intent. This mirrors
+  the Tripo edit workflow: generate a high-fidelity texture image from the mesh
+  view and prompt, paint it onto the visible model, rotate the model to continue
+  painting/blending, and save once the result is satisfactory.
 
 1. Open Generate Asset.
-2. Enter the prompt and target Unreal asset name.
+2. Select the workspace mode and fill the active prompt/image/task fields.
 3. Confirm the current model version, texture quality, output folder, and spend
    state shown from the existing Generate Asset Settings panel.
-4. Insert the generated `gen_tripo_text_to_model` request into the composer.
+4. Insert the generated Tripo request into the composer.
 5. Send only after the user has approved the spend gate. The inserted request
    keeps `confirm_spend=false` until the panel spend confirmation is active.
 6. Follow with `gen_tripo_wait_for_task`; Tripo progress fields render as an

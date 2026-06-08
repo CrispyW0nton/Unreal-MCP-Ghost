@@ -685,6 +685,58 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	{
 		GenerateAssetName = GenerateAssetNameInput->GetText().ToString().TrimStartAndEnd();
 	}
+	if (GenerateAssetImageInputBox.IsValid())
+	{
+		GenerateAssetImageInput = GenerateAssetImageInputBox->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateAssetFrontImageInputBox.IsValid())
+	{
+		GenerateAssetFrontImageInput = GenerateAssetFrontImageInputBox->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateAssetLeftImageInputBox.IsValid())
+	{
+		GenerateAssetLeftImageInput = GenerateAssetLeftImageInputBox->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateAssetBackImageInputBox.IsValid())
+	{
+		GenerateAssetBackImageInput = GenerateAssetBackImageInputBox->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateAssetRightImageInputBox.IsValid())
+	{
+		GenerateAssetRightImageInput = GenerateAssetRightImageInputBox->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureTaskIdInput.IsValid())
+	{
+		GenerateTextureTaskId = GenerateTextureTaskIdInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePromptInput.IsValid())
+	{
+		GenerateTexturePrompt = GenerateTexturePromptInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureReferenceImageInputBox.IsValid())
+	{
+		GenerateTextureReferenceImageInput = GenerateTextureReferenceImageInputBox->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTexturePaintNotesInput.IsValid())
+	{
+		GenerateTexturePaintNotes = GenerateTexturePaintNotesInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureViewAngleInput.IsValid())
+	{
+		GenerateTextureViewAngle = GenerateTextureViewAngleInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureBrushStrengthInput.IsValid())
+	{
+		GenerateTextureBrushStrength = GenerateTextureBrushStrengthInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureBlendModeInput.IsValid())
+	{
+		GenerateTextureBlendMode = GenerateTextureBlendModeInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureSaveNameInput.IsValid())
+	{
+		GenerateTextureSaveName = GenerateTextureSaveNameInput->GetText().ToString().TrimStartAndEnd();
+	}
 	if (GenerateAssetPrompt.IsEmpty())
 	{
 		GenerateAssetPrompt = TEXT("game-ready stylized prop, clean silhouette, PBR textures");
@@ -692,6 +744,35 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	if (GenerateAssetName.IsEmpty())
 	{
 		GenerateAssetName = TEXT("SM_GeneratedAsset");
+	}
+	if (!IsGenerativeApiKeyConfigured())
+	{
+		bGenerativeSettingsVisible = true;
+		SetStatus(LOCTEXT("StatusGenerateAssetMissingKey", "Add a Tripo API key before generating"), ErrorStatusColor);
+		return FReply::Handled();
+	}
+	if (GenerateAssetMode == TEXT("image_to_model") && GenerateAssetImageInput.IsEmpty())
+	{
+		SetStatus(LOCTEXT("StatusGenerateAssetMissingImage", "Image to 3D needs an image path or URL"), ErrorStatusColor);
+		return FReply::Handled();
+	}
+	if (GenerateAssetMode == TEXT("multiview_to_model"))
+	{
+		int32 ViewCount = 0;
+		ViewCount += GenerateAssetFrontImageInput.IsEmpty() ? 0 : 1;
+		ViewCount += GenerateAssetLeftImageInput.IsEmpty() ? 0 : 1;
+		ViewCount += GenerateAssetBackImageInput.IsEmpty() ? 0 : 1;
+		ViewCount += GenerateAssetRightImageInput.IsEmpty() ? 0 : 1;
+		if (ViewCount < 2 || GenerateAssetFrontImageInput.IsEmpty())
+		{
+			SetStatus(LOCTEXT("StatusGenerateAssetMissingMultiview", "Multi-image to 3D needs front plus at least one more view"), ErrorStatusColor);
+			return FReply::Handled();
+		}
+	}
+	if (GenerateAssetMode == TEXT("texture_model") && (GenerateTextureTaskId.IsEmpty() || GenerateTexturePrompt.IsEmpty()))
+	{
+		SetStatus(LOCTEXT("StatusGenerateAssetMissingTextureInputs", "Texture/Paint needs a model task id and texture prompt"), ErrorStatusColor);
+		return FReply::Handled();
 	}
 
 	InsertComposerText(BuildGenerateAssetToolCallPrompt());
@@ -701,6 +782,34 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 		bGenerativeSpendConfirmed ? LOCTEXT("StatusGenerateAssetInsertedConfirmed", "Inserted Tripo asset generation call") : LOCTEXT("StatusGenerateAssetInsertedNeedsSpend", "Inserted Tripo call; confirm spend before paid execution"),
 		bGenerativeSpendConfirmed ? OkStatusColor : PendingStatusColor
 	);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGenerateModeTextToModelClicked()
+{
+	GenerateAssetMode = TEXT("text_to_model");
+	SetStatus(LOCTEXT("StatusGenerateModeText", "Generate mode: Text to 3D"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGenerateModeImageToModelClicked()
+{
+	GenerateAssetMode = TEXT("image_to_model");
+	SetStatus(LOCTEXT("StatusGenerateModeImage", "Generate mode: Image to 3D"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGenerateModeMultiviewToModelClicked()
+{
+	GenerateAssetMode = TEXT("multiview_to_model");
+	SetStatus(LOCTEXT("StatusGenerateModeMultiview", "Generate mode: Multi-image to 3D"), PendingStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleGenerateModeTextureModelClicked()
+{
+	GenerateAssetMode = TEXT("texture_model");
+	SetStatus(LOCTEXT("StatusGenerateModeTexture", "Generate mode: Texture/Paint"), PendingStatusColor);
 	return FReply::Handled();
 }
 
@@ -757,6 +866,19 @@ FReply SMCPChatPanel::HandleSaveGenerativeSettingsClicked()
 	SaveGenerativeSettingsToDisk();
 	RecordTelemetryEvent(TEXT("generative_settings_saved"));
 	SetStatus(LOCTEXT("StatusGenerativeSettingsSaved", "Generative settings saved"), OkStatusColor);
+	return FReply::Handled();
+}
+
+FReply SMCPChatPanel::HandleClearGenerativeApiKeyClicked()
+{
+	GenerativeApiKey.Empty();
+	if (GenerativeApiKeyInput.IsValid())
+	{
+		GenerativeApiKeyInput->SetText(FText::GetEmpty());
+	}
+	IFileManager::Get().Delete(*GetGenerativeSecretsFilePath(), false, true, true);
+	RecordTelemetryEvent(TEXT("generative_api_key_cleared"));
+	SetStatus(LOCTEXT("StatusGenerativeApiKeyCleared", "Tripo API key cleared"), PendingStatusColor);
 	return FReply::Handled();
 }
 
@@ -2129,6 +2251,48 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 			.AutoHeight()
 			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GenerateModeTextToModel", "Text to 3D"))
+					.OnClicked(this, &SMCPChatPanel::HandleGenerateModeTextToModelClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GenerateModeImageToModel", "Image to 3D"))
+					.OnClicked(this, &SMCPChatPanel::HandleGenerateModeImageToModelClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GenerateModeMultiviewToModel", "Multi-Image to 3D"))
+					.OnClicked(this, &SMCPChatPanel::HandleGenerateModeMultiviewToModelClicked)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("GenerateModeTextureModel", "Texture/Paint"))
+					.OnClicked(this, &SMCPChatPanel::HandleGenerateModeTextureModelClicked)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
 				SAssignNew(GenerateAssetPromptInput, SEditableTextBox)
 				.HintText(LOCTEXT("GenerateAssetPromptHint", "Prompt for Tripo text_to_model"))
 				.Text(FText::FromString(GenerateAssetPrompt))
@@ -2156,6 +2320,141 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 					.Text(FText::Format(LOCTEXT("GenerateAssetSettingsSummary", "Model {0} | Texture {1} | Folder {2}"), FText::FromString(GenerativeModelVersion), FText::FromString(GenerativeTextureQuality), FText::FromString(GenerativeOutputFolder)))
 					.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 					.AutoWrapText(true)
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GenerateAssetImageInputBox, SEditableTextBox)
+				.HintText(LOCTEXT("GenerateAssetImageHint", "Image path or URL for image_to_model"))
+				.Text(FText::FromString(GenerateAssetImageInput))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateAssetFrontImageInputBox, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateAssetFrontImageHint", "front image path or URL"))
+					.Text(FText::FromString(GenerateAssetFrontImageInput))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateAssetLeftImageInputBox, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateAssetLeftImageHint", "left image path or URL"))
+					.Text(FText::FromString(GenerateAssetLeftImageInput))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateAssetBackImageInputBox, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateAssetBackImageHint", "back image path or URL"))
+					.Text(FText::FromString(GenerateAssetBackImageInput))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				[
+					SAssignNew(GenerateAssetRightImageInputBox, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateAssetRightImageHint", "right image path or URL"))
+					.Text(FText::FromString(GenerateAssetRightImageInput))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.34f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureTaskIdInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureTaskIdHint", "existing model task_id"))
+					.Text(FText::FromString(GenerateTextureTaskId))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.33f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTexturePromptInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTexturePromptHint", "texture or paint prompt"))
+					.Text(FText::FromString(GenerateTexturePrompt))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.33f)
+				[
+					SAssignNew(GenerateTextureReferenceImageInputBox, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureReferenceImageHint", "texture reference image path or URL"))
+					.Text(FText::FromString(GenerateTextureReferenceImageInput))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GenerateTexturePaintNotesInput, SEditableTextBox)
+				.HintText(LOCTEXT("GenerateTexturePaintNotesHint", "paint and blend notes"))
+				.Text(FText::FromString(GenerateTexturePaintNotes))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureViewAngleInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureViewAngleHint", "view angle"))
+					.Text(FText::FromString(GenerateTextureViewAngle))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureBrushStrengthInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureBrushStrengthHint", "brush strength"))
+					.Text(FText::FromString(GenerateTextureBrushStrength))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureBlendModeInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureBlendModeHint", "blend mode"))
+					.Text(FText::FromString(GenerateTextureBlendMode))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				[
+					SAssignNew(GenerateTextureSaveNameInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureSaveNameHint", "save asset name"))
+					.Text(FText::FromString(GenerateTextureSaveName))
 				]
 			]
 
@@ -2247,9 +2546,25 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerativeSettingsPanel()
 			.AutoHeight()
 			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 			[
-				SAssignNew(GenerativeApiKeyInput, SEditableTextBox)
-				.HintText(LOCTEXT("GenerativeApiKeyHint", "TRIPO_API_KEY or local Saved/MCPChat/secrets.json value"))
-				.Text(FText::FromString(GenerativeApiKey))
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerativeApiKeyInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerativeApiKeyHint", "TRIPO_API_KEY"))
+					.Text(FText::FromString(GenerativeApiKey))
+					.IsPassword(true)
+				]
+
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				[
+					SNew(SButton)
+					.Text(LOCTEXT("ClearGenerativeApiKey", "Clear Key"))
+					.OnClicked(this, &SMCPChatPanel::HandleClearGenerativeApiKeyClicked)
+				]
 			]
 
 			+ SVerticalBox::Slot()
@@ -3666,6 +3981,126 @@ FString SMCPChatPanel::BuildToolPromptTemplate(const FToolPaletteEntry& Tool) co
 
 FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 {
+	auto Escape = [](const FString& Value) -> FString
+	{
+		return Value.Replace(TEXT("\""), TEXT("'"));
+	};
+	auto ImageArgumentName = [](const FString& Value) -> FString
+	{
+		return Value.StartsWith(TEXT("http"), ESearchCase::IgnoreCase) ? FString(TEXT("image_url")) : FString(TEXT("image_path"));
+	};
+	auto ImageObjectJson = [&Escape, &ImageArgumentName](const FString& Value) -> FString
+	{
+		if (Value.TrimStartAndEnd().IsEmpty())
+		{
+			return TEXT("{\"type\":\"image\"}");
+		}
+		return FString::Printf(TEXT("{\"%s\":\"%s\"}"), *ImageArgumentName(Value), *Escape(Value));
+	};
+
+	const FString SessionName = CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName;
+	const FString CleanAssetName = GenerateAssetName.Replace(TEXT("\""), TEXT(""));
+	const FString ConfirmSpend = bGenerativeSpendConfirmed ? TEXT("true") : TEXT("false");
+
+	if (GenerateAssetMode == TEXT("image_to_model"))
+	{
+		return FString::Printf(
+			TEXT("Use MCP tool `gen_tripo_image_to_model` to generate a textured 3D model from a reference image, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
+			TEXT("Parameters:\n")
+			TEXT("- %s: \"%s\"\n")
+			TEXT("- model_version: \"%s\"\n")
+			TEXT("- texture: true\n")
+			TEXT("- pbr: true\n")
+			TEXT("- texture_quality: \"%s\"\n")
+			TEXT("- texture_alignment: \"original_image\"\n")
+			TEXT("- face_limit: 12000\n")
+			TEXT("- session_name: \"%s\"\n")
+			TEXT("- confirm_spend: %s\n")
+			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			*ImageArgumentName(GenerateAssetImageInput),
+			*Escape(GenerateAssetImageInput),
+			*GenerativeModelVersion,
+			*GenerativeTextureQuality,
+			*SessionName,
+			*ConfirmSpend,
+			*GenerativeOutputFolder,
+			*CleanAssetName
+		);
+	}
+
+	if (GenerateAssetMode == TEXT("multiview_to_model"))
+	{
+		const FString ImagesJson = FString::Printf(
+			TEXT("[%s,%s,%s,%s]"),
+			*ImageObjectJson(GenerateAssetFrontImageInput),
+			*ImageObjectJson(GenerateAssetLeftImageInput),
+			*ImageObjectJson(GenerateAssetBackImageInput),
+			*ImageObjectJson(GenerateAssetRightImageInput)
+		);
+		return FString::Printf(
+			TEXT("Use MCP tool `gen_tripo_multiview_to_model` to generate a textured 3D model from ordered front/left/back/right references, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
+			TEXT("Parameters:\n")
+			TEXT("- images: %s\n")
+			TEXT("- model_version: \"%s\"\n")
+			TEXT("- texture: true\n")
+			TEXT("- pbr: true\n")
+			TEXT("- texture_quality: \"%s\"\n")
+			TEXT("- texture_alignment: \"original_image\"\n")
+			TEXT("- face_limit: 12000\n")
+			TEXT("- session_name: \"%s\"\n")
+			TEXT("- confirm_spend: %s\n")
+			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			*ImagesJson,
+			*GenerativeModelVersion,
+			*GenerativeTextureQuality,
+			*SessionName,
+			*ConfirmSpend,
+			*GenerativeOutputFolder,
+			*CleanAssetName
+		);
+	}
+
+	if (GenerateAssetMode == TEXT("texture_model"))
+	{
+		FString TexturePrompt = GenerateTexturePrompt;
+		if (!GenerateTextureReferenceImageInput.TrimStartAndEnd().IsEmpty())
+		{
+			TexturePrompt += FString::Printf(TEXT("; use texture reference image %s as the visual style target"), *GenerateTextureReferenceImageInput);
+		}
+		if (!GenerateTexturePaintNotes.TrimStartAndEnd().IsEmpty())
+		{
+			TexturePrompt += FString::Printf(TEXT("; paint/blend notes: %s"), *GenerateTexturePaintNotes);
+		}
+		TexturePrompt += FString::Printf(
+			TEXT("; texture edit workspace controls: generate the high-fidelity texture image from the %s mesh view, paint it onto the visible model, rotate the model as needed, use brush strength %s, use %s, then save the satisfied result as %s"),
+			*GenerateTextureViewAngle,
+			*GenerateTextureBrushStrength,
+			*GenerateTextureBlendMode,
+			*GenerateTextureSaveName
+		);
+		return FString::Printf(
+			TEXT("Use MCP tool `gen_tripo_texture_model` to create a new texture/paint pass for an existing Tripo model task, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
+			TEXT("Parameters:\n")
+			TEXT("- task_id: \"%s\"\n")
+			TEXT("- texture_prompt: \"%s\"\n")
+			TEXT("- model_version: \"v3.0-20250812\"\n")
+			TEXT("- texture: true\n")
+			TEXT("- pbr: true\n")
+			TEXT("- texture_quality: \"%s\"\n")
+			TEXT("- texture_alignment: \"original_image\"\n")
+			TEXT("- session_name: \"%s\"\n")
+			TEXT("- confirm_spend: %s\n")
+			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
+			*Escape(GenerateTextureTaskId),
+			*Escape(TexturePrompt),
+			*GenerativeTextureQuality,
+			*SessionName,
+			*ConfirmSpend,
+			*GenerativeOutputFolder,
+			*CleanAssetName
+		);
+	}
+
 	return FString::Printf(
 		TEXT("Use MCP tool `gen_tripo_text_to_model` to generate an asset, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
 		TEXT("Parameters:\n")
@@ -3678,20 +4113,22 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 		TEXT("- session_name: \"%s\"\n")
 		TEXT("- confirm_spend: %s\n")
 		TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
-		*GenerateAssetPrompt.Replace(TEXT("\""), TEXT("'")),
+		*Escape(GenerateAssetPrompt),
 		*GenerativeModelVersion,
 		*GenerativeTextureQuality,
-		*(CurrentSessionName.IsEmpty() ? FString(TEXT("default")) : CurrentSessionName),
-		bGenerativeSpendConfirmed ? TEXT("true") : TEXT("false"),
+		*SessionName,
+		*ConfirmSpend,
 		*GenerativeOutputFolder,
-		*GenerateAssetName.Replace(TEXT("\""), TEXT(""))
+		*CleanAssetName
 	);
 }
 
 FText SMCPChatPanel::GetGenerateAssetPreviewText() const
 {
 	return FText::Format(
-		LOCTEXT("GenerateAssetPreview", "Preview: gen_tripo_text_to_model -> gen_tripo_wait_for_task progress -> gen_tripo_import_to_project. Confirmed spend: {0}."),
+		LOCTEXT("GenerateAssetPreview", "Preview: {0} -> gen_tripo_wait_for_task progress -> gen_tripo_import_to_project. Auth: {1}. Confirmed spend: {2}."),
+		FText::FromString(GenerateAssetMode),
+		IsGenerativeApiKeyConfigured() ? LOCTEXT("GenerateAssetAuthReady", "ready") : LOCTEXT("GenerateAssetAuthMissing", "missing"),
 		bGenerativeSpendConfirmed ? LOCTEXT("GenerateAssetSpendYes", "yes") : LOCTEXT("GenerateAssetSpendNo", "no")
 	);
 }
@@ -3723,6 +4160,11 @@ FString SMCPChatPanel::GetGenerativeApiKeySource() const
 		return TEXT("Saved/MCPChat/secrets.json");
 	}
 	return TEXT("missing");
+}
+
+bool SMCPChatPanel::IsGenerativeApiKeyConfigured() const
+{
+	return GetGenerativeApiKeySource() != TEXT("missing");
 }
 
 void SMCPChatPanel::LoadGenerativeSettings()

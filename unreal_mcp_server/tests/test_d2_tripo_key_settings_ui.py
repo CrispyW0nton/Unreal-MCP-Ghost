@@ -1,0 +1,77 @@
+"""Static checks for the in-editor Tripo settings and workspace UI."""
+
+from __future__ import annotations
+
+from pathlib import Path
+import unittest
+
+
+REPO_ROOT = Path(__file__).resolve().parents[2]
+EDITOR_MODULE = REPO_ROOT / "unreal_plugin" / "Source" / "UnrealMCPEditor"
+PANEL_CPP = EDITOR_MODULE / "Private" / "MCPChatPanel.cpp"
+PANEL_H = EDITOR_MODULE / "Public" / "MCPChatPanel.h"
+GENERATIVE_KB = REPO_ROOT / "knowledge_base" / "31_GENERATIVE_CONTENT_PIPELINE.md"
+CHANGELOG = REPO_ROOT / "knowledge_base" / "v5" / "CHANGELOG.md"
+
+
+class D2TripoKeySettingsUiTest(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.cpp = PANEL_CPP.read_text(encoding="utf-8")
+        cls.header = PANEL_H.read_text(encoding="utf-8")
+        cls.kb = GENERATIVE_KB.read_text(encoding="utf-8")
+        cls.changelog = CHANGELOG.read_text(encoding="utf-8")
+
+    def test_tripo_api_key_field_is_secret_and_clearable(self) -> None:
+        for token in (
+            "GenerativeApiKeyInput",
+            "TRIPO_API_KEY",
+            ".IsPassword(true)",
+            "HandleClearGenerativeApiKeyClicked",
+            "GetGenerativeSecretsFilePath()",
+            "IFileManager::Get().Delete",
+            "Saved/MCPChat/secrets.json",
+            "IsGenerativeApiKeyConfigured",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header)
+
+    def test_generate_workspace_has_all_tripo_modes(self) -> None:
+        for token in (
+            "HandleGenerateModeTextToModelClicked",
+            "HandleGenerateModeImageToModelClicked",
+            "HandleGenerateModeMultiviewToModelClicked",
+            "HandleGenerateModeTextureModelClicked",
+            "Text to 3D",
+            "Image to 3D",
+            "Multi-Image to 3D",
+            "Texture/Paint",
+            "gen_tripo_text_to_model",
+            "gen_tripo_image_to_model",
+            "gen_tripo_multiview_to_model",
+            "gen_tripo_texture_model",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header)
+
+    def test_texture_paint_controls_are_documented(self) -> None:
+        for token in (
+            "GenerateTextureReferenceImageInput",
+            "GenerateTexturePaintNotes",
+            "GenerateTextureViewAngle",
+            "GenerateTextureBrushStrength",
+            "GenerateTextureBlendMode",
+            "GenerateTextureSaveName",
+            "texture reference image",
+            "paint/blend notes",
+            "paint it onto the visible model",
+            "rotate the model",
+            "save the satisfied result",
+            "Tripo workspace modes",
+        ):
+            with self.subTest(token=token):
+                self.assertIn(token, self.cpp + self.header + self.kb + self.changelog)
+
+
+if __name__ == "__main__":
+    unittest.main()

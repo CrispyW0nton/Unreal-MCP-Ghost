@@ -9,6 +9,9 @@
 ### D.9 - Chat dock generative integration
 
 - Added a Generate Asset quick action in the MCP Chat dock that opens a Tripo prompt/settings/preview panel and inserts a `gen_tripo_text_to_model` request into the composer.
+- Expanded the Generate Asset surface into Tripo workspace modes for Text to 3D, Image to 3D, Multi-Image to 3D, and Texture/Paint existing-model passes.
+- Added Texture/Paint controls for texture reference, view angle, brush strength, blend mode, paint/blend notes, and save-name intent so Unreal mirrors Tripo's edit workflow.
+- Hardened the Tripo API-key UX with password-style entry, save/clear controls, local `Saved/MCPChat/secrets.json` persistence, and generation gating when auth is missing.
 - Added inline Tripo progress rendering for `gen_tripo_wait_for_task` tool cards, including SSE refresh behavior when streamed progress JSON arrives.
 - Documented the D.9 chat-dock workflow in the generative content pipeline KB and added static smoke coverage for the UI hooks.
 
