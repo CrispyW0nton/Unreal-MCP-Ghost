@@ -6,6 +6,12 @@
 
 ## 2026-06-07
 
+### D.3 - Tripo task tools
+
+- Added Tripo task-family tools for text, image, multiview, refine, texture, conversion, status polling, waiting, and downloading signed outputs.
+- Added provider-side HTTP helpers, local image upload support, explicit credit confirmation, and reservation rollback on failed submission.
+- Updated the generative content KB with D.3 task sequencing and output handoff guidance.
+
 ### D.2 - Generative config and auth
 
 - Added Tripo config/auth tools for key-source detection, local settings persistence, and per-session credit budget checks.

@@ -45,6 +45,9 @@ verified in-editor.
 | Inspect provider config/auth | `gen_get_provider_config` |
 | Save provider defaults | `gen_save_provider_config` |
 | Guard paid credit spend | `gen_check_credit_budget` |
+| Submit Tripo generation tasks | `gen_tripo_text_to_model`, `gen_tripo_image_to_model`, `gen_tripo_multiview_to_model` |
+| Refine, texture, or export Tripo results | `gen_tripo_refine_model`, `gen_tripo_texture_model`, `gen_tripo_post_process` |
+| Poll and collect Tripo outputs | `gen_tripo_get_task_status`, `gen_tripo_wait_for_task`, `gen_tripo_download_result` |
 | Prepare import handoff | `gen_prepare_import_manifest` |
 | Import assets | asset import, batch import, texture/audio import tools |
 | Normalize materials | `material_create_master`, `material_create_instance_from_master`, texture tools |
@@ -128,6 +131,53 @@ gen_check_credit_budget(
     operation="text_to_model",
     confirm_spend=True,
     reserve_credits=True,
+)
+```
+
+## Tripo Task Family
+
+D.3 mirrors Tripo's asynchronous OpenAPI task model. All paid task-submission
+tools require `confirm_spend=True` before calling Tripo. The tool estimates
+credit cost, reserves the estimate against the session budget, submits the task,
+and returns the `task_id`. If submission fails before Tripo accepts the task, the
+reservation is released.
+
+Use these task creation tools:
+
+- `gen_tripo_text_to_model` for text prompts.
+- `gen_tripo_image_to_model` for a local image path, image URL, or uploaded
+  `file_token`.
+- `gen_tripo_multiview_to_model` for 2-4 ordered views: front, left, back,
+  right. Missing rear/side slots are represented as empty file entries.
+- `gen_tripo_refine_model` for legacy draft model refinement.
+- `gen_tripo_texture_model` for retexturing an existing model task.
+- `gen_tripo_post_process` for conversion/export such as `FBX`, `OBJ`, `STL`,
+  `USDZ`, or `GLTF`.
+
+Then use `gen_tripo_get_task_status` or `gen_tripo_wait_for_task` until the
+task reaches a final status. Successful Tripo task output URLs are short-lived,
+so call `gen_tripo_download_result` promptly and pass the local files into
+`gen_prepare_import_manifest` before D.4 imports them.
+
+Example:
+
+```python
+gen_tripo_text_to_model(
+    prompt="stylized slime enemy, game-ready proportions",
+    model_version="v3.1-20260211",
+    texture=True,
+    pbr=True,
+    texture_quality="standard",
+    face_limit=12000,
+    session_name="dungeon-demo",
+    confirm_spend=True,
+)
+
+gen_tripo_wait_for_task(task_id="<task_id>", timeout_s=900, poll_s=10)
+
+gen_tripo_download_result(
+    task_id="<task_id>",
+    target_folder="C:/Generated/DungeonDemo/Slime",
 )
 ```
 
