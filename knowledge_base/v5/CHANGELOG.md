@@ -29,6 +29,12 @@
 - Touched the native `add_map_variable` compatibility route while preserving the existing `add_blueprint_variable` creation path for real Map variable authoring.
 - Reduced the tracked bridge audit's C++-only route backlog from 14 to 12, with Python-missing-C++ routes still at 0.
 
+### B.19 - AI helper bridge parity routing
+
+- Added opt-in native-route dispatch for `add_clear_blackboard_value_node`, `add_finish_execute_node`, and `add_get_random_reachable_point_node` while keeping the existing richer generic node helpers as defaults.
+- Reduced the tracked bridge audit's C++-only route backlog from 12 to 9, with no remaining routes classified as needing Python wrappers.
+- Left residual C++-only routes classified as aliases, internal helpers, legacy routes, or game-specific recipes rather than public wrapper gaps.
+
 ### C.13 - Playable Slice quick action
 
 - Added a Playable Slice quick action in the MCP Chat dock for one-brief-to-playable vertical-slice workflows.

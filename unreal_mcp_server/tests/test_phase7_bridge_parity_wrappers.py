@@ -278,6 +278,61 @@ class TestBridgeParityWrappers(unittest.TestCase):
         self.assertEqual(calls[1][1]["variable_type"], "Map:Name:Integer")
         self.assertEqual(result["compatibility_route"], "add_map_variable")
 
+    def test_ai_native_routes_are_opt_in_and_preserve_richer_defaults(self):
+        from tools.ai_tools import register_ai_tools
+
+        mcp = _MockMCP()
+        register_ai_tools(mcp)
+
+        calls = []
+
+        def fake_send(command, params):
+            calls.append((command, params))
+            return {"success": True, "command": command, "params": params}
+
+        with patch("tools.ai_tools._send", side_effect=fake_send):
+            mcp.tools["add_get_random_reachable_point_node"](
+                None,
+                "/Game/MCP_Test/BTT_Wander",
+                radius=750.0,
+            )
+            mcp.tools["add_get_random_reachable_point_node"](
+                None,
+                "/Game/MCP_Test/BTT_Wander",
+                use_native_route=True,
+            )
+            mcp.tools["add_finish_execute_node"](
+                None,
+                "/Game/MCP_Test/BTT_Wander",
+                success=False,
+            )
+            mcp.tools["add_finish_execute_node"](
+                None,
+                "/Game/MCP_Test/BTT_Wander",
+                use_native_route=True,
+            )
+            mcp.tools["add_clear_blackboard_value_node"](
+                None,
+                "/Game/MCP_Test/BTT_Wander",
+                "PatrolLocation",
+            )
+            mcp.tools["add_clear_blackboard_value_node"](
+                None,
+                "/Game/MCP_Test/BTT_Wander",
+                "PatrolLocation",
+                use_native_route=True,
+            )
+
+        self.assertEqual(calls[0][0], "add_blueprint_function_node")
+        self.assertEqual(calls[0][1]["params"], {"Radius": 750.0})
+        self.assertEqual(calls[1][0], "add_get_random_reachable_point_node")
+        self.assertEqual(calls[2][0], "add_blueprint_function_node")
+        self.assertEqual(calls[2][1]["params"], {"bSuccess": False})
+        self.assertEqual(calls[3][0], "add_finish_execute_node")
+        self.assertEqual(calls[4][0], "add_blueprint_function_node")
+        self.assertEqual(calls[4][1]["params"], {"KeyName": "PatrolLocation"})
+        self.assertEqual(calls[5][0], "add_clear_blackboard_value_node")
+
 
 if __name__ == "__main__":
     unittest.main()

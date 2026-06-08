@@ -41,16 +41,22 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertGreater(commands["create_blueprint"]["python_references"], 0)
         self.assertGreater(commands["create_blueprint"]["cpp_routes"], 0)
         review = {entry["command"]: entry for entry in registry["cpp_unreferenced_review"]}
-        self.assertIn("add_clear_blackboard_value_node", review)
-        self.assertEqual(review["add_clear_blackboard_value_node"]["recommendation"], "needs_python_wrapper")
+        self.assertIn("set_material_instance_parameter", review)
+        self.assertEqual(review["set_material_instance_parameter"]["recommendation"], "legacy_or_superseded")
+        self.assertNotIn("add_clear_blackboard_value_node", review)
+        self.assertNotIn("add_finish_execute_node", review)
+        self.assertNotIn("add_get_random_reachable_point_node", review)
         self.assertNotIn("set_behavior_tree_blackboard", review)
         self.assertNotIn("bt_get_info", review)
         for bridged_command in (
             "add_arithmetic_operator_node",
             "add_blueprint_custom_event_node",
+            "add_clear_blackboard_value_node",
             "add_blueprint_function_with_pins",
             "add_construction_script_node",
             "add_custom_event",
+            "add_finish_execute_node",
+            "add_get_random_reachable_point_node",
             "add_interface_event_node",
             "add_map_variable",
             "add_niagara_component",
@@ -92,7 +98,7 @@ class TestPhase7BridgeCommandAudit(unittest.TestCase):
         self.assertIn("## C++-Only Route Review", markdown)
         self.assertIn("## Commands By Category", markdown)
         self.assertIn("Python missing C++ routes", markdown)
-        self.assertIn("add_clear_blackboard_value_node", markdown)
+        self.assertIn("set_material_instance_parameter", markdown)
 
 
 if __name__ == "__main__":

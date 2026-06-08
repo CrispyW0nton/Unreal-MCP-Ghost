@@ -1195,7 +1195,8 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
         radius: float = 1000.0,
-        node_position: List[float] = None
+        node_position: List[float] = None,
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Add a 'Get Random Reachable Point In Radius' node.
 
@@ -1207,10 +1208,16 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: Blueprint name (usually BTTask Blueprint)
             radius: Search radius for random point
             node_position: Optional [X, Y] graph position
+            use_native_route: Use the exact native bridge route when no Radius pin default is needed
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_get_random_reachable_point_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
+        if use_native_route and radius == 1000.0:
+            return _send("add_get_random_reachable_point_node", {
+                "blueprint_name": blueprint_name,
+                "node_position": node_position or [0, 0]
+            })
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UNavigationSystemV1",
@@ -1224,7 +1231,8 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
         success: bool = True,
-        node_position: List[float] = None
+        node_position: List[float] = None,
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Add a 'Finish Execute' node to a Behavior Tree Task Blueprint.
 
@@ -1235,10 +1243,16 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: BT Task Blueprint name
             success: True = task succeeded, False = task failed
             node_position: Optional [X, Y] graph position
+            use_native_route: Use the exact native bridge route when default success wiring is sufficient
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_finish_execute_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
+        if use_native_route and success:
+            return _send("add_finish_execute_node", {
+                "blueprint_name": blueprint_name,
+                "node_position": node_position or [0, 0]
+            })
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -1297,7 +1311,8 @@ def register_ai_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
         key_name: str,
-        node_position: List[float] = None
+        node_position: List[float] = None,
+        use_native_route: bool = False
     ) -> Dict[str, Any]:
         """Add a 'Clear Blackboard Value' node (BTTask_ClearBBValue).
 
@@ -1308,10 +1323,17 @@ def register_ai_tools(mcp: FastMCP):
             blueprint_name: Blueprint or BT Task name
             key_name: Blackboard key to clear
             node_position: Optional [X, Y] graph position
+            use_native_route: Use the exact native bridge route when the KeyName pin will be wired manually
 
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_clear_blackboard_value_node(blueprint_name="/Game/MCP_Test/BP_Example", key_name="ExampleName")"""
+        if use_native_route:
+            return _send("add_clear_blackboard_value_node", {
+                "blueprint_name": blueprint_name,
+                "key_name": key_name,
+                "node_position": node_position or [0, 0]
+            })
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UBlackboardComponent",
