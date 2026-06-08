@@ -290,6 +290,11 @@ private:
 	FString GenerateTextureBlendMode = TEXT("soft blend");
 	FString GenerateTextureSaveName = TEXT("MI_GeneratedPaintedTexture");
 	FString GenerateTextureTripoProjectId;
+	FString GenerateTextureRenderImageBucket;
+	FString GenerateTextureRenderImageKey;
+	FString GenerateTextureRenderImageUrl;
+	FString GenerateTextureCameraMatrix;
+	FString GenerateTextureImageMapJson = TEXT("[]");
 	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
 	TArray<FChatSessionEntry> ChatSessions;
 	TArray<FCommandPaletteItem> CommandPaletteItems;
@@ -325,6 +330,11 @@ private:
 	TSharedPtr<SEditableTextBox> GenerateTextureBlendModeInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureSaveNameInput;
 	TSharedPtr<SEditableTextBox> GenerateTextureTripoProjectIdInput;
+	TSharedPtr<SEditableTextBox> GenerateTextureRenderImageBucketInput;
+	TSharedPtr<SEditableTextBox> GenerateTextureRenderImageKeyInput;
+	TSharedPtr<SEditableTextBox> GenerateTextureRenderImageUrlInput;
+	TSharedPtr<SEditableTextBox> GenerateTextureCameraMatrixInput;
+	TSharedPtr<SEditableTextBox> GenerateTextureImageMapJsonInput;
 	TSharedPtr<SEditableTextBox> CommandPaletteInput;
 	TSharedPtr<SMultiLineEditableTextBox> MessageInput;
 	TSharedPtr<STextBlock> StatusText;

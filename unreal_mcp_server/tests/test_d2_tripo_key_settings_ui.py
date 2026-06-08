@@ -50,6 +50,7 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "gen_tripo_image_to_model",
             "gen_tripo_multiview_to_model",
             "gen_tripo_texture_model",
+            "smart_low_poly: true",
         ):
             with self.subTest(token=token):
                 self.assertIn(token, self.cpp + self.header)
@@ -62,11 +63,23 @@ class D2TripoKeySettingsUiTest(unittest.TestCase):
             "GenerateTextureBrushStrength",
             "GenerateTextureBlendMode",
             "GenerateTextureSaveName",
+            "GenerateTextureRenderImageBucket",
+            "GenerateTextureRenderImageKey",
+            "GenerateTextureRenderImageUrl",
+            "GenerateTextureCameraMatrix",
+            "GenerateTextureImageMapJson",
             "texture reference image",
+            "render image bucket",
+            "render image key",
+            "render image URL",
+            "camera matrix JSON",
+            "Magic Brush image_map JSON",
             "paint/blend notes",
             "paint it onto the visible model",
             "rotate the model",
             "save the satisfied result",
+            "gen_tripo_magic_brush_generate",
+            "gen_tripo_magic_brush_apply",
             "Tripo workspace modes",
         ):
             with self.subTest(token=token):

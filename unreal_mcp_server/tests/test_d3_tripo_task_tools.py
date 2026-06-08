@@ -113,6 +113,7 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls[0]["type"], "text_to_model")
         self.assertEqual(calls[0]["prompt"], "stylized slime enemy")
         self.assertEqual(calls[0]["model_version"], "v3.1-20260211")
+        self.assertTrue(calls[0]["smart_low_poly"])
         self.assertTrue(payload["outputs"]["credit_guard"]["reserved"])
 
     async def test_submission_failure_releases_credit_reservation(self):
@@ -163,8 +164,10 @@ class TestD3TripoTaskTools(unittest.IsolatedAsyncioTestCase):
         _assert_structured(self, multiview_payload, "gen_tripo_multiview_to_model")
         self.assertTrue(image_payload["success"])
         self.assertEqual(submitted[0]["file"]["file_token"], "uploaded-token")
+        self.assertTrue(submitted[0]["smart_low_poly"])
         self.assertTrue(multiview_payload["success"])
         self.assertEqual(submitted[1]["type"], "multiview_to_model")
+        self.assertTrue(submitted[1]["smart_low_poly"])
         self.assertEqual(len(submitted[1]["files"]), 4)
         self.assertEqual(submitted[1]["files"][0]["url"], "https://example.com/front.png")
 

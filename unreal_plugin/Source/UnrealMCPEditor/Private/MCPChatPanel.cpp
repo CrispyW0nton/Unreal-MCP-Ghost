@@ -761,6 +761,26 @@ FReply SMCPChatPanel::HandleInsertGenerateAssetToolCallClicked()
 	{
 		GenerateTextureTripoProjectId = GenerateTextureTripoProjectIdInput->GetText().ToString().TrimStartAndEnd();
 	}
+	if (GenerateTextureRenderImageBucketInput.IsValid())
+	{
+		GenerateTextureRenderImageBucket = GenerateTextureRenderImageBucketInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureRenderImageKeyInput.IsValid())
+	{
+		GenerateTextureRenderImageKey = GenerateTextureRenderImageKeyInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureRenderImageUrlInput.IsValid())
+	{
+		GenerateTextureRenderImageUrl = GenerateTextureRenderImageUrlInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureCameraMatrixInput.IsValid())
+	{
+		GenerateTextureCameraMatrix = GenerateTextureCameraMatrixInput->GetText().ToString().TrimStartAndEnd();
+	}
+	if (GenerateTextureImageMapJsonInput.IsValid())
+	{
+		GenerateTextureImageMapJson = GenerateTextureImageMapJsonInput->GetText().ToString().TrimStartAndEnd();
+	}
 	if (GenerateAssetPrompt.IsEmpty())
 	{
 		GenerateAssetPrompt = TEXT("game-ready stylized prop, clean silhouette, PBR textures");
@@ -2576,6 +2596,57 @@ TSharedRef<SWidget> SMCPChatPanel::BuildGenerateAssetDialog()
 			.AutoHeight()
 			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
 			[
+				SNew(SHorizontalBox)
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureRenderImageBucketInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureRenderImageBucketHint", "render image bucket"))
+					.Text(FText::FromString(GenerateTextureRenderImageBucket))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureRenderImageKeyInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureRenderImageKeyHint", "render image key"))
+					.Text(FText::FromString(GenerateTextureRenderImageKey))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				.Padding(0.0f, 0.0f, 6.0f, 0.0f)
+				[
+					SAssignNew(GenerateTextureRenderImageUrlInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureRenderImageUrlHint", "render image URL"))
+					.Text(FText::FromString(GenerateTextureRenderImageUrl))
+				]
+
+				+ SHorizontalBox::Slot()
+				.FillWidth(0.25f)
+				[
+					SAssignNew(GenerateTextureCameraMatrixInput, SEditableTextBox)
+					.HintText(LOCTEXT("GenerateTextureCameraMatrixHint", "camera matrix JSON"))
+					.Text(FText::FromString(GenerateTextureCameraMatrix))
+				]
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
+				SAssignNew(GenerateTextureImageMapJsonInput, SEditableTextBox)
+				.HintText(LOCTEXT("GenerateTextureImageMapJsonHint", "Magic Brush image_map JSON for final painted apply"))
+				.Text(FText::FromString(GenerateTextureImageMapJson))
+			]
+
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			.Padding(0.0f, 0.0f, 0.0f, 6.0f)
+			[
 				SNew(SBorder)
 				.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
 				.Padding(6.0f)
@@ -4171,6 +4242,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- texture_quality: \"%s\"\n")
 			TEXT("- texture_alignment: \"original_image\"\n")
 			TEXT("- face_limit: 12000\n")
+			TEXT("- smart_low_poly: true\n")
 			TEXT("- session_name: \"%s\"\n")
 			TEXT("- confirm_spend: %s\n")
 			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
@@ -4204,6 +4276,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- texture_quality: \"%s\"\n")
 			TEXT("- texture_alignment: \"original_image\"\n")
 			TEXT("- face_limit: 12000\n")
+			TEXT("- smart_low_poly: true\n")
 			TEXT("- session_name: \"%s\"\n")
 			TEXT("- confirm_spend: %s\n")
 			TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),
@@ -4240,6 +4313,25 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			*GenerateTextureBlendMode,
 			*GenerateTextureSaveName
 		);
+		FString RenderImageForPrompt = TEXT("{}");
+		if (!GenerateTextureRenderImageBucket.TrimStartAndEnd().IsEmpty() && !GenerateTextureRenderImageKey.TrimStartAndEnd().IsEmpty())
+		{
+			RenderImageForPrompt = FString::Printf(
+				TEXT("{\"bucket\":\"%s\",\"key\":\"%s\"}"),
+				*Escape(GenerateTextureRenderImageBucket),
+				*Escape(GenerateTextureRenderImageKey)
+			);
+		}
+		else if (!GenerateTextureRenderImageUrl.TrimStartAndEnd().IsEmpty())
+		{
+			RenderImageForPrompt = FString::Printf(TEXT("{\"url\":\"%s\"}"), *Escape(GenerateTextureRenderImageUrl));
+		}
+		const FString CameraMatrixForPrompt = GenerateTextureCameraMatrix.TrimStartAndEnd().IsEmpty()
+			? FString(TEXT("[]"))
+			: GenerateTextureCameraMatrix.TrimStartAndEnd();
+		const FString ImageMapForPrompt = GenerateTextureImageMapJson.TrimStartAndEnd().IsEmpty()
+			? FString(TEXT("[]"))
+			: GenerateTextureImageMapJson.TrimStartAndEnd();
 		return FString::Printf(
 			TEXT("First use MCP tool `gen_prepare_texture_paint_session` to record the no-spend Tripo Studio Magic Brush plan for the Texture/Paint workspace.\n")
 			TEXT("Plan parameters:\n")
@@ -4247,6 +4339,11 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- texture_prompt: \"%s\"\n")
 			TEXT("- texture_reference_image: \"%s\"\n")
 			TEXT("- viewport_view: \"%s\"\n")
+			TEXT("- render_image_bucket: \"%s\"\n")
+			TEXT("- render_image_key: \"%s\"\n")
+			TEXT("- render_image_url: \"%s\"\n")
+			TEXT("- render_image: %s\n")
+			TEXT("- camera_matrix: %s\n")
 			TEXT("- brush_size: %s\n")
 			TEXT("- brush_strength: %s\n")
 			TEXT("- brush_hardness: %s\n")
@@ -4257,8 +4354,22 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			TEXT("- paint_notes: \"%s\"\n")
 			TEXT("- save_name: \"%s\"\n")
 			TEXT("- tripo_project_id: \"%s\"\n")
+			TEXT("- image_map: %s\n")
 			TEXT("- record_session: true\n")
-			TEXT("Then, only after spend approval, use MCP tool `gen_tripo_texture_model` to create the paid texture/paint pass for the existing Tripo model task, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
+			TEXT("Then, only after spend approval, run the Studio Magic Brush sequence when a Tripo project_id and render snapshot are available:\n")
+			TEXT("1. Use MCP tool `gen_tripo_magic_brush_generate` with project_id, prompt, render_image, camera_matrix, strength, and confirm_spend.\n")
+			TEXT("2. Use MCP tool `gen_tripo_magic_brush_get_retexture` with the returned draft_id to inspect the generated texture image.\n")
+			TEXT("3. Optionally use MCP tool `gen_tripo_magic_brush_list_images` for the project texture image history before painting.\n")
+			TEXT("4. After the user paints/blends and image_map contains painted regions, use MCP tool `gen_tripo_magic_brush_apply` with project_id, draft_id, image_map, and confirm_spend.\n")
+			TEXT("Studio Magic Brush parameters:\n")
+			TEXT("- project_id: \"%s\"\n")
+			TEXT("- prompt: \"%s\"\n")
+			TEXT("- render_image: %s\n")
+			TEXT("- camera_matrix: %s\n")
+			TEXT("- strength: %s\n")
+			TEXT("- image_map: %s\n")
+			TEXT("- confirm_spend: %s\n")
+			TEXT("If Studio project/snapshot/image_map data is missing, use public fallback MCP tool `gen_tripo_texture_model` to create the paid texture/paint pass for the existing Tripo model task, then show progress with `gen_tripo_wait_for_task` in the chat tool card.\n")
 			TEXT("Paid texture parameters:\n")
 			TEXT("- task_id: \"%s\"\n")
 			TEXT("- texture_prompt: \"%s\"\n")
@@ -4274,6 +4385,11 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			*Escape(GenerateTexturePrompt),
 			*Escape(GenerateTextureReferenceImageInput),
 			*Escape(GenerateTextureViewAngle),
+			*Escape(GenerateTextureRenderImageBucket),
+			*Escape(GenerateTextureRenderImageKey),
+			*Escape(GenerateTextureRenderImageUrl),
+			*RenderImageForPrompt,
+			*CameraMatrixForPrompt,
 			*Escape(GenerateTextureBrushSize),
 			*Escape(GenerateTextureBrushStrength),
 			*Escape(GenerateTextureBrushHardness),
@@ -4284,6 +4400,14 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 			*Escape(GenerateTexturePaintNotes),
 			*Escape(GenerateTextureSaveName),
 			*Escape(GenerateTextureTripoProjectId),
+			*ImageMapForPrompt,
+			*Escape(GenerateTextureTripoProjectId),
+			*Escape(TexturePrompt),
+			*RenderImageForPrompt,
+			*CameraMatrixForPrompt,
+			*Escape(GenerateTextureCreativityStrength),
+			*ImageMapForPrompt,
+			*ConfirmSpend,
 			*Escape(GenerateTextureTaskId),
 			*Escape(TexturePrompt),
 			*GenerativeTextureQuality,
@@ -4303,6 +4427,7 @@ FString SMCPChatPanel::BuildGenerateAssetToolCallPrompt() const
 		TEXT("- pbr: true\n")
 		TEXT("- texture_quality: \"%s\"\n")
 		TEXT("- face_limit: 12000\n")
+		TEXT("- smart_low_poly: true\n")
 		TEXT("- session_name: \"%s\"\n")
 		TEXT("- confirm_spend: %s\n")
 		TEXT("After the task succeeds, call `gen_tripo_import_to_project` with content_path \"%s\" and asset_name \"%s\"."),

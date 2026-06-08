@@ -206,6 +206,12 @@ Use these task creation tools:
 - `gen_tripo_post_process` for conversion/export such as `FBX`, `OBJ`, `STL`,
   `USDZ`, or `GLTF`.
 
+Because Unreal is the target runtime, new model generation defaults to Tripo's
+Smart Mesh path through `smart_low_poly=True` for text, image, and multiview
+tasks. Keep it enabled unless a specific art-review workflow needs rawer
+provider output; imported assets should favor game-ready topology over maximum
+sculpt detail.
+
 Then use `gen_tripo_get_task_status` or `gen_tripo_wait_for_task` until the
 task reaches a final status. Successful Tripo task output URLs are short-lived,
 so call `gen_tripo_download_result` promptly and pass the local files into
@@ -221,6 +227,7 @@ gen_tripo_text_to_model(
     pbr=True,
     texture_quality="standard",
     face_limit=12000,
+    smart_low_poly=True,
     session_name="dungeon-demo",
     confirm_spend=True,
 )
@@ -545,18 +552,22 @@ The in-editor MCP Chat dock is the preferred surface for user-facing generated
 asset work. Use the top-bar Generate Asset action as the Tripo workspace inside
 Unreal. Current Tripo workspace modes are:
 
-- Text to 3D: inserts `gen_tripo_text_to_model`.
-- Image to 3D: inserts `gen_tripo_image_to_model` with an image path or URL.
+- Text to 3D: inserts `gen_tripo_text_to_model` with `smart_low_poly: true`.
+- Image to 3D: inserts `gen_tripo_image_to_model` with an image path or URL and
+  `smart_low_poly: true`.
 - Multi-Image to 3D: inserts `gen_tripo_multiview_to_model` with ordered
-  front, left, back, and right reference inputs.
+  front, left, back, and right reference inputs and `smart_low_poly: true`.
 - Texture/Paint: inserts `gen_prepare_texture_paint_session` first, then a
-  gated `gen_tripo_texture_model` for an existing model task. The planning call
-  captures texture direction, optional reference image, paint/blend notes,
-  viewport angle, brush size, strength, hardness, creativity strength, paint
-  mode/color, blend mode, Tripo project id, and save-name intent. This mirrors
-  the Tripo edit workflow: generate a high-fidelity texture image from the mesh
-  view and prompt, paint it onto the visible model, rotate the model to continue
-  painting/blending, and save once the result is satisfactory.
+  gated Studio Magic Brush sequence when project and render data exist:
+  `gen_tripo_magic_brush_generate`, `gen_tripo_magic_brush_get_retexture`,
+  optional `gen_tripo_magic_brush_list_images`, and
+  `gen_tripo_magic_brush_apply`. The planning call captures texture direction,
+  optional reference image, paint/blend notes, viewport angle, render image
+  bucket/key or URL, camera matrix JSON, brush size, strength, hardness,
+  creativity strength, paint mode/color, blend mode, Tripo project id,
+  `image_map` JSON, and save-name intent. If Studio project/snapshot/image-map
+  data is unavailable, use the gated `gen_tripo_texture_model` fallback for an
+  existing model task.
 
 The Generate Asset workspace and its settings panel include a **Generative
 Credits** display. It shows the per-session budget, credits used from
