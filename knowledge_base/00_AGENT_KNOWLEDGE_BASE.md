@@ -1,7 +1,7 @@
 # AGENT KNOWLEDGE BASE — Unreal-MCP-Ghost
 > Master reference for any AI agent using this repository.
 > Read this file FIRST before taking any action in a UE5 project.
-> Version: 2026-04-10 | UE5.6 | Dantooine Project (EnclaveProject)
+> Version: 2026-04-10 | UE5.6 | MyProject Project (YourUnrealProject)
 > Built from: 4 professional UE5 books + project experience
 
 ---
@@ -34,9 +34,9 @@ AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←
 | `11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md` | Function Libraries, Macro Libraries, Actor/Scene Components, procedural gen, VR patterns | Before creating reusable systems |
 | `12_MCP_TOOL_USAGE_GUIDE.md` | **Every MCP command** — exact params, pin names, exec_python patterns, error ref | Before using ANY MCP tool |
 | `13_TOOL_EXPANSION_ROADMAP.md` | 20 new commands to implement — specs, priority, workarounds | When current tools aren't enough |
-| `14_DANTOOINE_PROJECT_REFERENCE.md` | All 49 assets, 52 folders, implementation status, pending tasks, asset paths | For all Dantooine-specific work |
+| `14_MYPROJECT_PROJECT_REFERENCE.md` | All 49 assets, 52 folders, implementation status, pending tasks, asset paths | For all MyProject-specific work |
 | `15_INPUT_SYSTEM_AND_UMG.md` | Enhanced Input deep-dive, IMC setup, Widget Blueprint patterns, dialogue/quest/sparring HUD | Extended Input/UI reference |
-| `16_ANIMATION_DEEP_DIVE.md` | ABP deep-dive, State Machines, Blend Spaces, Montages, IK, Notifies, Dantooine ABP reference | Advanced animation work |
+| `16_ANIMATION_DEEP_DIVE.md` | ABP deep-dive, State Machines, Blend Spaces, Montages, IK, Notifies, MyProject ABP reference | Advanced animation work |
 | `17_GAME_SYSTEMS_COOKBOOK.md` | Step-by-step recipes: health/damage, interaction, dialogue, quests, sparring, save/load | Implementation of all game systems |
 | `18_PACKAGING_AND_OPTIMIZATION.md` | Build configs, packaging steps, profiling commands, Blueprint/rendering/memory optimization | Before shipping or performance testing |
 
@@ -48,8 +48,8 @@ AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←
 
 | Command | ❌ WRONG (do not use) | ✅ CORRECT |
 |---|---|---|
-| `set_game_mode_for_level` | `"game_mode_path": "/Game/.../BP_DantooineGameMode"` | `"game_mode_name": "BP_DantooineGameMode"` |
-| `implement_blueprint_interface` | `"interface_path": "/Game/Dantooine/Interfaces/BPI_Interactable"` | `"interface_name": "BPI_Interactable"` |
+| `set_game_mode_for_level` | `"game_mode_path": "/Game/.../BP_MyProjectGameMode"` | `"game_mode_name": "BP_MyProjectGameMode"` |
+| `implement_blueprint_interface` | `"interface_path": "/Game/MyProject/Interfaces/BPI_Interactable"` | `"interface_name": "BPI_Interactable"` |
 | `create_data_table` | `"row_struct_path": "..."` | `"row_struct": "..."` |
 | `add_blackboard_key` | ❌ Command does not exist | Use `create_blackboard` with `"keys":[{...}]` array |
 
@@ -63,7 +63,7 @@ AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←
 Before ANY action in UE5:
 1. `12_MCP_TOOL_USAGE_GUIDE.md` — know which commands exist and their EXACT parameters
 2. The relevant KB file for the system you're touching (AI → file 04, UI → file 06, etc.)
-3. `14_DANTOOINE_PROJECT_REFERENCE.md` — know what already exists
+3. `14_MYPROJECT_PROJECT_REFERENCE.md` — know what already exists
 
 ### Rule 2: Never Guess — Verify
 ```
@@ -97,7 +97,7 @@ A wrongly-named asset cannot be found by the project's other Blueprints.
 
 ### Rule 7: Use exec_python for Custom Paths
 `create_blueprint` hardcodes `/Game/Blueprints/`. 
-**Always use** `exec_python` with `create_asset` when creating assets in Dantooine folders.
+**Always use** `exec_python` with `create_asset` when creating assets in MyProject folders.
 
 ### Rule 8: SpawnDefaultController for Runtime AI
 Any AI Character/Pawn spawned at runtime via `Spawn Actor from Class` needs:
@@ -138,16 +138,16 @@ WRONG: "AController" → CORRECT: "PlayerController" or "AIController"
 
 ---
 
-## PROJECT: ENCLAVE PROJECT — DANTOOINE
+## PROJECT: ENCLAVE PROJECT — MYPROJECT
 
 ### Project Path
 ```
-C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam270\Project2\EnclaveProject
+C:\Users\YourName\Documents\UnrealProjects\YourUnrealProject
 ```
 
 ### Content Root
 ```
-/Game/Dantooine/
+/Game/MyProject/
 ```
 
 ### Build Order (from AI Developer Execution Guide)
@@ -156,13 +156,13 @@ Phase 1 — Data Layer (DONE ✅):
   ✅ Enums: E_QuestStage, E_NPCDialogueMode, E_InteractableType, E_SparringState
   ✅ Structs: ST_DialogueLine, ST_DialogueNode, ST_DialogueChoice, ST_NPCBarkSet, ST_SparConfig
   ✅ Interfaces: BPI_Interactable, BPI_DialogueParticipant, BPI_CombatReceiver
-  ✅ Input: IA_Move, IA_Look, IA_Jump, IA_Interact, IA_Attack, IA_Block, IMC_Dantooine
+  ✅ Input: IA_Move, IA_Look, IA_Jump, IA_Interact, IA_Attack, IA_Block, IMC_MyProject
 
 Phase 2 — Core Framework (DONE ✅):
-  ✅ BP_DantooineGameMode (parent: GameModeBase)
-  ✅ BP_DantooinePlayerController (parent: PlayerController)
+  ✅ BP_MyProjectGameMode (parent: GameModeBase)
+  ✅ BP_MyProjectPlayerController (parent: PlayerController)
   ✅ BP_PlayerJediCharacter (parent: Character)
-  ✅ BP_DantooineQuestManager (parent: Actor)
+  ✅ BP_MyProjectQuestManager (parent: Actor)
 
 Phase 3 — UI (DONE ✅):
   ✅ WBP_HUD
@@ -202,8 +202,8 @@ Phase 8 — Cinematics (DONE ✅):
 
 Phase 9 — PENDING (awaiting artist assets):
   ⏳ Import Skeletal Meshes + assign to ABPs
-  ⏳ Configure IMC_Dantooine bindings (create_input_mapping)
-  ⏳ Set GameMode → use: set_game_mode_for_level '{"game_mode_name":"BP_DantooineGameMode"}'
+  ⏳ Configure IMC_MyProject bindings (create_input_mapping)
+  ⏳ Set GameMode → use: set_game_mode_for_level '{"game_mode_name":"BP_MyProjectGameMode"}'
   ⏳ Build Behavior Tree node graphs in BT Editor (manual — no MCP BT graph commands)
   ⏳ Add Blackboard keys → RECREATE BB_ assets using create_blackboard with "keys":[] array
   ⏳ Implement Blueprint interfaces → implement_blueprint_interface '{"blueprint_name":"X","interface_name":"BPI_Y"}'
@@ -220,14 +220,14 @@ Phase 9 — PENDING (awaiting artist assets):
 # 1. Verify plugin is connected
 python3 sandbox_ue5cli.py get_actors_in_level '{}'
 
-# 2. Check what already exists in Dantooine
-python3 sandbox_ue5cli.py exec_python '{"code":"import unreal\nassets=unreal.EditorAssetLibrary.list_assets(\"/Game/Dantooine\",recursive=True,include_folder=False)\nprint(len(assets),\"assets\")"}'
+# 2. Check what already exists in MyProject
+python3 sandbox_ue5cli.py exec_python '{"code":"import unreal\nassets=unreal.EditorAssetLibrary.list_assets(\"/Game/MyProject\",recursive=True,include_folder=False)\nprint(len(assets),\"assets\")"}'
 ```
 
 ### Create a Blueprint in the Right Folder
 ```bash
 python3 sandbox_ue5cli.py exec_python '{
-  "code": "import unreal\nat=unreal.AssetToolsHelpers.get_asset_tools()\nf=unreal.BlueprintFactory()\nf.set_editor_property(\"parent_class\",unreal.Character)\na=at.create_asset(\"BP_NewNPC\",\"/Game/Dantooine/Blueprints/NPC\",unreal.Blueprint,f)\nprint(\"OK\" if a else \"FAIL\")"
+  "code": "import unreal\nat=unreal.AssetToolsHelpers.get_asset_tools()\nf=unreal.BlueprintFactory()\nf.set_editor_property(\"parent_class\",unreal.Character)\na=at.create_asset(\"BP_NewNPC\",\"/Game/MyProject/Blueprints/NPC\",unreal.Blueprint,f)\nprint(\"OK\" if a else \"FAIL\")"
 }'
 ```
 
@@ -262,7 +262,7 @@ python3 sandbox_ue5cli.py add_blueprint_function_node '{"blueprint_name":"BP_NPC
 ```bash
 # In PlayerController BeginPlay
 # CreateWidget node → Store ref → AddToViewport
-python3 sandbox_ue5cli.py add_blueprint_function_node '{"blueprint_name":"BP_DantooinePlayerController","graph_name":"EventGraph","function_name":"CreateWidget","node_position":{"x":200,"y":0}}'
+python3 sandbox_ue5cli.py add_blueprint_function_node '{"blueprint_name":"BP_MyProjectPlayerController","graph_name":"EventGraph","function_name":"CreateWidget","node_position":{"x":200,"y":0}}'
 ```
 
 ---
@@ -335,7 +335,7 @@ python3 sandbox_ue5cli.py add_blueprint_function_node '{"blueprint_name":"BP_Dan
 | Date | Change |
 |---|---|
 | 2026-04-10 | Initial knowledge base created from project experience |
-| 2026-04-10 | Dantooine project setup complete — 49 assets, 52 folders |
+| 2026-04-10 | MyProject project setup complete — 49 assets, 52 folders |
 | 2026-04-10 | **MAJOR UPDATE**: Full text extraction from all 4 books, comprehensive rebuild of all 14 KB files |
 | 2026-04-10 | Added: 01_BLUEPRINT_FUNDAMENTALS (complete, 24K chars) |
 | 2026-04-10 | Added: 02_BLUEPRINT_COMMUNICATION (complete, 8.7K chars) |
@@ -350,10 +350,10 @@ python3 sandbox_ue5cli.py add_blueprint_function_node '{"blueprint_name":"BP_Dan
 | 2026-04-10 | Added: 11_BLUEPRINT_LIBRARIES_AND_COMPONENTS (complete, 10K chars) |
 | 2026-04-10 | Added: 12_MCP_TOOL_USAGE_GUIDE (definitive, 27K chars) |
 | 2026-04-10 | Added: 13_TOOL_EXPANSION_ROADMAP (20 new commands, 10K chars) |
-| 2026-04-10 | Added: 14_DANTOOINE_PROJECT_REFERENCE (complete asset registry, 14K chars) |
+| 2026-04-10 | Added: 14_MYPROJECT_PROJECT_REFERENCE (complete asset registry, 14K chars) |
 | 2026-04-10 | Added: 15_INPUT_SYSTEM_AND_UMG (Enhanced Input + UMG deep-dive, 12.6K chars) |
-| 2026-04-10 | Added: 16_ANIMATION_DEEP_DIVE (ABP, State Machines, Montages, IK, Dantooine reference, 10.9K chars) |
-| 2026-04-10 | Added: 17_GAME_SYSTEMS_COOKBOOK (complete recipe book for all Dantooine systems, 12.5K chars) |
+| 2026-04-10 | Added: 16_ANIMATION_DEEP_DIVE (ABP, State Machines, Montages, IK, MyProject reference, 10.9K chars) |
+| 2026-04-10 | Added: 17_GAME_SYSTEMS_COOKBOOK (complete recipe book for all MyProject systems, 12.5K chars) |
 | 2026-04-10 | Added: 18_PACKAGING_AND_OPTIMIZATION (build configs, packaging, profiling, optimization, 10.9K chars) |
-| 2026-04-10 | **FINAL REVISION**: All 19 KB files (00–18) verified complete; INDEX.md created; 14_DANTOOINE_PROJECT_REFERENCE expanded with Phase 9 implementation detail |
+| 2026-04-10 | **FINAL REVISION**: All 19 KB files (00–18) verified complete; INDEX.md created; 14_MYPROJECT_PROJECT_REFERENCE expanded with Phase 9 implementation detail |
 | 2026-04-10 | **BUG FIXES**: 3 parameter name corrections discovered via C++ source audit: `game_mode_path`→`game_mode_name`, `interface_path`→`interface_name`, `row_struct_path`→`row_struct`. Roadmap updated: 6 commands marked ✅ DONE, workarounds rewritten. |

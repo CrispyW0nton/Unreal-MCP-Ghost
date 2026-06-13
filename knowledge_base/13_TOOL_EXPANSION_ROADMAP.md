@@ -1,5 +1,5 @@
 # Tool Expansion Roadmap — New MCP Commands to Implement
-> Based on learnings from all 4 books. Prioritized by impact on Dantooine project.
+> Based on learnings from all 4 books. Prioritized by impact on MyProject project.
 > For each new command: why it's needed + exact implementation spec.
 
 ---
@@ -59,7 +59,7 @@ python3 sandbox_ue5cli.py set_blueprint_parent_class '{
 python3 sandbox_ue5cli.py add_input_action_node '{
   "blueprint_name": "BP_PlayerJediCharacter",
   "graph_name": "EventGraph",
-  "input_action_path": "/Game/Dantooine/Data/Input/IA_Attack",
+  "input_action_path": "/Game/MyProject/Data/Input/IA_Attack",
   "trigger_event": "Started",
   "node_position": {"x": 0, "y": 400}
 }'
@@ -76,7 +76,7 @@ Trigger events: `Started`, `Triggered`, `Completed`, `Canceled`, `Ongoing`
 ```bash
 python3 sandbox_ue5cli.py create_blackboard '{
   "name": "BB_RoamingNPC",
-  "path": "/Game/Dantooine/AI/Blackboard",
+  "path": "/Game/MyProject/AI/Blackboard",
   "keys": [
     {"name": "PatrolLocation", "type": "Vector"},
     {"name": "IsTalking",      "type": "Bool"}
@@ -106,7 +106,7 @@ python3 sandbox_ue5cli.py set_behavior_tree_blackboard '{
 python3 sandbox_ue5cli.py add_niagara_component '{
   "blueprint_name":      "BP_LightsaberWorkbench",
   "component_name":      "SparksEffect",
-  "niagara_system_path": "/Game/Dantooine/Art/FX/NS_WorkbenchSparks"
+  "niagara_system_path": "/Game/MyProject/Art/FX/NS_WorkbenchSparks"
 }'
 ```
 
@@ -118,8 +118,8 @@ python3 sandbox_ue5cli.py add_niagara_component '{
 ```bash
 python3 sandbox_ue5cli.py create_data_table '{
   "name": "DT_DialogueLines",
-  "path": "/Game/Dantooine/Data/DataTables",
-  "row_struct": "/Game/Dantooine/Data/Structs/ST_DialogueLine"
+  "path": "/Game/MyProject/Data/DataTables",
+  "row_struct": "/Game/MyProject/Data/Structs/ST_DialogueLine"
 }'
 ```
 > ⚠️ **PARAM FIX**: Parameter is `row_struct`, NOT `row_struct_path`.
@@ -131,7 +131,7 @@ python3 sandbox_ue5cli.py create_data_table '{
 
 ```bash
 python3 sandbox_ue5cli.py add_anim_notify '{
-  "animation_path": "/Game/Dantooine/Animation/Montages/AM_LightsaberAttack",
+  "animation_path": "/Game/MyProject/Animation/Montages/AM_LightsaberAttack",
   "notify_name":    "HitDetection",
   "time":           0.45
 }'
@@ -167,7 +167,7 @@ python3 sandbox_ue5cli.py get_blueprint_functions '{"blueprint_name": "BP_Player
 python3 sandbox_ue5cli.py add_blueprint_call_interface_function '{
   "blueprint_name": "BP_PlayerJediCharacter",
   "graph_name": "EventGraph",
-  "interface_path": "/Game/Dantooine/Interfaces/BPI_Interactable",
+  "interface_path": "/Game/MyProject/Interfaces/BPI_Interactable",
   "function_name": "Interact",
   "node_position": {"x": 400, "y": 0}
 }'
@@ -193,7 +193,7 @@ python3 sandbox_ue5cli.py add_blueprint_for_loop_with_break_node '{
 
 ```bash
 python3 sandbox_ue5cli.py set_sequencer_track '{
-  "sequence_path": "/Game/Dantooine/Sequences/LightsaberBuild/LS_LightsaberBuild",
+  "sequence_path": "/Game/MyProject/Sequences/LightsaberBuild/LS_LightsaberBuild",
   "actor_name":    "BP_LightsaberWorkbench_0",
   "track_type":    "Transform",
   "keyframes": [
@@ -215,7 +215,7 @@ python3 sandbox_ue5cli.py set_sequencer_track '{
 
 ```bash
 python3 sandbox_ue5cli.py set_material_instance_parameter '{
-  "material_instance_path": "/Game/Dantooine/Art/Materials/MI_LightsaberBlade",
+  "material_instance_path": "/Game/MyProject/Art/Materials/MI_LightsaberBlade",
   "parameter_name":         "EmissiveIntensity",
   "parameter_type":         "scalar",
   "value":                  "5.0"
@@ -231,7 +231,7 @@ python3 sandbox_ue5cli.py set_material_instance_parameter '{
 python3 sandbox_ue5cli.py add_spawn_niagara_at_location_node '{
   "blueprint_name":      "BP_LightsaberWorkbench",
   "graph_name":          "EventGraph",
-  "niagara_system_path": "/Game/Dantooine/Art/FX/NS_WorkbenchSparks",
+  "niagara_system_path": "/Game/MyProject/Art/FX/NS_WorkbenchSparks",
   "node_position":       {"x": 600, "y": 0}
 }'
 ```
@@ -249,11 +249,11 @@ python3 sandbox_ue5cli.py add_spawn_niagara_at_location_node '{
 # Via MCP tool call:
 import_sound_asset(
     file_path="C:/Sounds/SFX_SaberSwing.wav",
-    destination_path="/Game/Dantooine/Art/Audio/SFX/",
+    destination_path="/Game/MyProject/Art/Audio/SFX/",
     auto_create_cue=True
 )
-# Returns: {"success": true, "asset_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing",
-#            "asset_type": "SoundWave", "cue_path": "/Game/Dantooine/Art/Audio/SFX/SFX_SaberSwing_Cue"}
+# Returns: {"success": true, "asset_path": "/Game/MyProject/Art/Audio/SFX/SFX_SaberSwing",
+#            "asset_type": "SoundWave", "cue_path": "/Game/MyProject/Art/Audio/SFX/SFX_SaberSwing_Cue"}
 ```
 
 **For sandbox-side files** (from `audio_generation` / `DownloadFileWrapper`), use `import_sound_asset_from_sandbox` instead.
@@ -311,7 +311,7 @@ python3 sandbox_ue5cli.py implement_blueprint_interface '{"blueprint_name":"BP_L
 # 2. Or reparent manually in UE editor: right-click BP → Reparent Blueprint
 import unreal
 # Verify parent of a blueprint:
-bp = unreal.load_object(None, "/Game/Dantooine/Blueprints/NPC/BP_RoamingNPC_StudentA")
+bp = unreal.load_object(None, "/Game/MyProject/Blueprints/NPC/BP_RoamingNPC_StudentA")
 if bp:
     print(bp.parent_class.get_name())
 ```
@@ -319,8 +319,8 @@ if bp:
 ### ❌ `set_behavior_tree_blackboard` — WORKAROUND via exec_python
 ```python
 import unreal
-bt = unreal.load_object(None, "/Game/Dantooine/AI/BehaviorTrees/BT_RoamingNPC")
-bb = unreal.load_object(None, "/Game/Dantooine/AI/Blackboard/BB_RoamingNPC")
+bt = unreal.load_object(None, "/Game/MyProject/AI/BehaviorTrees/BT_RoamingNPC")
+bb = unreal.load_object(None, "/Game/MyProject/AI/Blackboard/BB_RoamingNPC")
 if bt and bb:
     bt.set_editor_property("blackboard_asset", bb)
     unreal.EditorAssetLibrary.save_asset(bt.get_path_name())
@@ -330,7 +330,7 @@ if bt and bb:
 ### ❌ `get_blueprint_variables` — WORKAROUND via exec_python
 ```python
 import unreal
-bp = unreal.load_object(None, "/Game/Dantooine/Blueprints/Player/BP_PlayerJediCharacter")
+bp = unreal.load_object(None, "/Game/MyProject/Blueprints/Player/BP_PlayerJediCharacter")
 for v in bp.new_variables:
     print(v.var_name, v.var_type.pc_object.get_name() if v.var_type.pc_object else v.var_type.pin_category)
 ```

@@ -1,7 +1,7 @@
 # Unreal-MCP-Ghost — Sprint Tracker (V4)
 
 > Last updated: 2026-04-16  
-> Branch: `genspark_ai_developer`
+> Branch: `main`
 
 ---
 
@@ -24,7 +24,7 @@
 | # | Task | Status |
 |---|------|--------|
 | 1.1 | Reconcile tool/module counts | ✅ 378 tools, 26 modules confirmed |
-| 1.2 | Clean stale project-specific content | ✅ Removed EnclaveProject/Dantooine artefacts |
+| 1.2 | Clean stale project-specific content | ✅ Removed YourUnrealProject/MyProject artefacts |
 | 1.3 | Expand .gitignore | ✅ UE artefacts, IDE files, binary dumps |
 | 1.4 | Update DEVELOPER_LOG.md | ✅ Generic plugin log, no project content |
 | 1.5 | Expand test suite | ✅ 103 → 137 tests passing |

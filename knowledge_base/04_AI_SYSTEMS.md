@@ -110,7 +110,7 @@ Name: BB_RoamingNPC (use BB_ prefix)
 | `Rotator` | Rotation data |
 | `String` / `Name` | Text identifiers |
 
-### Blackboard Keys — Dantooine Project
+### Blackboard Keys — MyProject Project
 
 **BB_RoamingNPC Keys:**
 | Key | Type | Purpose |

@@ -1,6 +1,6 @@
-# Game Systems Cookbook — Recipes for Dantooine
+# Game Systems Cookbook — Recipes for MyProject
 > Source: Blueprints Visual Scripting for UE5 (Marcos Romero), Unreal Engine Blueprint Game Developer (Asadullah Alam)
-> Complete, step-by-step implementation recipes for all major Dantooine game systems.
+> Complete, step-by-step implementation recipes for all major MyProject game systems.
 > Each recipe is a complete, working pattern that an AI agent can implement.
 
 ---
@@ -142,7 +142,7 @@ WBP_DialogueBox:
 
 ## RECIPE 4: QUEST MANAGER SYSTEM
 
-### BP_DantooineQuestManager Variables
+### BP_MyProjectQuestManager Variables
 ```
 CurrentStage: E_QuestStage = NotStarted
 ```
@@ -376,20 +376,20 @@ Button OnClicked: Open Level (same level)
 ### Save Flow (triggered by Quest Manager on stage change)
 ```
 Event: QuestStageChanged
-  → Create Save Game Object (BP_DantooineGameSave)
-  → Cast To BP_DantooineGameSave
+  → Create Save Game Object (BP_MyProjectGameSave)
+  → Cast To BP_MyProjectGameSave
   → Set QuestStage = CurrentStage
   → Set PlayerLocation = Get Actor Location
   → Set PlayTime = accumulated play time
-  → Save Game to Slot ("DantooineSlot1", 0)
+  → Save Game to Slot ("MyProjectSlot1", 0)
 ```
 
 ### Load Flow (Game Instance BeginPlay)
 ```
 Event Init (GameInstance):
-  → Does Save Game Exist ("DantooineSlot1", 0)
+  → Does Save Game Exist ("MyProjectSlot1", 0)
   → True:
-      Load Game from Slot → Cast To BP_DantooineGameSave
+      Load Game from Slot → Cast To BP_MyProjectGameSave
       → Restore QuestStage to GameInstance variable
       → Restore PlayTime
       → Set bHasSaveData = true
@@ -400,7 +400,7 @@ Event Init (GameInstance):
 
 ### Starting Level with Save
 ```
-BP_DantooineGameMode BeginPlay:
+BP_MyProjectGameMode BeginPlay:
   → Get Game Instance → Cast → bHasSaveData?
   → True:
       Get QuestStage → Broadcast to Quest Manager
@@ -419,7 +419,7 @@ The SkyBirdShip is a large ship silhouette flying slowly across the horizon for 
 ### Components
 ```
 BP_SkyBirdShip (parent: Actor)
-  └── StaticMesh (SM_DantooineSkyShip)
+  └── StaticMesh (SM_MyProjectSkyShip)
   └── SplineComponent (flight path, set in editor)
   └── AudioComponent (ambient engine hum)
 ```

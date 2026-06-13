@@ -71,7 +71,7 @@ python3 sandbox_ue5cli.py spawn_actor '{"name": "BP_RoamingNPC_StudentA", "locat
 #### `spawn_blueprint_actor`
 ```bash
 python3 sandbox_ue5cli.py spawn_blueprint_actor '{
-  "blueprint_path": "/Game/Dantooine/Blueprints/NPC/BP_MasterJedi",
+  "blueprint_path": "/Game/MyProject/Blueprints/NPC/BP_MasterJedi",
   "location": {"x": 0, "y": 0, "z": 0},
   "rotation": {"pitch": 0, "yaw": 0, "roll": 0}
 }'
@@ -220,7 +220,7 @@ python3 sandbox_ue5cli.py set_physics_properties '{
 python3 sandbox_ue5cli.py set_static_mesh_properties '{
   "blueprint_name": "BP_LightsaberWorkbench",
   "component_name": "WorkbenchMesh",
-  "static_mesh_path": "/Game/Dantooine/Art/Environment/SM_Workbench"
+  "static_mesh_path": "/Game/MyProject/Art/Environment/SM_Workbench"
 }'
 ```
 
@@ -393,7 +393,7 @@ python3 sandbox_ue5cli.py add_blueprint_timeline_node '{
 #### `add_event_dispatcher`
 ```bash
 python3 sandbox_ue5cli.py add_event_dispatcher '{
-  "blueprint_name": "BP_DantooineQuestManager",
+  "blueprint_name": "BP_MyProjectQuestManager",
   "dispatcher_name": "OnQuestStageChanged"
 }'
 ```
@@ -401,7 +401,7 @@ python3 sandbox_ue5cli.py add_event_dispatcher '{
 #### `call_event_dispatcher`
 ```bash
 python3 sandbox_ue5cli.py call_event_dispatcher '{
-  "blueprint_name": "BP_DantooineQuestManager",
+  "blueprint_name": "BP_MyProjectQuestManager",
   "graph_name": "EventGraph",
   "dispatcher_name": "OnQuestStageChanged",
   "node_position": {"x": 600, "y": 0}
@@ -522,7 +522,7 @@ python3 sandbox_ue5cli.py set_spawn_actor_class '{
   "blueprint_name": "BP_EnemySpawner",
   "graph_name": "EventGraph",
   "node_id": "SPAWN-NODE-GUID",
-  "class_path": "/Game/Dantooine/Blueprints/Combat/BP_SparringOpponent"
+  "class_path": "/Game/MyProject/Blueprints/Combat/BP_SparringOpponent"
 }'
 ```
 
@@ -670,7 +670,7 @@ Add an Enhanced Input Action binding node (UE5 Enhanced Input system).
 python3 sandbox_ue5cli.py add_blueprint_enhanced_input_action_node '{
   "blueprint_name": "BP_PlayerJediCharacter",
   "graph_name": "EventGraph",
-  "action_asset": "/Game/Dantooine/Data/Input/IA_Jump",
+  "action_asset": "/Game/MyProject/Data/Input/IA_Jump",
   "node_position": {"x": 0, "y": 0}
 }'
 ```
@@ -827,7 +827,7 @@ These are in `UnrealMCPExtendedCommands.cpp`. Many overlap with NodeCommands but
 Set the GameMode override for the current level.
 ```bash
 python3 sandbox_ue5cli.py set_game_mode_for_level '{
-  "game_mode_name": "BP_DantooineGameMode"
+  "game_mode_name": "BP_MyProjectGameMode"
 }'
 ```
 > ⚠️ **PARAM FIX**: Use `game_mode_name` (Blueprint asset name only, NOT full path). The plugin resolves the path internally.
@@ -838,7 +838,7 @@ Create a Blueprint Interface asset.
 ```bash
 python3 sandbox_ue5cli.py create_blueprint_interface '{
   "name": "BPI_Interactable",
-  "path": "/Game/Dantooine/Interfaces"
+  "path": "/Game/MyProject/Interfaces"
 }'
 ```
 
@@ -869,7 +869,7 @@ Create a Blueprint Struct asset.
 ```bash
 python3 sandbox_ue5cli.py create_struct '{
   "name": "ST_DialogueLine",
-  "path": "/Game/Dantooine/Data/Structs"
+  "path": "/Game/MyProject/Data/Structs"
 }'
 ```
 
@@ -878,7 +878,7 @@ Create a Blueprint Enum asset.
 ```bash
 python3 sandbox_ue5cli.py create_enum '{
   "name": "E_QuestStage",
-  "path": "/Game/Dantooine/Data/Enums"
+  "path": "/Game/MyProject/Data/Enums"
 }'
 ```
 
@@ -887,8 +887,8 @@ Create a Data Table asset.
 ```bash
 python3 sandbox_ue5cli.py create_data_table '{
   "name": "DT_DialogueLines",
-  "path": "/Game/Dantooine/Data/DataTables",
-  "row_struct": "/Game/Dantooine/Data/Structs/ST_DialogueLine"
+  "path": "/Game/MyProject/Data/DataTables",
+  "row_struct": "/Game/MyProject/Data/Structs/ST_DialogueLine"
 }'
 ```
 
@@ -897,8 +897,8 @@ Create an Animation Blueprint.
 ```bash
 python3 sandbox_ue5cli.py create_animation_blueprint '{
   "name": "ABP_PlayerJedi",
-  "path": "/Game/Dantooine/Animation/Player",
-  "skeleton_path": "/Game/Dantooine/Art/Characters/SK_PlayerJedi"
+  "path": "/Game/MyProject/Animation/Player",
+  "skeleton_path": "/Game/MyProject/Art/Characters/SK_PlayerJedi"
 }'
 ```
 > Leave `skeleton_path` blank if skeleton isn't imported yet; assign later in the editor.
@@ -940,7 +940,7 @@ python3 sandbox_ue5cli.py set_animation_for_state '{
   "blueprint_name": "ABP_PlayerJedi",
   "state_machine_name": "LocomotionSM",
   "state_name": "Idle",
-  "animation_path": "/Game/Dantooine/Animation/Player/AN_Player_Idle"
+  "animation_path": "/Game/MyProject/Animation/Player/AN_Player_Idle"
 }'
 ```
 
@@ -949,7 +949,7 @@ Create a Behavior Tree asset.
 ```bash
 python3 sandbox_ue5cli.py create_behavior_tree '{
   "name": "BT_RoamingNPC",
-  "path": "/Game/Dantooine/AI/BehaviorTrees"
+  "path": "/Game/MyProject/AI/BehaviorTrees"
 }'
 ```
 
@@ -958,14 +958,14 @@ Create a Blackboard asset. Optionally pre-populate keys in the same call.
 ```bash
 python3 sandbox_ue5cli.py create_blackboard '{
   "name": "BB_RoamingNPC",
-  "path": "/Game/Dantooine/AI/Blackboard"
+  "path": "/Game/MyProject/AI/Blackboard"
 }'
 ```
 **With pre-populated keys (recommended):**
 ```bash
 python3 sandbox_ue5cli.py create_blackboard '{
   "name": "BB_RoamingNPC",
-  "path": "/Game/Dantooine/AI/Blackboard",
+  "path": "/Game/MyProject/AI/Blackboard",
   "keys": [
     {"name": "PatrolLocation", "type": "Vector"},
     {"name": "IsTalking",      "type": "Bool"},
@@ -1023,7 +1023,7 @@ Create a Widget Blueprint asset.
 ```bash
 python3 sandbox_ue5cli.py create_umg_widget_blueprint '{
   "name": "WBP_HUD",
-  "path": "/Game/Dantooine/Widgets"
+  "path": "/Game/MyProject/Widgets"
 }'
 ```
 > Prefer `exec_python` with `WidgetBlueprintFactory` for more control.
@@ -1083,52 +1083,52 @@ import unreal
 at = unreal.AssetToolsHelpers.get_asset_tools()
 factory = unreal.BlueprintFactory()
 factory.set_editor_property("parent_class", unreal.Character)
-asset = at.create_asset("BP_PlayerJediCharacter", "/Game/Dantooine/Blueprints/Player", unreal.Blueprint, factory)
+asset = at.create_asset("BP_PlayerJediCharacter", "/Game/MyProject/Blueprints/Player", unreal.Blueprint, factory)
 print("OK" if asset else "FAIL")
 ```
 
 **Create Widget Blueprint:**
 ```python
 factory = unreal.WidgetBlueprintFactory()
-asset = at.create_asset("WBP_HUD", "/Game/Dantooine/Widgets", unreal.WidgetBlueprint, factory)
+asset = at.create_asset("WBP_HUD", "/Game/MyProject/Widgets", unreal.WidgetBlueprint, factory)
 ```
 
 **Create Blackboard:**
 ```python
-asset = at.create_asset("BB_RoamingNPC", "/Game/Dantooine/AI/Blackboard", unreal.BlackboardData, unreal.BlackboardDataFactory())
+asset = at.create_asset("BB_RoamingNPC", "/Game/MyProject/AI/Blackboard", unreal.BlackboardData, unreal.BlackboardDataFactory())
 ```
 
 **Create Behavior Tree:**
 ```python
-asset = at.create_asset("BT_RoamingNPC", "/Game/Dantooine/AI/BehaviorTrees", unreal.BehaviorTree, unreal.BehaviorTreeFactory())
+asset = at.create_asset("BT_RoamingNPC", "/Game/MyProject/AI/BehaviorTrees", unreal.BehaviorTree, unreal.BehaviorTreeFactory())
 ```
 
 **Create BT Task Blueprint:**
 ```python
 factory = unreal.BlueprintFactory()
 factory.set_editor_property("parent_class", unreal.BTTask_BlueprintBase)
-asset = at.create_asset("BTT_FindRandomPatrol", "/Game/Dantooine/AI/Tasks", unreal.Blueprint, factory)
+asset = at.create_asset("BTT_FindRandomPatrol", "/Game/MyProject/AI/Tasks", unreal.Blueprint, factory)
 ```
 
 **Create BT Decorator Blueprint:**
 ```python
 factory = unreal.BlueprintFactory()
 factory.set_editor_property("parent_class", unreal.BTDecorator_BlueprintBase)
-asset = at.create_asset("BTD_CanSeePlayer", "/Game/Dantooine/AI/Decorators", unreal.Blueprint, factory)
+asset = at.create_asset("BTD_CanSeePlayer", "/Game/MyProject/AI/Decorators", unreal.Blueprint, factory)
 ```
 
 **Create BT Service Blueprint:**
 ```python
 factory = unreal.BlueprintFactory()
 factory.set_editor_property("parent_class", unreal.BTService_BlueprintBase)
-asset = at.create_asset("BTS_UpdatePlayerLocation", "/Game/Dantooine/AI/Services", unreal.Blueprint, factory)
+asset = at.create_asset("BTS_UpdatePlayerLocation", "/Game/MyProject/AI/Services", unreal.Blueprint, factory)
 ```
 
 **Create AI Controller:**
 ```python
 factory = unreal.BlueprintFactory()
 factory.set_editor_property("parent_class", unreal.AIController)
-asset = at.create_asset("BP_NPC_AIController", "/Game/Dantooine/Blueprints/AI", unreal.Blueprint, factory)
+asset = at.create_asset("BP_NPC_AIController", "/Game/MyProject/Blueprints/AI", unreal.Blueprint, factory)
 ```
 
 **Create Animation Blueprint (no skeleton yet):**
@@ -1136,59 +1136,59 @@ asset = at.create_asset("BP_NPC_AIController", "/Game/Dantooine/Blueprints/AI", 
 factory = unreal.AnimBlueprintFactory()
 factory.set_editor_property("target_skeleton", None)
 factory.set_editor_property("blueprint_type", unreal.BlueprintType.BPTYPE_NORMAL)
-asset = at.create_asset("ABP_PlayerJedi", "/Game/Dantooine/Animation/Player", unreal.AnimBlueprint, factory)
+asset = at.create_asset("ABP_PlayerJedi", "/Game/MyProject/Animation/Player", unreal.AnimBlueprint, factory)
 ```
 
 **Create Enum:**
 ```python
-asset = at.create_asset("E_QuestStage", "/Game/Dantooine/Data/Enums", unreal.UserDefinedEnum, unreal.EnumFactory())
+asset = at.create_asset("E_QuestStage", "/Game/MyProject/Data/Enums", unreal.UserDefinedEnum, unreal.EnumFactory())
 ```
 
 **Create Struct:**
 ```python
-asset = at.create_asset("ST_DialogueLine", "/Game/Dantooine/Data/Structs", unreal.UserDefinedStruct, unreal.StructureFactory())
+asset = at.create_asset("ST_DialogueLine", "/Game/MyProject/Data/Structs", unreal.UserDefinedStruct, unreal.StructureFactory())
 ```
 
 **Create Blueprint Interface:**
 ```python
-asset = at.create_asset("BPI_Interactable", "/Game/Dantooine/Interfaces", unreal.Blueprint, unreal.BlueprintInterfaceFactory())
+asset = at.create_asset("BPI_Interactable", "/Game/MyProject/Interfaces", unreal.Blueprint, unreal.BlueprintInterfaceFactory())
 ```
 
 **Create Input Action:**
 ```python
-asset = at.create_asset("IA_Jump", "/Game/Dantooine/Data/Input", unreal.InputAction, unreal.InputAction_Factory())
+asset = at.create_asset("IA_Jump", "/Game/MyProject/Data/Input", unreal.InputAction, unreal.InputAction_Factory())
 ```
 
 **Create Input Mapping Context:**
 ```python
-asset = at.create_asset("IMC_Dantooine", "/Game/Dantooine/Data/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
+asset = at.create_asset("IMC_MyProject", "/Game/MyProject/Data/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
 ```
 
 **Create Level Sequence:**
 ```python
-asset = at.create_asset("LS_LightsaberBuild", "/Game/Dantooine/Sequences/LightsaberBuild", unreal.LevelSequence, unreal.LevelSequenceFactoryNew())
+asset = at.create_asset("LS_LightsaberBuild", "/Game/MyProject/Sequences/LightsaberBuild", unreal.LevelSequence, unreal.LevelSequenceFactoryNew())
 ```
 
 **Create Folder:**
 ```python
-unreal.EditorAssetLibrary.make_directory("/Game/Dantooine/NewFolder")
+unreal.EditorAssetLibrary.make_directory("/Game/MyProject/NewFolder")
 ```
 
 **List All Assets:**
 ```python
-assets = unreal.EditorAssetLibrary.list_assets("/Game/Dantooine", recursive=True, include_folder=False)
+assets = unreal.EditorAssetLibrary.list_assets("/Game/MyProject", recursive=True, include_folder=False)
 for a in sorted(assets): print(a)
 ```
 
 **Check Asset Exists:**
 ```python
-exists = unreal.EditorAssetLibrary.does_asset_exist("/Game/Dantooine/Blueprints/Core/BP_DantooineGameMode")
+exists = unreal.EditorAssetLibrary.does_asset_exist("/Game/MyProject/Blueprints/Core/BP_MyProjectGameMode")
 print("EXISTS" if exists else "MISSING")
 ```
 
 **Save All Modified Assets:**
 ```python
-unreal.EditorAssetLibrary.save_directory("/Game/Dantooine", recursive=True)
+unreal.EditorAssetLibrary.save_directory("/Game/MyProject", recursive=True)
 ```
 
 **Get All Level Actors:**
@@ -1280,7 +1280,7 @@ Add a NiagaraComponent to a Blueprint's component hierarchy.
 python3 sandbox_ue5cli.py add_niagara_component '{
   "blueprint_name":       "BP_LightsaberWorkbench",
   "component_name":       "SparksEffect",
-  "niagara_system_path":  "/Game/Dantooine/Art/FX/NS_WorkbenchSparks"
+  "niagara_system_path":  "/Game/MyProject/Art/FX/NS_WorkbenchSparks"
 }'
 ```
 | Parameter | Required | Notes |
@@ -1298,7 +1298,7 @@ Add a `SpawnSystemAtLocation` node from `UNiagaraFunctionLibrary` to a Blueprint
 python3 sandbox_ue5cli.py add_spawn_niagara_at_location_node '{
   "blueprint_name":      "BP_LightsaberWorkbench",
   "graph_name":          "EventGraph",
-  "niagara_system_path": "/Game/Dantooine/Art/FX/NS_WorkbenchSparks",
+  "niagara_system_path": "/Game/MyProject/Art/FX/NS_WorkbenchSparks",
   "node_position":       {"x": 600, "y": 0}
 }'
 ```
@@ -1310,7 +1310,7 @@ Output pins: `execute` (exec in), `then` (exec out), `SystemTemplate` (NS_ asset
 Add an AnimNotify or AnimNotifyState marker to an Animation Sequence or Montage.
 ```bash
 python3 sandbox_ue5cli.py add_anim_notify '{
-  "animation_path": "/Game/Dantooine/Animation/Montages/AM_LightsaberAttack",
+  "animation_path": "/Game/MyProject/Animation/Montages/AM_LightsaberAttack",
   "notify_name":    "HitDetection",
   "time":           0.45
 }'
@@ -1318,7 +1318,7 @@ python3 sandbox_ue5cli.py add_anim_notify '{
 **For AnimNotifyState (with duration):**
 ```bash
 python3 sandbox_ue5cli.py add_anim_notify '{
-  "animation_path":           "/Game/Dantooine/Animation/Montages/AM_LightsaberAttack",
+  "animation_path":           "/Game/MyProject/Animation/Montages/AM_LightsaberAttack",
   "notify_name":              "HitWindow",
   "time":                     0.3,
   "notify_type":              "notify_state",
@@ -1340,24 +1340,24 @@ Set a scalar, vector, or texture parameter on a Material Instance Constant asset
 ```bash
 # Scalar
 python3 sandbox_ue5cli.py set_material_instance_parameter '{
-  "material_instance_path": "/Game/Dantooine/Art/Materials/MI_LightsaberBlade",
+  "material_instance_path": "/Game/MyProject/Art/Materials/MI_LightsaberBlade",
   "parameter_name":         "EmissiveIntensity",
   "parameter_type":         "scalar",
   "value":                  "5.0"
 }'
 # Vector (R,G,B,A)
 python3 sandbox_ue5cli.py set_material_instance_parameter '{
-  "material_instance_path": "/Game/Dantooine/Art/Materials/MI_LightsaberBlade",
+  "material_instance_path": "/Game/MyProject/Art/Materials/MI_LightsaberBlade",
   "parameter_name":         "BladeColor",
   "parameter_type":         "vector",
   "value":                  "0.0,0.5,1.0,1.0"
 }'
 # Texture
 python3 sandbox_ue5cli.py set_material_instance_parameter '{
-  "material_instance_path": "/Game/Dantooine/Art/Materials/MI_GroundSurface",
+  "material_instance_path": "/Game/MyProject/Art/Materials/MI_GroundSurface",
   "parameter_name":         "DiffuseTexture",
   "parameter_type":         "texture",
-  "value":                  "/Game/Dantooine/Art/Textures/T_Ground_D"
+  "value":                  "/Game/MyProject/Art/Textures/T_Ground_D"
 }'
 ```
 | `parameter_type` | `value` format |
@@ -1372,7 +1372,7 @@ python3 sandbox_ue5cli.py set_material_instance_parameter '{
 Add actor tracks and keyframes to a Level Sequence asset.
 ```bash
 python3 sandbox_ue5cli.py set_sequencer_track '{
-  "sequence_path": "/Game/Dantooine/Sequences/LightsaberBuild/LS_LightsaberBuild",
+  "sequence_path": "/Game/MyProject/Sequences/LightsaberBuild/LS_LightsaberBuild",
   "actor_name":    "BP_LightsaberWorkbench_0",
   "track_type":    "Transform",
   "keyframes": [
@@ -1465,9 +1465,9 @@ eal = unreal.EditorAssetLibrary
 
 # Create all folders
 folders = [
-    "/Game/Dantooine/AI/Tasks",
-    "/Game/Dantooine/AI/Services",
-    "/Game/Dantooine/AI/Decorators",
+    "/Game/MyProject/AI/Tasks",
+    "/Game/MyProject/AI/Services",
+    "/Game/MyProject/AI/Decorators",
 ]
 for f in folders:
     eal.make_directory(f)
@@ -1475,7 +1475,7 @@ for f in folders:
 
 # Create assets
 assets_to_create = [
-    ("BTT_FinishTask", "/Game/Dantooine/AI/Tasks", unreal.BTTask_BlueprintBase),
+    ("BTT_FinishTask", "/Game/MyProject/AI/Tasks", unreal.BTTask_BlueprintBase),
 ]
 for name, path, parent in assets_to_create:
     f = unreal.BlueprintFactory()
@@ -1717,7 +1717,7 @@ python3 sandbox_ue5cli.py wire_play_sound_to_blueprint '{
 | `DA_` | Data Asset | `DA_WeaponConfig` |
 | `DT_` | Data Table | `DT_DialogueLines` |
 | `IA_` | Input Action | `IA_Jump` |
-| `IMC_` | Input Mapping Context | `IMC_Dantooine` |
+| `IMC_` | Input Mapping Context | `IMC_MyProject` |
 | `LS_` | Level Sequence | `LS_LightsaberBuild` |
 | `NS_` | Niagara System | `NS_SaberTrail` |
 | `M_` | Material | `M_MasterOpaque` |
@@ -1729,7 +1729,7 @@ python3 sandbox_ue5cli.py wire_play_sound_to_blueprint '{
 | `AM_` | Animation Montage | `AM_LightsaberAttack` |
 | `BS_` | Blend Space | `BS_Locomotion` |
 | `AC_` | Actor Component | `AC_HealthSystem` |
-| `BFL_` | Blueprint Function Library | `BFL_DantooineHelpers` |
+| `BFL_` | Blueprint Function Library | `BFL_MyProjectHelpers` |
 
 ---
 

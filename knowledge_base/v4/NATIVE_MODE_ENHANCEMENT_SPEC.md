@@ -372,7 +372,7 @@ async def get_server_info() -> str:
     return json.dumps({
         "server": "Unreal-MCP-Ghost",
         "version": "2.0.0",
-        "branch": "genspark_ai_developer",
+        "branch": "main",
         "total_tools": 311,
         "tool_domains": [
             "Actor/Level (spawn, transform, properties)",

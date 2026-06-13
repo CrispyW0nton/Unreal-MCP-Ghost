@@ -160,7 +160,7 @@ Capsule Component (root, collision)
 
 ### Setup in GameMode
 ```
-GameMode → Default Player Controller Class → BP_DantooinePlayerController
+GameMode → Default Player Controller Class → BP_MyProjectPlayerController
 ```
 
 ### PlayerController Patterns
@@ -169,7 +169,7 @@ GameMode → Default Player Controller Class → BP_DantooinePlayerController
 ```
 BeginPlay:
   Get Player Controller →
-  Add Mapping Context (IMC_Dantooine, Priority: 0)
+  Add Mapping Context (IMC_MyProject, Priority: 0)
 
 Input Action IA_Move (Triggered):
   → Get Control Rotation → Break Rotator → Yaw only → Make Rotator
@@ -221,11 +221,11 @@ OR per-level: World Settings → Game Mode Override
 
 ### GameMode Class Assignments
 ```
-Open BP_DantooineGameMode:
+Open BP_MyProjectGameMode:
   Class Defaults:
     Default Pawn Class: BP_PlayerJediCharacter
     HUD Class: none (we create UI in PlayerController)
-    Player Controller Class: BP_DantooinePlayerController
+    Player Controller Class: BP_MyProjectPlayerController
     Game State Class: GameStateBase (or custom)
     Player State Class: PlayerState (or custom)
     Spectator Class: SpectatorPawn
@@ -253,7 +253,7 @@ Open BP_DantooineGameMode:
 
 ### Setup
 ```
-Project Settings → Maps & Modes → Game Instance Class → BP_DantooineGameInstance
+Project Settings → Maps & Modes → Game Instance Class → BP_MyProjectGameInstance
 ```
 
 ### Common GameInstance Variables
@@ -267,7 +267,7 @@ SaveSlotName: String = "Slot1"
 
 ### Access Pattern
 ```
-Get Game Instance → Cast To BP_DantooineGameInstance → Get/Set variables
+Get Game Instance → Cast To BP_MyProjectGameInstance → Get/Set variables
 ```
 
 ---
@@ -279,7 +279,7 @@ Get Game Instance → Cast To BP_DantooineGameInstance → Get/Set variables
 ### Creating a SaveGame Class
 ```
 Content Browser → Blueprint Class → Parent: SaveGame
-Name: BP_DantooineProgress
+Name: BP_MyProjectProgress
 
 Variables:
   CompletedQuestStages: Array of E_QuestStage
@@ -289,8 +289,8 @@ Variables:
 
 ### Saving
 ```
-Create Save Game Object (Class: BP_DantooineProgress)
-  → Cast Return Value to BP_DantooineProgress
+Create Save Game Object (Class: BP_MyProjectProgress)
+  → Cast Return Value to BP_MyProjectProgress
   → Set CompletedQuestStages = (current data)
   → Set TotalPlayTime = (current time)
 Save Game to Slot (SaveGameObject, SlotName: "Slot1", UserIndex: 0)
@@ -300,7 +300,7 @@ Save Game to Slot (SaveGameObject, SlotName: "Slot1", UserIndex: 0)
 ```
 Does Save Game Exist ("Slot1", 0) → Branch:
   True → Load Game from Slot ("Slot1", 0)
-           → Cast To BP_DantooineProgress
+           → Cast To BP_MyProjectProgress
            → Get CompletedQuestStages
   False → Initialize default save data
 ```
@@ -371,20 +371,20 @@ Add to any Actor → attach to specific bone socket
 ### Blueprint Function Library
 ```
 Content Browser → Blueprint Class → Parent: BlueprintFunctionLibrary
-Name: FL_DantooineUtils
+Name: FL_MyProjectUtils
 
 Functions (all static, no self):
   CalculateSaberDamage(Strength: Float) → Float: return Strength × 1.5
   FormatQuestText(Stage: E_QuestStage) → Text
 
 Usage (from ANY Blueprint):
-  FL_DantooineUtils → CalculateSaberDamage(SaberStrength) → DamageAmount
+  FL_MyProjectUtils → CalculateSaberDamage(SaberStrength) → DamageAmount
 ```
 
 ### Blueprint Macro Library
 ```
 Content Browser → Blueprint Class → Parent: BlueprintMacroLibrary
-Name: ML_DantooineCommon
+Name: ML_MyProjectCommon
 
 Macros (with multiple exec pins):
   SafeInteract: 

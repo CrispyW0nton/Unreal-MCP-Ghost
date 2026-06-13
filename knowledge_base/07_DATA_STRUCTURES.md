@@ -131,7 +131,7 @@ Get → Break ST_DialogueLine → access individual fields
 Set → Make ST_DialogueLine → provide all fields
 ```
 
-### Dantooine Structs Reference
+### MyProject Structs Reference
 | Struct | Fields |
 |--------|--------|
 | `ST_DialogueLine` | SpeakerName, LineText, AudioCue, Duration |
@@ -167,7 +167,7 @@ Switch on Enum → routes execution based on current value
 Equals → compare against specific value
 ```
 
-### Dantooine Enums Reference
+### MyProject Enums Reference
 | Enum | Values |
 |------|--------|
 | `E_QuestStage` | Not_Started, Intro_Dialogue, Find_Workbench, Build_Lightsaber, Begin_Sparring, Complete |
@@ -237,7 +237,7 @@ Read at runtime: Get WeaponConfig → Get BaseDamage
 ### SaveGame Blueprint Setup
 ```
 Content Browser → Blueprint Class → Parent: SaveGame
-Name: BP_DantooineProgress
+Name: BP_MyProjectProgress
 
 Variables:
   CurrentQuestStage: E_QuestStage
@@ -249,17 +249,17 @@ Variables:
 
 ### Save Function
 ```
-[In BP_DantooineGameMode or BP_DantooinePlayerController]
+[In BP_MyProjectGameMode or BP_MyProjectPlayerController]
 
 Function: SaveGame
-  Create Save Game Object (Class: BP_DantooineProgress)
-  → Cast to BP_DantooineProgress → Store in SaveRef
+  Create Save Game Object (Class: BP_MyProjectProgress)
+  → Cast to BP_MyProjectProgress → Store in SaveRef
   
   Set CurrentQuestStage = Get Quest Manager → QuestStage
   Set TotalPlaytime = Get Game Instance → ElapsedTime
   Set PlayerPosition = Get Player Pawn → Get Actor Location
   
-  Save Game to Slot (SaveRef, SlotName: "DantooineSlot1", UserIndex: 0)
+  Save Game to Slot (SaveRef, SlotName: "MyProjectSlot1", UserIndex: 0)
   → Return: Success (bool)
 ```
 
@@ -267,10 +267,10 @@ Function: SaveGame
 ```
 Function: LoadGame → Output: Bool (DidLoad)
 
-Does Save Game Exist ("DantooineSlot1", 0) → Branch:
+Does Save Game Exist ("MyProjectSlot1", 0) → Branch:
   True:
-    Load Game from Slot ("DantooineSlot1", 0)
-    → Cast To BP_DantooineProgress
+    Load Game from Slot ("MyProjectSlot1", 0)
+    → Cast To BP_MyProjectProgress
     
     Get Quest Manager → Set QuestStage = SaveRef.CurrentQuestStage
     Get Player Pawn → Set Actor Location = SaveRef.PlayerPosition
@@ -312,7 +312,7 @@ IA_Block: Digital (bool)
 ### Input Mapping Context
 ```
 Content Browser → Input → Input Mapping Context
-Name: IMC_Dantooine (IMC_ prefix)
+Name: IMC_MyProject (IMC_ prefix)
 
 Mappings:
   IA_Move → W (Modifier: Swizzle YXZ)
@@ -332,7 +332,7 @@ Mappings:
 ```
 Event BeginPlay:
   Get Player Controller → 
-  Add Mapping Context (Context: IMC_Dantooine, Priority: 0)
+  Add Mapping Context (Context: IMC_MyProject, Priority: 0)
 ```
 
 ### Using Input in Character

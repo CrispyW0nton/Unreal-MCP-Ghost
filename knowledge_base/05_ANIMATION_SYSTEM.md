@@ -144,7 +144,7 @@ Entry → Idle
   Landing → Idle: Landing anim finished (Get Relevant Anim Time Remaining ≤ 0.1)
 ```
 
-### Combat State Machine (Dantooine)
+### Combat State Machine (MyProject)
 ```
 Entry → Unarmed
   Unarmed → Armed: HasLightsaber
@@ -265,7 +265,7 @@ Event AN_FootstepLeft
   → Make Noise (for AI hearing)
 ```
 
-### Common Notify Names (Dantooine)
+### Common Notify Names (MyProject)
 ```
 AN_AttackHit          → Detect lightsaber hit
 AN_FootstepLeft       → Left foot sound + noise
@@ -367,7 +367,7 @@ Two Bone IK for Left Hand:
 3. **Don't mix root motion and CharacterMovement locomotion** — pick one
 4. **Don't leave ABP without a skeleton** — it will crash or not compile
 
-### Skeleton Assignment (Critical for Dantooine)
+### Skeleton Assignment (Critical for MyProject)
 ```
 When you import SK_PlayerJedi:
   1. Assign to ABP_PlayerJedi: Open ABP → Class Settings → Target Skeleton → SK_PlayerJedi_Skeleton
@@ -377,7 +377,7 @@ When you import SK_PlayerJedi:
 
 ---
 
-## 12. Dantooine Animation Blueprint Setup
+## 12. MyProject Animation Blueprint Setup
 
 ### ABP_PlayerJedi
 ```

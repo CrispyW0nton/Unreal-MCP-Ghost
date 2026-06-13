@@ -13,6 +13,35 @@ preview_*
 *.patch
 
 # -------------------------------------------------------
+# Public repo hygiene
+# -------------------------------------------------------
+# Keep private project context local. The public KB can include curated
+# reusable knowledge, but project-specific folders must not be committed.
+knowledge_base/Projects/
+knowledge_base/private/
+knowledge_base/Reports/
+docs/knowledge-base/local-book-paths.json
+local-book-paths.json
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+secrets/
+
+# Generated artifacts and local MCP/session output
+.mcp_artifacts/
+generated_audio/
+.tmp_*/
+uv.lock
+package-lock.json
+node_modules/
+
+# -------------------------------------------------------
 # Project-specific one-off scripts (never commit these)
 # -------------------------------------------------------
 fix_*.py
@@ -26,7 +55,7 @@ books/
 pdf_books/
 reference_books/
 pdf_pages/
-dantooine_setup/
+*_setup/
 *_PROJECT_REFERENCE.md
 *_SESSION_PROMPT.md
 cursor_system_prompt.md

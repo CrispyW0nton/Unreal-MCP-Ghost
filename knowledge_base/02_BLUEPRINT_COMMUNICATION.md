@@ -272,10 +272,10 @@ Get All Actors of Class (Actor Class: BP_Enemy)
 
 ---
 
-## 9. Dantooine-Specific Communication Map
+## 9. MyProject-Specific Communication Map
 
 ```
-BP_DantooinePlayerController
+BP_MyProjectPlayerController
   → Creates & owns: WBP_HUD
   → Dispatchers: OnQuestUpdated, OnDialogueStarted
   → Casts to: BP_PlayerJediCharacter
@@ -283,9 +283,9 @@ BP_DantooinePlayerController
 BP_PlayerJediCharacter
   → Implements: BPI_CombatReceiver
   → Dispatchers: OnHealthChanged, OnAttack, OnBlock
-  → Direct ref to: BP_DantooineQuestManager
+  → Direct ref to: BP_MyProjectQuestManager
 
-BP_DantooineQuestManager
+BP_MyProjectQuestManager
   → Dispatchers: OnQuestStageChanged, OnObjectiveComplete
   → All quest blueprints bind to these
 

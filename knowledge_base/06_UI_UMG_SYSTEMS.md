@@ -124,7 +124,7 @@ Create Widget → Add to Viewport (must create new instance)
 ```
 Function: Get HealthPercent
   → Get PlayerController (index 0)
-  → Cast To BP_DantooinePlayerController
+  → Cast To BP_MyProjectPlayerController
   → Get PlayerCharRef
   → Get CurrentHealth / Get MaxHealth
   → Return float (0.0–1.0)
@@ -146,7 +146,7 @@ Function: Get HealthPercent
 ```
 In WBP_DialogueBox:
   Button OnClicked (DialogueChoice_1)
-  → Get Game Mode → Cast To BP_DantooineGameMode
+  → Get Game Mode → Cast To BP_MyProjectGameMode
   → Call AdvanceDialogue (ChoiceIndex: 0)
 ```
 
@@ -275,7 +275,7 @@ Event Construct:
 
 ---
 
-## 11. Dantooine Widget Reference
+## 11. MyProject Widget Reference
 
 | Widget | Parent | Purpose |
 |--------|--------|---------|
@@ -286,7 +286,7 @@ Event Construct:
 | `WBP_SparringHUD` | UserWidget | Combat overlay: timer, hits taken, opponent health |
 | `WBP_LevelComplete` | UserWidget | End of level screen with results and continue button |
 
-### HUD Creation Pattern (In BP_DantooinePlayerController)
+### HUD Creation Pattern (In BP_MyProjectPlayerController)
 ```
 Event BeginPlay:
   Create Widget (WBP_HUD) → Store HUDRef → Add to Viewport

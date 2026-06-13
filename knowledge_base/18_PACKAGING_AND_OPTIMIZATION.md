@@ -30,19 +30,19 @@
 ### Maps & Modes
 ```
 Project Settings → Maps & Modes
-  → Default GameMode: BP_DantooineGameMode
-  → Game Default Map: Dantooine_Level
-  → Editor Startup Map: Dantooine_Level
+  → Default GameMode: BP_MyProjectGameMode
+  → Game Default Map: MyProject_Level
+  → Editor Startup Map: MyProject_Level
   → Transition Map (optional)
 ```
 
 ### Project Description
 ```
 Project Settings → Description
-  → Project Name: "Enclave Project — Dantooine"
+  → Project Name: "Enclave Project — MyProject"
   → Description: "GAM270 Project 2"
   → Version: "1.0"
-  → Company Name: "Academy of Art University"
+  → Company Name: "Your Studio"
   → Copyright Notice: "2026"
   → Homepage URL: ""
 ```
@@ -81,7 +81,7 @@ File → Package Project → Windows (64-bit) → Choose output folder
 | Use Pak File | true | All content in one pak |
 | Generate Chunks | false | (for download streaming only) |
 | Cook All in Project | false | Only cook content actually used |
-| List of Maps to Include | Dantooine_Level, (others) | Explicit list of levels |
+| List of Maps to Include | MyProject_Level, (others) | Explicit list of levels |
 
 ### What Gets Cooked
 - Only assets REFERENCED from the startup map and its dependencies
@@ -341,7 +341,7 @@ r.Lumen.Quality 1              # Set quality level (0-4)
 | BT Decorator | `BTD_` | `BTD_IsPlayerNearby` |
 | BT Service | `BTS_` | `BTS_UpdateTargetDistance` |
 | AI Controller BP | `BP_` + `_AIController` | `BP_NPC_AIController` |
-| Material | `M_` | `M_Rock_Dantooine` |
+| Material | `M_` | `M_Rock_MyProject` |
 | Material Instance | `MI_` | `MI_Rock_Mossy` |
 | Material Function | `MF_` | `MF_NormalBlend` |
 | Texture | `T_` | `T_Rock_BaseColor` |
@@ -359,17 +359,17 @@ r.Lumen.Quality 1              # Set quality level (0-4)
 | Enum | `E_` | `E_QuestStage` |
 | Struct | `ST_` | `ST_DialogueLine` |
 | Interface | `BPI_` | `BPI_Interactable` |
-| Blueprint Func Lib | `BFL_` | `BFL_DantooineHelpers` |
+| Blueprint Func Lib | `BFL_` | `BFL_MyProjectHelpers` |
 | Data Table | `DT_` | `DT_DialogueLines` |
 | Data Asset | `DA_` | `DA_LightsaberConfig` |
 | Input Action | `IA_` | `IA_Attack` |
-| Input Mapping Context | `IMC_` | `IMC_Dantooine` |
-| Level | (no prefix or `L_`) | `Dantooine_Level` |
+| Input Mapping Context | `IMC_` | `IMC_MyProject` |
+| Level | (no prefix or `L_`) | `MyProject_Level` |
 | Level Sequence | `LS_` | `LS_LightsaberBuild` |
 | Sound Cue | `SC_` | `SC_SaberHum` |
 | Sound Wave | `SW_` or `SFX_` | `SFX_Saber_Swing` |
-| Save Game BP | `BP_` + `GameSave` | `BP_DantooineGameSave` |
-| Game Instance BP | `BP_` + `GameInstance` | `BP_DantooineGameInstance` |
+| Save Game BP | `BP_` + `GameSave` | `BP_MyProjectGameSave` |
+| Game Instance BP | `BP_` + `GameInstance` | `BP_MyProjectGameInstance` |
 
 ---
 

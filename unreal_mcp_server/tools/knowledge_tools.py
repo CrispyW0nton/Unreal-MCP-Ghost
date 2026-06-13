@@ -42,7 +42,7 @@ TOPIC_MAP = {
     "components":        ["11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md", "BOOK_TECHNICAL_ART.md"],
     "tools":             ["12_MCP_TOOL_USAGE_GUIDE.md"],
     "roadmap":           ["13_TOOL_EXPANSION_ROADMAP.md"],
-    "dantooine":         ["14_DANTOOINE_PROJECT_REFERENCE.md"],
+    "project":           ["PUBLIC_AGENT_GUIDE.md"],
     "input":             ["15_INPUT_SYSTEM_AND_UMG.md", "BOOK_INPUT.md"],
     "animation_deep":    ["16_ANIMATION_DEEP_DIVE.md", "BOOK_ANIMATION.md"],
     "cookbook":          ["17_GAME_SYSTEMS_COOKBOOK.md"],
@@ -67,6 +67,7 @@ ALIASES = {
     "enhanced input": "input", "key": "input", "binding": "input",
     "optimization": "packaging", "performance": "packaging", "lod": "technical_art",
     "component": "components", "actor component": "components",
+    "private project": "project", "project context": "project",
 }
 
 def _resolve_topic(topic: str) -> str | None:
@@ -144,7 +145,7 @@ def register_knowledge_tools(mcp):
             "  vfx              — VFX deep-dive: Niagara + materials",
             "  tools            — Complete MCP tool usage guide with examples",
             "  roadmap          — Tool expansion roadmap, development status",
-            "  dantooine        — Project-specific reference (asset list, folder map, implementation status)",
+            "  project          — Public-safe project context rules and privacy boundaries",
             "",
             "## Usage",
             "  get_knowledge_base('ai')          → AI systems reference + book extracts",
