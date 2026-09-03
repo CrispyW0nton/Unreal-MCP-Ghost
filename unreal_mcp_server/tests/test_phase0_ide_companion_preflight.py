@@ -8,6 +8,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from contextlib import contextmanager
 from pathlib import Path
 
 
@@ -22,6 +23,25 @@ PAID_GENERATION_REVIEW_SCRIPT_PATH = REPO_ROOT / "scripts" / "write_paid_generat
 BLUEPRINT_MUTATION_REVIEW_SCRIPT_PATH = REPO_ROOT / "scripts" / "write_blueprint_mutation_evidence_review.py"
 PLATFORM_STABILITY_REVIEW_SCRIPT_PATH = REPO_ROOT / "scripts" / "write_platform_stability_review.py"
 COUNT_PATH = SERVER_ROOT / "tests" / "last_tool_count.txt"
+
+
+@contextmanager
+def _temporary_untracked_git_change():
+    """Make dirty-worktree tests deterministic without touching tracked files."""
+    with tempfile.NamedTemporaryFile(
+        mode="w",
+        encoding="utf-8",
+        dir=SERVER_ROOT / "tests",
+        prefix=".git-status-test-",
+        suffix=".tmp",
+        delete=False,
+    ) as stream:
+        marker_path = Path(stream.name)
+        stream.write("synthetic dirty-worktree fixture\n")
+    try:
+        yield
+    finally:
+        marker_path.unlink(missing_ok=True)
 
 
 def _load_preflight_module():
@@ -61,12 +81,13 @@ class TestPhase0IdeCompanionPreflight(unittest.TestCase):
         module = _load_preflight_module()
 
         before = COUNT_PATH.read_text(encoding="utf-8")
-        report = module.build_report(
-            bridge_host="127.0.0.1",
-            bridge_port=9,
-            chat_url="http://127.0.0.1:9",
-            timeout_s=0.1,
-        )
+        with _temporary_untracked_git_change():
+            report = module.build_report(
+                bridge_host="127.0.0.1",
+                bridge_port=9,
+                chat_url="http://127.0.0.1:9",
+                timeout_s=0.1,
+            )
         after = COUNT_PATH.read_text(encoding="utf-8")
 
         self.assertEqual(before, after)
@@ -1563,23 +1584,24 @@ class TestPhase0IdeCompanionPreflight(unittest.TestCase):
     def test_dirty_promotion_review_writer_merges_same_signature_target_evidence(self):
         module = _load_dirty_review_module()
 
-        owner_only = module.build_receipt({
-            "target_review_owner_or_source": "codex local WIP review",
-            "target_review_promotion_intent": "keep_wip",
-        }, reset_target_evidence=True)
-        merged = module.build_receipt({
-            "target_review_focused_test_results": "audit and no-mutation tests passed",
-            "target_review_artifact_policy_decision": "keep generated artifacts ignored unless explicitly promoted",
-            "target_review_tracked_diff_review": "tracked docs and tests reviewed as one project_knowledge batch",
-        }, previous_receipt=owner_only)
-        reset = module.build_receipt({
-            "target_review_focused_test_results": "fresh focused test note only",
-        }, previous_receipt=owner_only, reset_target_evidence=True)
-        stale_previous = dict(owner_only)
-        stale_previous["dirty_signature"] = "0" * 64
-        stale = module.build_receipt({
-            "target_review_focused_test_results": "fresh focused test note only",
-        }, previous_receipt=stale_previous)
+        with _temporary_untracked_git_change():
+            owner_only = module.build_receipt({
+                "target_review_owner_or_source": "codex local WIP review",
+                "target_review_promotion_intent": "keep_wip",
+            }, reset_target_evidence=True)
+            merged = module.build_receipt({
+                "target_review_focused_test_results": "audit and no-mutation tests passed",
+                "target_review_artifact_policy_decision": "keep generated artifacts ignored unless explicitly promoted",
+                "target_review_tracked_diff_review": "tracked docs and tests reviewed as one server_tests batch",
+            }, previous_receipt=owner_only)
+            reset = module.build_receipt({
+                "target_review_focused_test_results": "fresh focused test note only",
+            }, previous_receipt=owner_only, reset_target_evidence=True)
+            stale_previous = dict(owner_only)
+            stale_previous["dirty_signature"] = "0" * 64
+            stale = module.build_receipt({
+                "target_review_focused_test_results": "fresh focused test note only",
+            }, previous_receipt=stale_previous)
 
         self.assertFalse(owner_only["target_review_previous_evidence_merged"])
         self.assertEqual(owner_only["target_review_recorded_evidence_count"], 2)
@@ -2389,12 +2411,13 @@ class TestPhase0IdeCompanionPreflight(unittest.TestCase):
 
     def test_text_summary_surfaces_local_receipt_states(self):
         module = _load_preflight_module()
-        report = module.build_report(
-            bridge_host="127.0.0.1",
-            bridge_port=9,
-            chat_url="http://127.0.0.1:9",
-            timeout_s=0.1,
-        )
+        with _temporary_untracked_git_change():
+            report = module.build_report(
+                bridge_host="127.0.0.1",
+                bridge_port=9,
+                chat_url="http://127.0.0.1:9",
+                timeout_s=0.1,
+            )
         dirty_action = next(
             item
             for item in report["readiness_repair_queue"]["action_preview"]

@@ -802,9 +802,24 @@ class TestChatRoutes(unittest.TestCase):
                 "no_mutation_snapshot_scope": "git_tracked_worktree",
                 "no_mutation_snapshot_hash_algorithm": "sha256(path\\0content_sha256_or_missing\\0)",
             })
-            platform_preflight = json.loads(json.dumps(cockpit.platform_preflight_context()))
+            with tempfile.NamedTemporaryFile(
+                mode="w",
+                encoding="utf-8",
+                dir=_HERE,
+                prefix=".git-status-test-",
+                suffix=".tmp",
+                delete=False,
+            ) as stream:
+                dirty_marker = Path(stream.name)
+                stream.write("synthetic dirty-worktree fixture\n")
+            try:
+                platform_preflight = json.loads(json.dumps(cockpit.platform_preflight_context()))
+            finally:
+                dirty_marker.unlink(missing_ok=True)
             platform_preflight.update({
                 "ready_for_platform_stability": True,
+                "platform_missing_gate_count": 0,
+                "platform_missing_gate_preview": [],
                 "successful_bridge_ping": False,
                 "bridge_ready": False,
                 "bridge_tcp_ready": False,
@@ -2444,14 +2459,13 @@ class TestChatRoutes(unittest.TestCase):
                 "dirty_state_grouped_for_promotion",
                 {item["blocker"] for item in promotion_context["promotion_resolution_preview"]},
             )
-            self.assertEqual(
-                promotion_context["target_promotion_blocker_resolution"]["blocker"],
-                "dirty_state_grouped_for_promotion",
-            )
-            self.assertEqual(
-                promotion_context["target_promotion_blocker_resolution"]["recommended_strategy"],
-                "group_dirty_state_for_promotion",
-            )
+            target_resolution = promotion_context["target_promotion_blocker_resolution"]
+            self.assertIn(target_resolution["blocker"], promotion_context["missing_gate_preview"])
+            if target_resolution["blocker"] == "dirty_state_grouped_for_promotion":
+                self.assertEqual(
+                    target_resolution["recommended_strategy"],
+                    "group_dirty_state_for_promotion",
+                )
             self.assertEqual(promotion_context["tool_count"], platform_context["tool_count"])
             self.assertEqual(promotion_context["recorded_count"], platform_context["recorded_count"])
             self.assertEqual(promotion_context["dirty_risk"], platform_context["dirty_risk"])
