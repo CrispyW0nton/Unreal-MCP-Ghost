@@ -2,7 +2,7 @@
 
 > **Generated**: 2026-04-16
 > **Repo**: https://github.com/CrispyW0nton/Unreal-MCP-Ghost
-> **Branch**: `genspark_ai_developer`
+> **Branch**: `main`
 > **Current State**: 362 tools / 24 modules / 119 C++ commands
 
 ---

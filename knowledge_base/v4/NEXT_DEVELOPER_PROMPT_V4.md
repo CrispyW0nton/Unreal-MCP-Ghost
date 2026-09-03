@@ -1,7 +1,7 @@
 # Unreal-MCP-Ghost — Developer Session Prompt V4
 
 > **Date**: 2026-04-16
-> **Branch**: `genspark_ai_developer`
+> **Branch**: `main`
 > **Repo**: https://github.com/CrispyW0nton/Unreal-MCP-Ghost
 > **Related**: https://github.com/CrispyW0nton/GDeveloper | https://github.com/CrispyW0nton/Kotor-3D-Model-Converter
 

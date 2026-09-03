@@ -151,9 +151,8 @@ This still does not connect to Unreal Editor. It only times the server's
 
 ## Optional Live Bridge Smoke
 
-Use this only when Unreal Editor is already open with the plugin running. Most
-local projects use `127.0.0.1:55655`; Insanitii and some project-specific
-setups use `127.0.0.1:55655`.
+Use this only when Unreal Editor is already open with the plugin running. Most local projects use `127.0.0.1:55655`; project-specific port overrides
+should be supplied explicitly through configuration.
 
 ```powershell
 python scripts\bridge_ping.py

@@ -4,6 +4,8 @@ Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP ser
 
 The current server registers **713 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55655`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window with a compact IDE cockpit overview, queued-action preview, evidence timeline and artifact preview, live context chips, typed drag/drop references, and a categorized tool palette that can send messages to Cursor through the server.
 
+`main` is the stable public branch. Experimental work belongs on `wip`. Project-specific knowledge, generated reports, and development logs remain local and are excluded from the public repository.
+
 ## What It Can Do
 
 - Inspect levels, actors, Blueprints, components, variables, graphs, nodes, pins, compile diagnostics, references, source control state, and project assets.
@@ -324,6 +326,8 @@ Phase 7 startup/tool-discovery profiler:
 python scripts\profile_mcp_startup.py --iterations 3 --markdown-out knowledge_base\Reports\mcp_startup_profile.md --json-out knowledge_base\Reports\mcp_startup_profile.json
 ```
 
+The generated report files remain local and are ignored by Git.
+
 Phase 7 bridge command metadata audit:
 
 ```powershell
@@ -407,4 +411,10 @@ Regenerate project files and rebuild `Development Editor | Win64`.
 
 ## License
 
-Based on [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp). Extended under the same MIT license.
+Unreal-MCP-Ghost is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
+Portions of this project are derived from or inspired by [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp). See [NOTICE.md](NOTICE.md) for attribution and license details.
+
+## Security
+
+Report security issues privately using the guidance in [SECURITY.md](SECURITY.md). Do not open public issues for vulnerabilities, secrets, or exploit details.

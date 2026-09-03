@@ -133,4 +133,4 @@ if not _result["is_compiled"]:
 - "Compile `BP_PlayerCharacter` and check for errors"
 - "After adding the variable, compile and validate the Blueprint"
 - "Is `BP_EnemyAI` compiled? Check the output log for Blueprint errors"
-- "Validate all Blueprints in `/Game/Dantooine/Blueprints/`"
+- "Validate all Blueprints in `/Game/MyProject/Blueprints/`"

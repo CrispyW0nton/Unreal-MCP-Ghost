@@ -1,564 +1,150 @@
-# Unreal-MCP-Ghost Roadmap
+# Unreal-MCP-Ghost Public Roadmap
 
-Last updated: 2026-05-16
+Last updated: 2026-09-03
 
-This roadmap is the working plan for turning Unreal-MCP-Ghost into a production-grade AI game development platform for Unreal Engine 5. It replaces older command-by-command expansion notes that were useful during the 300-400 tool era, but are now too stale to guide the next phase.
+This roadmap covers reusable Unreal-MCP-Ghost platform work. Project-specific plans,
+validation logs, generated reports, and private production context are intentionally
+kept outside the public repository.
 
 ## North Star
 
-Unreal-MCP-Ghost should let an AI agent build, inspect, repair, and verify full UE5 gameplay systems while preserving editor stability and project integrity.
+Unreal-MCP-Ghost should let an AI agent inspect, author, validate, and repair Unreal
+Engine 5 projects while preserving editor stability, project integrity, and a clear
+audit trail.
 
-The target is not simply "more tools." The target is reliable end-to-end workflows:
+## Current Surface
 
-1. Discover project state before mutation.
-2. Make small, structured editor changes through engine APIs.
-3. Compile, save, inspect, and verify after each meaningful change.
-4. Return evidence: graph summaries, diagnostics, screenshots, logs, or asset diffs.
-5. Keep risky operations auditable and reversible.
+- 713 registered MCP tools across 51 categorized modules.
+- Unreal Engine 5.6 editor plugin with a localhost TCP bridge on port `55655`.
+- Python FastMCP transports for `stdio`, SSE, and streamable HTTP.
+- Optional dockable editor chat and IDE cockpit workflows.
+- 382 discovered native C++ bridge commands with Python-route coverage auditing.
+- Offline inventory, test-lane, wrapper-coverage, and no-mutation validation.
 
-## Current Baseline
+## Operating Rules
 
-Static registry audit currently finds 509 MCP tools from Git-tracked tool files: 505 Python tools under `unreal_mcp_server/tools` plus 4 higher-level skills under `unreal_mcp_server/skills`.
+- Keep public tools and documentation project-agnostic.
+- Keep project knowledge, generated reports, credentials, media, and build output local.
+- Prefer read-only discovery before editor mutation.
+- Keep each mutation transaction-sized and immediately inspectable.
+- Require compile/readback evidence after Blueprint or native authoring changes.
+- Keep tool registration, documentation, tests, and inventory counts synchronized.
+- Treat paid generation and destructive editor actions as explicit guarded workflows.
 
-Strong areas:
+## Workstream 0 — Registry and Documentation Hygiene
 
-- Blueprint creation, graph editing, variables, functions, nodes, comments, diagnostics, and repair.
-- Behavior Tree and Blackboard authoring, including full-tree JSON construction.
-- Animation Blueprint basics, state machines, AnimGraph slot insertion, Control Rig asset/control/constraint helpers, IK Rig, IK Retargeter, skeleton inspection, and batch retargeting.
-- Import pipelines for textures, meshes, skeletal meshes, audio, batch folders, and GhostRigger assets.
-- UMG/widget, gameplay, data, save-game, procedural, physics, VR, variant, reflection, project intelligence, C++ bridge, source control, and editor chat surfaces.
-- Dual MCP transport support: stdio, SSE, and streamable HTTP.
-- C++ plugin bridge with editor GameThread command execution and an optional MCP Chat dock tab.
+Status: active maintenance.
 
-Partially live areas:
-
-- Niagara/VFX exists, but is mostly discovery, safe system settings, Blueprint spawn nodes, component attachment, and recipes. Full native Niagara emitter/module/renderer authoring is not yet present.
-- AI covers Blackboard/BT/PawnSensing, data-level EQS query authoring, BT Run EQS wiring, AI Perception components, sight/hearing configs, stimulus sources, nav links, nav modifier volumes, RVO defaults, Detour guidance, and AI debug snapshots.
-- Technical art now covers basic materials, material instance parameters, master material creation, material function assets, texture-set wiring, material instance creation, bulk instance parameter updates, ORM texture generation, texture memory audits, vertex paint automation, mesh UV-channel audits, shader graph complexity estimates, diagnostic viewmode captures, overdraw visualization, and lightweight GPU/performance snapshots.
-- Autonomous verification now has a formal execution journal, risk evaluation foundation, PIE launch/stop/log/input wrappers, viewport screenshot capture, screenshot comparison, existing diagnostics, source control status, and chat. Vision-language screenshot analysis remains.
-
-Missing or thin areas:
-
-- Multiplayer/networking tools: Slices 1-3 now cover replication inspection/defaults, RepNotify variables, RPC Custom Event authoring/configuration, authority/role/owner graph helpers, Blueprint session flow nodes, runtime replication snapshots, and common mistake validation.
-- Niagara native authoring: systems from recipes, emitters, modules, renderers, parameters, events, ribbons, GPU/CPU collision, fluid/flipbook workflows, and profiling.
-- Production skill workflows: only a few high-level skills exist today; complete game-system templates and larger repeatable workflows still need deliberate buildout.
-- Production distribution/performance: command registry generated from metadata, startup profiling, and optional high-performance server packaging.
-
-## Engineering Principles
-
-These come from the repo knowledge-base guides and current plugin lessons:
-
-- Prefer narrow C++ bridge commands for editor operations that Python cannot do safely or completely.
-- Prefer structured JSON results over silent no-ops or string-only errors.
-- Avoid editor-crash paths already documented in the plugin, especially direct graph notifications in fragile asset editors.
-- Keep Blueprint/BT/AnimGraph mutations transaction-sized and immediately inspectable.
-- Use vertical-slice tests: create or inspect a tiny realistic asset, then verify the resulting state.
-- Add high-level skill workflows only after the underlying low-level tools are trustworthy.
-- Keep docs, tests, and reported tool counts synchronized.
-
-## Phase 0 - Roadmap And Registry Hygiene
-
-Goal: make the current surface measurable and keep planning artifacts honest.
-
-Status: complete.
-
-Tasks:
-
-- Replace stale 362/406/419-era roadmap notes with this current roadmap. Done.
-- Reconcile documented tool count to the current static count. Done.
-- Add an offline test that checks `README.md` and `tests/last_tool_count.txt` against the static tool registry count. Done.
-- Create or document a single canonical tool inventory command. Done: `python scripts/tool_inventory.py --markdown`.
-- Add a machine-readable category map for tools and skills. Done: `unreal_mcp_server/tool_inventory_categories.json`.
-- Mark implemented, partial, and missing areas in the knowledge base index. Done.
+- Maintain one canonical static tool inventory.
+- Require every registered tool to have a useful docstring and stable schema.
+- Keep module categories and roadmap phases machine-readable.
+- Detect Python/native bridge route drift in offline CI.
+- Keep setup examples portable and free of machine-specific paths.
+- Keep generated artifacts and project-only material out of Git.
 
 Definition of done:
 
-- `python -m unittest unreal_mcp_server.tests.test_tool_count` passes.
-- README and `last_tool_count.txt` agree with the static registry count.
-- Roadmap has clear first implementation slices.
+- Inventory and documented counts agree.
+- No uncategorized public tool modules.
+- No tracked build packages, logs, caches, credentials, or private project material.
+- Public setup and security guidance matches runtime defaults.
 
-## Phase 1 - Niagara Native Authoring
+## Workstream 1 — Native Unreal Authoring
 
-Goal: make VFX creation a first-class MCP workflow instead of a recipe-only workflow.
+Status: ongoing.
 
-Status: Slice 1 native bridge foundation is implemented and live-tested in Lab5E. Slice 2 native renderer tools and spawn-rate module editing are implemented and live-tested.
+- Expand safe Blueprint graph, UMG, Niagara, animation, Control Rig, AI, navigation,
+  networking, material, Sequencer, and asset authoring primitives.
+- Prefer native bridge routes where editor APIs provide stronger validation or
+  transaction support than Python reflection.
+- Preserve structured errors and readback for unsupported engine-version paths.
 
-Why first:
+Definition of done:
 
-- It is the largest confirmed gap.
-- The plugin already has Niagara module dependencies.
-- Existing Python tools already establish naming, result shape, and tests.
-
-Slice 1:
-
-- `niagara_validate_authoring_support` - implemented as a read-only Python/editor API probe.
-- `niagara_create_system` - implemented as a native C++ bridge command with Python fallback for older installed plugins.
-- `niagara_describe_system` - upgraded to use native C++ bridge inspection when available, including emitter handles and user parameters.
-- `niagara_add_empty_emitter` - implemented as a native C++ bridge command for adding an empty emitter handle to a system.
-- `niagara_set_system_user_parameter` - implemented as a native C++ bridge command for exposed float, bool, vector3, and color parameters.
-- `niagara_set_fixed_bounds` - implemented as a focused fixed-bounds setter.
-- `niagara_profile_system` - implemented as a lightweight asset-level profile/inspection tool.
-
-Slice 2:
-
-- `niagara_add_sprite_renderer` - implemented as a native C++ bridge command for adding a sprite renderer to an emitter handle.
-- `niagara_add_mesh_renderer` - implemented as a native C++ bridge command for adding a mesh renderer backed by a Static Mesh asset.
-- `niagara_set_spawn_rate` - implemented as a native C++ bridge command for adding/updating the emitter `SpawnRate` module's particles-per-second value.
-- `niagara_add_force_module`
-- `niagara_add_collision_module`
-- `niagara_add_event_handler`
-
-Slice 3:
-
-- `niagara_create_system_from_recipe`
-- `niagara_add_ribbon_renderer`
-- `niagara_configure_subuv_animation`
-- `niagara_bake_flipbook`
-- `niagara_create_fluid_simulation_preset` where engine APIs permit.
-
-Validation:
-
-- Offline wrapper tests for tool registration and schema.
-- UE live smoke test that creates a minimal system, adds one emitter, sets bounds/user params, saves, describes, and profiles.
-- Screenshot or viewport capture for a placed NiagaraComponent when feasible.
+- Each new native route has a Python wrapper or is explicitly classified as internal.
+- Wrapper schema, native routing, and error behavior have offline coverage.
+- Live-editor validation is recorded outside the public repository when it contains
+  project-specific context.
 
-Lab5E smoke result, 2026-05-16:
-
-- Live Coding loaded the updated Lab5E project plugin.
-- Created `/Game/MCP_Test/VFX/NS_MCP_Phase1_NativeSmoke`.
-- Added emitter handle `MCP_TestEmitter`.
-- Added one sprite renderer to `MCP_TestEmitter`.
-- Added exposed float parameter `MCP_Intensity`.
-- Native describe reported 1 emitter, 1 renderer, and 1 user parameter.
-- Created `/Game/MCP_Test/VFX/NS_MCP_Phase1_MeshSmoke`.
-- Added emitter handle `MCP_MeshEmitter`.
-- Added one mesh renderer backed by `/Engine/BasicShapes/Cube.Cube`.
-- Native describe reported renderer class and static mesh path.
-- Created `/Game/MCP_Test/VFX/NS_MCP_Phase1_SpawnRateSmoke`.
-- Added emitter handle `MCP_SpawnEmitter`.
-- Set the native `SpawnRate` module to `42`, creating the module.
-- Set the native `SpawnRate` module to `84`, updating the existing module without duplicating it.
-
-## Phase 2 - Modern AI Systems
-
-Goal: move from BT/Blackboard-only AI to full encounter authoring and debugging.
-
-Status: Slice 1 EQS data-asset authoring and Behavior Tree Run EQS service wiring are implemented and live-tested in Lab5E. Slice 2 AI Perception listener/source authoring is implemented and live-tested in Lab5E. Slice 3 navigation/crowd/debug tooling is implemented and live-tested in Lab5E.
-
-Slice 1:
-
-- `eqs_create_query` - implemented as a native C++ bridge command with a Python MCP wrapper.
-- `eqs_add_generator` - implemented for Simple Grid, Circle, Donut, Current Location, and Actors of Class generator classes.
-- `eqs_add_test` - implemented for Distance, Pathfinding, Dot, and Trace test classes.
-- `eqs_describe_query` - implemented as readback inspection for query options, generators, and tests.
-- `bt_add_run_eqs_service` - implemented as a native C++ bridge command that attaches or updates `BTService_RunEQS`, sets the EQS query, result Blackboard key, run mode, interval, and update-on-fail behavior.
-
-Slice 2:
-
-- `perception_add_component` - implemented as a native C++ bridge command for adding/finding `AIPerceptionComponent` on Blueprint SCS.
-- `perception_configure_sight` - implemented for Sight radius, lose-sight radius, peripheral vision angle, affiliation filters, and dominant sense.
-- `perception_configure_hearing` - implemented for Hearing range, affiliation filters, and optional dominant sense.
-- `perception_create_stimulus_source` - implemented as a native C++ bridge command for `AIPerceptionStimuliSourceComponent` with sight/hearing source registration.
-- `perception_bind_updated_event` - implemented as a Python wrapper around the existing component-bound event node command for Perception delegates.
-- `perception_describe_blueprint` - implemented as readback inspection for perception listeners and configured sense assets.
-
-Slice 3:
-
-- `nav_create_link_proxy` - implemented as a native C++ bridge command that spawns and configures point-link `ANavLinkProxy` actors.
-- `nav_add_modifier_volume` - implemented as a native C++ bridge command that spawns `ANavModifierVolume` actors with a chosen `UNavArea`.
-- `nav_describe_agent_settings` - implemented as readback inspection for supported agents, nav data, navmesh bounds, links, and modifier counts.
-- `crowd_configure_rvo` - implemented for Character Blueprint `CharacterMovement` RVO avoidance defaults and masks.
-- `crowd_configure_detour` - implemented for existing native `UCrowdFollowingComponent` controllers, with structured guidance when a Blueprint cannot retrofit the required default subobject.
-- `gameplay_debugger_capture_ai` - implemented as a lightweight AI/navigation world snapshot.
-
-Validation:
-
-- Tiny AI vertical slice: Character + AIController + Blackboard + BT + EQS query + perception component.
-- Verify navmesh, controller possession, blackboard keys, and BT graph info.
-
-Lab5E smoke result, 2026-05-16:
-
-- Live Coding loaded the updated Lab5E project plugin.
-- Created `/Game/MCP_Test/AI/EQS_MCP_Phase2_FindPoint`.
-- Added one `EnvQueryGenerator_SimpleGrid` option.
-- Added one `EnvQueryTest_Distance` test.
-- Native describe reported 1 option, the Simple Grid generator, and 1 Distance test.
-- Created `/Game/MCP_Test/AI/BB_MCP_Phase2_EQSService` with vector key `EQSResult`.
-- Created `/Game/MCP_Test/AI/BT_MCP_Phase2_EQSService`, assigned the Blackboard, and built a Selector/Wait smoke tree.
-- Attached `BTService_RunEQS` to the Selector, targeting `/Game/MCP_Test/AI/EQS_MCP_Phase2_FindPoint` and Blackboard key `EQSResult`.
-- Re-ran the tool with a different run mode and interval; it updated the existing service without duplicating the sub-node.
-- Created `BP_MCP_Phase2_PerceptionController`, added `AIPerception`, configured Sight at 4200/5000 radius with 85-degree peripheral vision, and configured Hearing at 2800 range.
-- Native describe reported `AISense_Sight` as dominant with Sight and Hearing configs.
-- Created `BP_MCP_Phase2_StimulusSource` and added `PerceptionStimuliSource` registered for Sight and Hearing.
-- Added an `OnTargetPerceptionUpdated` component-bound event node on the perception controller Blueprint.
-- Spawned `MCP_Phase2_NavLink` with a point link using `NavArea_Default`; native readback reported 1 nav link proxy.
-- Spawned `MCP_Phase2_NavBlocker` as a `NavArea_Null` modifier volume; native readback reported 1 nav modifier volume.
-- Captured an AI debug snapshot for world `Lab-0X`; it reported nav link/modifier counts and no active AI controllers in the current level.
-- Created/reparented `BP_MCP_Phase2_RVOCharacter` to `Character` and configured RVO defaults: enabled, 650 radius, 0.7 weight, group mask 1, avoid-all mask.
-- Ran `crowd_configure_detour` against `BP_MCP_Phase2_PerceptionController`; it correctly returned `configured:false` with native `UCrowdFollowingComponent` constructor guidance.
-
-## Phase 3 - Multiplayer And Networking
-
-Goal: support networked gameplay authoring without relying on generic property setters.
-
-Status: Slice 1 replication inspection and safe replication defaults are implemented and live-tested in Lab5E. Slice 2 RPC and authority graph helpers are implemented and live-tested in Lab5E. Slice 3 session flow helpers and replication diagnostics are implemented and live-tested in Lab5E.
-
-Slice 1:
-
-- `net_describe_blueprint_replication` - implemented as readback for Actor replication defaults, replicated Blueprint variables, RepNotify functions, SCS component replication, and existing RPC functions.
-- `net_set_actor_replicates` - implemented for Actor-derived Blueprint CDO defaults: `bReplicates`, movement replication, update frequency, and min update frequency.
-- `net_set_component_replicates` - implemented for Blueprint SCS component templates using the public component replication API.
-- `net_configure_replicated_property` - implemented for existing Blueprint member variables with none/replicated/RepNotify modes and lifetime conditions.
-- `net_add_repnotify_variable` - implemented for adding simple Blueprint member variables and generating the `OnRep_` function graph.
-
-Slice 2:
-
-- `net_create_rpc_event` - implemented for creating/updating Custom Events with Server, Client, NetMulticast, reliable, and simple typed input parameters.
-- `net_configure_rpc` - implemented for retagging existing Custom Events with RPC type/reliability flags.
-- `net_add_authority_gate` - implemented as `AActor::HasAuthority` wired into a Branch node so `Then` is authority/server flow and `Else` is remote/client flow.
-- `net_add_role_switch` - implemented as an `ENetRole` switch node with role case pins for graph wiring.
-- `net_set_owner_reference` - implemented as an `AActor::SetOwner` call node for server-side ownership setup.
-
-Slice 3:
-
-- `session_create_blueprint_flow` - implemented as a `CreateSession` async Blueprint node with `GetPlayerController(0)` wired and public connection/LAN/lobby defaults set.
-- `session_find_blueprint_flow` - implemented as a `FindSessions` async Blueprint node with `GetPlayerController(0)` wired and max result/LAN/lobby defaults set.
-- `network_debug_replication` - implemented as a runtime/editor snapshot for net mode, net driver, connections, network object counts, and replicated actor samples.
-- `net_validate_common_mistakes` - implemented for Actor replication defaults, replicated components/variables, RepNotify handlers, owner-conditioned variables, and risky reliable multicast RPCs.
-
-Validation:
-
-- Two-player PIE smoke plan if available.
-- Static graph inspection for RPC flags, replicated variables, RepNotify handlers, and authority guards.
-
-Lab5E smoke result, 2026-05-16:
-
-- Live Coding loaded the updated Lab5E project plugin after UE 5.6 API fixes for movement replication readback and component replication.
-- Created `BP_MCP_Phase3_NetActor`.
-- Added SCS component `ReplicatedMesh` and configured it to replicate.
-- Enabled Actor replication and movement replication; set net update frequency to `30` and min net update frequency to `5`.
-- Added existing variable `Score` and configured it as replicated with `owner_only` lifetime condition.
-- Added RepNotify variable `Health`, generated `OnRep_Health`, and configured it with `skip_owner` lifetime condition.
-- Native readback reported `actor_replicates=true`, `replicate_movement=true`, `ReplicatedMesh.is_replicated=true`, `Score.is_replicated=true`, and `Health.is_repnotify=true`.
-- Created RPC Custom Event `Server_Phase3_DoThing` with a `Damage` float input, initially configured as reliable Server, then reconfigured to NetMulticast.
-- Added a live authority gate; readback confirmed the HasAuthority return pin was connected to the Branch condition.
-- Added an `ENetRole` switch node with `ROLE_None`, `ROLE_SimulatedProxy`, `ROLE_AutonomousProxy`, and `ROLE_Authority` pins.
-- Added a `SetOwner` call node exposing the `NewOwner` pin.
-- Native readback reported `Server_Phase3_DoThing` under `rpc_functions` with `net_multicast` flags.
-- Added a `CreateSession` async Blueprint flow with `GetPlayerController(0)` wired, `PublicConnections=6`, LAN enabled, and lobbies enabled.
-- Added a `FindSessions` async Blueprint flow with `GetPlayerController(0)` wired, `MaxResults=12`, LAN enabled, and lobbies enabled.
-- Captured a runtime replication snapshot for world `Lab-0X`; the standalone editor world reported no active net driver and 4 replicated actor samples.
-- Ran common networking validation against `BP_MCP_Phase3_NetActor`; it checked 1 Blueprint and reported 0 issues.
-
-## Phase 4 - Technical Art Pipeline
-
-Goal: make materials, textures, and performance views as automatable as Blueprints.
-
-Status: Slice 1 master material and material instance pipeline tooling is implemented and live-tested in Lab5E. Slice 2 texture/mesh/vertex-paint audit helpers are implemented and live-tested in Lab5E. Slice 3 shader/viewmode/GPU audit helpers are implemented and live-tested in Lab5E.
-
-Slice 1:
-
-- `material_create_master` - implemented as a native C++ bridge command with a Python MCP wrapper for standard BaseColor, Metallic, Roughness, EmissiveColor, Opacity, and texture parameters.
-- `material_create_function` - implemented as a native C++ bridge command with a Python MCP wrapper for exposed Material Function assets.
-- `material_wire_texture_set` - implemented as a native C++ bridge command with a Python MCP wrapper for BaseColor, Normal, ORM, and Emissive texture wiring. ORM maps R/G/B to AO/Roughness/Metallic.
-- `material_create_instance_from_master` - implemented as a native C++ bridge command with a Python MCP wrapper for Material Instance Constant creation.
-- `material_set_instance_parameters_bulk` - implemented as a native C++ bridge command with a Python MCP wrapper for scalar, vector, and texture parameter updates in one call.
-
-Slice 2:
-
-- `texture_generate_orm` - implemented as a native C++ bridge command with a Python MCP wrapper for packed R/G/B ORM Texture2D generation from source maps or flat defaults.
-- `texture_audit_memory` - implemented as a native C++ bridge command with a Python MCP wrapper for Texture2D size, mip, compression, streaming, source-format, and estimated source-memory readback.
-- `vertex_paint_actor` - implemented as a native C++ bridge command with a Python MCP wrapper for component override vertex colors on placed StaticMesh actors/components.
-- `mesh_audit_uv_channels` - implemented as a native C++ bridge command with a Python MCP wrapper for StaticMesh LOD, UV-channel, vertex, triangle, and vertex-color readback.
-
-Slice 3:
-
-- `shader_analyze_complexity` - implemented as a native C++ bridge command with a Python MCP wrapper for fast graph-level shader complexity estimates and recommendations.
-- `renderer_capture_viewmode` - implemented as a native C++ bridge command with a Python MCP wrapper for active viewport diagnostic PNG capture.
-- `shader_visualize_overdraw` - implemented as a native C++ bridge command with a Python MCP wrapper for shader complexity plus quad-overdraw review.
-- `performance_audit_gpu` - implemented as a native C++ bridge command with a Python MCP wrapper for RHI adapter, feature level, memory, viewport, and scene/component snapshots.
-
-Validation:
-
-- Build one PBR master material from a texture set.
-- Verify material compile diagnostics, parameter names, texture compression, and asset references.
-- Capture shader complexity and overdraw viewmodes from a live editor viewport.
-- Return GPU/RHI, memory, viewport, and scene-count evidence for lightweight performance triage.
-
-Lab5E smoke result, 2026-05-16:
-
-- Live Coding loaded the updated Lab5E project plugin after UE 5.6 material API checks and timeout fixes.
-- Created `/Game/MCP_Test/Materials/M_MCP_Phase4_MasterFast3` with standard scalar/vector/texture parameters; native result reported `connected=true`, `saved=false`, and `compiled=false`.
-- Created and saved `/Game/MCP_Test/Materials/MF_MCP_Phase4_Test` as an exposed Material Function asset.
-- Created and saved `/Game/MCP_Test/Materials/MI_MCP_Phase4_MasterFast` from `/Game/MCP_Test/Materials/M_MCP_Phase4_MasterFast`.
-- Bulk-updated `MI_MCP_Phase4_MasterFast` parameters: `Metallic`, `Roughness`, and `BaseColor`; native result reported 2 scalar and 1 vector parameters set.
-- Wired `/Engine/EngineResources/DefaultTexture.DefaultTexture` into the master material as `BaseColorTexture`; native result reported 1 wired texture and no missing textures.
-- Added `RenderCore` as a plugin dependency for component override vertex-color initialization.
-- Created and saved `/Game/MCP_Test/Materials/T_MCP_Phase4_Slice2_ORM` as an 8x8 packed ORM texture; native result reported `R=Occlusion, G=Roughness, B=Metallic, A=255`.
-- Audited `T_MCP_Phase4_Slice2_ORM`; native readback reported `TC_Masks`, `SRGB=false`, `source_format=TSF_BGRA8`, 1 mip, and 256 estimated source bytes.
-- Audited `/Engine/BasicShapes/Cube.Cube`; native readback reported 1 LOD, 54 vertices, 48 triangles, and 2 UV channels.
-- Spawned `MCP_Phase4_VertexPaintActor` in the editor world and applied component override vertex colors to 54 vertices on LOD 0.
-- Added `RHI` as a plugin dependency for GPU adapter and feature-level readback.
-- Live Coding recompiled the updated Lab5E project plugin successfully.
-- Analyzed `/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial`; native readback reported 2 expressions, risk `low`, and a graph heuristic score of 2.
-- Captured `shader_complexity` and `shader_complexity_with_quad_overdraw` PNGs from the active Lab5E viewport at 1431x870.
-- Captured a lightweight GPU audit: NVIDIA GeForce RTX 3090, SM6, active `lit` viewport, 39 actors, 19 StaticMeshComponents, and 54 PrimitiveComponents.
-
-## Phase 5 - Animation Closure
-
-Goal: close the remaining animation gaps rather than rebuilding what already works.
-
-Status: Slice 1 montage and notify tooling is implemented and live-tested in Lab5E. Slice 2 Control Rig foundation is implemented and live-tested in Lab5E.
-
-Already strong:
-
-- Animation Blueprints.
-- State machines, states, transitions, and sequence assignment.
-- Blend-space nodes.
-- AnimGraph slot insertion.
-- IK Rig and IK Retargeter setup.
-- Batch retargeting.
-- Anim notify native handler exists in the plugin.
-
-Slice 1:
-
-- `add_anim_notify` - implemented as Python wrapper coverage for the existing native bridge command.
-- `anim_create_montage` - implemented as a native C++ bridge command with Python wrapper.
-- `anim_describe_montage` - implemented as readback inspection for slots, segments, sections, and notifies.
-- `anim_add_montage_slot` - implemented as a native C++ bridge command for adding slots and optional animation segments.
-- `anim_set_montage_section` - implemented as a native C++ bridge command for creating/repositioning sections and optional next-section links.
-- `anim_add_branching_point` - implemented as a native C++ bridge command that adds branching AnimNotify events on montages.
-
-Slice 2:
-
-- `control_rig_create` - implemented as a UE Python Control Rig Blueprint asset creator with optional preview mesh and bone import.
-- `control_rig_describe` - implemented as readback inspection for hierarchy counts, preview mesh, bones, controls, nulls, and curves.
-- `control_rig_add_control` - implemented for transform, position, float, bool, scale, and related control types.
-- `control_rig_add_constraint` - implemented for hierarchy parent and available-space relationships.
-- `control_rig_bake_to_sequence` - implemented as a guarded adapter over `ControlRigSequencerLibrary.bake_to_control_rig`; it validates required Sequencer binding context before invoking the bake.
-
-Validation:
-
-- Locomotion AnimBP with state machine and slot.
-- Montage with notify.
-- Optional Control Rig asset creation and basic inspection.
-
-Lab5E smoke result, 2026-05-16:
-
-- Live Coding compiled the updated Lab5E project plugin successfully; a second Live Coding pass remapped the bridge routing function in the running editor.
-- Discovered project animation assets under `/Game/ArtAssets/Characters/Mannequins/Animations`.
-- Created and saved `/Game/MCP_Test/Animation/M_MCP_Phase5_MontageSmoke` from `/Game/ArtAssets/Characters/Mannequins/Animations/Manny/MM_Idle`.
-- Added `UpperBody` as a second montage slot with `/Game/ArtAssets/Characters/Mannequins/Animations/Manny/MM_Run_Fwd` as a segment.
-- Added an `Attack` montage section at `0.25s` with `next_section_name=Start`.
-- Added branching point `MCP_Hit` at `0.35s`.
-- Added regular notify `MCP_GenericNotify` through the exposed `add_anim_notify` wrapper.
-- Native describe reported 2 slots, 2 sections, and 2 notifies, including `MCP_Hit` as a branching point and `MCP_GenericNotify` as a regular notify.
-- Created `/Game/MCP_Test/Animation/CR_MCP_Phase5_ControlRigSmoke2` from `/Game/ArtAssets/Characters/Mannequins/Meshes/SKM_Manny`.
-- Imported 161 bones from the Skeletal Mesh and verified the preview mesh persisted.
-- Added transform controls `MCP_Root_CTRL` and `MCP_Free_CTRL`.
-- Added an available-space relationship from `MCP_Root_CTRL` to `pelvis`.
-- Added a parent hierarchy relationship from `MCP_Free_CTRL` to `root`.
-- Readback reported 163 hierarchy elements: 161 bones and 2 controls.
-- Ran the guarded bake adapter with missing inputs; it correctly reported the required Level Sequence, Control Rig, and binding display name instead of mutating the project.
-
-## Phase 6 - Autonomous Verification Loop
-
-Goal: give agents a repeatable plan-execute-verify loop.
-
-Status: Slice 1 execution journal and risk-evaluation foundation is implemented and offline-tested. Slice 2 PIE/log/viewport evidence tooling is implemented and live-tested in Lab5E.
-
-Slices:
-
-- `execution_journal_start` - implemented as a workspace-scoped JSON journal creator with session metadata, tags, and schema versioning.
-- `execution_journal_log` - implemented for structured progress/tool/verification/error entries, artifacts, severities, risk labels, and stats.
-- `execution_journal_finish` - implemented for closeout summary, final status, final artifacts, verification evidence, and stats.
-- `risk_evaluate_action` - implemented as a heuristic risk gate returning risk level, score, reasons, recommended gate, and checklist.
-- `pie_launch_session` - implemented as a UE Python wrapper for Simulate In Editor or requested PIE, with state readback.
-- `pie_stop_session` - implemented as a UE Python wrapper for ending active PIE/SIE sessions, with state readback.
-- `pie_capture_log` - implemented as a project-log tail capture tool with optional workspace artifact output.
-- `pie_simulate_input` - implemented as a console-command input bridge into the active PIE world/player controller.
-- `viewport_capture_screenshot` - implemented as a workspace-local PNG artifact wrapper over the native viewport screenshot command.
-- `viewport_compare_screenshot` - implemented for workspace-local screenshot comparison using Pillow RMS when available, otherwise hash/size/dimension fallback.
-
-Later:
+## Workstream 2 — Runtime Reliability and Safety
 
-- Vision-language screenshot analysis integration.
-- Automatic rollback/checkpoint suggestions for high-risk failures.
+Status: ongoing.
 
-Validation:
+- Keep bridge authentication consistent across direct clients, scripts, and proxy paths.
+- Bind unauthenticated HTTP/chat surfaces to loopback by default.
+- Improve timeout, cancellation, health, and process-ownership behavior.
+- Continue eliminating blocking calls from async tool paths.
+- Maintain no-mutation and test-lane classification for offline validation.
 
-- Agent builds a small gameplay slice, launches PIE, captures log/screenshot, and returns a journal.
-- Slice 1 offline validation creates a temporary execution journal, appends evidence, finishes it, and verifies low-risk versus critical-risk action scoring.
+Definition of done:
 
-Slice 1 smoke result, 2026-05-16:
+- Startup failures are structured and actionable.
+- Network exposure requires an authenticated tunnel or reverse proxy.
+- Offline validation does not mutate tracked files.
+- Long-running provider and bridge calls do not block the async server loop.
 
-- Registered 4 new execution-substrate tools, bringing the execution substrate category to 7 tools.
-- Created a temporary repo-local execution journal in unit tests.
-- Appended a verification entry with inputs, outputs, artifact path, severity, and risk label.
-- Finished the journal with final verification evidence and read the persisted JSON schema back from disk.
-- Verified read-only Blueprint inspection scores as low risk and destructive source-touching project-wide deletion scores as critical with a manual approval gate.
+## Workstream 3 — IDE Companion and Editor Chat
 
-Slice 2 smoke result, 2026-05-17:
+Status: ongoing.
 
-- Offline tests registered all 6 PIE/log/viewport tools.
-- Verified screenshot comparison against identical PNG artifacts.
-- Live Lab5E validation launched a Simulate In Editor request against map `Lab-0X`.
-- Captured a project log tail from `Lab5E/Saved/Logs/Lab5E.log`, including PIE world duplication/startup lines.
-- Dispatched harmless console-command input `stat fps` to `PlayerController_0` in the PIE/game world.
-- Captured an active viewport PNG at 1431x870 and recorded file size/hash metadata.
-- Compared the screenshot to itself with Pillow RMS; similarity was 1.0 with zero RMS difference.
-- Requested PIE/SIE stop and verified the editor returned to no active PIE world. Launch/stop tools include a readback note because UE applies PIE state changes on the next editor tick.
+- Refine session-aware chat history, context, queued actions, evidence, and artifacts.
+- Improve tool discovery and operation-status visibility.
+- Keep the editor panel useful without coupling the native plugin to a specific AI client.
+- Preserve explicit confirmation boundaries for risky or paid operations.
 
-## Phase 7 - Performance And Distribution
+Definition of done:
 
-Goal: make the platform easier to run in production and CI.
+- A session can be started, resumed, inspected, and handed off deterministically.
+- Failed operations expose repair context without hiding the original evidence.
+- Chat and cockpit routes follow the same loopback and authentication policy as the MCP server.
 
-Status: Slice 1 startup/tool-discovery profiling and repeatable offline CI smoke docs are implemented and offline-tested. Slice 2 bridge command metadata audit is implemented and offline-tested. Slice 3 UMG missing-route cleanup is implemented and offline-tested. Slice 4 C++-only route review is implemented and offline-tested. Slice 5 high-priority wrapper exposure is implemented and offline-tested. Slice 6 Insanitii project smoke-test wrappers are implemented and offline-tested.
+## Workstream 4 — Spatial and Generative Workflows
 
-Slices:
+Status: guarded expansion.
 
-- Profile startup and most-used tool latency - implemented as `scripts/profile_mcp_startup.py` for inventory build timing, subprocess inventory startup timing, optional server `--help` cold-start timing, and slowest static module decorator scans.
-- Add command metadata registry to reduce routing drift between Python and C++ - implemented as `scripts/bridge_command_audit.py`, with JSON snapshot support, Markdown drift reporting, and C++-only route review recommendations.
-- Investigate T3D or bulk Blueprint graph injection for large graph creation.
-- Add headless build and smoke-test documentation - started with `docs/ci-smoke.md` for offline inventory/profile tests and optional live bridge smoke.
-- Evaluate optional single-binary or Go/Rust sidecar only after command metadata and test coverage are solid.
-- Expose high-priority C++-only routes through Python wrappers - implemented for bridge `ping` and generic UMG `widget_*` routes.
+- Build reusable spatial inspection, room/zone, clearance, and placement planning.
+- Keep generation provider configuration isolated from tool orchestration.
+- Require dry-run, spend, import, scale, placement, and validation gates.
+- Reuse existing project assets before requesting paid generation.
 
-Validation:
+Definition of done:
 
-- Startup time baseline.
-- Repeatable CI smoke commands.
-- Large Blueprint creation benchmark before and after bulk injection.
+- Spatial plans are inspectable before mutation.
+- Provider calls are asynchronous and credentials never enter logs or Git.
+- Generated assets retain provenance and validation metadata.
+- Paid and live-editor lanes remain separate from default offline CI.
 
-Slice 1 smoke result, 2026-05-17:
+## Workstream 5 — Distribution and CI
 
-- Added `scripts/profile_mcp_startup.py` with JSON and Markdown report output.
-- Added offline tests covering profile schema, Markdown sections, and report artifact writing.
-- Documented repeatable CI commands in `docs/ci-smoke.md`.
-- Verified the profiler against the 503-tool static registry without requiring Unreal Editor.
-- Local baseline on Python 3.14: inventory build median about 8 ms, inventory subprocess median about 113 ms, optional server `--help` cold start about 1.07 s.
+Status: ongoing.
 
-Slice 2 smoke result, 2026-05-17:
+- Keep lockfiles and dependency bounds reproducible.
+- Maintain repeatable offline smoke commands and plugin packaging checks.
+- Add CI workflows when repository policy defines required checks.
+- Continue measuring startup, discovery, and bridge-route health without committing
+  generated reports.
 
-- Added `scripts/bridge_command_audit.py` to extract Git-tracked Python `send_command` callers and C++ `CommandType` routes without connecting to Unreal Editor.
-- Added registry snapshot write/check support for CI review artifacts.
-- Added tests covering registry schema, stable snapshot comparison, and Markdown drift sections.
-- Current tracked-worktree audit finds 313 bridge command names, 276 Python-referenced commands, 301 C++ routed commands, 12 Python commands without discovered C++ routes, and 1 intentionally dynamic CLI call site.
-- The 12 current missing routes are UMG convenience wrappers: `add_canvas_panel_to_widget`, `add_checkbox_to_widget`, `add_create_widget_node`, `add_horizontal_box_to_widget`, `add_image_to_widget`, `add_named_slot_to_widget`, `add_progress_bar_to_widget`, `add_slider_to_widget`, `add_vertical_box_to_widget`, `add_widget_animation`, `create_hud_widget`, and `create_win_menu_widget`.
+## Canonical Validation
 
-Slice 3 smoke result, 2026-05-17:
+```powershell
+python scripts\tool_inventory.py --markdown
+python scripts\audit_test_lanes.py
+python scripts\audit_high_value_wrapper_coverage.py
+python scripts\bridge_command_audit.py
+python scripts\run_no_mutation_unittest.py
+uv lock --check
+```
 
-- Removed Python calls to the 12 missing UMG bridge routes discovered by the Slice 2 audit.
-- Kept the public MCP tools registered, but retired unstable convenience wrappers now return structured `retired_route` guidance instead of sending nonexistent commands to the plugin.
-- Routed `add_create_widget_node` through the existing `add_blueprint_function_node` bridge route for `GameplayStatics.CreateWidget`.
-- Current audit result: 0 Python bridge commands without discovered C++ routes. The remaining unresolved call site is the intentional dynamic CLI passthrough in `ue5cli.py`.
-
-Slice 4 smoke result, 2026-05-17:
-
-- Extended `scripts/bridge_command_audit.py` with explicit review recommendations for C++ routes that are not referenced by Python wrappers.
-- Classified each C++-only route as `needs_python_wrapper`, `internal_alias`, `internal_helper`, `legacy_or_superseded`, or `recipe_or_sample`.
-- Current tracked-worktree review finds 37 C++-only routes: 27 should receive Python wrappers, 4 are aliases/helpers, 2 are legacy or superseded, and 4 are sample/recipe routes better suited to skills or removal.
-- Highest-priority wrapper candidates are `ping`, generic `widget_*` primitives, `add_niagara_component`, `add_blueprint_function_with_pins`, `add_construction_script_node`, `add_relational_operator_node`, `connect_anim_graph_nodes`, `set_behavior_tree_blackboard`, and `set_blueprint_parent_class`.
-- Offline tests now assert that the registry includes the C++-only review section and that high-value routes receive deterministic recommendations.
-
-Slice 5 smoke result, 2026-05-17:
-
-- Added `ping_unreal` as a first-class Python MCP wrapper for the native bridge `ping` route.
-- Added `tools/widget_tools.py` with generic `widget_add_child`, `widget_set_property`, `widget_set_anchor`, and `widget_get_children` wrappers for the native UMG widget-tree routes.
-- Hardened `scripts/tool_inventory.py` so the default inventory uses Git-tracked tool files, preventing local untracked scratch tools from changing documented counts. `--include-untracked` remains available for workspace audits.
-
-Slice 6:
-
-- Added native bridge routes plus Python wrappers for `get_actor_identity`, `find_actors_by_class`, `check_blueprint_generated_class`, and `inspect_input_mapping_context`.
-- Added Windows-side prompt safety tools `editor_list_blocking_dialogs` and `editor_dismiss_blocking_dialog` so MCP can detect blocking Unreal/file prompts and explicitly click a named button when automation is stuck behind a dialog.
-- Live Insanitii smoke readback before native plugin reload confirmed bridge `ping`, 7 `INS_` actors by label/path, valid `BP_RuntimeBootstrap` generated class, 18 mappings in `/Game/FirstPerson/Input/IMC_Default`, and no visible blocking dialogs. Native class-chain matching requires Live Coding/reload of the new plugin commands. UBT compiled the updated UnrealMCP C++ files, then failed only at final link because the open editor and LiveCodingConsole locked the loaded DLL/PDB files.
-- Current tracked-worktree audit finds 301 bridge command names, 265 Python-referenced commands, 301 C++ routed commands, 0 Python commands without discovered C++ routes, and 32 C++ routes not referenced by Python.
-- Offline tests cover the ping wrapper, widget wrappers, tracked-only inventory count, and the existing bridge-drift guard.
-
-## Phase 8 - Production Skills And Game Templates
-
-Goal: turn trustworthy low-level tools into repeatable, inspectable game-development workflows.
-
-Status: Slice 1 vertical slice reporting skill is implemented and offline-tested. Slice 2 Insanitii readiness reporting is implemented, offline-tested, and live-tested against the open Insanitii editor with fallbacks for an older loaded plugin binary. Slice 3 Insanitii lifestyle-framework reporting is implemented, offline-tested, and live-tested against the open Insanitii editor.
-
-Why this is explicit:
-
-- The tool surface is broad enough to build many systems, but single-developer productivity depends on higher-level skills that chain discovery, creation, verification, and repair.
-- The original 360-degree gap analysis called out complete character, weapon, inventory, multiplayer, VFX, and material-pipeline skills as a differentiator.
-
-Slices:
-
-- `skill_create_complete_character_controller`
-- `skill_build_fps_weapon_system`
-- `skill_create_inventory_ui`
-- `skill_setup_multiplayer_character`
-- `skill_build_niagara_explosion`
-- `skill_create_master_material_pipeline`
-- `skill_create_enemy_encounter_ai`
-- `skill_package_vertical_slice_report` - implemented as a Markdown report packager for execution journals, artifacts, verification evidence, and follow-up checklists.
-
-Validation:
-
-- Each skill must call existing low-level tools rather than duplicating engine logic.
-- Each skill must produce a small project artifact plus evidence: compile diagnostics, graph summaries, asset descriptions, screenshots, PIE logs, or journal entries.
-
-Slice 1 smoke result, 2026-05-17:
-
-- Registered `skill_package_vertical_slice_report` through the existing skills registration path.
-- Packaged a synthetic execution journal into a workspace-local Markdown report.
-- Verified the report includes project name, summary, journal entry, artifact paths, verification keys, stats, and checklist.
-
-Slice 2:
-
-- `insanitii_phase1_readiness_report` - implemented as a high-level smoke workflow that checks bridge ping, expected Insanitii actors, placed test interactables, Blueprint wrapper generated classes, Enhanced Input mappings, blocking dialogs, and the remaining manual PIE checklist.
-- The tool prefers native bridge routes from Phase 7 Slice 6 and falls back to read-only `exec_python` probes when the active editor has not reloaded the latest plugin binary.
-
-Slice 2 smoke result, 2026-05-17:
-
-- Live Insanitii bridge ping returned `pong`.
-- Found all 7 placed `INS_` actors.
-- Found 5 placed `BP_TestInteractable` actors.
-- Verified 8 Insanitii Blueprint wrappers have generated classes.
-- Resolved the active First Person input mapping context at `/Game/Input/IMC_Default` and found 18 mappings, including all 6 Insanitii actions.
-- Found 0 visible blocking dialogs.
-- Report status was `warn` rather than `pass` because the running editor still reports the new native smoke routes as unknown; the workflow used `exec_python` fallback coverage until Live Coding or editor restart reloads the plugin.
-
-Slice 3:
-
-- `insanitii_phase2_lifestyle_report` - implemented as a high-level smoke workflow that checks bridge ping, native Phase 2 class visibility, `BP_LifestyleManager`, placed `INS_LifestyleManager`, generated lifestyle task options, current time/money readback, and blocking dialogs.
-
-Slice 3 smoke result, 2026-05-17:
-
-- Added native Insanitii game classes for the Phase 2 lifestyle foundation: `UInsanitiiTimeOfDayComponent`, `UInsanitiiEconomyComponent`, `AInsanitiiLifestyleManager`, and shared lifestyle structs/enums.
-- UHT and C++ compilation succeeded; the first open-editor build failed only at DLL link because Unreal Editor and LiveCodingConsole locked the loaded binaries.
-- Closed the saved editor, rebuilt successfully, reopened Insanitii, and confirmed all 3 native Phase 2 classes load.
-- Created and saved `/Game/Insanitii/Gameplay/Lifestyles/BP_LifestyleManager`.
-- Placed `INS_LifestyleManager` in `Lvl_FirstPerson`.
-- Live `insanitii_phase2_lifestyle_report` returned `pass`: 3 native classes visible, Blueprint generated class valid, manager actor placed, 3 daily tasks generated, cash `$250`, time `Day 1 08:00`, and 0 blocking dialogs.
-- Simulate-in-Editor smoke found the manager in the PIE world and confirmed the clock advanced to `Day 1 08:13`.
-
-## Immediate Execution Queue
-
-1. Phase 0: reconcile tool-count docs and add drift guard test.
-2. Phase 1: add Niagara authoring support probe and schema wrappers.
-3. Phase 1: implement the first native Niagara command in C++ only after live API probe confirms the safest editor path.
-4. Phase 4 Slice 3: add shader complexity, overdraw, renderer viewmode, and GPU/performance audit helpers. Done.
-5. Phase 5 Slice 1: close montage/notify tooling gaps. Done and live-tested.
-6. Phase 5 Slice 2: add Control Rig asset/control/constraint/bake tooling. Done and live-tested.
-7. Phase 6 Slice 1: add execution journal and risk-evaluation foundation. Done and offline-tested.
-8. Phase 6 Slice 2: add PIE/log/viewport evidence tooling. Done and live-tested.
-9. Phase 8 Slice 1: add vertical slice report packaging skill. Done and offline-tested.
-10. Phase 7 Slice 1: add startup/tool latency profiling and repeatable CI smoke docs. Done and offline-tested.
-11. Phase 7 Slice 2: add command metadata registry to reduce routing drift between Python and C++. Done and offline-tested.
-12. Phase 7 Slice 3: close or formally retire the 12 UMG Python wrappers that have no discovered C++ route. Done and offline-tested.
-13. Phase 7 Slice 4: review C++-only routes not referenced by Python and decide which should receive wrappers, remain internal aliases, or be removed. Done and offline-tested.
-14. Phase 7 Slice 5: implement the highest-priority read-only/generic C++-only wrappers first: bridge `ping`, `widget_get_children`, `widget_set_property`, `widget_add_child`, and `widget_set_anchor`. Done and offline-tested.
-15. Phase 7 Slice 6: add project smoke-test wrappers discovered during Insanitii validation: actor labels/full paths, `find_actors_by_class`, generated-class checks, and Enhanced Input mapping inspection. Done and offline-tested; native reload smoke pending.
-16. Phase 8 Slice 2: add Insanitii Phase 1 readiness workflow with native-route fallback support and blocking-dialog reporting. Done, offline-tested, and live-tested.
-
-## Backlog Notes
-
-- Keep historical command-level notes in git history rather than preserving stale workaround sections in this roadmap.
-- When adding a tool, update tests first or in the same change.
-- When adding a C++ bridge command, update Python wrapper, README tool category summary, and knowledge-base usage notes.
-- Use `local-book-paths.json` only for short local retrieval from licensed PDFs; do not commit book text.
+For native plugin changes, also package the plugin against the supported Unreal Engine
+version and retain build evidence locally.
+
+## Contribution Checklist
+
+When adding a public tool:
+
+1. Add or update the implementation and stable result schema.
+2. Add focused offline tests.
+3. Update the module category registry.
+4. Update the documented tool count when the inventory changes.
+5. Run no-mutation tests and bridge-route audits.
+6. Keep project-specific validation evidence outside the public repository.

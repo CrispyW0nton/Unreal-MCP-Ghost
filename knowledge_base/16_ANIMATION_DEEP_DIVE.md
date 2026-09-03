@@ -1,6 +1,6 @@
 # Animation System — Complete Reference
 > Source: Blueprints Visual Scripting for UE5 (Marcos Romero), Mastering Technical Art in UE (Greg Penninck)
-> Covers Animation Blueprints, State Machines, Blend Spaces, Montages, Notifies, IK, and the Dantooine animation setup.
+> Covers Animation Blueprints, State Machines, Blend Spaces, Montages, Notifies, IK, and the MyProject animation setup.
 
 ---
 
@@ -77,7 +77,7 @@ Transitions:
   Land → Idle: (time-based or AnimNotify)
 ```
 
-### State Machine for Dantooine Player
+### State Machine for MyProject Player
 ```
 States:
   Idle
@@ -285,7 +285,7 @@ Offset capsule Z to keep character on ground
 
 ---
 
-## 11. DANTOOINE ANIMATION BLUEPRINT REFERENCE
+## 11. MYPROJECT ANIMATION BLUEPRINT REFERENCE
 
 ### ABP_PlayerJedi
 **Skeleton:** SK_PlayerJedi (assign when mesh is imported)
@@ -350,7 +350,7 @@ at = unreal.AssetToolsHelpers.get_asset_tools()
 factory = unreal.AnimBlueprintFactory()
 factory.set_editor_property("target_skeleton", None)  # None = no skeleton yet
 factory.set_editor_property("blueprint_type", unreal.BlueprintType.BPTYPE_NORMAL)
-asset = at.create_asset("ABP_PlayerJedi", "/Game/Dantooine/Animation/Player", unreal.AnimBlueprint, factory)
+asset = at.create_asset("ABP_PlayerJedi", "/Game/MyProject/Animation/Player", unreal.AnimBlueprint, factory)
 print("Created:", asset.get_path_name() if asset else "FAILED")
 ```
 

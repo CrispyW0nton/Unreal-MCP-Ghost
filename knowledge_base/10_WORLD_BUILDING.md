@@ -128,7 +128,7 @@ Restart editor
 
 ### Setup
 1. Content Browser → PCG → PCG Graph Asset
-2. Name: `PCG_DantooineVegetation`
+2. Name: `PCG_MyProjectVegetation`
 3. Place `Procedural Content Generation Volume` in level
 4. Assign PCG Graph to the volume's `Graph Instance` property
 5. `Ctrl+R` to force regenerate
@@ -149,7 +149,7 @@ Restart editor
 | `Static Mesh Spawner` | Spawn static mesh at each point |
 | `Spawn Actor` | Spawn Blueprint actor at each point |
 
-### PCG Workflow — Dantooine Vegetation
+### PCG Workflow — MyProject Vegetation
 ```
 [Landscape Input] → Surface Sampler (Density: 1.0/m²)
   → Point Filter (Slope < 30°)  ← no plants on steep slopes
@@ -290,8 +290,8 @@ Organize actors into Folders (in Outliner):
     Landscape
     NavMeshBoundsVolume
   Gameplay/
-    BP_DantooineGameMode
-    BP_DantooineQuestManager
+    BP_MyProjectGameMode
+    BP_MyProjectQuestManager
   NPCs/
     BP_MasterJedi_01
     BP_RoamingNPC_StudentA_01

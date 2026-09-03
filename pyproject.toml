@@ -4,6 +4,7 @@ version = "1.0.0"
 description = "Unreal Engine 5 MCP server - AI-assisted Blueprint authoring"
 readme = "README.md"
 requires-python = ">=3.10"
+license = { text = "AGPL-3.0-or-later" }
 dependencies = [
     # fastmcp 2.x changed `description=` to `instructions=` (already patched in server).
     # fastmcp 3.x keeps the same API. Both work with our fix.

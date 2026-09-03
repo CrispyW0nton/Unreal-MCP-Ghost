@@ -226,7 +226,7 @@ Niagara System (NS_)
 
 ---
 
-## 5. VFX Recipes — Dantooine Project
+## 5. VFX Recipes — MyProject Project
 
 ### Lightsaber Trail (NS_SaberTrail)
 ```

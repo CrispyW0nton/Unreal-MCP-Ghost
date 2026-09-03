@@ -10,7 +10,7 @@
 
 ### Creating a Blueprint Function Library
 `Content Browser → Add → Blueprint Class → Blueprint Function Library`
-Name with `FL_` or `BFL_` prefix (e.g., `BFL_MathUtilities`, `BFL_DantooineHelpers`)
+Name with `FL_` or `BFL_` prefix (e.g., `BFL_MathUtilities`, `BFL_MyProjectHelpers`)
 
 ### Characteristics
 - Functions are **static** — no instance required to call them
@@ -19,7 +19,7 @@ Name with `FL_` or `BFL_` prefix (e.g., `BFL_MathUtilities`, `BFL_DantooineHelpe
 - Cannot implement interfaces
 - Great for: math helpers, string utilities, game-wide helper functions
 
-### Example: BFL_DantooineHelpers
+### Example: BFL_MyProjectHelpers
 ```
 [Function: CalculateLightsaberDamage]
   Input: BaseDamage (float), DifficultyMultiplier (float), IsCritical (bool)

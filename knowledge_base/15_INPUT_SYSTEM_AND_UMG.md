@@ -18,7 +18,7 @@
 | Input Action | `IA_` | Defines WHAT can happen (Move, Jump, Attack) |
 | Input Mapping Context | `IMC_` | Maps input devices to actions with context |
 
-### Dantooine Input Assets
+### MyProject Input Assets
 ```
 IA_Move     — Move the player (axis 2D)
 IA_Look     — Camera look (axis 2D)
@@ -26,7 +26,7 @@ IA_Jump     — Jump button (digital)
 IA_Interact — Interact with world objects (digital)
 IA_Attack   — Lightsaber attack (digital)
 IA_Block    — Lightsaber block (hold)
-IMC_Dantooine — Maps keyboard/gamepad to all above actions
+IMC_MyProject — Maps keyboard/gamepad to all above actions
 ```
 
 ### Input Action Types
@@ -43,16 +43,16 @@ import unreal
 at = unreal.AssetToolsHelpers.get_asset_tools()
 
 # Input Action
-ia = at.create_asset("IA_Move", "/Game/Dantooine/Data/Input", unreal.InputAction, unreal.InputAction_Factory())
+ia = at.create_asset("IA_Move", "/Game/MyProject/Data/Input", unreal.InputAction, unreal.InputAction_Factory())
 
 # Input Mapping Context
-imc = at.create_asset("IMC_Dantooine", "/Game/Dantooine/Data/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
+imc = at.create_asset("IMC_MyProject", "/Game/MyProject/Data/Input", unreal.InputMappingContext, unreal.InputMappingContext_Factory())
 ```
 
 ### Wiring Enhanced Input in PlayerController
 ```
 Event BeginPlay (PlayerController)
-  → Get Local Player Subsystem → Add Mapping Context (IMC_Dantooine, Priority: 0)
+  → Get Local Player Subsystem → Add Mapping Context (IMC_MyProject, Priority: 0)
 
 Event BeginPlay (Character)
   → Enable Input (PlayerController reference)
@@ -421,7 +421,7 @@ at = unreal.AssetToolsHelpers.get_asset_tools()
 
 # Create a Widget Blueprint
 factory = unreal.WidgetBlueprintFactory()
-widget = at.create_asset("WBP_HUD", "/Game/Dantooine/Widgets", unreal.WidgetBlueprint, factory)
+widget = at.create_asset("WBP_HUD", "/Game/MyProject/Widgets", unreal.WidgetBlueprint, factory)
 print("Created:", widget.get_path_name() if widget else "FAILED")
 ```
 

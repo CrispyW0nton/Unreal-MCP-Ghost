@@ -36,8 +36,6 @@ What do you need?
 ├─ "I need to work with data (arrays/structs)" → Read 07_DATA_STRUCTURES.md
 ├─ "I need to add new MCP commands"         → Read 13_TOOL_EXPANSION_ROADMAP.md + v4/GRAPH_SCRIPTING_SPEC_V4.md
 ├─ "I need current tool counts/categories"  → Run scripts/tool_inventory.py
-├─ "I need Insanitii project context"       → Read Projects/Insanitii/INDEX.md
-├─ "I need active MCP/plugin limitations"  → Read Limitation log/ACTIVE_LIMITATIONS.md
 ├─ "I need CI smoke/profile commands"       → Read ../docs/ci-smoke.md + run scripts/profile_mcp_startup.py
 ├─ "I need Python/C++ route drift status"   → Run scripts/bridge_command_audit.py
 ├─ "I need recent KB changes"               → Read v5/CHANGELOG.md
@@ -239,9 +237,9 @@ What do you need?
 | Property | Value |
 |----------|-------|
 | Engine | UE 5.6 |
-| MCP Tools | 600 |
-| Tool Modules | 44 categorized modules/skills |
-| C++ Commands | 239 |
+| MCP Tools | 713 |
+| Tool Modules | 51 categorized modules/skills |
+| C++ Commands | 382 |
 | Transports | stdio, SSE, streamable-HTTP |
 | Plugin Port | 55655 |
 | Inventory Command | `python scripts/tool_inventory.py --markdown` |
@@ -261,25 +259,3 @@ What do you need?
 ---
 
 *Updated: 2026-06-07 | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
-
----
-
-## PROJECT-SPECIFIC KNOWLEDGE BASES
-
-| Project | Location | Description |
-|---------|----------|-------------|
-| Endar Spire | `Projects/EndarSpire/INDEX.md` | Star Wars KotOR-inspired FPS: Sith troopers, Republic soldiers, force powers, Dark Jedi boss |
-| Insanitii | `Projects/Insanitii/INDEX.md` | First-person psychosis simulation and lifestyle sandbox using native C++ plus Blueprint wrappers |
-
-## LIMITATION LOG
-
-| Location | Purpose |
-|----------|---------|
-| `Limitation log/ACTIVE_LIMITATIONS.md` | Active Unreal-MCP-Ghost plugin/server/workflow limitations discovered during real project work |
-| `Limitation log/RESOLVED_LIMITATIONS.md` | Limitations that have been fixed and verified |
-
-### BP_SithTrooperFramework (moved)
-The `BP_SithTrooperFramework/` folder that was previously at the repo root has been relocated to `knowledge_base/Projects/EndarSpire/Blueprints/`. See:
-- `Projects/EndarSpire/Blueprints/BP_SithTrooper_FrameworkLog.md`
-- `Projects/EndarSpire/Blueprints/BP_SithHeavyTrooper_FrameworkLog.md`
-- `Projects/EndarSpire/Blueprints/BP_RepublicSoldier_FrameworkLog.md`

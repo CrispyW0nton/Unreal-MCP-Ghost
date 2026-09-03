@@ -2887,7 +2887,7 @@ def register_editor_tools(mcp: FastMCP):
     ) -> Dict[str, Any]:
         """Launch PIE and verify possessed-player movement/look readiness for Insanitii.
 
-        KB: see knowledge_base/Projects/Insanitii/Phase3_Manual_Control_Readiness_2026-06-07.md#manual-control-readiness
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#complete-command-reference
         Example:
             insanitii_manual_control_readiness_report(mode="play", wait_seconds=10.0, stop_after_probe=True)
 
@@ -3095,7 +3095,7 @@ def register_editor_tools(mcp: FastMCP):
     ) -> Dict[str, Any]:
         """Launch PIE and verify player-view interaction traces for every Day 1 task station.
 
-        KB: see knowledge_base/Projects/Insanitii/Phase3_Player_Station_Interaction_Route_2026-06-07.md#player-station-interaction-route
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#complete-command-reference
         Example:
             insanitii_player_station_interaction_route_report(mode="play", wait_seconds=10.0, stop_after_probe=True)
 
