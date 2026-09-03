@@ -8,10 +8,10 @@
 
 ## WHAT THIS REPOSITORY IS
 
-**Unreal-MCP-Ghost** is a plugin + toolchain that lets an AI agent control Unreal Engine 5 via a socket connection. The plugin (`UnrealMCP`) runs inside UE5 and listens on port **55557**. The agent communicates through `sandbox_ue5cli.py`.
+**Unreal-MCP-Ghost** is a plugin + toolchain that lets an AI agent control Unreal Engine 5 via a socket connection. The plugin (`UnrealMCP`) runs inside UE5 and listens on port **55655**. The agent communicates through `sandbox_ue5cli.py`.
 
 ```
-AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←──→ UE5 Editor
+AI Agent (sandbox_ue5cli.py) ←──socket:55655──→ UnrealMCP Plugin ←──→ UE5 Editor
 ```
 
 ---
@@ -141,9 +141,8 @@ WRONG: "AController" → CORRECT: "PlayerController" or "AIController"
 ## PROJECT: ENCLAVE PROJECT — DANTOOINE
 
 ### Project Path
-```
-C:\Users\NewAdmin\Documents\Academy of Art University\2026\Gam270\Project2\EnclaveProject
-```
+
+Use the active Unreal project root; do not assume a machine-specific absolute path.
 
 ### Content Root
 ```

@@ -105,6 +105,19 @@ NPCDialogueState: Map(Name → E_NPCDialogueMode)  (per-NPC state)
 LevelHighScores: Map(String → Integer)            (score by level name)
 ```
 
+### MCP Map Variable Authoring
+
+Use `add_map_variable` when a generated Blueprint needs dictionary-style state,
+such as quest flags, inventory counts, per-NPC dialogue state, or level scores.
+
+Recommended companion flow:
+
+1. Inspect existing Blueprint variables before adding a map.
+2. Choose stable key/value types that match gameplay ownership.
+3. Add the map through `add_map_variable`.
+4. Compile the Blueprint and inspect diagnostics.
+5. Read back variables and record evidence before wiring graph access nodes.
+
 ---
 
 ## 4. Structs (Structures)

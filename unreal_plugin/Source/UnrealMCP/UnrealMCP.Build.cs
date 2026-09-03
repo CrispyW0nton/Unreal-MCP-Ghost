@@ -1,5 +1,5 @@
 // Copyright 2024 CrispyW0nton. All Rights Reserved.
-// UnrealMCP.Build.cs ? Standalone plugin for Unreal Engine 5.6
+// UnrealMCP.Build.cs - Standalone plugin compatible with Unreal Engine 5.6-5.8.
 // Merges base unreal-mcp dependencies with extended Blueprint Visual Scripting tools.
 
 using UnrealBuildTool;
@@ -10,6 +10,26 @@ public class UnrealMCP : ModuleRules
     {
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
         IWYUSupport = IWYUSupport.Full;
+
+        // Production qualification embeds the exact MCPStudio-approved source
+        // inventory digest into the compiled module. Ordinary local builds are
+        // deliberately marked unqualified and cannot pass the live gate.
+        string ApprovedSourceSha256 = System.Environment.GetEnvironmentVariable(
+            "MCPSTUDIO_UNREAL_SOURCE_SHA256"
+        );
+        if (string.IsNullOrEmpty(ApprovedSourceSha256) ||
+            !System.Text.RegularExpressions.Regex.IsMatch(
+                ApprovedSourceSha256,
+                "^[a-f0-9]{64}$"
+            ))
+        {
+            ApprovedSourceSha256 = "unqualified";
+        }
+        PublicDefinitions.Add(
+            "MCPSTUDIO_UNREAL_SOURCE_SHA256=\"" +
+            ApprovedSourceSha256 +
+            "\""
+        );
 
         PublicIncludePaths.AddRange(
             new string[] { }
@@ -100,6 +120,8 @@ public class UnrealMCP : ModuleRules
                 // Procedural Mesh (extended ? Chapter 19)
                 "ProceduralMeshComponent",
                 "GeometryCore",
+                "MeshDescription",
+                "StaticMeshDescription",
                 "GeometryFramework",
                 "DynamicMesh",
                 "GeometryScriptingCore",
@@ -115,7 +137,6 @@ public class UnrealMCP : ModuleRules
                 "StateTreeEditorModule",
                 "GameplayStateTreeModule",
                 "SmartObjectsModule",
-                "StructUtils",
                 "PropertyBindingUtils",
 
                 // Motion Matching / Pose Search / Chooser authoring - required for B.8 tools

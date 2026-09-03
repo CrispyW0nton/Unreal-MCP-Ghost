@@ -28,7 +28,7 @@
 │  └──────────────────────────────────────────────────────────────────┘│
 └──────────────────────────────────┬───────────────────────────────────┘
                                    │
-                                   │ TCP JSON (port 55557)
+                                   │ TCP JSON (port 55655)
                                    │ (via Playit tunnel if remote)
                                    │
 ┌──────────────────────────────────▼───────────────────────────────────┐
@@ -197,7 +197,7 @@ tools/
 
 ## Communication Protocol
 
-### TCP JSON Command Format (Port 55557)
+### TCP JSON Command Format (Port 55655)
 ```json
 // Request
 {
@@ -226,7 +226,7 @@ tools/
 1. AI Client calls MCP tool (e.g., import_sound_asset)
 2. Python tool handler builds exec_python code string
 3. Tool sends TCP JSON: {"command": "exec_python", "params": {"code": "..."}}
-4. C++ plugin receives on port 55557
+4. C++ plugin receives on port 55655
 5. UnrealMCPBridge dispatches to exec_python handler
 6. Python code runs on UE5 GameThread via FPythonCommandEx
 7. Result printed to stdout, captured by C++ handler

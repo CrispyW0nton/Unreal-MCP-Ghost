@@ -269,6 +269,73 @@ def register_umg_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def bind_widget_component_event(
+        ctx: Context,
+        widget_blueprint_path: str,
+        widget_name: str,
+        event_name: str,
+        compile: bool = True,
+    ) -> Dict[str, Any]:
+        """Create or reuse a component-bound event node for a named sub-widget.
+
+        Use this for precise UMG event wiring on named widget variables such as
+        Button.OnClicked, Button.OnHovered, or Slider.OnValueChanged. Unlike the
+        legacy bind_widget_event route, this resolves the Widget Blueprint by
+        full path, promotes the sub-widget to a Blueprint variable when needed,
+        and binds the delegate to that specific widget property.
+
+        Args:
+            widget_blueprint_path: Full Widget Blueprint asset path.
+            widget_name: Named sub-widget in the WidgetTree, e.g. "BTN_Start".
+            event_name: Delegate property name, e.g. "OnClicked".
+            compile: Whether the native route should compile/save after binding.
+
+        Returns:
+            Structured result with node_id, created, and variable_promoted.
+
+        KB: see knowledge_base/06_UI_UMG_SYSTEMS.md#event-driven-widget-workflows
+        Example:
+            bind_widget_component_event(widget_blueprint_path="/Game/UI/WBP_MainMenu", widget_name="BTN_Start", event_name="OnClicked")"""
+        from unreal_mcp_server import get_unreal_connection
+        inputs = {
+            "widget_blueprint_path": widget_blueprint_path,
+            "widget_name": widget_name,
+            "event_name": event_name,
+            "compile": compile,
+        }
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {
+                    "success": False,
+                    "stage": "bind_widget_component_event",
+                    "message": "Not connected to Unreal Engine",
+                    "inputs": inputs,
+                    "outputs": {},
+                    "warnings": [],
+                    "errors": ["Not connected to Unreal Engine"],
+                    "log_tail": [],
+                }
+            raw = unreal.send_command("bind_widget_component_event", inputs) or {}
+            return _structured_umg_result(
+                raw,
+                stage="bind_widget_component_event",
+                message=f"Bound '{event_name}' on '{widget_name}' in '{widget_blueprint_path}'",
+                inputs=inputs,
+            )
+        except Exception as e:
+            return {
+                "success": False,
+                "stage": "bind_widget_component_event",
+                "message": str(e),
+                "inputs": inputs,
+                "outputs": {},
+                "warnings": [],
+                "errors": [str(e)],
+                "log_tail": [],
+            }
+
+    @mcp.tool()
     def add_widget_to_viewport(
         ctx: Context,
         widget_name: str,

@@ -3,7 +3,7 @@ Blueprint Tools - Create/modify Blueprint classes and components.
 Ported from: https://github.com/chongdashu/unreal-mcp
 """
 import logging
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
 
 logger = logging.getLogger("UnrealMCP")
@@ -63,6 +63,38 @@ def register_blueprint_tools(mcp: FastMCP):
             return unreal.send_command("create_blueprint", {
                 "name": name,
                 "parent_class": parent_class
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def set_blueprint_parent_class(
+        ctx: Context,
+        blueprint_name: str,
+        new_parent_class: str,
+    ) -> Dict[str, Any]:
+        """Reparent an existing Blueprint to another Blueprint or C++ class.
+
+        Use this for deliberate class-architecture changes after inspecting the
+        Blueprint and confirming the new parent still matches its components,
+        variables, and gameplay responsibilities. Compile and read back the
+        Blueprint after reparenting before making additional graph changes.
+
+        Args:
+            blueprint_name: Blueprint asset name or path to reparent.
+            new_parent_class: Parent Blueprint asset name/path or C++ class name.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            set_blueprint_parent_class(blueprint_name="/Game/MCP_Test/BP_Example", new_parent_class="Character")"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("set_blueprint_parent_class", {
+                "blueprint_name": blueprint_name,
+                "new_parent_class": new_parent_class,
             }) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -485,6 +517,57 @@ def register_blueprint_tools(mcp: FastMCP):
             if relative_scale is not None:
                 params["relative_scale"] = relative_scale
             return unreal.send_command("add_skeleton_socket", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def set_pawn_properties(
+        ctx: Context,
+        blueprint_name: str,
+        auto_possess_player: Optional[str] = None,
+        auto_possess_ai: Optional[str] = None,
+        use_controller_rotation_yaw: Optional[bool] = None,
+        use_controller_rotation_pitch: Optional[bool] = None,
+        use_controller_rotation_roll: Optional[bool] = None,
+        can_be_damaged: Optional[bool] = None,
+    ) -> dict:
+        """Set common Pawn/Character class defaults on a Blueprint.
+
+        Use this after confirming the Blueprint is a Pawn or Character subclass.
+        Compile and read back class defaults before building AI or possession
+        workflows on top of the changed defaults.
+
+        Args:
+            blueprint_name: Pawn/Character Blueprint asset name or path.
+            auto_possess_player: Optional AutoPossessPlayer enum value/name.
+            auto_possess_ai: Optional AutoPossessAI enum value/name.
+            use_controller_rotation_yaw: Optional bUseControllerRotationYaw.
+            use_controller_rotation_pitch: Optional bUseControllerRotationPitch.
+            use_controller_rotation_roll: Optional bUseControllerRotationRoll.
+            can_be_damaged: Optional bCanBeDamaged default.
+
+        Returns:
+            Dict with per-property native mutation results.
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#pawn-and-controller-setup
+        Example:
+            set_pawn_properties(blueprint_name="/Game/BP_Enemy", auto_possess_ai="PlacedInWorldOrSpawned")"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            params: Dict[str, Any] = {"blueprint_name": blueprint_name}
+            optional_values = {
+                "auto_possess_player": auto_possess_player,
+                "auto_possess_ai": auto_possess_ai,
+                "use_controller_rotation_yaw": use_controller_rotation_yaw,
+                "use_controller_rotation_pitch": use_controller_rotation_pitch,
+                "use_controller_rotation_roll": use_controller_rotation_roll,
+                "can_be_damaged": can_be_damaged,
+            }
+            params.update({key: value for key, value in optional_values.items() if value is not None})
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("set_pawn_properties", params) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
 

@@ -176,8 +176,8 @@
 #include "BehaviorTree/Tasks/BTTask_Wait.h"
 #include "BehaviorTree/Tasks/BTTask_MoveTo.h"
 
-// Data Assets ? paths fixed for UE 5.6
-#include "Engine/UserDefinedStruct.h"
+// UserDefinedStruct moved out of Engine in UE 5.8; StructUtils is valid in 5.6+.
+#include "StructUtils/UserDefinedStruct.h"
 #include "Engine/UserDefinedEnum.h"
 #include "Engine/DataTable.h"
 #include "Factories/DataTableFactory.h"
@@ -240,6 +240,7 @@
 #include "HAL/PlatformMemory.h"
 #include "ImageUtils.h"
 #include "LevelEditorViewport.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Misc/FileHelper.h"
 #include "Misc/Paths.h"
 #include "RHI.h"
@@ -287,6 +288,14 @@
 #include "LevelSequenceActor.h"
 
 DEFINE_LOG_CATEGORY_STATIC(LogUnrealMCPExt, Log, All);
+
+#if UE_VERSION_OLDER_THAN(5, 8, 0)
+static constexpr ERenameFlags MCPSubobjectRenameFlags =
+    REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders;
+#else
+static constexpr ERenameFlags MCPSubobjectRenameFlags =
+    REN_NonTransactional | REN_DoNotDirty;
+#endif
 
 static FString MCPNormalizeAssetPath(const FString& Path)
 {
@@ -2968,7 +2977,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateMachine(
     if (auto* Root = UnrealMCP_AnimGraphHelpers::FindRootNode(AnimGraph))
         bWiredToRoot = UnrealMCP_AnimGraphHelpers::WirePoseLink(SMNode, Root);
 
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(AnimBP);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -3398,7 +3407,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddStateTransition(
         }
     }
 
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(AnimBP);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -3515,7 +3524,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetAnimationForState(
 
     const bool bWired = WirePoseLink(PlayerNode, ResultNode);
 
-    FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(AnimBP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(AnimBP);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), true);
@@ -3791,7 +3800,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleInsertAnimGraphSlotBef
     const bool bUpstreamToSlot = WirePoseLink(Upstream, SlotNode);
     const bool bSlotToRoot = WirePoseLink(SlotNode, Root);
 
-    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(AnimBP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(AnimBP);
 
     TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
     Result->SetBoolField(TEXT("success"), bUpstreamToSlot && bSlotToRoot);
@@ -5634,7 +5643,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleSetNiagaraSpawnRate(
         return CreateErrorResponse(TEXT("Niagara emitter handle not found"));
     }
 
-    FVersionedNiagaraEmitter& VersionedEmitter = TargetHandle->GetInstance();
+    const FVersionedNiagaraEmitter VersionedEmitter = TargetHandle->GetInstance();
     if (!VersionedEmitter.Emitter)
     {
         return CreateErrorResponse(TEXT("Emitter handle has no backing emitter instance"));
@@ -5814,7 +5823,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNiagaraSpriteRender
         return CreateErrorResponse(TEXT("Niagara emitter handle not found"));
     }
 
-    FVersionedNiagaraEmitter& VersionedEmitter = TargetHandle->GetInstance();
+    const FVersionedNiagaraEmitter VersionedEmitter = TargetHandle->GetInstance();
     if (!VersionedEmitter.Emitter)
     {
         return CreateErrorResponse(TEXT("Emitter handle has no backing emitter instance"));
@@ -5938,7 +5947,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddNiagaraMeshRenderer
         return CreateErrorResponse(TEXT("Niagara emitter handle not found"));
     }
 
-    FVersionedNiagaraEmitter& VersionedEmitter = TargetHandle->GetInstance();
+    const FVersionedNiagaraEmitter VersionedEmitter = TargetHandle->GetInstance();
     if (!VersionedEmitter.Emitter)
     {
         return CreateErrorResponse(TEXT("Emitter handle has no backing emitter instance"));
@@ -7275,7 +7284,14 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddObjectTypeMakeArray
         {
             // Set pin type to EObjectTypeQuery enum
             Pin->PinType.PinCategory = UEdGraphSchema_K2::PC_Byte;
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 8, 0)
+            UEnum* ObjTypeEnum = FindObject<UEnum>(
+                nullptr,
+                TEXT("/Script/Engine.EObjectTypeQuery"),
+                EFindObjectFlags::ExactClass);
+#else
             UEnum* ObjTypeEnum = FindObject<UEnum>(nullptr, TEXT("/Script/Engine.EObjectTypeQuery"), true);
+#endif
             if (!ObjTypeEnum)
             {
                 ObjTypeEnum = LoadObject<UEnum>(nullptr, TEXT("/Script/Engine.EObjectTypeQuery"));
@@ -8030,8 +8046,9 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialSetInstancePar
     {
         for (const auto& KV : (*ScalarParameters)->Values)
         {
+            const FString ParameterName(KV.Key);
             UMaterialEditingLibrary::SetMaterialInstanceScalarParameterValue(
-                Instance, FName(*KV.Key), (float)KV.Value->AsNumber());
+                Instance, FName(*ParameterName), (float)KV.Value->AsNumber());
             ++ScalarCount;
         }
     }
@@ -8041,9 +8058,10 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialSetInstancePar
     {
         for (const auto& KV : (*VectorParameters)->Values)
         {
+            const FString ParameterName(KV.Key);
             const FLinearColor Color = MCPReadLinearColorValue(KV.Value, FLinearColor::White);
             UMaterialEditingLibrary::SetMaterialInstanceVectorParameterValue(
-                Instance, FName(*KV.Key), Color);
+                Instance, FName(*ParameterName), Color);
             ++VectorCount;
         }
     }
@@ -8053,15 +8071,16 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleMaterialSetInstancePar
     {
         for (const auto& KV : (*TextureParameters)->Values)
         {
+            const FString ParameterName(KV.Key);
             const FString TexturePath = KV.Value->AsString();
             UTexture* Texture = MCPLoadAsset<UTexture>(TexturePath);
             if (!Texture)
             {
-                MissingTextures.Add(KV.Key + TEXT("=") + TexturePath);
+                MissingTextures.Add(ParameterName + TEXT("=") + TexturePath);
                 continue;
             }
             UMaterialEditingLibrary::SetMaterialInstanceTextureParameterValue(
-                Instance, FName(*KV.Key), Texture);
+                Instance, FName(*ParameterName), Texture);
             ++TextureCount;
         }
     }
@@ -11555,7 +11574,7 @@ static void BTSafeAddNode(UBehaviorTreeGraph* BTGraph, UBehaviorTreeGraphNode* N
     Node->SetFlags(RF_Transactional);
     // Fix outer so the node is properly owned by this graph
     if (Node->GetOuter() != BTGraph)
-        Node->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+        Node->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
 }
 
 /**
@@ -12031,7 +12050,7 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
                 DecNode->SetFlags(RF_Transactional);
                 // Set outer to BTGraph so the sub-node is properly owned
                 if (DecNode->GetOuter() != BTGraph)
-                    DecNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                    DecNode->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
                 DecNode->bIsSubNode = 1;
                 DecNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(DecNode);
@@ -12071,7 +12090,7 @@ static UBehaviorTreeGraphNode* BuildBTNodeFromJson(
                 // Manually wire sub-node relationships
                 SvcNode->SetFlags(RF_Transactional);
                 if (SvcNode->GetOuter() != BTGraph)
-                    SvcNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                    SvcNode->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
                 SvcNode->bIsSubNode = 1;
                 SvcNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(SvcNode);
@@ -12345,7 +12364,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
                     DecNode->InitializeInstance();
                 // Wire sub-node without calling AddSubNode (which calls NotifyGraphChanged)
                 if (DecNode->GetOuter() != BTGraph)
-                    DecNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                    DecNode->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
                 DecNode->bIsSubNode = 1;
                 DecNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(DecNode);
@@ -12379,7 +12398,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAddBTNode(
                     SvcNode->InitializeInstance();
                 // Wire sub-node without calling AddSubNode (which calls NotifyGraphChanged)
                 if (SvcNode->GetOuter() != BTGraph)
-                    SvcNode->Rename(nullptr, BTGraph, REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+                    SvcNode->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
                 SvcNode->bIsSubNode = 1;
                 SvcNode->ParentNode = NewNode;
                 NewNode->SubNodes.Add(SvcNode);
@@ -12537,8 +12556,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleAttachBTSubNode(
     // Ensure graph ownership then attach as sub-node without triggering NotifyGraphChanged
     if (SubGraphNode->GetOuter() != BTGraph)
     {
-        SubGraphNode->Rename(nullptr, BTGraph,
-            REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+        SubGraphNode->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
     }
     SubGraphNode->bIsSubNode = 1;
     SubGraphNode->ParentNode = ParentNode;
@@ -12699,8 +12717,7 @@ TSharedPtr<FJsonObject> FUnrealMCPExtendedCommands::HandleBTAddRunEQSService(
         }
         if (ServiceGraphNode->GetOuter() != BTGraph)
         {
-            ServiceGraphNode->Rename(nullptr, BTGraph,
-                REN_NonTransactional | REN_DoNotDirty | REN_ForceNoResetLoaders);
+            ServiceGraphNode->Rename(nullptr, BTGraph, MCPSubobjectRenameFlags);
         }
         ServiceGraphNode->SetFlags(RF_Transactional);
         ServiceGraphNode->bIsSubNode = 1;

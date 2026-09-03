@@ -16,7 +16,11 @@
 #include "Engine/Selection.h"
 #include "Kismet/GameplayStatics.h"
 #include "Misc/PackageName.h"
+#include "Misc/EngineVersion.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/StaticMesh.h"
+#include "StaticMeshAttributes.h"
+#include "StaticMeshResources.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
 #include "Engine/SpotLight.h"
@@ -387,6 +391,10 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     {
         return HandleGetActorIdentity(Params);
     }
+    else if (CommandType == TEXT("inspect_static_mesh_sections"))
+    {
+        return HandleInspectStaticMeshSections(Params);
+    }
     else if (CommandType == TEXT("find_actors_by_name"))
     {
         return HandleFindActorsByName(Params);
@@ -530,6 +538,184 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleGetActorIdentity(const T
     ResultObj->SetNumberField(TEXT("count"), MatchingActors.Num());
     ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
     return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleInspectStaticMeshSections(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    FString RequestedPath;
+    if (!Params.IsValid() || !Params->TryGetStringField(TEXT("asset_path"), RequestedPath))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'asset_path' parameter"));
+    }
+    const FString AssetPath = NormalizeAssetPath(RequestedPath);
+    if (AssetPath != RequestedPath || !AssetPath.StartsWith(TEXT("/Game/")) || AssetPath.Len() > 512)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("asset_path must name one project asset under /Game/"));
+    }
+
+    double LodNumber = 0.0;
+    Params->TryGetNumberField(TEXT("lod_index"), LodNumber);
+    const int32 LodIndex = FMath::FloorToInt(LodNumber);
+    if (!FMath::IsNearlyEqual(LodNumber, static_cast<double>(LodIndex)) || LodIndex < 0 || LodIndex > 7)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("lod_index must be an integer from 0 through 7"));
+    }
+
+    double MaxSectionsNumber = 64.0;
+    Params->TryGetNumberField(TEXT("max_sections"), MaxSectionsNumber);
+    const int32 MaxSections = FMath::FloorToInt(MaxSectionsNumber);
+    if (!FMath::IsNearlyEqual(MaxSectionsNumber, static_cast<double>(MaxSections)) ||
+        MaxSections < 1 || MaxSections > 128)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("max_sections must be an integer from 1 through 128"));
+    }
+
+    UStaticMesh* StaticMesh = Cast<UStaticMesh>(LoadAsset(AssetPath));
+    if (!StaticMesh)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Static mesh asset not found: %s"), *AssetPath));
+    }
+    if (LodIndex >= StaticMesh->GetNumSourceModels())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("LOD %d is unavailable; source model count is %d"),
+                LodIndex, StaticMesh->GetNumSourceModels()));
+    }
+
+    UPackage* Package = StaticMesh->GetOutermost();
+    const bool bPackageDirtyBefore = Package && Package->IsDirty();
+    const FMeshDescription* MeshDescription = StaticMesh->GetMeshDescription(LodIndex);
+    if (!MeshDescription || MeshDescription->IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("LOD %d MeshDescription is unavailable or empty"), LodIndex));
+    }
+
+    FStaticMeshConstAttributes Attributes(*MeshDescription);
+    const TPolygonGroupAttributesConstRef<FName> PolygonGroupSlotNames =
+        Attributes.GetPolygonGroupMaterialSlotNames();
+    const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+    const int32 PolygonGroupCount = MeshDescription->PolygonGroups().Num();
+
+    const FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
+    const FStaticMeshLODResources* RenderLod =
+        RenderData && RenderData->LODResources.IsValidIndex(LodIndex)
+            ? &RenderData->LODResources[LodIndex]
+            : nullptr;
+    const int32 RenderSectionCount = RenderLod ? RenderLod->Sections.Num() : 0;
+    if (PolygonGroupCount > MaxSections || StaticMaterials.Num() > MaxSections ||
+        RenderSectionCount > MaxSections)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+            TEXT("Static mesh section budget exceeded (polygon groups=%d, materials=%d, render sections=%d, max=%d)"),
+            PolygonGroupCount, StaticMaterials.Num(), RenderSectionCount, MaxSections));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> MaterialValues;
+    MaterialValues.Reserve(StaticMaterials.Num());
+    for (int32 MaterialIndex = 0; MaterialIndex < StaticMaterials.Num(); ++MaterialIndex)
+    {
+        const FStaticMaterial& Material = StaticMaterials[MaterialIndex];
+        TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+        Entry->SetNumberField(TEXT("material_index"), MaterialIndex);
+        Entry->SetStringField(TEXT("slot_name"), Material.MaterialSlotName.ToString());
+        Entry->SetStringField(TEXT("imported_slot_name"), Material.ImportedMaterialSlotName.ToString());
+        Entry->SetStringField(TEXT("material_path"),
+            Material.MaterialInterface ? Material.MaterialInterface->GetPathName() : TEXT(""));
+        MaterialValues.Add(MakeShared<FJsonValueObject>(Entry));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> PolygonGroupValues;
+    PolygonGroupValues.Reserve(PolygonGroupCount);
+    for (const FPolygonGroupID PolygonGroupId : MeshDescription->PolygonGroups().GetElementIDs())
+    {
+        const FName ImportedSlotName = PolygonGroupSlotNames[PolygonGroupId];
+        int32 MaterialIndex = StaticMesh->GetMaterialIndexFromImportedMaterialSlotName(ImportedSlotName);
+        if (MaterialIndex == INDEX_NONE && StaticMaterials.IsValidIndex(PolygonGroupId.GetValue()))
+        {
+            MaterialIndex = PolygonGroupId.GetValue();
+        }
+
+        TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+        Entry->SetNumberField(TEXT("polygon_group_id"), PolygonGroupId.GetValue());
+        Entry->SetStringField(TEXT("imported_slot_name"), ImportedSlotName.ToString());
+        Entry->SetNumberField(TEXT("material_index"), MaterialIndex);
+        Entry->SetNumberField(TEXT("polygon_count"),
+            MeshDescription->GetPolygonGroupPolygonIDs(PolygonGroupId).Num());
+        Entry->SetNumberField(TEXT("triangle_count"),
+            MeshDescription->GetPolygonGroupTriangles(PolygonGroupId).Num());
+        if (StaticMaterials.IsValidIndex(MaterialIndex))
+        {
+            const FStaticMaterial& Material = StaticMaterials[MaterialIndex];
+            Entry->SetStringField(TEXT("resolved_slot_name"), Material.MaterialSlotName.ToString());
+            Entry->SetStringField(TEXT("resolved_imported_slot_name"),
+                Material.ImportedMaterialSlotName.ToString());
+            Entry->SetStringField(TEXT("resolved_material_path"),
+                Material.MaterialInterface ? Material.MaterialInterface->GetPathName() : TEXT(""));
+        }
+        else
+        {
+            Entry->SetStringField(TEXT("resolved_slot_name"), TEXT(""));
+            Entry->SetStringField(TEXT("resolved_imported_slot_name"), TEXT(""));
+            Entry->SetStringField(TEXT("resolved_material_path"), TEXT(""));
+        }
+        PolygonGroupValues.Add(MakeShared<FJsonValueObject>(Entry));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> RenderSectionValues;
+    if (RenderLod)
+    {
+        RenderSectionValues.Reserve(RenderLod->Sections.Num());
+        for (int32 SectionIndex = 0; SectionIndex < RenderLod->Sections.Num(); ++SectionIndex)
+        {
+            const FStaticMeshSection& Section = RenderLod->Sections[SectionIndex];
+            TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+            Entry->SetNumberField(TEXT("section_index"), SectionIndex);
+            Entry->SetNumberField(TEXT("material_index"), Section.MaterialIndex);
+            Entry->SetNumberField(TEXT("first_index"), Section.FirstIndex);
+            Entry->SetNumberField(TEXT("triangle_count"), Section.NumTriangles);
+            Entry->SetNumberField(TEXT("min_vertex_index"), Section.MinVertexIndex);
+            Entry->SetNumberField(TEXT("max_vertex_index"), Section.MaxVertexIndex);
+            Entry->SetBoolField(TEXT("collision_enabled"), Section.bEnableCollision);
+            Entry->SetBoolField(TEXT("casts_shadow"), Section.bCastShadow);
+            RenderSectionValues.Add(MakeShared<FJsonValueObject>(Entry));
+        }
+    }
+
+    const bool bPackageDirtyAfter = Package && Package->IsDirty();
+    if (bPackageDirtyAfter != bPackageDirtyBefore)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Read-only mesh inspection changed package dirty state"));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("schema"), TEXT("unreal-mcp/static-mesh-section-snapshot/v1"));
+    Result->SetBoolField(TEXT("read_only"), true);
+    Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+    Result->SetStringField(TEXT("asset_path"), AssetPath);
+    Result->SetStringField(TEXT("object_path"), StaticMesh->GetPathName());
+    Result->SetNumberField(TEXT("lod_index"), LodIndex);
+    Result->SetNumberField(TEXT("source_model_count"), StaticMesh->GetNumSourceModels());
+    Result->SetNumberField(TEXT("vertex_count"), MeshDescription->Vertices().Num());
+    Result->SetNumberField(TEXT("vertex_instance_count"), MeshDescription->VertexInstances().Num());
+    Result->SetNumberField(TEXT("polygon_count"), MeshDescription->Polygons().Num());
+    Result->SetNumberField(TEXT("triangle_count"), MeshDescription->Triangles().Num());
+    Result->SetNumberField(TEXT("uv_channel_count"), Attributes.GetVertexInstanceUVs().GetNumChannels());
+    Result->SetNumberField(TEXT("lightmap_coordinate_index"), StaticMesh->GetLightMapCoordinateIndex());
+    Result->SetBoolField(TEXT("render_data_available"), RenderLod != nullptr);
+    Result->SetBoolField(TEXT("package_dirty_before"), bPackageDirtyBefore);
+    Result->SetBoolField(TEXT("package_dirty_after"), bPackageDirtyAfter);
+    Result->SetArrayField(TEXT("static_materials"), MaterialValues);
+    Result->SetArrayField(TEXT("polygon_groups"), PolygonGroupValues);
+    Result->SetArrayField(TEXT("render_sections"), RenderSectionValues);
+    return Result;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByName(const TSharedPtr<FJsonObject>& Params)

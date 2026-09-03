@@ -26,16 +26,69 @@ if str(SERVER_ROOT) not in sys.path:
     sys.path.insert(0, str(SERVER_ROOT))
 
 # ── Stub unavailable dependencies ─────────────────────────────────────────────
-for _m in ["unreal", "mcp", "mcp.server", "mcp.server.fastmcp"]:
-    if _m not in sys.modules:
-        stub = types.ModuleType(_m)
-        sys.modules[_m] = stub
+if "unreal" not in sys.modules:
+    sys.modules["unreal"] = types.ModuleType("unreal")
 
-_fmcp = sys.modules["mcp.server.fastmcp"]
-if not hasattr(_fmcp, "FastMCP"):
+try:
+    import mcp.server.fastmcp  # noqa: F401
+    _fmcp = sys.modules["mcp.server.fastmcp"]
+except Exception:
+    for _m in ["mcp", "mcp.server", "mcp.server.fastmcp"]:
+        if _m not in sys.modules:
+            stub = types.ModuleType(_m)
+            sys.modules[_m] = stub
+
+    class _FakeTool:
+        """Minimal compatibility object for fake tool registration."""
+
+        def __init__(self, fn):
+            self.fn = fn
+            self.name = fn.__name__
+
+    class _FakeToolManager:
+        def __init__(self):
+            self._tools = []
+
+        def add_tool(self, fn):
+            self._tools.append(_FakeTool(fn))
+
+        def list_tools(self):
+            return self._tools
+
+    class _FakeResource:
+        def __init__(self, uri):
+            self.uri = uri
+            self.name = uri
+
+    class _FakeResourceManager:
+        def __init__(self):
+            self._resources = []
+
+        def list_resources(self):
+            return self._resources
+
+        def add_resource(self, uri):
+            self._resources.append(_FakeResource(uri))
+
+    _fmcp = sys.modules["mcp.server.fastmcp"]
+
     class _FakeFastMCP:
+        def __init__(self, *args, **kwargs):
+            # permissive stub constructor to stay compatible when tests run after
+            # other modules that imported a real or differently-shaped FastMCP.
+            self._tool_manager = _FakeToolManager()
+            self._resource_manager = _FakeResourceManager()
+
         def tool(self):
-            def _dec(fn): return fn
+            def _dec(fn):
+                self._tool_manager.add_tool(fn)
+                return fn
+            return _dec
+
+        def resource(self, uri_template: str, *args, **kwargs):
+            def _dec(fn):
+                self._resource_manager.add_resource(uri_template)
+                return fn
             return _dec
     _fmcp.FastMCP = _FakeFastMCP
 if not hasattr(_fmcp, "Context"):

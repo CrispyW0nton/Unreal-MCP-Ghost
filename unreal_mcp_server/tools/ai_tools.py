@@ -81,6 +81,31 @@ def register_ai_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def set_behavior_tree_blackboard(
+        ctx: Context,
+        behavior_tree_name: str,
+        blackboard_name: str,
+    ) -> Dict[str, Any]:
+        """Assign a Blackboard asset to a Behavior Tree.
+
+        Behavior Trees should have one explicit Blackboard source of truth for
+        target, patrol, perception, and combat state. Use this after creating
+        or repairing BT/Blackboard assets, then inspect the tree before adding
+        decorators, services, or EQS tasks that depend on keys.
+
+        Args:
+            behavior_tree_name: Behavior Tree asset name, e.g. `BT_EnemyAI`
+            blackboard_name: Blackboard asset name, e.g. `BB_EnemyAI`
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            set_behavior_tree_blackboard(behavior_tree_name="BT_EnemyAI", blackboard_name="BB_EnemyAI")"""
+        return _send("set_behavior_tree_blackboard", {
+            "behavior_tree_name": behavior_tree_name,
+            "blackboard_name": blackboard_name,
+        })
+
+    @mcp.tool()
     def create_ai_controller(
         ctx: Context,
         name: str,
@@ -1187,11 +1212,9 @@ def register_ai_tools(mcp: FastMCP):
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_get_random_reachable_point_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
-        return _send("add_blueprint_function_node", {
+        return _send("add_get_random_reachable_point_node", {
             "blueprint_name": blueprint_name,
-            "target": "UNavigationSystemV1",
-            "function_name": "GetRandomReachablePointInRadius",
-            "params": {"Radius": radius},
+            "radius": radius,
             "node_position": node_position or [0, 0]
         })
 
@@ -1215,11 +1238,9 @@ def register_ai_tools(mcp: FastMCP):
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_finish_execute_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
-        return _send("add_blueprint_function_node", {
+        return _send("add_finish_execute_node", {
             "blueprint_name": blueprint_name,
-            "target": "self",
-            "function_name": "FinishExecute",
-            "params": {"bSuccess": success},
+            "success": success,
             "node_position": node_position or [0, 0]
         })
 
@@ -1288,11 +1309,9 @@ def register_ai_tools(mcp: FastMCP):
         KB: see knowledge_base/04_AI_SYSTEMS.md#overview
         Example:
             add_clear_blackboard_value_node(blueprint_name="/Game/MCP_Test/BP_Example", key_name="ExampleName")"""
-        return _send("add_blueprint_function_node", {
+        return _send("add_clear_blackboard_value_node", {
             "blueprint_name": blueprint_name,
-            "target": "UBlackboardComponent",
-            "function_name": "ClearValue",
-            "params": {"KeyName": key_name},
+            "key_name": key_name,
             "node_position": node_position or [0, 0]
         })
 
@@ -1706,6 +1725,27 @@ def register_ai_tools(mcp: FastMCP):
         Example:
             get_bt_graph_info(behavior_tree_name="ExampleName")"""
         return _send("get_bt_graph_info", {
+            "behavior_tree_name": behavior_tree_name,
+        })
+
+    @mcp.tool()
+    def bt_get_info(
+        ctx: Context,
+        behavior_tree_name: str,
+    ) -> Dict[str, Any]:
+        """Inspect a Behavior Tree graph using the native bridge alias.
+
+        This read-only wrapper is useful for discovery-before-mutation flows:
+        call it before and after changing BT structure or Blackboard assignment
+        so the IDE companion can prove what changed and keep AI state readable.
+
+        Args:
+            behavior_tree_name: Name of the BT asset to inspect
+
+        KB: see knowledge_base/04_AI_SYSTEMS.md#overview
+        Example:
+            bt_get_info(behavior_tree_name="BT_EnemyAI")"""
+        return _send("bt_get_info", {
             "behavior_tree_name": behavior_tree_name,
         })
 

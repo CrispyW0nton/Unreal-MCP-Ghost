@@ -205,7 +205,7 @@ uint32 FMCPServerRunnable::Run()
             continue;
         }
 
-        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Received command line: %s"), *JsonLine);
+        UE_LOG(LogTemp, Display, TEXT("MCPServerRunnable: Received bounded JSON command (%d chars)"), JsonLine.Len());
 
         // ── 4. Parse JSON ─────────────────────────────────────────────────────
         TSharedPtr<FJsonObject> JsonObject;
@@ -228,6 +228,15 @@ uint32 FMCPServerRunnable::Run()
         {
             UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Missing command/type field"));
             SendAndClose(ClientSock, TEXT("{\"status\":\"error\",\"error\":\"Missing command type\"}"));
+            continue;
+        }
+
+        if (!Bridge->ValidateRequestAuthentication(JsonObject))
+        {
+            UE_LOG(LogTemp, Warning, TEXT("MCPServerRunnable: Rejected unauthenticated command '%s'"), *CommandType);
+            SendAndClose(
+                ClientSock,
+                TEXT("{\"status\":\"error\",\"code\":\"UNREAL_MCP_AUTH_REQUIRED\",\"error\":\"Authentication required\"}"));
             continue;
         }
 

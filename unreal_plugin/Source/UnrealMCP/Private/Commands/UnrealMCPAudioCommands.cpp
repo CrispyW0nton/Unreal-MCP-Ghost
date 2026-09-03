@@ -3,6 +3,7 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "AssetToolsModule.h"
 #include "Commands/UnrealMCPCommonUtils.h"
+#include "Editor.h"
 #include "EditorAssetLibrary.h"
 #include "Engine/Attenuation.h"
 #include "Factories/SoundAttenuationFactory.h"
@@ -10,8 +11,8 @@
 #include "Factories/SoundCueFactoryNew.h"
 #include "Metasound.h"
 #include "MetasoundBuilderBase.h"
-#include "MetasoundBuilderSubsystem.h"
 #include "MetasoundDocumentInterface.h"
+#include "MetasoundEditorSubsystem.h"
 #include "MetasoundFactory.h"
 #include "MetasoundFrontendDocument.h"
 #include "MetasoundSource.h"
@@ -225,10 +226,25 @@ UMetaSoundBuilderBase* FUnrealMCPAudioCommands::AttachBuilder(UObject* MetaSound
         return nullptr;
     }
 
-PRAGMA_DISABLE_DEPRECATION_WARNINGS
-    UMetaSoundBuilderBase& Builder = UMetaSoundBuilderSubsystem::GetChecked().AttachBuilderToAssetChecked(*MetaSoundObject);
-PRAGMA_ENABLE_DEPRECATION_WARNINGS
-    return &Builder;
+    UMetaSoundEditorSubsystem* EditorSubsystem =
+        GEditor ? GEditor->GetEditorSubsystem<UMetaSoundEditorSubsystem>() : nullptr;
+    if (!EditorSubsystem)
+    {
+        OutError = TEXT("MetaSound editor subsystem is unavailable");
+        return nullptr;
+    }
+
+    EMetaSoundBuilderResult Result = EMetaSoundBuilderResult::Failed;
+    UMetaSoundBuilderBase* Builder = EditorSubsystem->FindOrBeginBuilding(
+        TScriptInterface<IMetaSoundDocumentInterface>(MetaSoundObject), Result);
+    if (!Builder || Result != EMetaSoundBuilderResult::Succeeded)
+    {
+        OutError = FString::Printf(
+            TEXT("Could not begin editing MetaSound asset: %s"),
+            *MetaSoundObject->GetPathName());
+        return nullptr;
+    }
+    return Builder;
 }
 
 bool FUnrealMCPAudioCommands::ParseGuidField(

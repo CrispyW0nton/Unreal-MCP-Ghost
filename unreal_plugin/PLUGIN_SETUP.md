@@ -7,7 +7,7 @@ repos to clone. Drop this one folder into your project and you're done.
 
 ## ✅ What This Plugin Does
 
-Opens a TCP server on port **55557** inside the Unreal Editor. The Python MCP
+Opens a TCP server on port **55655** inside the Unreal Editor. The Python MCP
 server connects to it and forwards AI commands (from Cursor or Claude Desktop)
 that create and manipulate Blueprints, actors, materials, AI systems, UMG
 widgets, save systems, VR setups, procedural generation, and more — all 283
@@ -107,7 +107,7 @@ YourProject/
 
 **Verify it is running** — open the Output Log (Window → Output Log) and look for:
 ```
-LogTemp: Display: UnrealMCPBridge: Server started on 127.0.0.1:55557
+LogTemp: Display: UnrealMCPBridge: Server started on 127.0.0.1:55655
 ```
 
 ---
@@ -117,10 +117,9 @@ LogTemp: Display: UnrealMCPBridge: Server started on 127.0.0.1:55557
 Clone this repo if you haven't already:
 ```powershell
 # Recommended location — keeps dev tools organized, off the Desktop
-cd C:\Users\NewAdmin\Documents\KotorMods\Tools
+cd C:\Dev
 git clone https://github.com/CrispyW0nton/Unreal-MCP-Ghost.git
 cd Unreal-MCP-Ghost
-git checkout genspark_ai_developer
 ```
 
 Install dependencies and start the server:
@@ -132,7 +131,7 @@ python unreal_mcp_server/unreal_mcp_server.py
 Expected output:
 ```
 [MCP] Unreal MCP Server starting...
-[MCP] 283 tools registered across 18 modules
+[MCP] 713 tools registered
 [MCP] Server ready — connect your AI client
 ```
 
@@ -163,7 +162,7 @@ Keep this terminal window open while you work.
 ```
 
 Replace the path with your actual clone location, e.g.:
-`C:/Users/NewAdmin/Documents/KotorMods/Tools/Unreal-MCP-Ghost/unreal_mcp_server/unreal_mcp_server.py`
+`C:/Dev/Unreal-MCP-Ghost/unreal_mcp_server/unreal_mcp_server.py`
 
 4. **Restart Cursor**
 5. Open the AI chat panel — you should see "unreal-mcp" listed as an available tool
@@ -173,7 +172,7 @@ Replace the path with your actual clone location, e.g.:
 ## 🧪 Step 6: Test the Full Pipeline
 
 With all three running simultaneously:
-- ✅ Unreal Engine 5.6 open with your project (Output Log shows port 55557)
+- ✅ Unreal Engine 5.6 open with your project (Output Log shows port 55655)
 - ✅ Python MCP server running in terminal
 - ✅ Cursor open with MCP configured
 
@@ -230,7 +229,7 @@ Add save-on-exit and load-on-begin-play to the GameMode.
 |---------|-----|
 | Plugin won't compile | Install VS 2022 with "Game Development with C++" workload |
 | "Module not found" on startup | Right-click .uproject → Generate VS files → rebuild |
-| Port 55557 already in use | Run: `netstat -ano \| findstr 55557` then `taskkill /PID [number] /F` |
+| Port 55655 already in use | Run: `netstat -ano \| findstr 55655` then `taskkill /PID [number] /F` |
 | Output Log shows no server message | Check Edit → Plugins → UnrealMCP is enabled |
 | Cursor doesn't list the tools | Restart Cursor after saving mcp.json |
 | VariantManager compile error | Open Build.cs and comment out the two VariantManager lines |

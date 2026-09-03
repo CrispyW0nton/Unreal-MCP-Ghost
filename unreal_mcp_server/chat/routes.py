@@ -8,6 +8,7 @@ from typing import Any, Dict
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from .cockpit import build_cockpit_overview, build_ledger_detail, build_session_resume_context
 from .storage import (
     append_message,
     clear_history,
@@ -161,6 +162,65 @@ async def chat_session_export(request: Request) -> Response:
     return Response(markdown, media_type="text/markdown")
 
 
+async def chat_session_resume_context(request: Request) -> Response:
+    """GET /chat/session/resume-context?session=<session>&limit=N."""
+    session = request.query_params.get("session", "")
+    raw_limit = request.query_params.get("limit", "20")
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        return _error("limit must be an integer")
+    try:
+        payload = build_session_resume_context(session=session, message_limit=limit)
+    except Exception as exc:
+        return _error(f"Failed to load session resume context: {exc}", status_code=500)
+    warnings = payload.pop("warnings", [])
+    return JSONResponse({"status": "ok", **payload, "warnings": warnings})
+
+
+async def chat_cockpit_overview(request: Request) -> Response:
+    """GET /chat/cockpit/overview?session=<session>&limit=N."""
+    session = request.query_params.get("session", "")
+    raw_limit = request.query_params.get("limit", "20")
+    try:
+        limit = int(raw_limit)
+    except ValueError:
+        return _error("limit must be an integer")
+    try:
+        payload = build_cockpit_overview(session=session, message_limit=limit, limit=limit)
+    except Exception as exc:
+        return _error(f"Failed to load cockpit overview: {exc}", status_code=500)
+    warnings = payload.pop("warnings", [])
+    return JSONResponse({"status": "ok", **payload, "warnings": warnings})
+
+
+async def chat_cockpit_ledger_detail(request: Request) -> Response:
+    """GET /chat/cockpit/ledger?session=<session>&ledger_path=<path>&event_index=N."""
+    session = request.query_params.get("session", "")
+    ledger_path = request.query_params.get("ledger_path", "")
+    raw_limit = request.query_params.get("limit", "20")
+    raw_artifact_limit = request.query_params.get("artifact_limit", "12")
+    raw_event_index = request.query_params.get("event_index", "0")
+    try:
+        limit = int(raw_limit)
+        artifact_limit = int(raw_artifact_limit)
+        event_index = int(raw_event_index)
+    except ValueError:
+        return _error("limit, artifact_limit, and event_index must be integers")
+    try:
+        payload = build_ledger_detail(
+            session=session,
+            ledger_path=ledger_path,
+            event_index=event_index,
+            limit=limit,
+            artifact_limit=artifact_limit,
+        )
+    except Exception as exc:
+        return _error(f"Failed to load cockpit ledger detail: {exc}", status_code=500)
+    warnings = payload.pop("warnings", [])
+    return JSONResponse({"status": "ok", **payload, "warnings": warnings})
+
+
 def register_chat_routes(mcp) -> None:
     """Register chat HTTP endpoints on FastMCP."""
     async def tools_list(request: Request) -> Response:
@@ -178,5 +238,7 @@ def register_chat_routes(mcp) -> None:
     mcp.custom_route("/chat/session/pin", methods=["POST"], name="chat_session_pin")(chat_session_pin)
     mcp.custom_route("/chat/session/delete", methods=["POST"], name="chat_session_delete")(chat_session_delete)
     mcp.custom_route("/chat/session/export", methods=["GET"], name="chat_session_export")(chat_session_export)
+    mcp.custom_route("/chat/session/resume-context", methods=["GET"], name="chat_session_resume_context")(chat_session_resume_context)
+    mcp.custom_route("/chat/cockpit/overview", methods=["GET"], name="chat_cockpit_overview")(chat_cockpit_overview)
+    mcp.custom_route("/chat/cockpit/ledger", methods=["GET"], name="chat_cockpit_ledger_detail")(chat_cockpit_ledger_detail)
     mcp.custom_route("/tools/list", methods=["GET"], name="tools_list")(tools_list)
-

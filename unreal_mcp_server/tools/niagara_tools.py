@@ -578,6 +578,51 @@ print(json.dumps(out))
         )
 
     @mcp.tool()
+    async def add_niagara_component(
+        ctx: Context,
+        blueprint_name: str,
+        component_name: str = "NiagaraComponent",
+        niagara_system_path: str = "",
+    ) -> Dict[str, Any]:
+        """Attach a NiagaraComponent to a Blueprint through the native bridge.
+
+        Use this to place an authored Niagara System on a generated gameplay
+        actor. Follow with Blueprint compile, component readback, and viewport
+        proof before claiming the VFX pass is complete.
+
+        KB: see knowledge_base/09_NIAGARA_VFX.md#blueprint-component-attachment
+        Example:
+            add_niagara_component(blueprint_name="/Game/BP_BlackHoleFX", niagara_system_path="/Game/VFX/NS_BlackHole")"""
+        t0 = time.monotonic()
+        native = _send(
+            "add_niagara_component",
+            {
+                "blueprint_name": blueprint_name,
+                "component_name": component_name,
+                "niagara_system_path": niagara_system_path,
+            },
+        )
+        success = native.get("success") is True or native.get("status") == "success"
+        if success:
+            outputs = native.get("result", native)
+            return _result(
+                success=True,
+                tool="add_niagara_component",
+                t0=t0,
+                message="Niagara component added through native bridge",
+                outputs=outputs,
+            )
+        message = native.get("error") or native.get("message", "Native Niagara component command failed")
+        return _result(
+            success=False,
+            tool="add_niagara_component",
+            t0=t0,
+            message="Niagara component add failed",
+            errors=[message],
+            warnings=["This operation requires a reachable Unreal bridge and a Blueprint with a SimpleConstructionScript."],
+        )
+
+    @mcp.tool()
     async def niagara_describe_system(ctx: Context, system_path: str) -> Dict[str, Any]:
         """Describe a Niagara System asset and report what Python can safely inspect.
 

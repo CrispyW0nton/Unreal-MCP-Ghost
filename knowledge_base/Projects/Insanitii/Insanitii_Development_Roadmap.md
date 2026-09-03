@@ -2,6 +2,8 @@
 
 Last updated: 2026-05-17
 
+Current execution note, 2026-05-18: use `Next_Development_Roadmap_2026-05-18.md` for the immediate roadmap derived from the user-provided GDD and current project state. This file remains useful as the broader in-depth roadmap.
+
 ## Mission
 
 Build a reliable, mechanics-first psychological FPS foundation in Unreal Engine 5.6 using a native C++ logic + Blueprint wrapper architecture, then scale into lifestyle loops, encounters, content, and optimization without breaking core feel.
@@ -136,6 +138,8 @@ Every Unreal-MCP-Ghost development pass that touches project verification should
 - `INS_LifestyleManager` is placed in `Lvl_FirstPerson`.
 - `insanitii_phase2_lifestyle_report()` returns `pass`.
 - Simulate-in-Editor confirmed the clock advanced from `Day 1 08:00` to `Day 1 08:13`.
+- Phase 2A HUD daily-loop visibility is implemented and compiled as of 2026-05-18.
+- Native task execution and sleep/day-advance APIs are implemented and compiled as of 2026-05-18; manual possessed-PIE validation and clean-restart reflection validation remain pending.
 
 ### Exit Criteria
 

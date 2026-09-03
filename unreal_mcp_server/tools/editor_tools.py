@@ -9,20 +9,10 @@ import textwrap
 import time
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
+from tools.static_mesh_section_tools import register_static_mesh_section_tools
+from tools.unreal_connection_tools import send_unreal_command as _send_unreal_command
 
 logger = logging.getLogger("UnrealMCP")
-
-
-def _send_unreal_command(command: str, params: Dict[str, Any]) -> Dict[str, Any]:
-    from unreal_mcp_server import get_unreal_connection
-
-    unreal = get_unreal_connection()
-    if not unreal:
-        return {"success": False, "message": "Not connected to Unreal Engine"}
-    return unreal.send_command(command, params) or {
-        "success": False,
-        "message": "No response from Unreal Engine",
-    }
 
 
 def _parse_exec_python_json(response: Dict[str, Any]) -> Dict[str, Any]:
@@ -624,6 +614,678 @@ def _insanitii_pie_stop_request_code() -> str:
     """)
 
 
+def _insanitii_manual_control_runtime_read_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        result = {
+            "success": True,
+            "errors": [],
+            "is_in_play_in_editor": False,
+            "pie_world_count": 0,
+            "pie_world_names": [],
+            "controller_class": "",
+            "pawn_class": "",
+            "pawn_name": "",
+            "location": None,
+            "control_rotation": None,
+            "show_mouse_cursor": None,
+            "input_enabled": None,
+            "input_component_class": "",
+            "has_character_movement": False,
+            "movement_component_class": "",
+            "movement_mode": "",
+            "max_walk_speed": None,
+            "pending_input_size": None,
+            "has_mental_state": False,
+            "has_interaction_detector": False,
+        }
+
+        try:
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            result["is_in_play_in_editor"] = bool(subsystem.is_in_play_in_editor())
+            try:
+                pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+            except Exception:
+                pie_worlds = []
+            result["pie_world_count"] = len(pie_worlds)
+            result["pie_world_names"] = [world.get_name() for world in pie_worlds]
+            world = pie_worlds[0] if pie_worlds else None
+            if not world:
+                result["success"] = False
+                result["errors"].append("No PIE world available.")
+                print(json.dumps(result))
+            else:
+                controller = unreal.GameplayStatics.get_player_controller(world, 0)
+                pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+                if not controller:
+                    result["success"] = False
+                    result["errors"].append("No player controller.")
+                if not pawn:
+                    result["success"] = False
+                    result["errors"].append("No possessed pawn.")
+
+                if controller:
+                    result["controller_class"] = controller.get_class().get_name()
+                    try:
+                        result["show_mouse_cursor"] = bool(controller.get_editor_property("bShowMouseCursor"))
+                    except Exception:
+                        result["show_mouse_cursor"] = None
+                    try:
+                        rot = controller.get_control_rotation()
+                        result["control_rotation"] = [float(rot.pitch), float(rot.yaw), float(rot.roll)]
+                    except Exception as exc:
+                        result["errors"].append("Could not read control rotation: " + str(exc))
+
+                if pawn:
+                    result["pawn_class"] = pawn.get_class().get_name()
+                    result["pawn_name"] = pawn.get_name()
+                    loc = pawn.get_actor_location()
+                    result["location"] = [float(loc.x), float(loc.y), float(loc.z)]
+                    try:
+                        result["input_enabled"] = bool(pawn.get_editor_property("input_enabled"))
+                    except Exception:
+                        result["input_enabled"] = None
+                    try:
+                        result["input_component_class"] = pawn.input_component.get_class().get_name() if pawn.input_component else ""
+                    except Exception:
+                        result["input_component_class"] = ""
+                    try:
+                        pending = pawn.get_pending_movement_input_vector()
+                        result["pending_input_size"] = float(pending.length())
+                    except Exception:
+                        result["pending_input_size"] = None
+
+                    try:
+                        movement = pawn.get_movement_component()
+                    except Exception:
+                        movement = None
+                    result["has_character_movement"] = bool(movement)
+                    if movement:
+                        result["movement_component_class"] = movement.get_class().get_name()
+                        try:
+                            result["movement_mode"] = str(movement.get_editor_property("movement_mode"))
+                        except Exception:
+                            result["movement_mode"] = ""
+                        try:
+                            result["max_walk_speed"] = float(movement.get_editor_property("max_walk_speed"))
+                        except Exception:
+                            result["max_walk_speed"] = None
+
+                    mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+                    detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+                    result["has_mental_state"] = bool(pawn.get_component_by_class(mental_cls)) if mental_cls else False
+                    result["has_interaction_detector"] = bool(pawn.get_component_by_class(detector_cls)) if detector_cls else False
+
+                result["success"] = result["success"] and not result["errors"]
+                print(json.dumps(result))
+        except Exception as exc:
+            result["success"] = False
+            result["errors"].append("Manual control runtime read exception: " + str(exc))
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_manual_control_apply_move_code(scale: float = 1.0) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        result = {{"success": True, "errors": [], "applied": False, "pending_input_size": None}}
+        try:
+            pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            pie_worlds = []
+        world = pie_worlds[0] if pie_worlds else None
+        controller = unreal.GameplayStatics.get_player_controller(world, 0) if world else None
+        pawn = unreal.GameplayStatics.get_player_pawn(world, 0) if world else None
+        if not pawn:
+            result["success"] = False
+            result["errors"].append("No pawn available for movement input.")
+        else:
+            try:
+                direction = pawn.get_actor_forward_vector()
+                pawn.add_movement_input(direction, float({scale!r}), False)
+                pending = pawn.get_pending_movement_input_vector()
+                result["pending_input_size"] = float(pending.length())
+                result["applied"] = True
+            except Exception as exc:
+                result["success"] = False
+                result["errors"].append(str(exc))
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_manual_control_apply_look_code(yaw_delta: float = 30.0) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        result = {{"success": True, "errors": [], "applied": False, "before": None, "after": None}}
+        try:
+            pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            pie_worlds = []
+        world = pie_worlds[0] if pie_worlds else None
+        controller = unreal.GameplayStatics.get_player_controller(world, 0) if world else None
+        if not controller:
+            result["success"] = False
+            result["errors"].append("No player controller available for look input.")
+        else:
+            try:
+                before = controller.get_control_rotation()
+                result["before"] = [float(before.pitch), float(before.yaw), float(before.roll)]
+                new_rotation = unreal.Rotator()
+                new_rotation.pitch = float(before.pitch)
+                new_rotation.yaw = float(before.yaw) + float({yaw_delta!r})
+                new_rotation.roll = float(before.roll)
+                controller.set_control_rotation(new_rotation)
+                after = controller.get_control_rotation()
+                result["after"] = [float(after.pitch), float(after.yaw), float(after.roll)]
+                result["applied"] = True
+            except Exception as exc:
+                result["success"] = False
+                result["errors"].append(str(exc))
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_player_station_interaction_route_code() -> str:
+    station_labels = [
+        "INS_TaskStation_Food_Sandwich",
+        "INS_TaskStation_Medication",
+        "INS_TaskStation_Sleep_Bed",
+        "INS_TaskStation_Grocery_Corner",
+        "INS_TaskStation_Laundry_Washer",
+        "INS_TaskStation_Package_Dropoff",
+        "INS_TaskStation_Commute_Car",
+        "INS_TaskStation_Work_EmailTriage",
+        "INS_TaskStation_Stress_OverwhelmingNoise",
+        "INS_TaskStation_Grounding_Card",
+        "INS_TaskStation_Grounding_Snack",
+    ]
+    return textwrap.dedent(f"""
+        import json, math, unreal
+
+        expected_labels = {json.dumps(station_labels)}
+        result = {{
+            "success": True,
+            "errors": [],
+            "route": [],
+            "controller_class": "",
+            "pawn_class": "",
+            "detector_class": "",
+            "initial_mental_state": None,
+            "final_mental_state": None,
+        }}
+
+        def _round_vec(vec):
+            return [round(float(vec.x), 2), round(float(vec.y), 2), round(float(vec.z), 2)]
+
+        def _normalize_xy(vec):
+            length = math.sqrt(float(vec.x) * float(vec.x) + float(vec.y) * float(vec.y))
+            if length < 1.0:
+                return unreal.Vector(1.0, 0.0, 0.0)
+            return unreal.Vector(float(vec.x) / length, float(vec.y) / length, 0.0)
+
+        def _line_trace(world, start, end, actors_to_ignore):
+            try:
+                hit = world.line_trace_single_by_channel(start, end, unreal.CollisionChannel.ECC_VISIBILITY)
+                if hit:
+                    return hit
+            except Exception:
+                pass
+            try:
+                trace_channel = unreal.TraceTypeQuery.TRACE_TYPE_QUERY1
+                draw_type = unreal.DrawDebugTrace.NONE
+                hit_tuple = unreal.SystemLibrary.line_trace_single(
+                    world,
+                    start,
+                    end,
+                    trace_channel,
+                    False,
+                    actors_to_ignore,
+                    draw_type,
+                    True,
+                    unreal.LinearColor(1.0, 0.0, 0.0, 1.0),
+                    unreal.LinearColor(0.0, 1.0, 0.0, 1.0),
+                    0.05,
+                )
+                if isinstance(hit_tuple, tuple) and len(hit_tuple) >= 2 and hit_tuple[0]:
+                    return hit_tuple[1]
+            except Exception:
+                pass
+            return None
+
+        def _hit_actor(hit):
+            if not hit:
+                return None
+            try:
+                return hit.get_actor()
+            except Exception:
+                try:
+                    return hit.actor
+                except Exception:
+                    return None
+
+        def _impact_point(hit):
+            if not hit:
+                return None
+            try:
+                return _round_vec(hit.impact_point)
+            except Exception:
+                try:
+                    return _round_vec(hit.location)
+                except Exception:
+                    return None
+
+        try:
+            worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            worlds = []
+        world = worlds[0] if worlds else None
+        if not world:
+            result["success"] = False
+            result["errors"].append("No PIE world available.")
+            print(json.dumps(result))
+        else:
+            controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+            detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+            mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+            station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+            camera_cls = unreal.load_class(None, "/Script/Engine.CameraComponent")
+            detector = pawn.get_component_by_class(detector_cls) if pawn and detector_cls else None
+            mental = pawn.get_component_by_class(mental_cls) if pawn and mental_cls else None
+            camera = pawn.get_component_by_class(camera_cls) if pawn and camera_cls else None
+
+            if controller:
+                result["controller_class"] = controller.get_class().get_name()
+            else:
+                result["errors"].append("No player controller.")
+            if pawn:
+                result["pawn_class"] = pawn.get_class().get_name()
+            else:
+                result["errors"].append("No player pawn.")
+            if detector:
+                result["detector_class"] = detector.get_class().get_name()
+            else:
+                result["errors"].append("No InsanitiiInteractionDetectorComponent on pawn.")
+            if not camera:
+                result["errors"].append("No camera component on pawn.")
+
+            if mental:
+                try:
+                    result["initial_mental_state"] = float(mental.get_editor_property("MentalState"))
+                except Exception:
+                    pass
+
+            actors = list(unreal.GameplayStatics.get_all_actors_of_class(world, station_cls)) if station_cls else []
+            by_label = {{actor.get_actor_label(): actor for actor in actors}}
+            missing = [label for label in expected_labels if label not in by_label]
+            for label in missing:
+                result["errors"].append("Missing PIE station: " + label)
+
+            if not result["errors"]:
+                original_pawn_location = pawn.get_actor_location()
+                original_pawn_rotation = pawn.get_actor_rotation()
+                original_control_rotation = controller.get_control_rotation()
+                original_detector_range = None
+                try:
+                    original_detector_range = float(detector.get_editor_property("InteractionRange"))
+                    detector.set_editor_property("InteractionRange", max(original_detector_range, 260.0))
+                except Exception:
+                    pass
+
+                for label in expected_labels:
+                    station = by_label[label]
+                    mesh = station.get_component_by_class(unreal.StaticMeshComponent)
+                    prompt = ""
+                    try:
+                        prompt = str(station.get_interaction_prompt())
+                    except Exception:
+                        prompt = ""
+
+                    if mental:
+                        try:
+                            mental.set_editor_property("MentalState", 1.0)
+                            mental.set_editor_property("bIsFocusActive", False)
+                        except Exception:
+                            pass
+                    try:
+                        station.set_editor_property("bHasBeenUsed", False)
+                        station.set_editor_property("bRequiresStabilizedRetry", False)
+                        station.set_editor_property("bLastUseSucceeded", True)
+                    except Exception:
+                        pass
+
+                    bounds_origin, bounds_extent = station.get_actor_bounds(False)
+                    direction = _normalize_xy(bounds_origin)
+                    approach_distance = max(115.0, min(170.0, max(float(bounds_extent.x), float(bounds_extent.y)) + 95.0))
+                    approach = unreal.Vector(
+                        float(bounds_origin.x) - float(direction.x) * approach_distance,
+                        float(bounds_origin.y) - float(direction.y) * approach_distance,
+                        92.0,
+                    )
+
+                    pawn.set_actor_location(approach, False, True)
+                    horizontal = math.sqrt((float(bounds_origin.x) - float(approach.x)) ** 2 + (float(bounds_origin.y) - float(approach.y)) ** 2)
+                    yaw = math.degrees(math.atan2(float(bounds_origin.y) - float(approach.y), float(bounds_origin.x) - float(approach.x)))
+                    pitch = math.degrees(math.atan2(float(bounds_origin.z) - (float(approach.z) + 72.0), max(1.0, horizontal)))
+                    aim = unreal.Rotator(0.0, float(pitch), float(yaw))
+                    controller.set_control_rotation(aim)
+                    pawn.set_actor_rotation(unreal.Rotator(0.0, 0.0, float(yaw)), False)
+
+                    yaw_rad = math.radians(float(yaw))
+                    pitch_rad = math.radians(float(pitch))
+                    start = approach + unreal.Vector(0.0, 0.0, 75.0)
+                    forward = unreal.Vector(
+                        math.cos(pitch_rad) * math.cos(yaw_rad),
+                        math.cos(pitch_rad) * math.sin(yaw_rad),
+                        math.sin(pitch_rad),
+                    )
+                    trace_range = float(detector.get_editor_property("InteractionRange")) if detector else 260.0
+                    end = start + forward * trace_range
+                    hit = _line_trace(world, start, end, [pawn])
+                    hit_actor = _hit_actor(hit)
+                    hit_label = hit_actor.get_actor_label() if hit_actor else ""
+                    trace_hit_station = bool(hit_actor == station)
+
+                    focus_ready = trace_hit_station and bool(prompt)
+                    before_used = bool(station.get_editor_property("bHasBeenUsed"))
+                    if focus_ready:
+                        try:
+                            detector.set_editor_property("CurrentFocusedActor", station)
+                            detector.set_editor_property("CurrentPromptText", unreal.Text.cast(prompt))
+                        except Exception:
+                            try:
+                                detector.set_editor_property("CurrentFocusedActor", station)
+                            except Exception:
+                                pass
+                        try:
+                            detector.attempt_interact()
+                        except Exception as exc:
+                            result["errors"].append(label + " detector AttemptInteract failed: " + str(exc))
+
+                    after_used = bool(station.get_editor_property("bHasBeenUsed"))
+                    last_succeeded = bool(station.get_editor_property("bLastUseSucceeded"))
+                    route_row = {{
+                        "label": label,
+                        "prompt": prompt,
+                        "mesh": mesh.static_mesh.get_path_name() if mesh and mesh.static_mesh else "",
+                        "mesh_is_tripo": bool(mesh and mesh.static_mesh and "/Game/TripoModels/" in mesh.static_mesh.get_path_name()),
+                        "pawn_location": _round_vec(approach),
+                        "camera_location": _round_vec(start),
+                        "control_rotation": [round(float(pitch), 2), round(float(yaw), 2), 0.0],
+                        "trace_hit_label": hit_label,
+                        "trace_hit_station": trace_hit_station,
+                        "trace_impact": _impact_point(hit),
+                        "focus_prompt_ready": focus_ready,
+                        "used_before": before_used,
+                        "used_after_attempt": after_used,
+                        "last_use_succeeded": last_succeeded,
+                    }}
+                    result["route"].append(route_row)
+
+                    if not route_row["mesh_is_tripo"]:
+                        result["errors"].append(label + " does not use a Tripo mesh.")
+                    if not trace_hit_station:
+                        result["errors"].append(label + " player-view trace hit '" + hit_label + "' instead of the station.")
+                    if not focus_ready:
+                        result["errors"].append(label + " did not produce a focus-ready prompt.")
+                    if not after_used or not last_succeeded:
+                        result["errors"].append(label + " did not complete through detector AttemptInteract.")
+
+                if original_detector_range is not None:
+                    try:
+                        detector.set_editor_property("InteractionRange", original_detector_range)
+                    except Exception:
+                        pass
+                pawn.set_actor_location(original_pawn_location, False, True)
+                pawn.set_actor_rotation(original_pawn_rotation, False)
+                controller.set_control_rotation(original_control_rotation)
+
+                if mental:
+                    try:
+                        result["final_mental_state"] = float(mental.get_editor_property("MentalState"))
+                    except Exception:
+                        pass
+
+            result["success"] = not result["errors"] and len(result["route"]) == len(expected_labels)
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_player_station_prepare_focus_code(label: str) -> str:
+    return textwrap.dedent(f"""
+        import json, math, unreal
+
+        label = {json.dumps(label)}
+        result = {{"success": True, "errors": [], "label": label}}
+
+        try:
+            worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            worlds = []
+        world = worlds[0] if worlds else None
+        if not world:
+            result["success"] = False
+            result["errors"].append("No PIE world available.")
+            print(json.dumps(result))
+        else:
+            controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+            station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+            mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+            detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+            stations = list(unreal.GameplayStatics.get_all_actors_of_class(world, station_cls)) if station_cls else []
+            station = next((actor for actor in stations if actor.get_actor_label() == label), None)
+            mental = pawn.get_component_by_class(mental_cls) if pawn and mental_cls else None
+            detector = pawn.get_component_by_class(detector_cls) if pawn and detector_cls else None
+
+            if controller:
+                result["controller_class"] = controller.get_class().get_name()
+            if pawn:
+                result["pawn_class"] = pawn.get_class().get_name()
+            if detector:
+                result["detector_class"] = detector.get_class().get_name()
+
+            if not controller:
+                result["errors"].append("No player controller.")
+            if not pawn:
+                result["errors"].append("No player pawn.")
+            if not station:
+                result["errors"].append("Missing station: " + label)
+            if not detector:
+                result["errors"].append("No interaction detector.")
+
+            if not result["errors"]:
+                mesh = station.get_component_by_class(unreal.StaticMeshComponent)
+                camera = pawn.get_component_by_class(unreal.CameraComponent)
+                try:
+                    station.set_editor_property("bHasBeenUsed", False)
+                    station.set_editor_property("bRequiresStabilizedRetry", False)
+                    station.set_editor_property("bLastUseSucceeded", True)
+                except Exception:
+                    pass
+                if mental:
+                    try:
+                        mental.set_editor_property("MentalState", 1.0)
+                        mental.set_editor_property("bIsFocusActive", False)
+                    except Exception:
+                        pass
+                try:
+                    detector.set_editor_property("InteractionRange", max(float(detector.get_editor_property("InteractionRange")), 260.0))
+                except Exception:
+                    pass
+
+                bounds_origin, bounds_extent = station.get_actor_bounds(False)
+                focus_target = bounds_origin
+                focus_extent = bounds_extent
+                focus_component_name = ""
+                try:
+                    for component in station.get_components_by_class(unreal.BoxComponent):
+                        if component and component.get_name() == "StationFocusTrace":
+                            focus_target = component.get_world_location()
+                            focus_extent = component.get_scaled_box_extent()
+                            focus_component_name = component.get_name()
+                            break
+                except Exception:
+                    pass
+
+                length = math.sqrt(float(focus_target.x) * float(focus_target.x) + float(focus_target.y) * float(focus_target.y))
+                if length < 1.0:
+                    direction_x = 1.0
+                    direction_y = 0.0
+                else:
+                    direction_x = float(focus_target.x) / length
+                    direction_y = float(focus_target.y) / length
+                approach_distance = max(115.0, min(170.0, max(float(focus_extent.x), float(focus_extent.y)) + 95.0))
+                approach = unreal.Vector(
+                    float(focus_target.x) - direction_x * approach_distance,
+                    float(focus_target.y) - direction_y * approach_distance,
+                    92.0,
+                )
+                eye_z = float(approach.z) + 75.0
+                horizontal = math.sqrt((float(focus_target.x) - float(approach.x)) ** 2 + (float(focus_target.y) - float(approach.y)) ** 2)
+                yaw = math.degrees(math.atan2(float(focus_target.y) - float(approach.y), float(focus_target.x) - float(approach.x)))
+                pitch = math.degrees(math.atan2(float(focus_target.z) - eye_z, max(1.0, horizontal)))
+
+                pawn.set_actor_location(approach, False, True)
+                pawn.set_actor_rotation(unreal.Rotator(0.0, 0.0, float(yaw)), False)
+                controller.set_control_rotation(unreal.Rotator(0.0, float(pitch), float(yaw)))
+                try:
+                    if camera:
+                        camera.set_world_rotation(unreal.Rotator(0.0, float(pitch), float(yaw)), False, None, False)
+                except Exception:
+                    pass
+
+                result.update({{
+                    "prompt": str(station.get_interaction_prompt()),
+                    "mesh": mesh.static_mesh.get_path_name() if mesh and mesh.static_mesh else "",
+                    "mesh_is_tripo": bool(mesh and mesh.static_mesh and "/Game/TripoModels/" in mesh.static_mesh.get_path_name()),
+                    "focus_component": focus_component_name,
+                    "pawn_location": [round(float(approach.x), 2), round(float(approach.y), 2), round(float(approach.z), 2)],
+                    "target_location": [round(float(focus_target.x), 2), round(float(focus_target.y), 2), round(float(focus_target.z), 2)],
+                    "control_rotation": [round(float(pitch), 2), round(float(yaw), 2), 0.0],
+                }})
+
+            result["success"] = not result["errors"]
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_player_station_read_and_interact_code(label: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        label = {json.dumps(label)}
+        result = {{
+            "success": True,
+            "errors": [],
+            "label": label,
+            "controller_class": "",
+            "pawn_class": "",
+            "detector_class": "",
+            "focused_label": "",
+            "focused_prompt": "",
+            "has_focus": False,
+            "station_used_before": False,
+            "station_used_after": False,
+            "last_use_succeeded": False,
+        }}
+
+        try:
+            worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            worlds = []
+        world = worlds[0] if worlds else None
+        if not world:
+            result["success"] = False
+            result["errors"].append("No PIE world available.")
+            print(json.dumps(result))
+        else:
+            controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+            detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+            station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+            detector = pawn.get_component_by_class(detector_cls) if pawn and detector_cls else None
+            stations = list(unreal.GameplayStatics.get_all_actors_of_class(world, station_cls)) if station_cls else []
+            station = next((actor for actor in stations if actor.get_actor_label() == label), None)
+
+            if not detector:
+                result["errors"].append("No interaction detector.")
+            if not station:
+                result["errors"].append("Missing station: " + label)
+            if controller:
+                result["controller_class"] = controller.get_class().get_name()
+            if pawn:
+                result["pawn_class"] = pawn.get_class().get_name()
+            if detector:
+                result["detector_class"] = detector.get_class().get_name()
+
+            if detector:
+                if controller:
+                    try:
+                        control_rotation = controller.get_control_rotation()
+                        result["controller_rotation"] = [round(float(control_rotation.pitch), 2), round(float(control_rotation.yaw), 2), round(float(control_rotation.roll), 2)]
+                    except Exception as exc:
+                        result["controller_rotation_error"] = str(exc)
+                    try:
+                        view_location, view_rotation = controller.get_player_view_point()
+                        view_direction = view_rotation.get_forward_vector()
+                        result["controller_view_location"] = [round(float(view_location.x), 2), round(float(view_location.y), 2), round(float(view_location.z), 2)]
+                        result["controller_view_rotation"] = [round(float(view_rotation.pitch), 2), round(float(view_rotation.yaw), 2), round(float(view_rotation.roll), 2)]
+                        result["controller_view_forward"] = [round(float(view_direction.x), 3), round(float(view_direction.y), 3), round(float(view_direction.z), 3)]
+                    except Exception as exc:
+                        result["controller_view_error"] = str(exc)
+                camera = pawn.get_component_by_class(unreal.CameraComponent) if pawn else None
+                if camera:
+                    try:
+                        camera_location = camera.get_world_location()
+                        camera_forward = camera.get_forward_vector()
+                        result["camera_location"] = [round(float(camera_location.x), 2), round(float(camera_location.y), 2), round(float(camera_location.z), 2)]
+                        result["camera_forward"] = [round(float(camera_forward.x), 3), round(float(camera_forward.y), 3), round(float(camera_forward.z), 3)]
+                    except Exception as exc:
+                        result["camera_report_error"] = str(exc)
+                try:
+                    focused = detector.get_editor_property("CurrentFocusedActor")
+                except Exception:
+                    focused = None
+                if focused:
+                    result["focused_label"] = focused.get_actor_label()
+                try:
+                    result["focused_prompt"] = str(detector.get_editor_property("CurrentPromptText"))
+                except Exception:
+                    result["focused_prompt"] = ""
+                try:
+                    result["has_focus"] = bool(detector.has_focused_actor())
+                except Exception:
+                    result["has_focus"] = bool(focused)
+
+            if station:
+                result["station_used_before"] = bool(station.get_editor_property("bHasBeenUsed"))
+
+            if detector and station and result["focused_label"] == label:
+                try:
+                    detector.attempt_interact()
+                except Exception as exc:
+                    result["errors"].append("AttemptInteract failed: " + str(exc))
+
+            if station:
+                result["station_used_after"] = bool(station.get_editor_property("bHasBeenUsed"))
+                result["last_use_succeeded"] = bool(station.get_editor_property("bLastUseSucceeded"))
+
+            if result["focused_label"] != label:
+                result["errors"].append("Focused actor was '" + result["focused_label"] + "', expected '" + label + "'.")
+            if not result["focused_prompt"]:
+                result["errors"].append("Focused prompt was empty.")
+            if not result["station_used_after"] or not result["last_use_succeeded"]:
+                result["errors"].append("Station did not complete through detector AttemptInteract.")
+
+            result["success"] = not result["errors"]
+            print(json.dumps(result))
+    """)
+
+
 def _insanitii_phase3_pie_runtime_probe_code(
     mode: str,
     wait_seconds: float,
@@ -831,6 +1493,8 @@ def _insanitii_phase3_pie_runtime_probe_code(
             world_reactivity_summary = ""
             world_reactivity_tracked_count = 0
             world_reactivity_intensity = None
+            world_reactivity_pattern_intensity = None
+            world_reactivity_pattern_actor_count = 0
             if world_reactivity:
                 try:
                     summary_fn = getattr(world_reactivity, "get_debug_summary", None)
@@ -846,9 +1510,19 @@ def _insanitii_phase3_pie_runtime_probe_code(
                     world_reactivity_intensity = float(world_reactivity.get_editor_property("current_reactive_intensity"))
                 except Exception:
                     world_reactivity_intensity = None
+                try:
+                    world_reactivity_pattern_intensity = float(world_reactivity.get_editor_property("current_pattern_flood_intensity"))
+                except Exception:
+                    world_reactivity_pattern_intensity = None
+                try:
+                    pattern_count_fn = getattr(world_reactivity, "get_pattern_flood_actor_count", None)
+                    world_reactivity_pattern_actor_count = int(pattern_count_fn()) if callable(pattern_count_fn) else 0
+                except Exception:
+                    world_reactivity_pattern_actor_count = 0
 
             hud_status = ""
             objective_marker_summary = ""
+            completion_summary = ""
             if hud:
                 try:
                     status_fn = getattr(hud, "get_demo_status_debug_summary", None)
@@ -860,6 +1534,11 @@ def _insanitii_phase3_pie_runtime_probe_code(
                     objective_marker_summary = str(marker_fn()) if callable(marker_fn) else ""
                 except Exception as exc:
                     objective_marker_summary = f"<error: {{exc}}>"
+                try:
+                    completion_fn = getattr(hud, "get_demo_completion_debug_summary", None)
+                    completion_summary = str(completion_fn()) if callable(completion_fn) else ""
+                except Exception as exc:
+                    completion_summary = f"<error: {{exc}}>"
 
             post_process_summary = ""
             task_feedback_pulse = None
@@ -885,6 +1564,7 @@ def _insanitii_phase3_pie_runtime_probe_code(
                 "hud_class": hud.get_class().get_name() if hud else "",
                 "hud_status": hud_status,
                 "objective_marker_summary": objective_marker_summary,
+                "completion_summary": completion_summary,
                 "post_process_summary": post_process_summary,
                 "task_feedback_pulse": task_feedback_pulse,
                 "task_feedback_color_shift": task_feedback_color_shift,
@@ -900,6 +1580,8 @@ def _insanitii_phase3_pie_runtime_probe_code(
                 "station_count": len(stations),
                 "world_reactivity_tracked_count": world_reactivity_tracked_count,
                 "world_reactivity_intensity": world_reactivity_intensity,
+                "world_reactivity_pattern_intensity": world_reactivity_pattern_intensity,
+                "world_reactivity_pattern_actor_count": world_reactivity_pattern_actor_count,
                 "world_reactivity_summary": world_reactivity_summary,
                 "cash_balance": float(_prop(economy, "cash_balance", "CashBalance", default=-1.0)) if economy else None,
                 "formatted_time": str(time_of_day.get_formatted_time()) if time_of_day and hasattr(time_of_day, "get_formatted_time") else "",
@@ -907,21 +1589,36 @@ def _insanitii_phase3_pie_runtime_probe_code(
 
         result["runtime"]["before_exercise"] = _read_runtime()
 
+        def _refresh_world_reactivity(debug_seconds=0.35):
+            if not world_reactivity:
+                return False
+            try:
+                refresh_fn = getattr(world_reactivity, "force_refresh_for_debug", None)
+                if callable(refresh_fn):
+                    refresh_fn(float(debug_seconds))
+                    return True
+            except Exception as exc:
+                result["exercise"]["errors"].append(f"world_reactivity_refresh: {{exc}}")
+            return False
+
         if hud and mental:
             anchor_samples = {{}}
             original_mental_state = float(_prop(mental, "mental_state", "MentalState", default=1.0))
             try:
                 mental.set_editor_property("MentalState", 1.0)
+                _refresh_world_reactivity(0.2)
                 time.sleep(0.1)
                 anchor_samples["clean"] = _read_runtime().get("objective_marker_summary", "")
 
                 mental.set_editor_property("MentalState", 0.15)
+                _refresh_world_reactivity(0.2)
                 time.sleep(0.1)
                 anchor_samples["strained"] = _read_runtime().get("objective_marker_summary", "")
 
                 if psychosis:
                     if not psychosis.is_event_active():
                         psychosis.start_random_psychosis_event(0.05)
+                    _refresh_world_reactivity(0.35)
                     time.sleep(0.2)
                     anchor_samples["psychosis"] = _read_runtime().get("objective_marker_summary", "")
                     if psychosis.is_event_active():
@@ -931,14 +1628,17 @@ def _insanitii_phase3_pie_runtime_probe_code(
                     false_fn = getattr(audio, "trigger_false_instruction_for_debug", None)
                     if callable(false_fn):
                         false_fn()
+                        _refresh_world_reactivity(0.2)
                         time.sleep(0.15)
                         anchor_samples["false_cue"] = _read_runtime().get("objective_marker_summary", "")
 
                 mental.set_editor_property("MentalState", original_mental_state)
+                _refresh_world_reactivity(0.2)
                 result["objective_anchor_samples"] = anchor_samples
             except Exception as exc:
                 try:
                     mental.set_editor_property("MentalState", original_mental_state)
+                    _refresh_world_reactivity(0.2)
                 except Exception:
                     pass
                 result["objective_anchor_samples"] = anchor_samples
@@ -952,9 +1652,11 @@ def _insanitii_phase3_pie_runtime_probe_code(
                     mental.set_editor_property("FocusCharges", 100.0)
                     mental.set_editor_property("bIsFocusActive", False)
                     breathe_result = bool(mental.attempt_breathe())
+                    _refresh_world_reactivity(0.2)
                     time.sleep(0.1)
                     breathe_after = _read_runtime()
                     focus_result = bool(mental.activate_focus(1.0))
+                    _refresh_world_reactivity(0.2)
                     time.sleep(0.1)
                     focus_after = _read_runtime()
                     try:
@@ -969,6 +1671,15 @@ def _insanitii_phase3_pie_runtime_probe_code(
                     }}
                 except Exception as exc:
                     result["exercise"]["errors"].append(f"stabilization_tools: {{exc}}")
+
+            if objective:
+                try:
+                    reset_objective = getattr(objective, "reset_slice_progress_for_debug", None)
+                    if callable(reset_objective):
+                        reset_objective()
+                        result["exercise"]["fresh_start_after_preflight"] = _read_runtime()
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"objective_fresh_start_reset: {{exc}}")
 
             ordered = [
                 ("food", "INS_TaskStation_Food_Sandwich"),
@@ -993,6 +1704,7 @@ def _insanitii_phase3_pie_runtime_probe_code(
                             mental.tick_mental_state(0.25)
                         except Exception:
                             pass
+                    _refresh_world_reactivity(0.35 if step_name == "stress" else 0.2)
                     time.sleep(0.1)
                     after = _read_runtime()
                     result["exercise"]["steps"].append({{"step": step_name, "station": label, "before": before, "after": after}})
@@ -1003,6 +1715,7 @@ def _insanitii_phase3_pie_runtime_probe_code(
                 try:
                     if not psychosis.is_event_active():
                         psychosis.start_random_psychosis_event(float(_prop(mental, "mental_state", "MentalState", default=0.0)) if mental else 0.0)
+                    _refresh_world_reactivity(0.35)
                     time.sleep(0.2)
                     result["exercise"]["after_psychosis_start"] = _read_runtime()
                     if psychosis.is_event_active():
@@ -1012,6 +1725,7 @@ def _insanitii_phase3_pie_runtime_probe_code(
                             mental.adjust_mental_state(1.0)
                         except Exception:
                             pass
+                    _refresh_world_reactivity(0.35)
                     time.sleep(0.1)
                     result["exercise"]["after_psychosis_end"] = _read_runtime()
                 except Exception as exc:
@@ -1022,6 +1736,7 @@ def _insanitii_phase3_pie_runtime_probe_code(
                 try:
                     before = _read_runtime()
                     _call(sleep_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.2)
                     time.sleep(0.1)
                     after = _read_runtime()
                     result["exercise"]["steps"].append({{"step": "sleep", "station": "INS_TaskStation_Sleep_Bed", "before": before, "after": after}})
@@ -1042,16 +1757,48 @@ def _insanitii_phase3_pie_runtime_probe_code(
                     mental.set_editor_property("MentalState", 0.05)
                     mental.set_editor_property("bIsFocusActive", False)
                     _call(friction_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.35)
                     time.sleep(0.1)
                     result["exercise"]["friction_slip"] = {{
                         "station": "INS_TaskStation_Grocery_Corner",
                         "station_used": bool(friction_station.get_editor_property("bHasBeenUsed")),
                         "last_use_succeeded": bool(friction_station.get_editor_property("bLastUseSucceeded")),
                         "friction_risk": float(friction_station.get_editor_property("LastFrictionRisk")),
+                        "requires_stabilized_retry": bool(friction_station.get_editor_property("bRequiresStabilizedRetry")),
+                        "used_stabilized_grace": bool(friction_station.get_editor_property("bLastRetryUsedStabilizedGrace")),
                         "feedback": str(friction_station.get_editor_property("LastUseFeedback")),
                         "after": _read_runtime(),
                     }}
-                    mental.set_editor_property("MentalState", 1.0)
+
+                    _call(friction_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    result["exercise"]["friction_unrecovered_retry"] = {{
+                        "station": "INS_TaskStation_Grocery_Corner",
+                        "station_used": bool(friction_station.get_editor_property("bHasBeenUsed")),
+                        "last_use_succeeded": bool(friction_station.get_editor_property("bLastUseSucceeded")),
+                        "friction_risk": float(friction_station.get_editor_property("LastFrictionRisk")),
+                        "requires_stabilized_retry": bool(friction_station.get_editor_property("bRequiresStabilizedRetry")),
+                        "used_stabilized_grace": bool(friction_station.get_editor_property("bLastRetryUsedStabilizedGrace")),
+                        "feedback": str(friction_station.get_editor_property("LastUseFeedback")),
+                        "after": _read_runtime(),
+                    }}
+
+                    mental.set_editor_property("MentalState", 0.30)
+                    mental.set_editor_property("bIsFocusActive", False)
+                    _call(friction_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    result["exercise"]["friction_stabilized_retry"] = {{
+                        "station": "INS_TaskStation_Grocery_Corner",
+                        "station_used": bool(friction_station.get_editor_property("bHasBeenUsed")),
+                        "last_use_succeeded": bool(friction_station.get_editor_property("bLastUseSucceeded")),
+                        "friction_risk": float(friction_station.get_editor_property("LastFrictionRisk")),
+                        "requires_stabilized_retry": bool(friction_station.get_editor_property("bRequiresStabilizedRetry")),
+                        "used_stabilized_grace": bool(friction_station.get_editor_property("bLastRetryUsedStabilizedGrace")),
+                        "feedback": str(friction_station.get_editor_property("LastUseFeedback")),
+                        "after": _read_runtime(),
+                    }}
                 except Exception as exc:
                     result["exercise"]["errors"].append(f"friction_slip: {{exc}}")
             else:
@@ -1395,12 +2142,15 @@ def _insanitii_world_reactivity_probe_code() -> str:
             try:
                 summary_fn = getattr(director, "get_debug_summary", None)
                 tracked_fn = getattr(director, "get_tracked_actor_count", None)
+                pattern_count_fn = getattr(director, "get_pattern_flood_actor_count", None)
                 director_probe = {
                     "success": True,
                     "label": director.get_actor_label(),
                     "class": director.get_class().get_name(),
                     "tracked_actor_count": int(tracked_fn()) if callable(tracked_fn) else -1,
+                    "pattern_flood_actor_count": int(pattern_count_fn()) if callable(pattern_count_fn) else -1,
                     "current_reactive_intensity": float(director.get_editor_property("current_reactive_intensity")),
+                    "current_pattern_flood_intensity": float(director.get_editor_property("current_pattern_flood_intensity")),
                     "debug_summary": str(summary_fn()) if callable(summary_fn) else "",
                     "reactive_actor_tag": str(director.get_editor_property("reactive_actor_tag")),
                 }
@@ -1670,6 +2420,39 @@ def _list_windows(process_name_contains: str = "UnrealEditor") -> Dict[str, Any]
 
     EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
     EnumChildProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    user32.EnumWindows.argtypes = [EnumWindowsProc, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, EnumChildProc, wintypes.LPARAM]
+    user32.EnumChildWindows.restype = wintypes.BOOL
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.restype = ctypes.c_int
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    psapi.GetModuleFileNameExW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.HMODULE,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+    ]
+    psapi.GetModuleFileNameExW.restype = wintypes.DWORD
 
     def _window_text(hwnd) -> str:
         length = user32.GetWindowTextLengthW(hwnd)
@@ -2095,6 +2878,381 @@ def register_editor_tools(mcp: FastMCP):
             return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
 
     @mcp.tool()
+    def insanitii_manual_control_readiness_report(
+        ctx: Context,
+        mode: str = "play",
+        wait_seconds: float = 10.0,
+        stop_after_probe: bool = True,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Launch PIE and verify possessed-player movement/look readiness for Insanitii.
+
+        KB: see knowledge_base/Projects/Insanitii/Phase3_Manual_Control_Readiness_2026-06-07.md#manual-control-readiness
+        Example:
+            insanitii_manual_control_readiness_report(mode="play", wait_seconds=10.0, stop_after_probe=True)
+
+        This is not a replacement for human feel testing. It proves the slice has a
+        possessed pawn, visible movement/look mappings, gameplay input components,
+        no obvious cursor trap, movement input response, and control rotation response.
+        """
+
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        def _mapping_identity(mapping: Dict[str, Any]) -> Dict[str, str]:
+            action = str(mapping.get("action_name") or mapping.get("action") or mapping.get("action_path") or "")
+            key = str(mapping.get("key") or mapping.get("key_name") or mapping.get("key_display_name") or "")
+            return {"action": action, "key": key}
+
+        def _collect_mapping_identities(report: Dict[str, Any]) -> List[Dict[str, str]]:
+            return [_mapping_identity(mapping) for mapping in report.get("mappings", []) if isinstance(mapping, dict)]
+
+        def _has_action_key(mappings: List[Dict[str, str]], action_fragment: str, key_fragment: str) -> bool:
+            action_fragment_lower = action_fragment.lower()
+            key_fragment_lower = key_fragment.lower()
+            for mapping in mappings:
+                if action_fragment_lower in mapping["action"].lower() and key_fragment_lower in mapping["key"].lower():
+                    return True
+            return False
+
+        def _has_action(mappings: List[Dict[str, str]], action_fragment: str) -> bool:
+            action_fragment_lower = action_fragment.lower()
+            return any(action_fragment_lower in mapping["action"].lower() for mapping in mappings)
+
+        def _angle_delta_degrees(before: Optional[List[float]], after: Optional[List[float]]) -> float:
+            if not before or not after or len(before) < 2 or len(after) < 2:
+                return 0.0
+            delta = abs(float(after[1]) - float(before[1]))
+            while delta > 180.0:
+                delta = abs(delta - 360.0)
+            return delta
+
+        def _distance(a: Optional[List[float]], b: Optional[List[float]]) -> float:
+            if not a or not b or len(a) < 3 or len(b) < 3:
+                return 0.0
+            return float(((float(a[0]) - float(b[0])) ** 2 + (float(a[1]) - float(b[1])) ** 2 + (float(a[2]) - float(b[2])) ** 2) ** 0.5)
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            imc_reports = []
+            for imc_path in ("/Game/FirstPerson/Input/IMC_Default", "/Game/Input/IMC_Default"):
+                imc_report = _native_or_python_json(
+                    "inspect_input_mapping_context",
+                    {"imc_path_or_name": imc_path},
+                    _insanitii_imc_fallback_code(imc_path),
+                )
+                imc_report["requested_path"] = imc_path
+                imc_reports.append(imc_report)
+
+            mapping_identities: List[Dict[str, str]] = []
+            for imc_report in imc_reports:
+                mapping_identities.extend(_collect_mapping_identities(imc_report))
+
+            missing_wasd = [key for key in ("W", "A", "S", "D") if not _has_action_key(mapping_identities, "Move", key)]
+            missing_mechanics = [
+                action for action in ("IA_Focus", "IA_Breathe", "IA_Interact", "IA_DebugDecreaseState", "IA_DebugIncreaseState", "IA_ToggleHUD")
+                if not _has_action(mapping_identities, action)
+            ]
+            has_mouse_look = any(
+                "Look" in mapping["action"] and ("Mouse" in mapping["key"] or "Turn" in mapping["key"] or "Look" in mapping["key"])
+                for mapping in mapping_identities
+            )
+
+            if missing_wasd:
+                failures.append("Missing First Person movement key mappings: " + ", ".join(missing_wasd) + ".")
+            if not has_mouse_look:
+                failures.append("Missing mouse look mapping for the First Person controller.")
+            if missing_mechanics:
+                failures.append("Missing Insanitii mechanic input mappings: " + ", ".join(missing_mechanics) + ".")
+
+            initial_status = _exec_python_json(_insanitii_pie_status_code())
+            launch_probe = _exec_python_json(_insanitii_pie_launch_request_code(mode))
+
+            deadline = time.time() + max(1.0, min(float(wait_seconds), 30.0))
+            ready_status: Dict[str, Any] = {}
+            while time.time() < deadline:
+                ready_status = _exec_python_json(_insanitii_pie_status_code())
+                if ready_status.get("is_in_play_in_editor") and int(ready_status.get("pie_world_count") or 0) > 0:
+                    break
+                time.sleep(0.25)
+
+            before = _exec_python_json(_insanitii_manual_control_runtime_read_code())
+            for _ in range(24):
+                _exec_python_json(_insanitii_manual_control_apply_move_code(1.0))
+                time.sleep(0.035)
+            after_move = _exec_python_json(_insanitii_manual_control_runtime_read_code())
+            look_apply = _exec_python_json(_insanitii_manual_control_apply_look_code(32.0))
+            time.sleep(0.05)
+            after_look = _exec_python_json(_insanitii_manual_control_runtime_read_code())
+
+            movement_distance = _distance(before.get("location"), after_move.get("location"))
+            control_rotation_delta = _angle_delta_degrees(before.get("control_rotation"), after_look.get("control_rotation"))
+
+            if not before.get("success"):
+                failures.append("Could not read PIE control state: " + "; ".join(str(error) for error in before.get("errors", [])))
+            if not before.get("controller_class"):
+                failures.append("No possessed player controller was found in PIE.")
+            if not before.get("pawn_class"):
+                failures.append("No possessed pawn was found in PIE.")
+            if not before.get("has_character_movement"):
+                failures.append("Possessed pawn did not expose a movement component.")
+            if before.get("show_mouse_cursor") is True:
+                failures.append("Player controller is showing the mouse cursor during gameplay control probe.")
+            if not before.get("has_mental_state"):
+                failures.append("Possessed pawn is missing Insanitii mental-state component.")
+            if not before.get("has_interaction_detector"):
+                failures.append("Possessed pawn is missing Insanitii interaction detector component.")
+            if movement_distance < 10.0:
+                failures.append(f"Movement input did not move the possessed pawn far enough: {movement_distance:.2f} cm.")
+            if control_rotation_delta < 10.0:
+                failures.append(f"Control rotation did not respond to look probe: {control_rotation_delta:.2f} degrees.")
+            if look_apply.get("success") is not True:
+                failures.append("Look probe failed: " + "; ".join(str(error) for error in look_apply.get("errors", [])))
+
+            stop_status: Dict[str, Any] = {}
+            if stop_after_probe:
+                _exec_python_json(_insanitii_pie_stop_request_code())
+                stop_deadline = time.time() + 5.0
+                while time.time() < stop_deadline:
+                    stop_status = _exec_python_json(_insanitii_pie_status_code())
+                    if not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0:
+                        break
+                    time.sleep(0.25)
+                if stop_status.get("is_in_play_in_editor") or int(stop_status.get("pie_world_count") or 0) > 0:
+                    failures.append("PIE did not stop cleanly after manual control readiness probe.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Manual control readiness",
+                "summary": {
+                    "bridge_ping": ping,
+                    "controller_class": before.get("controller_class"),
+                    "pawn_class": before.get("pawn_class"),
+                    "movement_component_class": before.get("movement_component_class"),
+                    "movement_distance_cm": movement_distance,
+                    "control_rotation_delta_degrees": control_rotation_delta,
+                    "has_mouse_look_mapping": has_mouse_look,
+                    "missing_wasd": missing_wasd,
+                    "missing_mechanics": missing_mechanics,
+                    "show_mouse_cursor": before.get("show_mouse_cursor"),
+                    "stopped_cleanly": bool(not stop_after_probe or (stop_status and not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0)),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "initial_status": initial_status,
+                    "launch_probe": launch_probe,
+                    "ready_status": ready_status,
+                    "input_mappings": {
+                        "reports": imc_reports,
+                        "flattened": mapping_identities,
+                    },
+                    "before": before,
+                    "after_move": after_move,
+                    "look_apply": look_apply,
+                    "after_look": after_look,
+                    "stop": stop_status,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "remaining_human_feel_checklist": [
+                    "Walk the full Day 1 route with WASD and mouse, not scripted station calls.",
+                    "Confirm mouse sensitivity and objective marker readability feel comfortable.",
+                    "Listen for station, voice, psychosis, and stabilization sounds in speakers/headphones.",
+                    "Confirm psychosis VFX are readable and not nauseating at default intensity.",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii manual control readiness report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_player_station_interaction_route_report(
+        ctx: Context,
+        mode: str = "play",
+        wait_seconds: float = 10.0,
+        stop_after_probe: bool = True,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Launch PIE and verify player-view interaction traces for every Day 1 task station.
+
+        KB: see knowledge_base/Projects/Insanitii/Phase3_Player_Station_Interaction_Route_2026-06-07.md#player-station-interaction-route
+        Example:
+            insanitii_player_station_interaction_route_report(mode="play", wait_seconds=10.0, stop_after_probe=True)
+
+        This proves the possessed first-person pawn can be placed at each station approach,
+        look through its camera at the Tripo-backed station mesh, resolve the station through
+        the same visibility trace shape the detector uses, and complete through
+        UInsanitiiInteractionDetectorComponent::AttemptInteract.
+        """
+        warnings: List[str] = []
+        failures: List[str] = []
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            bounded_wait = max(0.5, min(float(wait_seconds), 15.0))
+            initial_status = _exec_python_json(_insanitii_pie_status_code())
+            launch_probe: Dict[str, Any] = {
+                "success": True,
+                "requested_mode": mode,
+                "launch_requested": False,
+                "was_in_pie": bool(initial_status.get("is_in_play_in_editor")),
+            }
+            if not initial_status.get("is_in_play_in_editor"):
+                launch_probe = _exec_python_json(_insanitii_pie_launch_request_code(mode))
+                time.sleep(bounded_wait)
+
+            station_labels = [
+                "INS_TaskStation_Food_Sandwich",
+                "INS_TaskStation_Medication",
+                "INS_TaskStation_Sleep_Bed",
+                "INS_TaskStation_Grocery_Corner",
+                "INS_TaskStation_Laundry_Washer",
+                "INS_TaskStation_Package_Dropoff",
+                "INS_TaskStation_Commute_Car",
+                "INS_TaskStation_Work_EmailTriage",
+                "INS_TaskStation_Stress_OverwhelmingNoise",
+                "INS_TaskStation_Grounding_Card",
+                "INS_TaskStation_Grounding_Snack",
+            ]
+            route: List[Dict[str, Any]] = []
+            controller_class = ""
+            pawn_class = ""
+            detector_class = ""
+            for station_label in station_labels:
+                prepare = _exec_python_json(_insanitii_player_station_prepare_focus_code(station_label))
+                time.sleep(0.55)
+                sample = _exec_python_json(_insanitii_player_station_read_and_interact_code(station_label))
+                row: Dict[str, Any] = {
+                    "label": station_label,
+                    "prepare": prepare,
+                    "sample": sample,
+                    "mesh_is_tripo": bool(prepare.get("mesh_is_tripo")),
+                    "focus_ready": bool(sample.get("focused_label") == station_label and sample.get("focused_prompt")),
+                    "interaction_succeeded": bool(sample.get("station_used_after") and sample.get("last_use_succeeded")),
+                    "focused_label": sample.get("focused_label", ""),
+                    "focused_prompt": sample.get("focused_prompt", ""),
+                    "prompt": prepare.get("prompt", ""),
+                    "pawn_location": prepare.get("pawn_location"),
+                    "target_location": prepare.get("target_location"),
+                    "control_rotation": prepare.get("control_rotation"),
+                }
+                route.append(row)
+                if not prepare.get("success"):
+                    failures.extend(str(error) for error in prepare.get("errors", []))
+                if not sample.get("success"):
+                    failures.extend(str(error) for error in sample.get("errors", []))
+
+            probe: Dict[str, Any] = {
+                "success": not any(not row.get("focus_ready") or not row.get("interaction_succeeded") or not row.get("mesh_is_tripo") for row in route),
+                "route": route,
+            }
+
+            stop_request: Dict[str, Any] = {}
+            stop_status: Dict[str, Any] = {}
+            if stop_after_probe:
+                stop_request = _exec_python_json(_insanitii_pie_stop_request_code())
+                stop_deadline = time.time() + 5.0
+                while time.time() < stop_deadline:
+                    stop_status = _exec_python_json(_insanitii_pie_status_code())
+                    if not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0:
+                        break
+                    time.sleep(0.25)
+                if stop_status.get("is_in_play_in_editor") or int(stop_status.get("pie_world_count") or 0) > 0:
+                    failures.append("PIE did not stop cleanly after player station interaction probe.")
+
+            route_count = len(route)
+            focus_success_count = sum(1 for row in route if row.get("focus_ready"))
+            prompt_success_count = sum(1 for row in route if row.get("focused_prompt"))
+            interaction_success_count = sum(1 for row in route if row.get("interaction_succeeded"))
+            tripo_success_count = sum(1 for row in route if row.get("mesh_is_tripo"))
+            for row in route:
+                prepare = row.get("prepare") if isinstance(row.get("prepare"), dict) else {}
+                sample = row.get("sample") if isinstance(row.get("sample"), dict) else {}
+                controller_class = controller_class or str(sample.get("controller_class") or prepare.get("controller_class") or "")
+                pawn_class = pawn_class or str(sample.get("pawn_class") or prepare.get("pawn_class") or "")
+                detector_class = detector_class or str(sample.get("detector_class") or prepare.get("detector_class") or "")
+
+            if route_count < 11:
+                failures.append(f"Expected 11 station interaction route samples; got {route_count}.")
+            if focus_success_count < route_count:
+                failures.append("Not every station became the detector's focused actor.")
+            if prompt_success_count < route_count:
+                failures.append("Not every station produced a detector prompt.")
+            if interaction_success_count < route_count:
+                failures.append("Not every station completed through detector AttemptInteract.")
+            if tripo_success_count < route_count:
+                failures.append("Not every station used a direct Tripo mesh.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Player station interaction route",
+                "summary": {
+                    "bridge_ping": ping,
+                    "controller_class": controller_class,
+                    "pawn_class": pawn_class,
+                    "detector_class": detector_class,
+                    "route_count": route_count,
+                    "focus_success_count": focus_success_count,
+                    "prompt_success_count": prompt_success_count,
+                    "interaction_success_count": interaction_success_count,
+                    "tripo_success_count": tripo_success_count,
+                    "stopped_cleanly": bool(not stop_after_probe or (stop_status and not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0)),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "initial_status": initial_status,
+                    "launch_probe": launch_probe,
+                    "probe": probe,
+                    "stop_request": stop_request,
+                    "stop_status": stop_status,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii player station interaction route report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
     def insanitii_phase2_lifestyle_report(
         ctx: Context,
         include_dialogs: bool = True,
@@ -2492,6 +3650,7 @@ def register_editor_tools(mcp: FastMCP):
             director = probe.get("director", {}) if isinstance(probe, dict) else {}
             reactive_actor_count = int(probe.get("reactive_actor_count") or 0) if isinstance(probe, dict) else 0
             tracked_actor_count = int(director.get("tracked_actor_count") or 0) if isinstance(director, dict) else 0
+            pattern_flood_actor_count = int(director.get("pattern_flood_actor_count") or 0) if isinstance(director, dict) else 0
 
             if not class_check.get("success"):
                 failures.append("InsanitiiWorldReactiveDirector native class is not visible to Unreal reflection.")
@@ -2501,6 +3660,8 @@ def register_editor_tools(mcp: FastMCP):
                 failures.append("Expected at least 40 tagged Day 1 reactive set-dressing actors.")
             if tracked_actor_count < 40:
                 failures.append("World reactive director did not bind at least 40 tagged actors.")
+            if pattern_flood_actor_count < 5:
+                failures.append("World reactive director did not bind at least five text actors for pattern flood.")
 
             errors = probe.get("errors") or [] if isinstance(probe, dict) else []
             if errors:
@@ -2523,6 +3684,8 @@ def register_editor_tools(mcp: FastMCP):
                     "director_present": bool(director.get("success")),
                     "reactive_actor_count": reactive_actor_count,
                     "tracked_actor_count": tracked_actor_count,
+                    "pattern_flood_actor_count": pattern_flood_actor_count,
+                    "current_pattern_flood_intensity": director.get("current_pattern_flood_intensity"),
                     "debug_summary": director.get("debug_summary", ""),
                 },
                 "checks": probe,
@@ -2718,6 +3881,10 @@ def register_editor_tools(mcp: FastMCP):
                 int(before.get("world_reactivity_tracked_count") or 0),
                 int(after.get("world_reactivity_tracked_count") or 0),
             )
+            world_reactivity_pattern_actor_count = max(
+                int(before.get("world_reactivity_pattern_actor_count") or 0),
+                int(after.get("world_reactivity_pattern_actor_count") or 0),
+            )
             controller_class = str(before.get("controller_class") or "")
             pawn_class = str(before.get("pawn_class") or "")
             hud_class = str(before.get("hud_class") or "")
@@ -2746,10 +3913,14 @@ def register_editor_tools(mcp: FastMCP):
                 failures.append("No psychosis event director readback was available in PIE.")
             if world_reactivity_tracked_count < 40:
                 failures.append("World reactivity director did not bind at least 40 Day 1 set-dressing actors in PIE.")
+            if world_reactivity_pattern_actor_count < 5:
+                failures.append("World reactivity director did not bind at least five text actors for pattern flood in PIE.")
 
             exercise_errors = exercise.get("errors") or []
             exercise_steps = exercise.get("steps") or []
             friction_slip = exercise.get("friction_slip") or {}
+            friction_unrecovered_retry = exercise.get("friction_unrecovered_retry") or {}
+            friction_stabilized_retry = exercise.get("friction_stabilized_retry") or {}
             stabilization_tools = exercise.get("stabilization_tools") or {}
             if exercise_loop:
                 if exercise_errors:
@@ -2796,23 +3967,48 @@ def register_editor_tools(mcp: FastMCP):
                     failures.append("Scripted PIE friction slip unexpectedly completed the station.")
                 elif float(friction_slip.get("friction_risk") or 0.0) <= 0.0:
                     failures.append("Scripted PIE friction slip did not report positive friction risk.")
+                elif not friction_slip.get("requires_stabilized_retry"):
+                    failures.append("Scripted PIE friction slip did not require a stabilized retry.")
                 elif "Task slipped" not in friction_hud_status or "Friction risk" not in friction_hud_status:
                     failures.append("Scripted PIE friction slip did not produce HUD slip feedback.")
                 elif float((friction_slip.get("after") or {}).get("task_feedback_pulse") or 0.0) <= 0.0:
                     failures.append("Scripted PIE friction slip did not produce a distortion post-process pulse.")
                 elif float((friction_slip.get("after") or {}).get("task_feedback_color_shift") or 0.0) <= 0.0:
                     failures.append("Scripted PIE friction slip did not produce a warm color-shift pulse.")
+                if not friction_unrecovered_retry:
+                    failures.append("Scripted PIE friction unrecovered retry check did not run.")
+                elif friction_unrecovered_retry.get("station_used") or friction_unrecovered_retry.get("last_use_succeeded"):
+                    failures.append("Scripted PIE unrecovered retry unexpectedly completed the station.")
+                elif not friction_unrecovered_retry.get("requires_stabilized_retry"):
+                    failures.append("Scripted PIE unrecovered retry cleared the stabilized retry requirement.")
+                elif "Breathe or focus" not in str(friction_unrecovered_retry.get("feedback") or ""):
+                    failures.append("Scripted PIE unrecovered retry did not direct the player to breathe or focus.")
+                if not friction_stabilized_retry:
+                    failures.append("Scripted PIE friction stabilized retry check did not run.")
+                elif not friction_stabilized_retry.get("station_used") or not friction_stabilized_retry.get("last_use_succeeded"):
+                    failures.append("Scripted PIE stabilized retry did not complete the station.")
+                elif friction_stabilized_retry.get("requires_stabilized_retry"):
+                    failures.append("Scripted PIE stabilized retry did not clear the retry requirement.")
+                elif not friction_stabilized_retry.get("used_stabilized_grace"):
+                    failures.append("Scripted PIE stabilized retry did not use the recovery grace path.")
                 completion = after.get("objective_completion_percent")
                 if completion is not None and float(completion) < 1.0:
                     warnings.append("Scripted loop completed without errors but objective completion stayed below 100 percent.")
+                completion_summary = str(after.get("completion_summary") or "")
+                if completion is not None and float(completion) >= 1.0 and "Complete true" not in completion_summary:
+                    failures.append("Scripted PIE Day 1 loop reached 100 percent but the HUD completion readback did not report Complete true.")
                 stress_intensity = None
+                stress_pattern_intensity = None
                 for step in exercise_steps:
                     if step.get("step") == "stress":
                         stress_after = step.get("after") or {}
                         stress_intensity = stress_after.get("world_reactivity_intensity")
+                        stress_pattern_intensity = stress_after.get("world_reactivity_pattern_intensity")
                         break
                 if stress_intensity is not None and float(stress_intensity) <= 0.0:
                     warnings.append("World reactivity intensity did not rise during the scripted stress beat.")
+                if stress_pattern_intensity is not None and float(stress_pattern_intensity) <= 0.0:
+                    warnings.append("Pattern flood intensity did not rise during the scripted stress beat.")
 
             if stop_after_probe:
                 if stop and (stop.get("is_in_play_in_editor") or int(stop.get("pie_world_count") or 0) > 0):
@@ -2864,10 +4060,13 @@ def register_editor_tools(mcp: FastMCP):
                     "objective_marker_summary": objective_marker_summary,
                     "objective_anchor_samples": objective_anchor_samples if isinstance(objective_anchor_samples, dict) else {},
                     "objective_completion_percent": after.get("objective_completion_percent", before.get("objective_completion_percent")),
+                    "completion_summary": after.get("completion_summary", before.get("completion_summary")),
                     "psychosis_active": bool(after.get("psychosis_active", before.get("psychosis_active", False))),
                     "station_count": station_count,
                     "world_reactivity_tracked_count": world_reactivity_tracked_count,
                     "world_reactivity_intensity": after.get("world_reactivity_intensity", before.get("world_reactivity_intensity")),
+                    "world_reactivity_pattern_actor_count": world_reactivity_pattern_actor_count,
+                    "world_reactivity_pattern_intensity": after.get("world_reactivity_pattern_intensity", before.get("world_reactivity_pattern_intensity")),
                     "exercise_step_count": len(exercise_steps),
                     "exercise_error_count": len(exercise_errors),
                     "stopped_cleanly": bool(stop_after_probe and stop and not stop.get("is_in_play_in_editor") and int(stop.get("pie_world_count") or 0) == 0),
@@ -2977,6 +4176,8 @@ def register_editor_tools(mcp: FastMCP):
         except Exception as e:
             logger.error(f"Error building Insanitii audio feedback report: {e}")
             return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    register_static_mesh_section_tools(mcp)
 
     @mcp.tool()
     def get_actors_in_level(ctx: Context) -> str:

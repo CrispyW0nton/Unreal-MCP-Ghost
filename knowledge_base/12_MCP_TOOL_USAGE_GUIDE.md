@@ -29,7 +29,7 @@
 ```bash
 python3 sandbox_ue5cli.py get_actors_in_level '{}'
 ```
-If this returns actors or an empty array, the plugin is connected on port **55557**.
+If this returns actors or an empty array, the plugin is connected on port **55655**.
 
 ### Get UE5 Version
 ```bash
@@ -2316,7 +2316,7 @@ as references for retargeting, animation validation, and performance audits.
 ### Overview
 
 The import pipeline uses **three communication channels**:
-- **TCP 55557** → UE5 C++ plugin (all existing 315 tools)
+- **TCP 55655** → UE5 C++ plugin (all existing 315 tools)
 - **HTTP 7001** → GhostRigger IPC server (KotOR model pipeline)
 - **Filesystem export folder** → shared path for FBX/texture transfer
 

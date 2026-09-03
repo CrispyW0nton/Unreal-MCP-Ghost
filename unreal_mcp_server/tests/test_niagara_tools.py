@@ -1,6 +1,7 @@
 import unittest
 import sys
 from pathlib import Path
+from unittest.mock import patch
 
 
 _SERVER_ROOT = Path(__file__).resolve().parents[1]
@@ -44,6 +45,7 @@ class TestNiagaraToolsRegistration(unittest.TestCase):
                 "niagara_set_spawn_rate",
                 "niagara_add_sprite_renderer",
                 "niagara_add_mesh_renderer",
+                "add_niagara_component",
                 "niagara_describe_system",
                 "niagara_apply_system_settings",
                 "niagara_set_fixed_bounds",
@@ -54,6 +56,36 @@ class TestNiagaraToolsRegistration(unittest.TestCase):
 
 
 class TestNiagaraRecipe(unittest.IsolatedAsyncioTestCase):
+    async def test_add_niagara_component_calls_native_route(self):
+        from tools.niagara_tools import register_niagara_tools
+
+        mcp = _MockMCP()
+        register_niagara_tools(mcp)
+        calls = []
+
+        def fake_send(command, params):
+            calls.append((command, params))
+            return {
+                "success": True,
+                "blueprint": params["blueprint_name"],
+                "component_name": params["component_name"],
+                "niagara_system": params["niagara_system_path"],
+            }
+
+        with patch("tools.niagara_tools._send", side_effect=fake_send):
+            result = await mcp.get_tool("add_niagara_component")(
+                None,
+                blueprint_name="/Game/BP_BlackHoleFX",
+                component_name="BlackHoleNiagara",
+                niagara_system_path="/Game/VFX/NS_BlackHole",
+            )
+
+        self.assertTrue(result["success"])
+        self.assertEqual(result["outputs"]["component_name"], "BlackHoleNiagara")
+        self.assertEqual(calls[0][0], "add_niagara_component")
+        self.assertEqual(calls[0][1]["blueprint_name"], "/Game/BP_BlackHoleFX")
+        self.assertEqual(calls[0][1]["niagara_system_path"], "/Game/VFX/NS_BlackHole")
+
     async def test_blackhole_recipe_is_niagara_first(self):
         from tools.niagara_tools import register_niagara_tools
 

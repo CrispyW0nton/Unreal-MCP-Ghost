@@ -37,13 +37,13 @@ You (AI agent)
 unreal_mcp_server.py          ← MCP server on the developer's machine
   │                              Running in SSE mode for remote agents:
   │                              python unreal_mcp_server.py --transport sse
-  │                                --mcp-host 0.0.0.0 --mcp-port 8000
+  │                                --mcp-host 127.0.0.1 --mcp-port 8000
   │                                --unreal-host <playit-address>
   │                                --unreal-port <playit-port>
   │
-  │  TCP JSON  port 55557  (via Playit tunnel if UE5 is on a remote machine)
+  │  TCP JSON  port 55655  (via Playit tunnel if UE5 is on a remote machine)
   ▼
-UnrealMCP C++ Plugin          ← compiled into the UE5 project, listening on localhost:55557
+UnrealMCP C++ Plugin          ← compiled into the UE5 project, listening on localhost:55655
   │
   │  UE5 Editor API (GameThread)
   ▼
@@ -65,9 +65,9 @@ get_actors_in_level()
 - ✅ Returns a list of actors → connected, proceed.
 - ❌ Returns a connection error → **STOP**. Tell the user:
   > "The MCP server cannot reach the UnrealMCP plugin. Please confirm:
-  > 1. UE5 is open with the UnrealMCP plugin enabled (Output Log should show 'Server started on 127.0.0.1:55557')
+  > 1. UE5 is open with the UnrealMCP plugin enabled (Output Log should show 'Server started on 127.0.0.1:55655')
   > 2. The MCP server is running: `python unreal_mcp_server.py --transport sse --unreal-host <address> --unreal-port <port>`
-  > 3. The Playit tunnel for UE5 (port 55557) is active"
+  > 3. The Playit tunnel for UE5 (port 55655) is active"
 
 Check engine version:
 ```

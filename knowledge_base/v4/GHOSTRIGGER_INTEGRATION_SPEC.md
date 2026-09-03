@@ -72,7 +72,7 @@ def ipc_call(port, action, payload=None, sender="GhostRigger", timeout=2.0):
 │                                                                      │
 │  ┌──────────────┐  ┌──────────────────┐  ┌───────────────────────┐  │
 │  │ UE5 Tools    │  │ GhostRigger      │  │ Folder Import         │  │
-│  │ (TCP:55557)  │  │ Bridge Tools     │  │ Tools                 │  │
+│  │ (TCP:55655)  │  │ Bridge Tools     │  │ Tools                 │  │
 │  │              │  │ (HTTP:7001)      │  │ (Filesystem)          │  │
 │  │ 311 existing │  │ NEW ~15 tools    │  │ NEW ~8 tools          │  │
 │  └──────┬───────┘  └────────┬─────────┘  └──────────┬────────────┘  │
@@ -82,7 +82,7 @@ def ipc_call(port, action, payload=None, sender="GhostRigger", timeout=2.0):
           │                  │                        │
 ┌─────────▼──────┐  ┌───────▼─────────┐  ┌──────────▼─────────────┐
 │  UE5 C++ Plugin│  │  GhostRigger    │  │  Export Folder         │
-│  Port 55557    │  │  Port 7001      │  │  (User's disk)         │
+│  Port 55655    │  │  Port 7001      │  │  (User's disk)         │
 │  119 commands  │  │  IPC + MCP      │  │  FBX/OBJ/glTF/WAV/PNG │
 │                │  │  5007 tests     │  │                        │
 │  ┌───────────┐ │  │  ┌────────────┐ │  │  Watched or scanned   │
@@ -95,7 +95,7 @@ def ipc_call(port, action, payload=None, sender="GhostRigger", timeout=2.0):
 ### Communication Protocols
 | Connection | Protocol | Port | Direction |
 |------------|----------|------|-----------|
-| MCP Server → UE5 Plugin | TCP JSON | 55557 | Server → Plugin |
+| MCP Server → UE5 Plugin | TCP JSON | 55655 | Server → Plugin |
 | MCP Server → GhostRigger | HTTP JSON | 7001 | Server → GhostRigger |
 | GhostRigger → GModular | HTTP JSON | 7003 | GhostRigger → GModular |
 | MCP Server → Filesystem | OS API | N/A | Server reads export folder |
@@ -470,7 +470,7 @@ class UnrealConnection:
     
     def connect(self) -> bool:
         self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket.connect((UNREAL_HOST, UNREAL_PORT))  # default 127.0.0.1:55557
+        self.socket.connect((UNREAL_HOST, UNREAL_PORT))  # default 127.0.0.1:55655
         self.connected = True
     
     def send_command(self, command, params=None):

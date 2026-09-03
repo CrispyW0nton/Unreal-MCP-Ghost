@@ -97,6 +97,7 @@ class TestD4TripoAutoImport(unittest.IsolatedAsyncioTestCase):
                     "imported_object_paths": ["/Game/Generated/Enemies/SM_Slime.SM_Slime"],
                     "material_instance": "/Game/Generated/Enemies/MI_SM_Slime",
                     "blueprint": "",
+                    "workspace_preview_handoff_path": "C:/Project/Saved/MCPChat/generative_workspace_preview.json",
                 },
                 "warnings": [],
                 "errors": [],
@@ -128,6 +129,11 @@ class TestD4TripoAutoImport(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(calls["imports"][0]["file_path"], calls["downloads"][0][1])
         self.assertEqual(calls["imports"][0]["content_path"], "/Game/Generated/Enemies")
         self.assertEqual(payload["outputs"]["asset_paths"]["primary_asset"], "/Game/Generated/Enemies/SM_Slime")
+        self.assertEqual(payload["outputs"]["preview_asset_path"], "/Game/Generated/Enemies/SM_Slime")
+        self.assertEqual(payload["outputs"]["preview_asset_reference"], "@asset:/Game/Generated/Enemies/SM_Slime")
+        self.assertEqual(payload["outputs"]["tripo_workspace_handoff"]["unreal_config_key"], "PreviewAssetPath")
+        self.assertEqual(payload["outputs"]["tripo_workspace_handoff"]["handoff_file"], "Saved/MCPChat/generative_workspace_preview.json")
+        self.assertEqual(payload["outputs"]["tripo_workspace_handoff"]["handoff_file_path"], "C:/Project/Saved/MCPChat/generative_workspace_preview.json")
         self.assertEqual(payload["outputs"]["thumbnail"]["path"], "C:/Repo/.mcp_artifacts/screenshots/slime.png")
         self.assertEqual(calls["thumbs"][0], ("task-d4", "SM_Slime"))
 
@@ -154,6 +160,10 @@ class TestD4TripoAutoImport(unittest.IsolatedAsyncioTestCase):
 
         self.assertIn("Auto-Import Bridge", kb_text)
         self.assertIn("gen_tripo_import_to_project", kb_text)
+        self.assertIn("preview_asset_path", kb_text)
+        self.assertIn("tripo_workspace_handoff", generative_text)
+        self.assertIn("generative_workspace_preview.json", generative_text)
+        self.assertIn("workspace_preview_handoff_path", generative_text)
         self.assertIn("gen_tripo_import_to_project", generative_text)
         self.assertIn("D.4 - Tripo auto-import bridge", changelog_text)
 

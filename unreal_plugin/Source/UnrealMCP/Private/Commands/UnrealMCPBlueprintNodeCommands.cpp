@@ -336,11 +336,11 @@ UEdGraph* FUnrealMCPBlueprintNodeCommands::ResolveGraph(
     {
         // Search UbergraphPages + FunctionGraphs + MacroGraphs
         for (UEdGraph* G : BP->UbergraphPages)
-            if (G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) return G;
+            if (G && G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) return G;
         for (UEdGraph* G : BP->FunctionGraphs)
-            if (G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) return G;
+            if (G && G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) return G;
         for (UEdGraph* G : BP->MacroGraphs)
-            if (G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) return G;
+            if (G && G->GetName().Equals(GraphName, ESearchCase::IgnoreCase)) return G;
 
         OutError = FString::Printf(TEXT("Graph not found: %s"), *GraphName);
         return nullptr;
@@ -648,7 +648,7 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleBPAddNode(
     Node->AllocateDefaultPins();
 
     UBlueprint* BP = FBlueprintEditorUtils::FindBlueprintForGraph(Graph);
-    FUnrealMCPCommonUtils::SafeMarkBlueprintModified(BP);
+    FUnrealMCPCommonUtils::SafeMarkBlueprintModifiedDeferred(BP);
 
     TSharedPtr<FJsonObject> Result = SerializeNode(Node);
     Result->SetBoolField(TEXT("success"), true);
@@ -2176,8 +2176,9 @@ TSharedPtr<FJsonObject> FUnrealMCPBlueprintNodeCommands::HandleAddBlueprintFunct
     {
         for (auto& KV : (*InlineParams)->Values)
         {
-            UEdGraphPin* Pin = FUnrealMCPCommonUtils::FindPin(FuncNode, KV.Key);
-            if (!Pin) { UE_LOG(LogMCPNode, Warning, TEXT("  pin '%s' not found on node"), *KV.Key); continue; }
+            const FString PinName(KV.Key);
+            UEdGraphPin* Pin = FUnrealMCPCommonUtils::FindPin(FuncNode, PinName);
+            if (!Pin) { UE_LOG(LogMCPNode, Warning, TEXT("  pin '%s' not found on node"), *PinName); continue; }
             FString StrVal;
             if (KV.Value->Type == EJson::String)       { StrVal = KV.Value->AsString(); }
             else if (KV.Value->Type == EJson::Number)  { StrVal = FString::SanitizeFloat(KV.Value->AsNumber()); }

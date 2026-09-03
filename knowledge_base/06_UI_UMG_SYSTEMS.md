@@ -53,6 +53,8 @@
 | `Spacer` | Empty space for layout |
 | `Rich Text Block` | Text with inline styling |
 
+Automation note: the MCP UMG `BrushSize` property remains the command-facing name for image sizing, but the native plugin applies it through `UImage::SetDesiredSizeOverride` so UE 5.6 builds avoid the deprecated `SetBrushSize` API.
+
 ### Interactive Widgets
 | Widget | Purpose |
 |--------|---------|
@@ -337,3 +339,23 @@ Common examples:
 Keep binding functions small and side-effect free. For high-frequency gameplay
 HUD updates, prefer event-driven variable updates when possible; use bindings
 for simple read-only display values.
+
+### Event-Driven Widget Workflows
+
+Use `bind_widget_component_event` when generated UI needs a named sub-widget to
+drive gameplay or menu flow through a precise event node.
+
+```
+bind_widget_component_event(
+  widget_blueprint_path="/Game/UI/WBP_MainMenu",
+  widget_name="BTN_Start",
+  event_name="OnClicked"
+)
+```
+
+Prefer this route over the older generic `bind_widget_event` when a Widget
+Blueprint contains multiple buttons, sliders, or controls of the same class. The
+native command binds the delegate to the specific widget property, promotes the
+sub-widget to a Blueprint variable when needed, and returns the event node GUID
+for follow-up graph wiring. After binding, inspect the Widget Blueprint graph,
+compile/read diagnostics, and record the node ID in the evidence ledger.

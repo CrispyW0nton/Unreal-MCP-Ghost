@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0.0",
 	"FriendlyName": "UnrealMCP",
-	"Description": "Model Context Protocol (MCP) bridge for Unreal Engine 5.6. Enables AI assistants (Claude, Cursor, etc.) to create and manipulate Blueprints, actors, materials, AI, UMG widgets, save systems, VR, procedural generation, and more via 283 registered tools covering all 20 chapters of Blueprints Visual Scripting for UE5.",
+	"Description": "Model Context Protocol (MCP) bridge for Unreal Engine 5.6. Enables AI assistants (Claude, Cursor, etc.) to manipulate Blueprints, actors, materials, AI, UMG widgets, animation, imports, diagnostics, repair workflows, and an in-editor MCP Chat panel backed by the Python FastMCP server.",
 	"Category": "AI Tools",
 	"CreatedBy": "CrispyW0nton",
 	"CreatedByURL": "https://github.com/CrispyW0nton/Unreal-MCP-Ghost",
@@ -62,10 +62,6 @@
 		},
 		{
 			"Name": "SmartObjects",
-			"Enabled": true
-		},
-		{
-			"Name": "StructUtils",
 			"Enabled": true
 		},
 		{

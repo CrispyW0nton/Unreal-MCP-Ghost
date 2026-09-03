@@ -10,6 +10,7 @@
 #include "Engine/SkeletalMesh.h"
 #include "IHasContext.h"
 #include "Math/Interval.h"
+#include "Misc/EngineVersionComparison.h"
 #include "Misc/Paths.h"
 #include "Misc/ScopedSlowTask.h"
 #include "ObjectChooser_Asset.h"
@@ -336,14 +337,23 @@ TSharedPtr<FJsonObject> FUnrealMCPMotionCommands::HandleCreatePoseSearchDatabase
             return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Could not load AnimSequence: %s"), *SequencePath));
         }
 
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)
+        FPoseSearchDatabaseAnimationAsset DatabaseSequence;
+        DatabaseSequence.AnimAsset = Sequence;
+#else
         FPoseSearchDatabaseSequence DatabaseSequence;
         DatabaseSequence.Sequence = Sequence;
+#endif
 #if WITH_EDITORONLY_DATA
         DatabaseSequence.bEnabled = true;
         DatabaseSequence.bDisableReselection = false;
         DatabaseSequence.MirrorOption = EPoseSearchMirrorOption::UnmirroredOnly;
 #endif
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)
+        Database->AddAnimationAsset(DatabaseSequence);
+#else
         Database->AddAnimationAsset(FInstancedStruct::Make(DatabaseSequence));
+#endif
     }
 
     Database->NotifyDerivedDataRebuild();
@@ -387,8 +397,13 @@ TSharedPtr<FJsonObject> FUnrealMCPMotionCommands::HandleAddPoseSearchSequence(co
 
     const FScopedTransaction Transaction(FText::FromString(TEXT("MCP Add Pose Search Sequence")));
     Database->Modify();
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)
+    FPoseSearchDatabaseAnimationAsset DatabaseSequence;
+    DatabaseSequence.AnimAsset = Sequence;
+#else
     FPoseSearchDatabaseSequence DatabaseSequence;
     DatabaseSequence.Sequence = Sequence;
+#endif
 
 #if WITH_EDITORONLY_DATA
     bool bEnabled = true;
@@ -417,7 +432,11 @@ TSharedPtr<FJsonObject> FUnrealMCPMotionCommands::HandleAddPoseSearchSequence(co
     }
 #endif
 
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)
+    Database->AddAnimationAsset(DatabaseSequence);
+#else
     Database->AddAnimationAsset(FInstancedStruct::Make(DatabaseSequence));
+#endif
     Database->NotifyDerivedDataRebuild();
     Database->MarkPackageDirty();
     Database->PostEditChange();

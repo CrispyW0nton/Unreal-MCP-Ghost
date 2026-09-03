@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Json.h"
+#include "Dom/JsonObject.h"
 
 /**
  * Handles UMG (Widget Blueprint) related MCP commands
@@ -69,6 +69,20 @@ private:
      * @return JSON response with the binding details
      */
     TSharedPtr<FJsonObject> HandleBindWidgetEvent(const TSharedPtr<FJsonObject>& Params);
+
+    /**
+     * Create (or reuse) a component-bound event node for a named sub-widget,
+     * e.g. BTN_NEWGAME's OnHovered. Unlike bind_widget_event this resolves the
+     * widget blueprint by full path, marks the sub-widget as a variable, and
+     * binds the event to that specific widget property so multiple widgets of
+     * the same class get distinct event nodes.
+     * @param Params - Must include:
+     *                "widget_blueprint_path" - Full object path of the Widget Blueprint
+     *                "widget_name" - Named sub-widget in the tree (e.g. BTN_EXIT)
+     *                "event_name" - Delegate property name (OnClicked/OnHovered/OnUnhovered/...)
+     * @return JSON response with the bound event node GUID for graph wiring
+     */
+    TSharedPtr<FJsonObject> HandleBindWidgetComponentEvent(const TSharedPtr<FJsonObject>& Params);
 
     /**
      * Set up text block binding for dynamic updates

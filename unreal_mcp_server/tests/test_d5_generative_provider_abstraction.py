@@ -64,10 +64,37 @@ class TestD5GenerativeProviderAbstraction(unittest.TestCase):
         ])
         self.assertEqual(primary["key"], "base_model")
 
+    def test_uthana_provider_satisfies_animation_contract(self):
+        from tools.generative import GenerativeProvider, ProviderRegistry
+        from tools.generative.uthana import UTHANA_PROVIDER
+
+        self.assertIsInstance(UTHANA_PROVIDER, GenerativeProvider)
+        registry = ProviderRegistry([UTHANA_PROVIDER])
+        provider = registry.get("uthana")
+        description = provider.describe({
+            "uthana_api_key_configured": True,
+            "uthana_api_key_source": "env:UTHANA_API_KEY",
+            "animation_output_folder": "/Game/Generated/Animations",
+        })
+
+        self.assertEqual(description["provider"], "uthana")
+        self.assertEqual(description["provider_role"], "animation_motion")
+        self.assertEqual(description["status"], "configured")
+        self.assertIn("text_to_motion", description["capabilities"])
+        self.assertIn("retarget_motion", description["capabilities"])
+        self.assertIn(".fbx", description["output_policy"]["model_extensions"])
+        self.assertEqual(UTHANA_PROVIDER.output_suffix("motion_fbx", "https://signed.example/motion"), ".fbx")
+        primary = UTHANA_PROVIDER.select_primary_model_download([
+            {"key": "character_glb", "path": "C:/Gen/character.glb"},
+            {"key": "motion_fbx", "path": "C:/Gen/walk.fbx"},
+        ])
+        self.assertEqual(primary["key"], "motion_fbx")
+
     def test_d5_static_files_and_kb(self):
         generative_text = (SERVER_ROOT / "tools" / "generative_tools.py").read_text(encoding="utf-8")
         contract_text = (SERVER_ROOT / "tools" / "generative" / "__init__.py").read_text(encoding="utf-8")
         tripo_text = (SERVER_ROOT / "tools" / "generative" / "tripo.py").read_text(encoding="utf-8")
+        uthana_text = (SERVER_ROOT / "tools" / "generative" / "uthana.py").read_text(encoding="utf-8")
         cpp_header = (REPO_ROOT / "unreal_plugin" / "Source" / "UnrealMCP" / "Public" / "Generative" / "IGenerativeProvider.h").read_text(encoding="utf-8")
         kb_text = (REPO_ROOT / "knowledge_base" / "31_GENERATIVE_CONTENT_PIPELINE.md").read_text(encoding="utf-8")
         changelog_text = (REPO_ROOT / "knowledge_base" / "v5" / "CHANGELOG.md").read_text(encoding="utf-8")
@@ -75,6 +102,8 @@ class TestD5GenerativeProviderAbstraction(unittest.TestCase):
         self.assertIn("ProviderRegistry", generative_text)
         self.assertIn("class GenerativeProvider", contract_text)
         self.assertIn("class TripoProvider", tripo_text)
+        self.assertIn("class UthanaProvider", uthana_text)
+        self.assertIn("UTHANA_PROVIDER", generative_text)
         self.assertIn("class UNREALMCP_API IGenerativeProvider", cpp_header)
         self.assertIn("Provider Abstraction", kb_text)
         self.assertIn("D.5 - Generative provider abstraction", changelog_text)

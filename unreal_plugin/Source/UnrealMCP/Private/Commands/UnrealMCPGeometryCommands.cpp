@@ -18,6 +18,7 @@
 #include "GeometryScript/MeshRemeshFunctions.h"
 #include "GeometryScript/MeshSelectionFunctions.h"
 #include "GeometryScript/MeshUVFunctions.h"
+#include "Misc/EngineVersionComparison.h"
 #include "ScopedTransaction.h"
 
 FUnrealMCPGeometryCommands::FUnrealMCPGeometryCommands()
@@ -511,7 +512,11 @@ TSharedPtr<FJsonObject> FUnrealMCPGeometryCommands::HandleApplyDisplacement(cons
 
     const FScopedTransaction Transaction(FText::FromString(TEXT("MCP Geometry Displacement")));
     FGeometryScriptMeshSelection EmptySelection;
+#if UE_VERSION_NEWER_THAN_OR_EQUAL(5, 7, 0)
+    UGeometryScriptLibrary_MeshDeformFunctions::ApplyPerlinNoiseToMesh2(Mesh, EmptySelection, Options);
+#else
     UGeometryScriptLibrary_MeshDeformFunctions::ApplyPerlinNoiseToMesh(Mesh, EmptySelection, Options);
+#endif
     Actor->GetDynamicMeshComponent()->NotifyMeshUpdated();
 
     TSharedPtr<FJsonObject> Result = MakeMeshResult(TEXT("geom_apply_displacement"), Actor, Mesh);

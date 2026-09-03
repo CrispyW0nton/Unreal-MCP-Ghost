@@ -31,6 +31,8 @@ public class UnrealMCPEditor : ModuleRules
                 "AssetTools",
                 "ContentBrowser",
                 "ToolMenus",
+                "AdvancedPreviewScene",
+                "PropertyEditor",
                 "WebBrowser",
                 "HTTP",
                 "Json",

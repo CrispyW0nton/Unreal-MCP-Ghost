@@ -59,6 +59,7 @@ What do you need?
 ├─ "I need Pixel Streaming/remote demo"     → Read 29_PIXEL_STREAMING_AND_REMOTE.md
 ├─ "I need Online Subsystem/EOS"            → Read 30_ONLINE_SUBSYSTEM_AND_EOS.md
 ├─ "I need generated asset pipeline"        → Read 31_GENERATIVE_CONTENT_PIPELINE.md
+├─ "I need native Unreal editor UI patterns" → Read ../docs/knowledge-base/unreal-editor-ui-source-deep-dive.md
 ├─ "I need an agent playable slice"         → Read 32_AGENT_PLAYABLE_SLICE_RECIPE.md
 ├─ "I need to understand the architecture"  → Read v4/ARCHITECTURE_BLUEPRINT.md
 ├─ "I need UE Python API references"        → Read v4/API_REFERENCE_CHEATSHEET.md
@@ -76,6 +77,7 @@ What do you need?
 | `../scripts/profile_mcp_startup.py` | Phase 7 offline startup and static tool-discovery profiler |
 | `../scripts/bridge_command_audit.py` | Phase 7 Python/C++ bridge command metadata audit and registry snapshot generator |
 | `../docs/ci-smoke.md` | Repeatable offline CI smoke and optional live bridge smoke commands |
+| `../docs/knowledge-base/unreal-editor-ui-source-deep-dive.md` | Local UE source guide for native asset editor windows, Slate viewport patterns, ToolMenus, details views, and mesh paint |
 | `../unreal_mcp_server/tool_inventory_categories.json` | Machine-readable module-to-category map used by the inventory script |
 
 ---
@@ -241,7 +243,7 @@ What do you need?
 | Tool Modules | 44 categorized modules/skills |
 | C++ Commands | 239 |
 | Transports | stdio, SSE, streamable-HTTP |
-| Plugin Port | 55557 |
+| Plugin Port | 55655 |
 | Inventory Command | `python scripts/tool_inventory.py --markdown` |
 | GitHub | https://github.com/CrispyW0nton/Unreal-MCP-Ghost |
 

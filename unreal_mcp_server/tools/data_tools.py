@@ -169,10 +169,11 @@ def register_data_tools(mcp: FastMCP):
         KB: see knowledge_base/07_DATA_STRUCTURES.md#overview
         Example:
             add_map_variable(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", key_type="ExampleName", value_type=0.0)"""
-        return _send("add_blueprint_variable", {
+        return _send("add_map_variable", {
             "blueprint_name": blueprint_name,
             "variable_name": variable_name,
-            "variable_type": f"Map:{key_type}:{value_type}",
+            "key_type": key_type,
+            "value_type": value_type,
             "is_exposed": is_exposed
         })
 

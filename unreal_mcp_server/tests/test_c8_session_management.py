@@ -13,6 +13,7 @@ PANEL_H = EDITOR_MODULE / "Public" / "MCPChatPanel.h"
 CHAT_STORAGE = REPO_ROOT / "unreal_mcp_server" / "chat" / "storage.py"
 CHAT_ROUTES = REPO_ROOT / "unreal_mcp_server" / "chat" / "routes.py"
 CHAT_TESTS = REPO_ROOT / "unreal_mcp_server" / "tests" / "test_chat.py"
+CHAT_AGENT = REPO_ROOT / "scripts" / "ue-chat-agent.mjs"
 CHANGELOG = REPO_ROOT / "knowledge_base" / "v5" / "CHANGELOG.md"
 
 
@@ -24,6 +25,7 @@ class SessionManagementTest(unittest.TestCase):
         cls.storage = CHAT_STORAGE.read_text(encoding="utf-8")
         cls.routes = CHAT_ROUTES.read_text(encoding="utf-8")
         cls.chat_tests = CHAT_TESTS.read_text(encoding="utf-8")
+        cls.chat_agent = CHAT_AGENT.read_text(encoding="utf-8")
         cls.changelog = CHANGELOG.read_text(encoding="utf-8")
 
     def test_session_surface_is_declared(self) -> None:
@@ -89,6 +91,11 @@ class SessionManagementTest(unittest.TestCase):
             with self.subTest(route=route):
                 self.assertIn(route, self.routes)
         self.assertIn("test_named_sessions_are_isolated_and_exportable", self.chat_tests)
+
+    def test_cursor_watcher_keeps_poll_history_and_response_in_one_session(self) -> None:
+        self.assertIn('process.env.UE_CHAT_SESSION', self.chat_agent)
+        self.assertIn('params.set("session", CHAT_SESSION)', self.chat_agent)
+        self.assertIn('{ session: CHAT_SESSION }', self.chat_agent)
 
     def test_changelog_records_c8(self) -> None:
         self.assertIn("### C.8 - Session management", self.changelog)

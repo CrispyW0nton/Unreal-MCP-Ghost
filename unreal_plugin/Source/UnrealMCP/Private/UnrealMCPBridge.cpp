@@ -100,7 +100,17 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Commands/UnrealMCPMetaHumanCommands.h"
 #include "Commands/UnrealMCPMotionCommands.h"
 #include "HAL/PlatformTime.h"
+#include "HAL/PlatformMisc.h"
+#include "Misc/CommandLine.h"
+#include "Misc/FileHelper.h"
+#include "Misc/Parse.h"
+#include "Misc/Paths.h"
+#include "Modules/ModuleManager.h"
 #include "UnrealMCPModule.h"
+
+#ifndef MCPSTUDIO_UNREAL_SOURCE_SHA256
+#define MCPSTUDIO_UNREAL_SOURCE_SHA256 "unqualified"
+#endif
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
@@ -1035,6 +1045,7 @@ namespace
 
 UUnrealMCPBridge::UUnrealMCPBridge()
 {
+	bRequireAuthentication = false;
     EditorCommands = MakeShared<FUnrealMCPEditorCommands>();
     BlueprintCommands = MakeShared<FUnrealMCPBlueprintCommands>();
     BlueprintNodeCommands = MakeShared<FUnrealMCPBlueprintNodeCommands>();
@@ -1063,7 +1074,30 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
     ConnectionSocket = nullptr;
     ServerThread = nullptr;
     Port = MCP_SERVER_PORT;
+    int32 CommandLinePort = 0;
+    if (FParse::Value(FCommandLine::Get(), TEXT("UnrealMCPPort="), CommandLinePort))
+    {
+        if (CommandLinePort > 0 && CommandLinePort <= 65535)
+        {
+            Port = CommandLinePort;
+            UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Using command-line port override %d"), Port);
+        }
+        else
+        {
+            UE_LOG(
+                LogMCP,
+                Warning,
+                TEXT("UnrealMCPBridge: Ignoring invalid command-line port override %d; using %d"),
+                CommandLinePort,
+                MCP_SERVER_PORT);
+        }
+    }
     FIPv4Address::Parse(MCP_SERVER_HOST, ServerAddress);
+
+    if (!LoadAuthenticationConfiguration())
+    {
+        UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Authentication is required but no valid private token is configured; the TCP bridge will not start."));
+    }
 
     // ── Asset Registry warm-up ────────────────────────────────────────────
     // Trigger the AR initial scan now, during plugin startup, so it finishes
@@ -1092,7 +1126,10 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
     }
 
     // Start the server automatically
-    StartServer();
+    if (!bRequireAuthentication || !BridgeAuthToken.IsEmpty())
+    {
+        StartServer();
+    }
 
     if (bEnableNativeSithCombatDirector)
     {
@@ -2390,8 +2427,123 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 }
 
 // Start the MCP server
+bool UUnrealMCPBridge::LoadAuthenticationConfiguration()
+{
+    BridgeAuthToken.Reset();
+    FString TokenFile;
+    FString DirectToken;
+    FParse::Value(FCommandLine::Get(), TEXT("UnrealMCPAuthTokenFile="), TokenFile);
+    FParse::Value(FCommandLine::Get(), TEXT("UnrealMCPAuthToken="), DirectToken);
+
+    if (TokenFile.IsEmpty())
+    {
+        TokenFile = FPlatformMisc::GetEnvironmentVariable(TEXT("UNREAL_MCP_PRIVATE_TOKEN_FILE"));
+    }
+    if (TokenFile.IsEmpty())
+    {
+        TokenFile = FPlatformMisc::GetEnvironmentVariable(TEXT("UNREAL_MCP_BRIDGE_TOKEN_FILE"));
+    }
+    if (DirectToken.IsEmpty())
+    {
+        DirectToken = FPlatformMisc::GetEnvironmentVariable(TEXT("UNREAL_MCP_BRIDGE_TOKEN"));
+    }
+
+    const FString RequireAuthValue = FPlatformMisc::GetEnvironmentVariable(TEXT("UNREAL_MCP_REQUIRE_AUTH"));
+    bRequireAuthentication = FParse::Param(FCommandLine::Get(), TEXT("UnrealMCPRequireAuth"))
+        || RequireAuthValue.Equals(TEXT("1"))
+        || RequireAuthValue.Equals(TEXT("true"), ESearchCase::IgnoreCase)
+        || RequireAuthValue.Equals(TEXT("yes"), ESearchCase::IgnoreCase)
+        || RequireAuthValue.Equals(TEXT("on"), ESearchCase::IgnoreCase)
+        || !TokenFile.IsEmpty()
+        || !DirectToken.IsEmpty();
+
+    if (!TokenFile.IsEmpty() && !DirectToken.IsEmpty())
+    {
+        UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Configure one authentication source, not both a token file and a direct token."));
+        return false;
+    }
+    if (!TokenFile.IsEmpty())
+    {
+        if (!FPaths::IsRelative(TokenFile))
+        {
+            FString TokenText;
+            if (!FFileHelper::LoadFileToString(TokenText, *TokenFile))
+            {
+                UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Could not read the configured private token file."));
+                return false;
+            }
+            DirectToken = TokenText.TrimStartAndEnd().ToLower();
+        }
+        else
+        {
+            UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Private token-file path must be absolute."));
+            return false;
+        }
+    }
+
+    DirectToken = DirectToken.TrimStartAndEnd().ToLower();
+
+    if (DirectToken.IsEmpty())
+    {
+        if (bRequireAuthentication)
+        {
+            return false;
+        }
+        UE_LOG(LogMCP, Warning, TEXT("UnrealMCPBridge: Starting in legacy unauthenticated loopback mode. MCPStudio qualification requires token-session mode."));
+        return true;
+    }
+
+    if (DirectToken.Len() != 64)
+    {
+        UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Private token must contain exactly 64 hexadecimal characters."));
+        return false;
+    }
+    for (const TCHAR Character : DirectToken)
+    {
+        const bool bHex = (Character >= TEXT('0') && Character <= TEXT('9'))
+            || (Character >= TEXT('a') && Character <= TEXT('f'));
+        if (!bHex)
+        {
+            UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Private token contains a non-hexadecimal character."));
+            return false;
+        }
+    }
+    BridgeAuthToken = DirectToken;
+    bRequireAuthentication = true;
+    UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Token-session authentication is required."));
+    return true;
+}
+
+bool UUnrealMCPBridge::ValidateRequestAuthentication(const TSharedPtr<FJsonObject>& Request) const
+{
+    if (!bRequireAuthentication)
+    {
+        return true;
+    }
+    if (!Request.IsValid() || BridgeAuthToken.IsEmpty())
+    {
+        return false;
+    }
+    FString Candidate;
+    if (!Request->TryGetStringField(TEXT("auth"), Candidate) || Candidate.Len() != BridgeAuthToken.Len())
+    {
+        return false;
+    }
+    uint32 Difference = 0;
+    for (int32 Index = 0; Index < Candidate.Len(); ++Index)
+    {
+        Difference |= static_cast<uint32>(Candidate[Index] ^ BridgeAuthToken[Index]);
+    }
+    return Difference == 0;
+}
+
 void UUnrealMCPBridge::StartServer()
 {
+    if (bRequireAuthentication && BridgeAuthToken.IsEmpty())
+    {
+        UE_LOG(LogMCP, Error, TEXT("UnrealMCPBridge: Refusing to start because required authentication has no valid token."));
+        return;
+    }
     if (bIsRunning)
     {
         UE_LOG(LogTemp, Warning, TEXT("UnrealMCPBridge: Server is already running"));
@@ -2512,7 +2664,13 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
         //
         // Cheap (one float store); safe even if GUnrealEd is not ready.
         // ---------------------------------------------------------------
-        FUnrealMCPCommonUtils::DeferAutoSave();
+        const bool bReadOnlyQualificationCommand =
+            CommandType == TEXT("ping") ||
+            CommandType == TEXT("inspect_static_mesh_sections");
+        if (!bReadOnlyQualificationCommand)
+        {
+            FUnrealMCPCommonUtils::DeferAutoSave();
+        }
 
         // ---------------------------------------------------------------
         // Pre-command diagnostic logging so we can trace every MCP action
@@ -2543,10 +2701,20 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
             {
                 ResultJson = MakeShareable(new FJsonObject);
                 ResultJson->SetStringField(TEXT("message"), TEXT("pong"));
+                ResultJson->SetBoolField(TEXT("authentication_required"), bRequireAuthentication);
+                ResultJson->SetStringField(TEXT("authentication"), bRequireAuthentication ? TEXT("token-session") : TEXT("legacy-unauthenticated"));
+                ResultJson->SetStringField(
+                    TEXT("approved_source_sha256"),
+                    UTF8_TO_TCHAR(MCPSTUDIO_UNREAL_SOURCE_SHA256));
+                ResultJson->SetStringField(
+                    TEXT("loaded_plugin_binary_path"),
+                    FPaths::ConvertRelativePathToFull(
+                        FModuleManager::Get().GetModuleFilename(TEXT("UnrealMCP"))));
             }
             // Editor Commands (including actor manipulation)
             else if (CommandType == TEXT("get_actors_in_level") ||
                      CommandType == TEXT("get_actor_identity") ||
+                     CommandType == TEXT("inspect_static_mesh_sections") ||
                      CommandType == TEXT("find_actors_by_name") ||
                      CommandType == TEXT("find_actors_by_class") ||
                      CommandType == TEXT("spawn_actor") ||
@@ -2674,6 +2842,7 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                      CommandType == TEXT("add_text_block_to_widget") ||
                      CommandType == TEXT("add_button_to_widget") ||
                      CommandType == TEXT("bind_widget_event") ||
+                     CommandType == TEXT("bind_widget_component_event") ||
                      CommandType == TEXT("set_text_block_binding") ||
                      CommandType == TEXT("add_widget_to_viewport") ||
                      CommandType == TEXT("widget_add_child") ||

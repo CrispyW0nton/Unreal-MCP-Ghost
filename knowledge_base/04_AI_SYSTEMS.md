@@ -60,6 +60,19 @@ PawnSensing (older, simpler) OR AIPerception (modern, recommended)
 3. In the AI Character Blueprint → Details → `AI Controller Class` → select your controller
 4. Set `Auto Possess AI` → `Placed in World or Spawned`
 
+### Pawn And Controller Setup
+
+Use `set_pawn_properties` for Pawn/Character class defaults that affect
+possession and controller rotation, and `set_blueprint_ai_controller` for the
+AIController class assignment. These changes affect the Blueprint class default
+object, so the companion flow should be:
+
+1. Confirm the Blueprint is a Pawn or Character subclass.
+2. Set `Auto Possess AI` deliberately, usually to placed-and-spawned behavior for generated enemies.
+3. Set controller rotation flags only when the movement/animation model expects controller-driven facing.
+4. Assign the AIController class.
+5. Compile, inspect diagnostics, read back class defaults, and record evidence before Behavior Tree work.
+
 ### Standard BeginPlay Pattern
 ```
 Event BeginPlay →
@@ -143,6 +156,42 @@ AlertLevel          → Float: 0-1 awareness meter
 ## 5. Behavior Tree
 
 **Tree-based decision-making. Executes top-to-bottom, left-to-right.**
+
+### MCP Behavior Tree Inspection And Blackboard Assignment
+
+Use these MCP tools to keep AI state explicit and inspectable:
+
+| Tool | Purpose |
+|------|---------|
+| `set_behavior_tree_blackboard` | Assigns a Blackboard asset to a Behavior Tree using the native bridge route. |
+| `bt_get_info` | Read-only Behavior Tree graph inspection through the native `bt_get_info` alias. |
+| `get_bt_graph_info` | Existing graph-inspection wrapper with node, pin, and sub-node details. |
+
+Recommended companion flow:
+
+1. Create or identify the Blackboard.
+2. Create or identify the Behavior Tree.
+3. Call `set_behavior_tree_blackboard`.
+4. Call `bt_get_info` or `get_bt_graph_info` before adding services, decorators, or EQS tasks.
+5. Record the returned Blackboard path and graph readback as evidence.
+
+### MCP Behavior Tree Task Graph Helpers
+
+Use these native bridge wrappers when authoring custom BTTask Blueprint graphs:
+
+| Tool | Purpose |
+|------|---------|
+| `add_get_random_reachable_point_node` | Adds a Navigation System random reachable point node for wander/patrol tasks. |
+| `add_clear_blackboard_value_node` | Adds a Blackboard `ClearValue` node for resetting task state. |
+| `add_finish_execute_node` | Adds the BT task completion node so generated tasks report success/failure. |
+
+Recommended companion flow:
+
+1. Inspect the BTTask Blueprint graph before adding nodes.
+2. Add random point, Blackboard clear, or finish-execute nodes through the native wrappers.
+3. Wire pins with explicit node IDs and inspect the graph again.
+4. Compile the task Blueprint and inspect diagnostics.
+5. Record graph readback and compile status before testing the Behavior Tree in PIE.
 
 ### Behavior Tree Node Types
 

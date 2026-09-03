@@ -65,6 +65,7 @@ class EditorModuleStructureTest(unittest.TestCase):
         descriptor = json.loads((PLUGIN_ROOT / "UnrealMCP.uplugin").read_text(encoding="utf-8"))
         modules = {module["Name"]: module for module in descriptor["Modules"]}
 
+        self.assertEqual(descriptor["EngineVersion"], "5.6.0")
         self.assertIn("UnrealMCP", modules)
         self.assertIn("UnrealMCPEditor", modules)
         self.assertEqual(modules["UnrealMCPEditor"]["Type"], "Editor")

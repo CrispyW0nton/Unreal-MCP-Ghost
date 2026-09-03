@@ -21,8 +21,9 @@ EXAMPLE_RE = re.compile(r"^\s*Example:\s*$", re.MULTILINE)
 
 def _load_tool_inventory():
     spec = importlib.util.spec_from_file_location("tool_inventory", TOOL_INVENTORY_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load tool inventory")
     module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
     spec.loader.exec_module(module)
     return module
 

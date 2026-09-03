@@ -32,6 +32,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import hashlib
 import ast
@@ -401,7 +402,12 @@ def evaluate_action_risk(
 # ── Transport helper ──────────────────────────────────────────────────────────
 
 def _send(command: str, params: dict) -> Dict[str, Any]:
-    from unreal_mcp_server import get_unreal_connection
+    if os.environ.get("MCPSTUDIO_SPATIAL_SERVER") == "1":
+        from mcpstudio_bridge_client import (
+            get_mcpstudio_unreal_connection as get_unreal_connection,
+        )
+    else:
+        from unreal_mcp_server import get_unreal_connection
     try:
         unreal = get_unreal_connection()
         if not unreal:
@@ -414,6 +420,17 @@ def _send(command: str, params: dict) -> Dict[str, Any]:
 
 
 def _parse_ue_json(resp: Dict[str, Any]) -> Dict[str, Any]:
+    if resp.get("status") == "error":
+        message = str(resp.get("error") or resp.get("message") or "exec_python failed")
+        return {
+            "success": False,
+            "stage": "bridge_error",
+            "message": message,
+            "outputs": {},
+            "warnings": [],
+            "errors": [message],
+            "log_tail": [],
+        }
     inner = resp.get("result", resp)
     command_result = inner.get("command_result", resp.get("command_result"))
     if command_result not in (None, "", "None"):
@@ -436,7 +453,16 @@ def _parse_ue_json(resp: Dict[str, Any]) -> Dict[str, Any]:
             except json.JSONDecodeError:
                 continue
     if not inner.get("success", True):
-        return {"success": False, "error": inner.get("message", output or "exec_python failed")}
+        message = str(inner.get("message") or inner.get("error") or output or "exec_python failed")
+        return {
+            "success": False,
+            "stage": str(inner.get("stage") or "bridge_error"),
+            "message": message,
+            "outputs": inner.get("outputs") if isinstance(inner.get("outputs"), dict) else {},
+            "warnings": inner.get("warnings") if isinstance(inner.get("warnings"), list) else [],
+            "errors": inner.get("errors") if isinstance(inner.get("errors"), list) else [message],
+            "log_tail": inner.get("log_tail") if isinstance(inner.get("log_tail"), list) else [],
+        }
     return {"success": False, "error": f"Could not parse UE output: {output!r}"}
 
 

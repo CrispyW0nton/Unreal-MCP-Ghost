@@ -35,6 +35,8 @@
 #include "Kismet/GameplayStatics.h"
 #include "Kismet2/KismetEditorUtilities.h"
 #include "K2Node_Event.h"
+#include "K2Node_ComponentBoundEvent.h"
+#include "EdGraphSchema_K2_Actions.h"
 
 namespace
 {
@@ -225,6 +227,10 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleCommand(const FString& Comm
 	else if (CommandName == TEXT("bind_widget_event"))
 	{
 		return HandleBindWidgetEvent(Params);
+	}
+	else if (CommandName == TEXT("bind_widget_component_event"))
+	{
+		return HandleBindWidgetComponentEvent(Params);
 	}
 	else if (CommandName == TEXT("set_text_block_binding"))
 	{
@@ -721,6 +727,121 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleBindWidgetEvent(const TShar
 	return Response;
 }
 
+TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleBindWidgetComponentEvent(const TSharedPtr<FJsonObject>& Params)
+{
+	FString BlueprintPath;
+	FString Error;
+	UWidgetBlueprint* WidgetBlueprint = LoadWidgetBlueprintFromParams(Params, BlueprintPath, Error);
+	if (!WidgetBlueprint)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(Error);
+	}
+
+	FString WidgetName;
+	if (!Params->TryGetStringField(TEXT("widget_name"), WidgetName) || WidgetName.IsEmpty())
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'widget_name' parameter"));
+	}
+	FString EventName;
+	if (!Params->TryGetStringField(TEXT("event_name"), EventName) || EventName.IsEmpty())
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'event_name' parameter"));
+	}
+
+	if (!WidgetBlueprint->WidgetTree)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Widget Blueprint has no WidgetTree"));
+	}
+	UWidget* Widget = WidgetBlueprint->WidgetTree->FindWidget(FName(*WidgetName));
+	if (!Widget)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(
+			FString::Printf(TEXT("Widget not found in tree: %s"), *WidgetName));
+	}
+
+	// The delegate must exist on the sub-widget's class (e.g. UButton::OnHovered).
+	FMulticastDelegateProperty* DelegateProperty =
+		FindFProperty<FMulticastDelegateProperty>(Widget->GetClass(), FName(*EventName));
+	if (!DelegateProperty)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+			TEXT("Delegate '%s' not found on widget class %s"), *EventName, *Widget->GetClass()->GetName()));
+	}
+
+	// Component-bound events require the widget to be a Blueprint variable so
+	// an FObjectProperty exists on the generated class.
+	bool bCompiledForVariable = false;
+	if (!Widget->bIsVariable)
+	{
+		Widget->bIsVariable = true;
+		FBlueprintEditorUtils::MarkBlueprintAsStructurallyModified(WidgetBlueprint);
+		FKismetEditorUtilities::CompileBlueprint(WidgetBlueprint);
+		bCompiledForVariable = true;
+	}
+	FObjectProperty* ComponentProperty =
+		FindFProperty<FObjectProperty>(WidgetBlueprint->GeneratedClass, FName(*WidgetName));
+	if (!ComponentProperty && WidgetBlueprint->SkeletonGeneratedClass)
+	{
+		ComponentProperty =
+			FindFProperty<FObjectProperty>(WidgetBlueprint->SkeletonGeneratedClass, FName(*WidgetName));
+	}
+	if (!ComponentProperty)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+			TEXT("No FObjectProperty for widget '%s' on the generated class (variable promotion failed)"),
+			*WidgetName));
+	}
+
+	bool bCreated = false;
+	const UK2Node_ComponentBoundEvent* EventNode =
+		FKismetEditorUtilities::FindBoundEventForComponent(
+			WidgetBlueprint, FName(*EventName), ComponentProperty->GetFName());
+	if (!EventNode)
+	{
+		UEdGraph* TargetGraph = FBlueprintEditorUtils::FindEventGraph(WidgetBlueprint);
+		if (!TargetGraph)
+		{
+			return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Widget Blueprint has no event graph"));
+		}
+		// Mirrors FKismetEditorUtilities::CreateNewBoundEventForClass, but with
+		// an explicit graph (GetLastEditedUberGraph can be null for tool-built
+		// blueprints) and without stealing editor focus.
+		const FVector2D NewNodePos = TargetGraph->GetGoodPlaceForNewNode();
+		EventNode = FEdGraphSchemaAction_K2NewNode::SpawnNode<UK2Node_ComponentBoundEvent>(
+			TargetGraph,
+			NewNodePos,
+			EK2NewNodeFlags::None,
+			[ComponentProperty, DelegateProperty](UK2Node_ComponentBoundEvent* NewInstance)
+			{
+				NewInstance->InitializeComponentBoundEventParams(ComponentProperty, DelegateProperty);
+			}
+		);
+		bCreated = EventNode != nullptr;
+	}
+	if (!EventNode)
+	{
+		return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create component bound event node"));
+	}
+
+	bool bCompile = true;
+	Params->TryGetBoolField(TEXT("compile"), bCompile);
+	if (bCompile)
+	{
+		FKismetEditorUtilities::CompileBlueprint(WidgetBlueprint);
+		UEditorAssetLibrary::SaveAsset(BlueprintPath, false);
+	}
+
+	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
+	Response->SetBoolField(TEXT("success"), true);
+	Response->SetStringField(TEXT("widget_blueprint_path"), BlueprintPath);
+	Response->SetStringField(TEXT("widget_name"), WidgetName);
+	Response->SetStringField(TEXT("event_name"), EventName);
+	Response->SetStringField(TEXT("node_id"), EventNode->NodeGuid.ToString());
+	Response->SetBoolField(TEXT("created"), bCreated);
+	Response->SetBoolField(TEXT("variable_promoted"), bCompiledForVariable);
+	return Response;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleSetTextBlockBinding(const TSharedPtr<FJsonObject>& Params)
 {
 	TSharedPtr<FJsonObject> Response = MakeShared<FJsonObject>();
@@ -1006,7 +1127,7 @@ TSharedPtr<FJsonObject> FUnrealMCPUMGCommands::HandleWidgetSetProperty(const TSh
 	{
 		if (UImage* Image = Cast<UImage>(Widget))
 		{
-			Image->SetBrushSize(ParseVector2D(PropertyValue));
+			Image->SetDesiredSizeOverride(ParseVector2D(PropertyValue));
 		}
 		else
 		{

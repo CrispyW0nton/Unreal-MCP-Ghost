@@ -4,10 +4,10 @@ demo_c_live.py — Phase 3 Project Intelligence End-to-End Demo
 ==============================================================
 
 15-step live demonstration of the V5 Project Intelligence tools against
-a running UE5 editor at 127.0.0.1:55557.
+a running UE5 editor at 127.0.0.1:55655.
 
 Pre-requisites:
-  • UE5 editor open with UnrealMCP plugin listening on port 55557
+  • UE5 editor open with UnrealMCP plugin listening on port 55655
   • BP_DemoA and BP_HealthSystem created (Demo A)
   • M_DemoB created (Demo B)
   • The UnrealMCP plugin's Source/ directory accessible under the project root
@@ -33,7 +33,7 @@ Exit code: 0 on 15/15, non-zero on any failure.
 
 Usage:
     python3 demo_c_live.py [--host HOST] [--port PORT]
-    python3 demo_c_live.py                          # default 127.0.0.1:55557
+    python3 demo_c_live.py                          # default 127.0.0.1:55655
 """
 
 from __future__ import annotations
@@ -56,7 +56,7 @@ if _SERVER_ROOT not in sys.path:
 
 parser = argparse.ArgumentParser(description="Demo C — Phase 3 Project Intelligence live test")
 parser.add_argument("--host", default="127.0.0.1")
-parser.add_argument("--port", type=int, default=55557)
+parser.add_argument("--port", type=int, default=55655)
 parser.add_argument("--no-fail-fast", action="store_true",
                     help="Continue past failures (default: stop on first failure)")
 args = parser.parse_args()

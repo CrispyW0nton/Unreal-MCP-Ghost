@@ -6,7 +6,7 @@ import json
 import sys
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 
 SERVER_ROOT = Path(__file__).resolve().parents[1]
@@ -43,7 +43,17 @@ class TestD1GenerativeTools(unittest.IsolatedAsyncioTestCase):
     def test_d1_generative_tools_register(self):
         expected = {
             "gen_list_providers",
+            "gen_uthana_text_to_motion",
+            "gen_uthana_create_character",
+            "gen_uthana_get_character",
+            "gen_uthana_create_locomotion",
+            "gen_uthana_video_to_motion",
+            "gen_uthana_get_job",
+            "gen_uthana_download_motion",
+            "gen_uthana_import_animation_to_project",
+            "gen_compile_generated_animation_evidence",
             "gen_prepare_import_manifest",
+            "gen_tripo_wait_for_task",
         }
         self.assertTrue(expected.issubset(set(self.mcp.tools)))
 
@@ -58,6 +68,9 @@ class TestD1GenerativeTools(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(payload["outputs"]["network_required"])
         providers = payload["outputs"]["providers"]
         self.assertEqual(providers[0]["provider"], "tripo")
+        self.assertEqual(providers[1]["provider"], "uthana")
+        self.assertEqual(providers[1]["provider_role"], "animation_motion")
+        self.assertIn("text_to_motion", providers[1]["capabilities"])
         self.assertIn("D.8 knowledge base", providers[0]["next_milestones"])
         helpers = payload["outputs"]["import_helpers"]
         self.assertEqual(helpers[0]["native_route"], "gen_prepare_import_manifest")
@@ -125,6 +138,46 @@ class TestD1GenerativeTools(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(manifest["source_files"][0]["import_kind"], "static_mesh")
         self.assertEqual(manifest["expected_assets"]["blueprint"], "/Game/Generated/Enemies/BP_SM_SlimeEnemy")
 
+    async def test_provider_balance_runs_blocking_request_off_event_loop(self):
+        fake_balance = {
+            "balance": 120,
+            "frozen": 0,
+            "trace_id": "trace-1",
+            "http_status": 200,
+        }
+        with patch(
+            "tools.generative_tools.asyncio.to_thread",
+            new=AsyncMock(return_value=fake_balance),
+        ) as offload:
+            payload = json.loads(await self.mcp.tools["gen_tripo_get_credit_balance"](
+                ctx=None,
+                timeout_s=30,
+            ))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(payload["outputs"]["balance"], 120)
+        offload.assert_awaited_once()
+
+    async def test_tripo_wait_polls_without_blocking_sleep(self):
+        snapshots = [
+            {"task": {"status": "running", "progress": 25}},
+            {"task": {"status": "success", "progress": 100}},
+        ]
+        with patch("tools.generative_tools._tripo_get_task", side_effect=snapshots), patch(
+            "tools.generative_tools.asyncio.sleep",
+            new=AsyncMock(),
+        ) as async_sleep:
+            payload = json.loads(await self.mcp.tools["gen_tripo_wait_for_task"](
+                ctx=None,
+                task_id="task-1",
+                timeout_s=10,
+                poll_s=1,
+            ))
+
+        self.assertTrue(payload["success"])
+        self.assertEqual(len(payload["outputs"]["snapshots"]), 2)
+        async_sleep.assert_awaited_once_with(1)
+
     def test_d1_static_registration_and_kb_links(self):
         server_text = (SERVER_ROOT / "unreal_mcp_server.py").read_text(encoding="utf-8")
         inventory_text = (SERVER_ROOT / "tool_inventory_categories.json").read_text(encoding="utf-8")
@@ -136,7 +189,7 @@ class TestD1GenerativeTools(unittest.IsolatedAsyncioTestCase):
         changelog_text = (REPO_ROOT / "knowledge_base" / "v5" / "CHANGELOG.md").read_text(encoding="utf-8")
 
         self.assertIn("from tools.generative_tools import register_generative_tools", server_text)
-        self.assertIn("register_generative_tools(mcp)", server_text)
+        self.assertIn("register_generative_tools(tool_mcp)", server_text)
         self.assertIn('"tools.generative_tools"', inventory_text)
         self.assertIn("Provider Scaffold", kb_text)
         self.assertIn("Import Manifest Helper", kb_text)

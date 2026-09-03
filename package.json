@@ -1,0 +1,11 @@
+{
+  "name": "unreal-mcp-ghost",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "chat:agent": "node scripts/ue-chat-agent.mjs"
+  },
+  "dependencies": {
+    "@cursor/sdk": "^1.0.12"
+  }
+}

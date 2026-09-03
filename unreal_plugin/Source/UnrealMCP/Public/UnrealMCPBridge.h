@@ -5,7 +5,7 @@
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "Http.h"
-#include "Json.h"
+#include "Dom/JsonObject.h"
 #include "Interfaces/IPv4/IPv4Address.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
 #include "Containers/Ticker.h"
@@ -111,6 +111,8 @@ public:
 
 	// Command execution
 	FString ExecuteCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
+	bool ValidateRequestAuthentication(const TSharedPtr<FJsonObject>& Request) const;
+	bool IsAuthenticationRequired() const { return bRequireAuthentication; }
 
 private:
 	// Server state
@@ -122,6 +124,9 @@ private:
 	// Server configuration
 	FIPv4Address ServerAddress;
 	uint16 Port;
+	bool bRequireAuthentication;
+	FString BridgeAuthToken;
+	bool LoadAuthenticationConfiguration();
 
 	// Watchdog timer handle
 	FTimerHandle WatchdogTimerHandle;
@@ -145,4 +150,4 @@ private:
 	TSharedPtr<FUnrealMCPProjectCommands> ProjectCommands;
 	TSharedPtr<FUnrealMCPUMGCommands> UMGCommands;
 	TSharedPtr<FUnrealMCPExtendedCommands> ExtendedCommands;
-}; 
+};

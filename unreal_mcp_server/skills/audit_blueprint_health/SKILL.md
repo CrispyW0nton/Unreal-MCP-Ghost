@@ -100,7 +100,7 @@ Score is clamped to [0, 100].
 
 ## Pre-conditions
 
-- UE5 editor running with UnrealMCP plugin (port 55557)
+- UE5 editor running with UnrealMCP plugin (port 55655)
 - Blueprint exists at the given path
 - Ping succeeds
 

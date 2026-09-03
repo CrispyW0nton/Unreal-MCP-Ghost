@@ -39,8 +39,9 @@ def _utc_now() -> str:
 
 def _load_inventory_module():
     spec = importlib.util.spec_from_file_location("tool_inventory", INVENTORY_PATH)
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Could not load tool inventory")
     module = importlib.util.module_from_spec(spec)
-    assert spec and spec.loader
     spec.loader.exec_module(module)
     return module
 

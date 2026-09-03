@@ -1255,8 +1255,15 @@ bool FUnrealMCPCommonUtils::ConnectGraphNodes(UEdGraph* Graph, UEdGraphNode* Sou
         return true;
     }
 
-    // Fallback: raw link (no type validation  -  only reached when no K2 schema)
-    SourcePin->MakeLinkTo(TargetPin);
+    // Fallback: raw link (no type validation - only reached when no K2 schema).
+    // AnimGraph pins use a non-K2 schema in several UE versions; MakeLinkTo can
+    // synchronously notify editor graph observers and destabilize a live MCP
+    // command after repeated data-pin edits. Mutate the link arrays directly and
+    // let the owning blueprint be marked dirty by the caller.
+    SourcePin->Modify();
+    TargetPin->Modify();
+    SourcePin->LinkedTo.AddUnique(TargetPin);
+    TargetPin->LinkedTo.AddUnique(SourcePin);
     return true;
 }
 
@@ -1772,4 +1779,4 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
     OutErrorMessage = FString::Printf(TEXT("Unsupported property type: %s for property %s"), 
                                     *Property->GetClass()->GetName(), *PropertyName);
     return false;
-} 
+}

@@ -21,7 +21,7 @@ Safe automation order:
 6. Expose tuning inputs with `niagara_set_system_user_parameter`.
 7. Generate or review an effect recipe with `niagara_get_effect_recipe`.
 8. Apply safe asset-level settings with `niagara_apply_system_settings`.
-9. Use Blueprint graph tools only to spawn/attach the Niagara system.
+9. Use `add_niagara_component` or Blueprint graph tools only to spawn/attach the Niagara system.
 10. If deeper module stack authoring is required, add native C++ MCP bridge
    commands rather than faking particles with Blueprint actors.
 
@@ -33,6 +33,19 @@ support currently covers system creation, system inspection, empty emitter
 handles, spawn-rate module editing, sprite/mesh renderers, and exposed user
 parameters; use additional C++ bridge extensions for ribbon renderers and
 broader module input editing.
+
+### Blueprint Component Attachment
+
+Use `add_niagara_component` when a generated actor should own a Niagara effect
+as a component rather than spawning the system from Event Graph logic.
+
+Recommended companion flow:
+
+1. Inspect or create the Niagara System asset first.
+2. Inspect the target Blueprint components before adding a component.
+3. Attach the Niagara System with `add_niagara_component`.
+4. Compile the Blueprint and read back components to confirm the assigned system.
+5. Capture viewport or PIE evidence before recording the VFX pass as complete.
 
 ---
 

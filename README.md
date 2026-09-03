@@ -2,7 +2,7 @@
 
 Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP server that lets AI agents inspect and modify live UE projects through the Model Context Protocol.
 
-The current server registers **620 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55557`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window with live context chips, typed drag/drop references, and a categorized tool palette that can send messages to Cursor through the server.
+The current server registers **713 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55655`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window with a compact IDE cockpit overview, queued-action preview, evidence timeline and artifact preview, live context chips, typed drag/drop references, and a categorized tool palette that can send messages to Cursor through the server.
 
 ## What It Can Do
 
@@ -14,7 +14,7 @@ The current server registers **620 MCP tools**. The plugin exposes a TCP bridge 
 - Add VFX/audio/material logic: Niagara components, spawn Niagara nodes, sound nodes, material instance parameters, collision settings, and Sequencer transform tracks.
 - Validate and repair Blueprints with diagnostic, repair, execution journal, action risk-evaluation, PIE, log, and viewport evidence tools.
 - Provide a repo knowledge base for UE5 workflows, Blueprint patterns, MCP usage, first-person systems, retargeting, Sequencer, Control Rig, weapons, melee, force powers, and boss AI.
-- Provide an editor-side chat panel with live level, actor, dirty-asset, compile, and SSE server context chips, typed asset/actor/file drag-drop references, a categorized tool palette, and an optional Cursor SDK watcher for automatic replies.
+- Provide an editor-side chat panel with a compact IDE cockpit overview, queued-action preview, evidence timeline and artifact preview, live level, actor, dirty-asset, compile, and SSE server context chips, typed asset/actor/file drag-drop references, a categorized tool palette, and an optional Cursor SDK watcher for automatic replies.
 
 ## Architecture
 
@@ -25,13 +25,13 @@ AI client or Cursor watcher
   v
 Python FastMCP server
   - unreal_mcp_server/unreal_mcp_server.py
-  - 620 registered MCP tools
+  - 713 registered MCP tools
   - optional /chat/* HTTP routes on port 8000
   |
   | TCP JSON, one command per connection
   v
 UnrealMCP UE plugin
-  - localhost:55557
+  - localhost:55655
   - runs commands on the editor GameThread
   - UnrealMCP module: TCP bridge and command handlers
   - UnrealMCPEditor module: Window > MCP Chat
@@ -146,13 +146,13 @@ Notes:
 Open the `.uproject`. In **Window > Output Log**, confirm:
 
 ```text
-UnrealMCPBridge: Server started on 127.0.0.1:55557
+UnrealMCPBridge: Server started on 127.0.0.1:55655
 ```
 
 PowerShell port check:
 
 ```powershell
-python -c "import socket; s=socket.socket(); s.settimeout(2); r=s.connect_ex(('127.0.0.1',55557)); s.close(); print('PLUGIN RUNNING' if r==0 else 'PLUGIN NOT RUNNING')"
+python -c "import socket; s=socket.socket(); s.settimeout(2); r=s.connect_ex(('127.0.0.1',55655)); s.close(); print('PLUGIN RUNNING' if r==0 else 'PLUGIN NOT RUNNING')"
 ```
 
 ## Running the MCP Server
@@ -199,15 +199,17 @@ Use this when remote clients, Cursor SDK processes, or the Unreal editor chat pa
 
 ```powershell
 cd "C:\Dev\Unreal-MCP-Ghost"
-python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 0.0.0.0 --mcp-port 8000
+python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000
 ```
 
 Expected:
 
 ```text
-[UnrealMCP] SSE server listening on http://0.0.0.0:8000/sse
-[UnrealMCP] UE5 plugin target: 127.0.0.1:55557
+[UnrealMCP] SSE server listening on http://127.0.0.1:8000/sse
+[UnrealMCP] UE5 plugin target: 127.0.0.1:55655
 ```
+
+The HTTP chat routes do not provide application-layer authentication, so the server only accepts loopback binds. For remote access, keep this loopback bind and put an authenticated tunnel or reverse proxy in front of it.
 
 Quick HTTP checks:
 
@@ -220,7 +222,7 @@ Invoke-RestMethod "http://127.0.0.1:8000/chat/history?limit=1"
 For MCP clients supporting the newer streamable HTTP transport:
 
 ```powershell
-python unreal_mcp_server\unreal_mcp_server.py --transport streamable-http --mcp-host 0.0.0.0 --mcp-port 8000
+python unreal_mcp_server\unreal_mcp_server.py --transport streamable-http --mcp-host 127.0.0.1 --mcp-port 8000
 ```
 
 Endpoint: `http://127.0.0.1:8000/mcp`
@@ -251,7 +253,7 @@ The panel:
 Start the MCP server in SSE mode before opening the chat panel:
 
 ```powershell
-python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 0.0.0.0 --mcp-port 8000
+python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000
 ```
 
 ### Automatic Cursor Replies
@@ -271,6 +273,7 @@ Useful options:
 $env:UE_CHAT_SERVER_URL = "http://127.0.0.1:8000"
 $env:UE_CHAT_POLL_INTERVAL_MS = "2000"
 $env:UE_CHAT_CATCH_UP = "1"
+$env:UE_CHAT_SESSION = "My Session"
 $env:CURSOR_MODEL = "auto"
 ```
 
@@ -288,7 +291,7 @@ Agents should read repository knowledge before making Unreal changes:
 
 ## Current Tool Surface
 
-The server currently registers **620 MCP tools**, including:
+The server currently registers **713 MCP tools**, including:
 
 - Core editor/actor tools
 - Blueprint creation, graph editing, node connection, variable/function tools
@@ -301,8 +304,9 @@ The server currently registers **620 MCP tools**, including:
 - Asset import and folder import tools
 - GhostRigger bridge tools
 - Safe execution substrate, execution journals, action risk evaluation, PIE/log/viewport evidence capture, reflection, diagnostics, source control, project intelligence, C++ bridge, and repair tools
-- Higher-level skills such as blueprint health audit, health system creation, vertical slice report packaging, and broken blueprint repair
-- Chat tools: `chat_poll_messages`, `chat_send_response`, `chat_get_context`
+- Higher-level skills such as IDE companion session orchestration/status receipts/work orders/evidence ledgers/resume packets/dashboards/blocker resolution/placeholder manifests/generated asset lifecycle manifests/editor action queues, gameplay mechanic planning, blueprint health audit, health system creation, vertical slice report packaging, and broken blueprint repair
+- Chat tools: `chat_poll_messages`, `chat_send_response`, `chat_get_context`, `chat_list_sessions`, `chat_get_session_resume_context`, `chat_get_cockpit_overview`, `chat_get_cockpit_ledger_detail`
+- Native-alignment meta-tools for toolset search, clean-room tool contribution contracts, client config generation, bridge descriptors, guarded bridge command calls, server lifecycle status, transport diagnostics, protocol contract/session guidance, operation status/cancel requests, safe metadata refresh, spatial awareness of live UE scenes, spatial room-bounds designation contracts for Ghost.RoomBounds/Ghost.Zone/Ghost.Opening/Ghost.Path/Ghost.Surface markers, live room analysis for dimensions/zones/surfaces/clearances, authored marker recognition, functional zone inference for kitchen/living/bedroom/entry/hallway/utility planning, zone-aware interior prop programming for fixtures/furniture/clutter/architectural fill, analysis-driven and support-surface-informed interior composition planning, semantic composition constraints/preflight for support contact, counter adjacency, kitchen work triangles, living groupings, circulation, hallway linear-clearance review, opening/egress clearance, entry-to-anchor visual sightlines, and per-prop front-facing interaction clearance, screenshot vision-decomposition requests, screenshot scene-graph relationship inference, size-aware live project asset cataloging and candidate resolution before Tripo spend, local screenshot crop manifests for Tripo image inputs, guarded Tripo generation batch manifests with project-asset-filtered unresolved-prop jobs and per-job prompt/spend/import/placement/validation lifecycle metadata, spatial generation briefs, concrete image-crop readiness gates, and binding handoffs that merge reused project assets plus generated imports into one dry-run composition, post-binding spatial pipeline handoffs for scale review, support anchoring, layout/candidate-clearance preflight, dry-run apply, validation, iteration, and viewport evidence, generated-asset binding from Tripo import results with spatial-fit review, generated-asset scale correction before dry-run placement, support-surface anchoring for floor/counter/table/shelf/wall contact, composition-derived support surfaces for screenshot/generated counters and tables, composition-derived room/zone wall anchors for generated wall props, dry-run-first and spatial-fit-gated composition batch application, spatial worldbuilding work orders/readiness gates with screenshot crop-manifest blockers before Tripo image-to-model spend and live candidate-clearance blockers before mutation, local layout preflight for room bounds/footprints/spacing/opening clearance/front-facing interaction clearance/visual sightlines, local layout-preflight correction planning for room-bound/overlap/circulation repair before mutation, live actor-bounds candidate clearance preflight, iterative correction planning from placement validation or live candidate-clearance blockers with corrected composition-plan handoffs, surface-aware placement probes, placement validation/evidence planning, placement policy inference, screenshot detection preflight/normalization, screenshot-driven detected-prop programming, screenshot reconstruction planning with scene-graph-guided placement hints, screenshot-detected opening/window clearance constraints, and guarded Tripo generation/import/crop handoffs, Content Browser selection handoff/batch placement, selection-aware viewport/evidence setup, and dry-run-first spatial asset placement with actor tags/Data Layer-aware planning
 
 Use `list_knowledge_base_topics`, `get_knowledge_base`, and `search_knowledge_base` before implementing systems. Use `get_blueprint_nodes`, `get_blueprint_variables`, and `get_blueprint_components` before modifying any Blueprint.
 
@@ -353,7 +357,7 @@ You are running an old MCP server process. Stop the process listening on port 80
 ```powershell
 Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object OwningProcess
 Stop-Process -Id <PID> -Force
-python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 0.0.0.0 --mcp-port 8000
+python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000
 ```
 
 ### Editor chat says "MCP Server offline"
@@ -365,7 +369,7 @@ python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 0.0.0.0
 ### AI cannot reach Unreal
 
 - Confirm Unreal Editor is open.
-- Confirm Output Log says the bridge started on `127.0.0.1:55557`.
+- Confirm Output Log says the bridge started on `127.0.0.1:55655`.
 - Confirm no firewall or tunnel is blocking the port.
 - Restart the MCP server after restarting Unreal.
 

@@ -7,7 +7,7 @@ KotOR 3-D model converter (https://github.com/CrispyW0nton/Kotor-3D-Model-Conver
 and exposes its own MCP-compatible API via the IPC server.
 
 Architecture:
-  Unreal-MCP-Ghost (port 55557 TCP → UE5 C++ plugin)
+  Unreal-MCP-Ghost (port 55655 TCP → UE5 C++ plugin)
   GhostRigger IPC  (port 7001  HTTP → GhostRigger / KotorMCP)
 
 These tools use plain HTTP (urllib) with no extra dependencies so they work

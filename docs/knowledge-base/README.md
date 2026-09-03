@@ -31,12 +31,14 @@ Duplicating whole chapters or the full text into `docs/` or rules would still be
 | [unreal-cpp-li-2023.md](unreal-cpp-li-2023.md) | UE5 C++ gameplay, `UPROPERTY` / `UFUNCTION`, AnimInstance, collisions, multiplayer | `unreal_plugin/` C++ commands, gameplay wiring |
 | [elevating-game-experiences-ue5-2e.md](elevating-game-experiences-ue5-2e.md) | Editor fluency, Blueprint-first workflows, “experience” quality | MCP Blueprint/UMG tools, iteration discipline |
 | [game-ai-unreal-sapio-2019.md](game-ai-unreal-sapio-2019.md) | BTs, navigation, EQS, perception-style AI framing | `build_behavior_tree`, BT/BBC tools, AI-related MCP commands |
+| [unreal-editor-ui-source-deep-dive.md](unreal-editor-ui-source-deep-dive.md) | Local UE source study of asset editor windows, Slate, viewports, details panels, ToolMenus, and mesh paint | Tripo Workspace and native Unreal UI/UX direction |
 
 ## Suggested reading order for MCP contributors
 
 1. **Li (C++)** — understand module boundaries, reflection macros, and where C++ must back MCP operations.
 2. **Marques et al. (Elevating experiences)** — align editor habits with safe automation (compile/save/delegate chains in UE5.6).
 3. **Sapio (AI)** — map high-level AI architecture to the MCP BT/Blackboard surface.
+4. **UE editor UI source deep dive** — use the local engine source to keep Tripo Workspace UI aligned with native asset editors.
 
 ## Maintenance
 

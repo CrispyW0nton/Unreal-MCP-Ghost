@@ -7,7 +7,7 @@ from __future__ import annotations
 import json, socket
 from typing import Any
 
-HOST, PORT = "127.0.0.1", 55557
+HOST, PORT = "127.0.0.1", 55655
 
 
 def send(command: str, params: dict | None = None, timeout: float = 120.0) -> dict:

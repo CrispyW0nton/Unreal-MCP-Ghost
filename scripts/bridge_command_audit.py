@@ -163,6 +163,16 @@ CPP_ONLY_ROUTE_REVIEW: Dict[str, Tuple[str, str, str]] = {
         "low",
         "Game-specific sample recipe; candidate for a skill, not a low-level MCP tool.",
     ),
+    "gen_prepare_import_manifest": (
+        "public_dynamic_wrapper",
+        "low",
+        "Public generative import-handoff tool; its shared command constant is not visible to the static call-site scanner.",
+    ),
+    "inspect_static_mesh_sections": (
+        "public_dynamic_wrapper",
+        "low",
+        "Public read-only editor and MCPStudio tool; its allowlisted bridge client call is intentionally indirect.",
+    ),
     "ping": (
         "needs_python_wrapper",
         "high",

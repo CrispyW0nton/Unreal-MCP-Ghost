@@ -374,6 +374,102 @@ def register_advanced_node_tools(mcp: FastMCP):
             "node_position": node_position
         })
 
+    # ── Custom / Interface Events ────────────────────────────────────────────
+
+    @mcp.tool()
+    def add_custom_event(
+        ctx: Context,
+        blueprint_name: str,
+        event_name: str,
+        node_position: List[float] = None,
+    ) -> Dict[str, Any]:
+        """Add a Custom Event node to a Blueprint event graph.
+
+        Use this for explicit gameplay entry points that will be wired by later
+        graph operations. Inspect existing events first to avoid duplicate event
+        names, then compile and read back after wiring.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            event_name: Custom event/function name to create.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#events-and-dispatch
+        Example:
+            add_custom_event(blueprint_name="/Game/MCP_Test/BP_Example", event_name="OnInteract")"""
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_custom_event", {
+            "blueprint_name": blueprint_name,
+            "event_name": event_name,
+            "node_position": node_position,
+        })
+
+    @mcp.tool()
+    def call_custom_event(
+        ctx: Context,
+        blueprint_name: str,
+        target_blueprint: str,
+        event_name: str,
+        node_position: List[float] = None,
+    ) -> Dict[str, Any]:
+        """Add a call node for a Custom Event defined on another Blueprint.
+
+        Use this after creating or verifying the target custom event. The native
+        route resolves the target Blueprint generated class and returns visible
+        pins for follow-up wiring.
+
+        Args:
+            blueprint_name: Blueprint that receives the call node.
+            target_blueprint: Blueprint that owns the custom event.
+            event_name: Custom event name to call.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#events-and-dispatch
+        Example:
+            call_custom_event(blueprint_name="/Game/BP_Button", target_blueprint="/Game/BP_Door", event_name="OpenDoor")"""
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("call_custom_event", {
+            "blueprint_name": blueprint_name,
+            "target_blueprint": target_blueprint,
+            "event_name": event_name,
+            "node_position": node_position,
+        })
+
+    @mcp.tool()
+    def add_interface_event_node(
+        ctx: Context,
+        blueprint_name: str,
+        interface_name: str,
+        function_name: str,
+        node_position: List[float] = None,
+    ) -> Dict[str, Any]:
+        """Add an event override node for a Blueprint Interface function.
+
+        Interface events are useful for interactables, pickups, objectives, and
+        other vertical-slice workflows where actors share behavior contracts.
+        Verify the Blueprint implements the interface before relying on runtime
+        dispatch, then compile and read back the graph.
+
+        Args:
+            blueprint_name: Blueprint that receives the interface event node.
+            interface_name: Blueprint Interface asset name or path.
+            function_name: Interface function to implement as an event.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#events-and-dispatch
+        Example:
+            add_interface_event_node(blueprint_name="/Game/BP_Door", interface_name="/Game/BPI_Interactable", function_name="Interact")"""
+        if node_position is None:
+            node_position = [0, 0]
+        return _send("add_interface_event_node", {
+            "blueprint_name": blueprint_name,
+            "interface_name": interface_name,
+            "function_name": function_name,
+            "node_position": node_position,
+        })
+
     # ── Math & Utility Nodes ──────────────────────────────────────────────────
 
     @mcp.tool()
@@ -660,11 +756,9 @@ def register_advanced_node_tools(mcp: FastMCP):
             add_open_level_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_function_node", {
+        return _send("add_open_level_node", {
             "blueprint_name": blueprint_name,
-            "target": "UGameplayStatics",
-            "function_name": "OpenLevel",
-            "params": {"LevelName": level_name},
+            "level_name": level_name,
             "node_position": node_position
         })
 
@@ -1367,23 +1461,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             add_arithmetic_operator_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
-        # Map operator + type to the actual KismetMathLibrary function name
-        _op_map = {
-            ("Add", "Float"): "Add_FloatFloat", ("Add", "Integer"): "Add_IntInt",
-            ("Add", "Vector"): "Add_VectorVector", ("Add", "Int64"): "Add_Int64Int64",
-            ("Subtract", "Float"): "Subtract_FloatFloat", ("Subtract", "Integer"): "Subtract_IntInt",
-            ("Subtract", "Vector"): "Subtract_VectorVector", ("Subtract", "Int64"): "Subtract_Int64Int64",
-            ("Multiply", "Float"): "Multiply_FloatFloat", ("Multiply", "Integer"): "Multiply_IntInt",
-            ("Multiply", "Vector"): "Multiply_VectorFloat", ("Multiply", "Int64"): "Multiply_Int64Int64",
-            ("Divide", "Float"): "Divide_FloatFloat", ("Divide", "Integer"): "Divide_IntInt",
-            ("Modulo", "Integer"): "Percent_IntInt",
-            ("Power", "Float"): "MultiplyMultiply_FloatFloat",
-        }
-        fn = _op_map.get((operator, operand_type), f"{operator}_{operand_type}{operand_type}")
-        return _send("add_blueprint_function_node", {
+        return _send("add_arithmetic_operator_node", {
             "blueprint_name": blueprint_name,
-            "target": "KismetMathLibrary",
-            "function_name": fn,
+            "operator": operator,
+            "operand_type": operand_type,
             "node_position": node_position or [0, 0]
         })
 
@@ -1416,21 +1497,10 @@ def register_advanced_node_tools(mcp: FastMCP):
             add_relational_operator_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
-        _rel_map = {
-            ("Equal", "Float"): "EqualEqual_FloatFloat", ("Equal", "Integer"): "EqualEqual_IntInt",
-            ("Equal", "String"): "EqualEqual_StrStr", ("Equal", "Vector"): "EqualEqual_VectorVector",
-            ("NotEqual", "Float"): "NotEqual_FloatFloat", ("NotEqual", "Integer"): "NotEqual_IntInt",
-            ("NotEqual", "String"): "NotEqual_StrStr",
-            ("Greater", "Float"): "Greater_FloatFloat", ("Greater", "Integer"): "Greater_IntInt",
-            ("GreaterEqual", "Float"): "GreaterEqual_FloatFloat", ("GreaterEqual", "Integer"): "GreaterEqual_IntInt",
-            ("Less", "Float"): "Less_FloatFloat", ("Less", "Integer"): "Less_IntInt",
-            ("LessEqual", "Float"): "LessEqual_FloatFloat", ("LessEqual", "Integer"): "LessEqual_IntInt",
-        }
-        fn = _rel_map.get((operator, operand_type), f"{operator}_{operand_type}{operand_type}")
-        return _send("add_blueprint_function_node", {
+        return _send("add_relational_operator_node", {
             "blueprint_name": blueprint_name,
-            "target": "KismetMathLibrary",
-            "function_name": fn,
+            "operator": operator,
+            "operand_type": operand_type,
             "node_position": node_position or [0, 0]
         })
 
@@ -1488,9 +1558,8 @@ def register_advanced_node_tools(mcp: FastMCP):
             add_construction_script_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         if node_position is None:
             node_position = [0, 0]
-        return _send("add_blueprint_event_node", {
+        return _send("add_construction_script_node", {
             "blueprint_name": blueprint_name,
-            "event_name": "UserConstructionScript",
             "node_position": node_position
         })
 

@@ -351,10 +351,15 @@ try:
         if asset_data:
             result["success"] = True
             result["class_name"] = asset_data.get_class().get_name() if asset_data.get_class() else ""
-            result["object_path"] = str(asset_data.object_path)
             result["package_name"] = str(asset_data.package_name)
             result["package_path"] = str(asset_data.package_path)
             result["asset_name"] = str(asset_data.asset_name)
+            # UE 5.8 removed AssetData.object_path from the Python wrapper and
+            # renders to_soft_object_path() as an opaque struct. Package and
+            # asset names remain stable across supported engine profiles.
+            result["object_path"] = (
+                result["package_name"] + "." + result["asset_name"]
+            )
 
             # Load the actual asset for richer info
             asset = unreal.EditorAssetLibrary.load_asset(asset_path)
@@ -906,7 +911,7 @@ _PROJECT_CONTEXT_TEMPLATE = """
 # Unreal-MCP-Ghost Project Context
 
 ## Architecture
-- TCP port 55557 → UE5 C++ plugin (all MCP tools)
+- TCP port 55655 → UE5 C++ plugin (all MCP tools)
 - HTTP port 7001 → GhostRigger IPC server (KotOR model pipeline)
 
 ## Registered tool count (actual): use get_recent_output_log() for live count

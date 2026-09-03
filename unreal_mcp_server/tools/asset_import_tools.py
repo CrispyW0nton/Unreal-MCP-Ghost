@@ -5,6 +5,7 @@ Tools:
   import_texture        — PNG/JPG/TGA/EXR/HDR/BMP → Texture2D with auto compression settings
   import_static_mesh    — FBX/OBJ/glTF → StaticMesh with configurable import options
   import_skeletal_mesh  — FBX → SkeletalMesh with animation, morph-target, and skeleton options
+  import_animation_fbx  — Animation-only FBX → AnimSequence(s) on an existing Skeleton
 
 All tools use exec_python_structured (safe execution substrate) to run inside UE5.
 Results follow the StructuredResult schema:
@@ -13,6 +14,7 @@ For files on the Linux sandbox use import_sound_asset_from_sandbox pattern inste
 """
 import json
 import logging
+import re
 from typing import Any, Dict
 
 from mcp.server.fastmcp import Context, FastMCP
@@ -22,6 +24,7 @@ logger = logging.getLogger("UnrealMCP")
 SUPPORTED_TEXTURE_EXTS = {".png", ".jpg", ".jpeg", ".tga", ".exr", ".hdr", ".bmp"}
 SUPPORTED_STATIC_MESH_EXTS = {".fbx", ".obj", ".gltf", ".glb"}
 SUPPORTED_SKELETAL_MESH_EXTS = {".fbx"}
+SUPPORTED_ANIMATION_EXTS = {".fbx"}
 
 
 def _get_substrate():
@@ -420,4 +423,204 @@ _result["reused_skeleton"]     = reused_skeleton
 """
         exec_structured = _get_substrate()
         r = exec_structured(user_code, "import_skeletal_mesh")
+        return json.dumps(r)
+
+    # ── Tool 4: import_animation_fbx ────────────────────────────────────────
+
+    @mcp.tool()
+    async def import_animation_fbx(
+        ctx: Context,
+        file_path: str,
+        skeleton: str,
+        destination_path: str = "/Game/Animations/",
+        destination_name: str = "",
+        animation_length: str = "exported_time",
+        import_custom_attributes: bool = True,
+        remove_redundant_keys: bool = True,
+        use_default_sample_rate: bool = False,
+        custom_sample_rate: int = 0,
+        replace_existing: bool = False,
+    ) -> str:
+        """Import an animation-only FBX onto an existing UE Skeleton.
+
+        This is the receiving half of DCC animation handoffs such as Cascadeur's
+        ``Animation`` FBX preset.  It deliberately disables mesh, material, and
+        texture import so a validation or animation pass cannot silently replace
+        a production SkeletalMesh.
+
+        Args:
+            file_path: Absolute path to an FBX file on the Unreal host.
+            skeleton: Existing Skeleton asset path, for example
+                ``/Game/Characters/Mannequins/Meshes/SKM_Manny_Skeleton``.
+            destination_path: Content Browser folder for AnimSequence assets.
+            destination_name: Optional asset name override.  Empty preserves the
+                FBX take/file naming chosen by Unreal.
+            animation_length: ``exported_time`` (default) or ``animated_key``.
+            import_custom_attributes: Preserve authored FBX custom attributes.
+            remove_redundant_keys: Allow Unreal's lossless redundant-key cleanup.
+            use_default_sample_rate: Sample at Unreal's default rate when true.
+            custom_sample_rate: Explicit sample rate when greater than zero.
+            replace_existing: Replace same-named destination assets only when
+                explicitly requested.  Defaults false for non-destructive proof.
+
+        Returns:
+            StructuredResult JSON with imported AnimSequence paths, the resolved
+            Skeleton, and the effective import settings.
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#import-and-retargeting
+        Example:
+            import_animation_fbx(
+                file_path="C:/Animations/Walk.fbx",
+                skeleton="/Game/Characters/Mannequins/Meshes/SKM_Manny_Skeleton",
+                destination_path="/Game/Animations",
+            )
+        """
+        allowed_lengths = {"exported_time", "animated_key"}
+        animation_length_normalized = str(animation_length).strip().lower()
+        if animation_length_normalized not in allowed_lengths:
+            return json.dumps({
+                "success": False,
+                "stage": "import_animation_fbx",
+                "message": "Invalid animation_length",
+                "outputs": {},
+                "warnings": [],
+                "errors": [
+                    "animation_length must be exported_time or animated_key"
+                ],
+                "log_tail": [],
+            })
+        destination_normalized = str(destination_path).rstrip("/") or "/Game/Animations"
+        if not (
+            destination_normalized == "/Game"
+            or destination_normalized.startswith("/Game/")
+        ):
+            return json.dumps({
+                "success": False,
+                "stage": "import_animation_fbx",
+                "message": "Invalid destination_path",
+                "outputs": {},
+                "warnings": [],
+                "errors": ["destination_path must be inside /Game"],
+                "log_tail": [],
+            })
+        if destination_name and not re.fullmatch(r"[A-Za-z0-9_]+", destination_name):
+            return json.dumps({
+                "success": False,
+                "stage": "import_animation_fbx",
+                "message": "Invalid destination_name",
+                "outputs": {},
+                "warnings": [],
+                "errors": [
+                    "destination_name may contain only letters, numbers, and underscores"
+                ],
+                "log_tail": [],
+            })
+        if custom_sample_rate < 0:
+            return json.dumps({
+                "success": False,
+                "stage": "import_animation_fbx",
+                "message": "Invalid custom_sample_rate",
+                "outputs": {},
+                "warnings": [],
+                "errors": ["custom_sample_rate must be zero or greater"],
+                "log_tail": [],
+            })
+
+        user_code = f"""
+import os
+
+file_path                = {file_path!r}
+skeleton_path            = {skeleton!r}
+destination_path         = {destination_normalized!r}
+destination_name         = {destination_name!r}
+animation_length_arg     = {animation_length_normalized!r}
+import_custom_attributes = {import_custom_attributes!r}
+remove_redundant_keys    = {remove_redundant_keys!r}
+use_default_sample_rate  = {use_default_sample_rate!r}
+custom_sample_rate       = {custom_sample_rate!r}
+replace_existing         = {replace_existing!r}
+
+if not os.path.isfile(file_path):
+    raise RuntimeError("Animation FBX does not exist: " + file_path)
+if os.path.splitext(file_path)[1].lower() != ".fbx":
+    raise RuntimeError("Animation import accepts FBX files only: " + file_path)
+if not skeleton_path:
+    raise RuntimeError("An existing Unreal Skeleton asset path is required")
+
+skel = unreal.EditorAssetLibrary.load_asset(skeleton_path)
+if not skel or not isinstance(skel, unreal.Skeleton):
+    raise RuntimeError("Skeleton asset not found or wrong type: " + skeleton_path)
+
+dest = destination_path.rstrip("/") or "/Game/Animations"
+unreal.EditorAssetLibrary.make_directory(dest)
+
+length_values = {{
+    "exported_time": unreal.FBXAnimationLengthImportType.FBXALIT_EXPORTED_TIME,
+    "animated_key": unreal.FBXAnimationLengthImportType.FBXALIT_ANIMATED_KEY,
+}}
+
+options = unreal.FbxImportUI()
+options.set_editor_property("import_mesh", False)
+options.set_editor_property("import_animations", True)
+options.set_editor_property("import_materials", False)
+options.set_editor_property("import_textures", False)
+options.set_editor_property("skeleton", skel)
+
+anim_data = options.anim_sequence_import_data
+anim_data.set_editor_property("animation_length", length_values[animation_length_arg])
+anim_data.set_editor_property("import_bone_tracks", True)
+anim_data.set_editor_property("import_custom_attribute", import_custom_attributes)
+anim_data.set_editor_property("remove_redundant_keys", remove_redundant_keys)
+anim_data.set_editor_property("use_default_sample_rate", use_default_sample_rate)
+if custom_sample_rate > 0:
+    anim_data.set_editor_property("custom_sample_rate", custom_sample_rate)
+
+task = unreal.AssetImportTask()
+task.filename = file_path
+task.destination_path = dest
+if destination_name:
+    task.destination_name = destination_name
+task.automated = True
+task.save = True
+task.replace_existing = replace_existing
+task.set_editor_property("options", options)
+
+unreal.AssetToolsHelpers.get_asset_tools().import_asset_tasks([task])
+imported = list(task.get_editor_property("imported_object_paths") or [])
+animation_paths = []
+unexpected_paths = []
+for imported_path in imported:
+    asset = unreal.EditorAssetLibrary.load_asset(imported_path)
+    clean_path = imported_path.split(".")[0] if "." in imported_path else imported_path
+    if asset and isinstance(asset, unreal.AnimSequence):
+        animation_paths.append(clean_path)
+    else:
+        unexpected_paths.append(clean_path)
+
+if not animation_paths:
+    raise RuntimeError(
+        "Unreal imported no AnimSequence assets. Confirm that the FBX contains "
+        "baked joint animation and that its hierarchy matches: " + skeleton_path
+    )
+if unexpected_paths:
+    _warnings.append(
+        "Animation-only import produced non-AnimSequence paths: "
+        + ", ".join(unexpected_paths)
+    )
+
+_result["asset_paths"] = animation_paths
+_result["asset_type"] = "AnimSequence"
+_result["skeleton_path"] = skel.get_path_name().split(".")[0]
+_result["source_file"] = file_path
+_result["settings"] = {{
+    "animation_length": animation_length_arg,
+    "import_custom_attributes": import_custom_attributes,
+    "remove_redundant_keys": remove_redundant_keys,
+    "use_default_sample_rate": use_default_sample_rate,
+    "custom_sample_rate": custom_sample_rate,
+    "replace_existing": replace_existing,
+}}
+"""
+        exec_structured = _get_substrate()
+        r = exec_structured(user_code, "import_animation_fbx")
         return json.dumps(r)

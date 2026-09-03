@@ -50,6 +50,25 @@ Character BP (game state) ──reads──→ ABP Event Graph ──updates─�
                                                                                     Skeletal Mesh
 ```
 
+### MCP AnimGraph Native Authoring
+
+Use native bridge wrappers for AnimGraph pose nodes instead of generic Blueprint
+function-node fallbacks:
+
+| Tool | Purpose |
+|------|---------|
+| `add_sequence_player_node` | Adds an Animation Sequence Player to an AnimBP AnimGraph. |
+| `connect_anim_graph_nodes` | Connects compatible pose pins between AnimGraph nodes by node GUID. |
+| `insert_anim_graph_slot` | Inserts a Slot node before the root pose for montage layering. |
+
+Recommended companion flow:
+
+1. Inspect the AnimBP and identify the target AnimGraph before mutation.
+2. Add Sequence Player or Blend Space nodes with explicit asset paths and positions.
+3. Connect pose links with `connect_anim_graph_nodes` only after reading node IDs.
+4. Compile the AnimBP and inspect diagnostics.
+5. Read back the AnimGraph and record evidence before runtime/PIE validation.
+
 ---
 
 ## 3. Standard Event Graph Pattern

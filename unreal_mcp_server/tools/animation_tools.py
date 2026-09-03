@@ -580,6 +580,77 @@ def register_animation_tools(mcp: FastMCP):
         })
 
     @mcp.tool()
+    def add_sequence_player_node(
+        ctx: Context,
+        anim_blueprint_name: str,
+        sequence_asset: str,
+        graph_name: str = "",
+        node_position: List[float] = None,
+        wire_to_root: bool = False,
+        loop: bool = True,
+    ) -> Dict[str, Any]:
+        """Add a Sequence Player node to an Animation Blueprint AnimGraph.
+
+        Use this for direct animation-sequence playback in generated AnimBP
+        graphs, then inspect the graph and compile the AnimBP before relying on
+        the node at runtime.
+
+        Args:
+            anim_blueprint_name: Animation Blueprint asset path or name.
+            sequence_asset: Animation sequence asset path.
+            graph_name: Optional graph name; defaults to the AnimGraph.
+            node_position: Optional [X, Y] graph position.
+            wire_to_root: Whether to wire the pose output directly to Root.
+            loop: Whether the sequence player should loop.
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#animgraph-native-authoring
+        Example:
+            add_sequence_player_node(anim_blueprint_name="/Game/ABP_Enemy", sequence_asset="/Game/Anims/A_Idle")"""
+        if node_position is None:
+            node_position = [0, 0]
+        params: Dict[str, Any] = {
+            "anim_blueprint_name": anim_blueprint_name,
+            "sequence_asset": sequence_asset,
+            "node_position": node_position,
+            "wire_to_root": wire_to_root,
+            "loop": loop,
+        }
+        if graph_name:
+            params["graph_name"] = graph_name
+        return _send("add_sequence_player_node", params)
+
+    @mcp.tool()
+    def connect_anim_graph_nodes(
+        ctx: Context,
+        anim_blueprint_name: str,
+        source_node_id: str,
+        target_node_id: str,
+        graph_name: str = "",
+    ) -> Dict[str, Any]:
+        """Connect compatible pose pins between two AnimGraph nodes.
+
+        Use this after inspecting AnimGraph node IDs. Follow with AnimBP compile
+        diagnostics and readback before treating the animation layer as proven.
+
+        Args:
+            anim_blueprint_name: Animation Blueprint asset path or name.
+            source_node_id: Source AnimGraph node GUID.
+            target_node_id: Target AnimGraph node GUID.
+            graph_name: Optional graph name; defaults to the AnimGraph.
+
+        KB: see knowledge_base/05_ANIMATION_SYSTEM.md#animgraph-native-authoring
+        Example:
+            connect_anim_graph_nodes(anim_blueprint_name="/Game/ABP_Enemy", source_node_id="...", target_node_id="...")"""
+        params: Dict[str, Any] = {
+            "anim_blueprint_name": anim_blueprint_name,
+            "source_node_id": source_node_id,
+            "target_node_id": target_node_id,
+        }
+        if graph_name:
+            params["graph_name"] = graph_name
+        return _send("connect_anim_graph_nodes", params)
+
+    @mcp.tool()
     def insert_anim_graph_slot(
         ctx: Context,
         anim_blueprint_name: str,

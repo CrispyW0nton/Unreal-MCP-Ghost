@@ -1,6 +1,6 @@
 # Cursor MCP Setup Guide — UnrealMCP (2026-04-11)
 
-This guide sets up **Cursor IDE** to control UE5 directly via the 321-tool MCP server,
+This guide sets up **Cursor IDE** to control UE5 directly via the 713-tool MCP server,
 using `stdio` transport (no port-forwarding, no SSE, no Playit tunnel needed).
 
 ---
@@ -11,8 +11,8 @@ using `stdio` transport (no port-forwarding, no SSE, no Playit tunnel needed).
 |-------------|-------|
 | Python 3.10+ on PATH | `python --version` in terminal |
 | MCP + FastMCP installed | `pip install "mcp>=1.2.0" "fastmcp>=2.0.0" "pydantic-core>=2.28.0" anyio` |
-| UE5 Editor open with EnclaveProject | Plugin: UnrealMCP active (check Plugins menu) |
-| UnrealMCP plugin listening | You should see `[MCP] Server listening on port 55557` in UE5 Output Log |
+| UE5 Editor open with your project | Plugin: UnrealMCP active (check Plugins menu) |
+| UnrealMCP plugin listening | You should see `[MCP] Server listening on port 55655` in UE5 Output Log |
 
 ---
 
@@ -32,7 +32,7 @@ Or open Cursor → **Settings** → search **"MCP"** → click **"Edit in mcp.js
 
 Create a `.cursor` folder inside your project root and put `mcp.json` inside it:
 ```
-EnclaveProject\
+YourProject\
   .cursor\
     mcp.json          ← create this
 ```
@@ -47,11 +47,11 @@ EnclaveProject\
     "unreal-mcp": {
       "command": "python",
       "args": [
-        "C:\\Users\\NewAdmin\\Documents\\Academy of Art University\\2026\\Gam270\\Project2\\EnclaveProject\\unreal_mcp_server\\unreal_mcp_server.py"
+        "${workspaceFolder}\\unreal_mcp_server\\unreal_mcp_server.py"
       ],
       "env": {
         "UNREAL_HOST": "127.0.0.1",
-        "UNREAL_PORT": "55557"
+        "UNREAL_PORT": "55655"
       }
     }
   }
@@ -74,7 +74,7 @@ If connected, you'll see tool calls like `get_actors_in_level` being invoked and
 
 If you get "MCP server not found" errors, check:
 - The `python` command works in your terminal (or use the full path: `C:\Python312\python.exe`)
-- UE5 is open and the Output Log shows `[MCP] Server listening on port 55557`
+- UE5 is open and the Output Log shows `[MCP] Server listening on port 55655`
 - The path in `mcp.json` exactly matches the location of `unreal_mcp_server.py`
 
 ---
@@ -85,7 +85,7 @@ If you get "MCP server not found" errors, check:
 2. Paste the entire contents of `cursor_system_prompt.md` into that field.
 3. Save.
 
-This tells Cursor how to use all 321 tools correctly, with the right parameter formats,
+This tells Cursor how to use all 713 tools correctly, with the right parameter formats,
 retry logic, and workflow order.
 
 ---

@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Json.h"
+#include "Dom/JsonObject.h"
 
 /**
  * Handler class for Project-wide MCP commands
@@ -17,4 +17,4 @@ public:
 private:
     // Specific project command handlers
     TSharedPtr<FJsonObject> HandleCreateInputMapping(const TSharedPtr<FJsonObject>& Params);
-}; 
+};
