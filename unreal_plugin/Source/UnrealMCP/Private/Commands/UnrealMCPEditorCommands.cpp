@@ -15,7 +15,12 @@
 #include "GameFramework/Actor.h"
 #include "Engine/Selection.h"
 #include "Kismet/GameplayStatics.h"
+#include "Misc/PackageName.h"
+#include "Misc/EngineVersion.h"
 #include "Engine/StaticMeshActor.h"
+#include "Engine/StaticMesh.h"
+#include "StaticMeshAttributes.h"
+#include "StaticMeshResources.h"
 #include "Engine/DirectionalLight.h"
 #include "Engine/PointLight.h"
 #include "Engine/SpotLight.h"
@@ -25,6 +30,351 @@
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Engine/Blueprint.h"
 #include "Engine/BlueprintGeneratedClass.h"
+#include "AssetRegistry/AssetRegistryModule.h"
+#include "AssetToolsModule.h"
+#include "InputAction.h"
+#include "InputModifiers.h"
+#include "InputMappingContext.h"
+#include "InputTriggers.h"
+#include "DataLayer/DataLayerFactory.h"
+#include "DataLayer/DataLayerEditorSubsystem.h"
+#include "EditorAssetLibrary.h"
+#include "EditorBuildUtils.h"
+#include "Misc/Paths.h"
+#include "Misc/ScopedSlowTask.h"
+#include "ScopedTransaction.h"
+#include "UObject/SavePackage.h"
+#include "WorldPartition/LoaderAdapter/LoaderAdapterShape.h"
+#include "WorldPartition/WorldPartition.h"
+#include "WorldPartition/WorldPartitionActorLoaderInterface.h"
+#include "WorldPartition/WorldPartitionEditorLoaderAdapter.h"
+#include "WorldPartition/WorldPartitionHelpers.h"
+#include "WorldPartition/DataLayer/DataLayerAsset.h"
+#include "WorldPartition/DataLayer/DataLayerInstance.h"
+#include "WorldPartition/HLOD/HLODLayer.h"
+
+namespace UnrealMCPExecPythonDetail
+{
+	// ExecPythonCommandEx can AV inside EditorScriptingUtilities / MassEntity observers
+	// when Python dirties assets synchronously. MSVC SEH (__try/__except) returns cleanly
+	// so the editor survives and MCP returns JSON instead of EXCEPTION_ACCESS_VIOLATION.
+	//
+	// - Use __except(1) instead of EXCEPTION_EXECUTE_HANDLER so we do not depend on
+	//   <excpt.h> / Windows.h macro order in IWYU builds.
+	// - Gate on real MSVC only: Clang (and clang-cl) do not support __try/__except.
+	static bool ExecPythonWithSeh(IPythonScriptPlugin* Py, FPythonCommandEx& Cmd, bool& bOutSehCrash)
+	{
+		bOutSehCrash = false;
+#if PLATFORM_WINDOWS && defined(_MSC_VER) && !defined(__clang__)
+		__try
+		{
+			return Py->ExecPythonCommandEx(Cmd);
+		}
+		__except (1)
+		{
+			bOutSehCrash = true;
+			return false;
+		}
+#else
+		return Py->ExecPythonCommandEx(Cmd);
+#endif
+	}
+} // namespace UnrealMCPExecPythonDetail
+
+namespace UnrealMCPEditorCommandDetail
+{
+    static UWorld* GetEditorWorld()
+    {
+        return GEditor ? GEditor->GetEditorWorldContext().World() : nullptr;
+    }
+
+    static FString NormalizeAssetPath(const FString& InPath)
+    {
+        FString AssetPath = InPath;
+        AssetPath.TrimStartAndEndInline();
+        if (AssetPath.Contains(TEXT(".")))
+        {
+            AssetPath.LeftInline(AssetPath.Find(TEXT(".")));
+        }
+        AssetPath.RemoveFromEnd(TEXT("/"));
+        return AssetPath;
+    }
+
+    static FString MakeObjectPath(const FString& AssetPath)
+    {
+        const FString CleanPath = NormalizeAssetPath(AssetPath);
+        return FString::Printf(TEXT("%s.%s"), *CleanPath, *FPaths::GetBaseFilename(CleanPath));
+    }
+
+    static bool SplitPackagePath(const FString& AssetPath, FString& OutPackagePath, FString& OutAssetName)
+    {
+        const FString CleanPath = NormalizeAssetPath(AssetPath);
+        int32 LastSlash = INDEX_NONE;
+        if (!CleanPath.StartsWith(TEXT("/Game/")) || !CleanPath.FindLastChar(TEXT('/'), LastSlash) || LastSlash <= 0)
+        {
+            return false;
+        }
+        OutPackagePath = CleanPath.Left(LastSlash);
+        OutAssetName = CleanPath.Mid(LastSlash + 1);
+        return !OutPackagePath.IsEmpty() && !OutAssetName.IsEmpty();
+    }
+
+    static UObject* LoadAsset(const FString& AssetOrObjectPath)
+    {
+        if (AssetOrObjectPath.IsEmpty())
+        {
+            return nullptr;
+        }
+        const FString ObjectPath = AssetOrObjectPath.Contains(TEXT("."))
+            ? AssetOrObjectPath
+            : MakeObjectPath(AssetOrObjectPath);
+        if (UObject* Loaded = StaticLoadObject(UObject::StaticClass(), nullptr, *ObjectPath))
+        {
+            return Loaded;
+        }
+        return StaticLoadObject(UObject::StaticClass(), nullptr, *AssetOrObjectPath);
+    }
+
+    static FVector ReadVectorField(const TSharedPtr<FJsonObject>& Params, const TCHAR* FieldName, const FVector& DefaultValue)
+    {
+        const TArray<TSharedPtr<FJsonValue>>* Values = nullptr;
+        if (Params.IsValid() && Params->TryGetArrayField(FieldName, Values) && Values && Values->Num() >= 3)
+        {
+            return FVector((*Values)[0]->AsNumber(), (*Values)[1]->AsNumber(), (*Values)[2]->AsNumber());
+        }
+        return DefaultValue;
+    }
+
+    static FBox ReadRegionBox(const TSharedPtr<FJsonObject>& Params)
+    {
+        const FVector Center = ReadVectorField(Params, TEXT("center"), FVector::ZeroVector);
+        const FVector Extent = ReadVectorField(Params, TEXT("extent"), FVector(50000.0, 50000.0, 50000.0));
+        const FVector Min = ReadVectorField(Params, TEXT("min"), Center - Extent);
+        const FVector Max = ReadVectorField(Params, TEXT("max"), Center + Extent);
+        return FBox(Min, Max);
+    }
+
+    static TArray<TSharedPtr<FJsonValue>> VectorToJson(const FVector& Value)
+    {
+        TArray<TSharedPtr<FJsonValue>> Values;
+        Values.Add(MakeShared<FJsonValueNumber>(Value.X));
+        Values.Add(MakeShared<FJsonValueNumber>(Value.Y));
+        Values.Add(MakeShared<FJsonValueNumber>(Value.Z));
+        return Values;
+    }
+
+    static TSharedPtr<FJsonObject> BoxToJson(const FBox& Box)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        Obj->SetArrayField(TEXT("min"), VectorToJson(Box.Min));
+        Obj->SetArrayField(TEXT("max"), VectorToJson(Box.Max));
+        Obj->SetArrayField(TEXT("center"), VectorToJson(Box.GetCenter()));
+        Obj->SetArrayField(TEXT("extent"), VectorToJson(Box.GetExtent()));
+        return Obj;
+    }
+
+    static TArray<TSharedPtr<FJsonValue>> MakeStringArray(const TArray<FString>& Values)
+    {
+        TArray<TSharedPtr<FJsonValue>> JsonValues;
+        for (const FString& Value : Values)
+        {
+            JsonValues.Add(MakeShared<FJsonValueString>(Value));
+        }
+        return JsonValues;
+    }
+
+    static TArray<FString> GetStringArrayField(const TSharedPtr<FJsonObject>& Params, const FString& FieldName)
+    {
+        TArray<FString> Values;
+        const TArray<TSharedPtr<FJsonValue>>* JsonValues = nullptr;
+        if (Params.IsValid() && Params->TryGetArrayField(FieldName, JsonValues))
+        {
+            for (const TSharedPtr<FJsonValue>& Value : *JsonValues)
+            {
+                if (Value.IsValid())
+                {
+                    Values.Add(Value->AsString());
+                }
+            }
+        }
+        return Values;
+    }
+
+    static TSharedPtr<FJsonObject> SummarizeDataLayer(UDataLayerInstance* DataLayer, UDataLayerAsset* Asset)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        Obj->SetStringField(TEXT("name"), DataLayer ? DataLayer->GetDataLayerShortName() : TEXT(""));
+        Obj->SetStringField(TEXT("full_name"), DataLayer ? DataLayer->GetDataLayerFullName() : TEXT(""));
+        Obj->SetStringField(TEXT("object_path"), DataLayer ? DataLayer->GetPathName() : TEXT(""));
+        Obj->SetStringField(TEXT("asset_path"), Asset ? NormalizeAssetPath(Asset->GetPathName()) : TEXT(""));
+        Obj->SetStringField(TEXT("asset_object_path"), Asset ? Asset->GetPathName() : TEXT(""));
+        Obj->SetBoolField(TEXT("is_runtime"), DataLayer ? DataLayer->IsRuntime() : false);
+        Obj->SetBoolField(TEXT("is_visible"), DataLayer ? DataLayer->IsVisible() : false);
+        Obj->SetBoolField(TEXT("is_loaded_in_editor"), DataLayer ? DataLayer->IsLoadedInEditor() : false);
+        Obj->SetStringField(TEXT("initial_runtime_state"), DataLayer ? GetDataLayerRuntimeStateName(DataLayer->GetInitialRuntimeState()) : TEXT(""));
+        return Obj;
+    }
+
+    static AActor* FindActorByNameOrLabel(UWorld* World, const FString& Query)
+    {
+        if (!World || Query.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        for (TActorIterator<AActor> It(World); It; ++It)
+        {
+            AActor* Actor = *It;
+            if (Actor && (Actor->GetName().Equals(Query, ESearchCase::IgnoreCase) ||
+                Actor->GetActorLabel().Equals(Query, ESearchCase::IgnoreCase) ||
+                Actor->GetPathName().Equals(Query, ESearchCase::IgnoreCase)))
+            {
+                return Actor;
+            }
+        }
+        return nullptr;
+    }
+
+    static EDataLayerRuntimeState ParseRuntimeState(const FString& State)
+    {
+        const FString Lower = State.ToLower();
+        if (Lower == TEXT("loaded"))
+        {
+            return EDataLayerRuntimeState::Loaded;
+        }
+        if (Lower == TEXT("activated") || Lower == TEXT("active") || Lower == TEXT("visible"))
+        {
+            return EDataLayerRuntimeState::Activated;
+        }
+        return EDataLayerRuntimeState::Unloaded;
+    }
+
+    static bool MatchesText(const FString& Value, const FString& Query, bool bExact)
+    {
+        if (Query.IsEmpty())
+        {
+            return true;
+        }
+        return bExact
+            ? Value.Equals(Query, ESearchCase::IgnoreCase)
+            : Value.Contains(Query, ESearchCase::IgnoreCase);
+    }
+
+    static TSharedPtr<FJsonObject> ClassEntryToJson(UClass* Class)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        Obj->SetStringField(TEXT("name"), Class ? Class->GetName() : TEXT(""));
+        Obj->SetStringField(TEXT("path"), Class ? Class->GetPathName() : TEXT(""));
+        return Obj;
+    }
+
+    static TArray<TSharedPtr<FJsonValue>> ClassChainToJson(UClass* Class)
+    {
+        TArray<TSharedPtr<FJsonValue>> Chain;
+        for (UClass* Current = Class; Current; Current = Current->GetSuperClass())
+        {
+            Chain.Add(MakeShared<FJsonValueObject>(ClassEntryToJson(Current)));
+        }
+        return Chain;
+    }
+
+    static void AppendClassChainStrings(UClass* Class, TArray<FString>& OutNames)
+    {
+        for (UClass* Current = Class; Current; Current = Current->GetSuperClass())
+        {
+            OutNames.Add(Current->GetName());
+            OutNames.Add(Current->GetPathName());
+        }
+    }
+
+    static TSharedPtr<FJsonObject> ActorIdentityToJson(AActor* Actor)
+    {
+        TSharedPtr<FJsonObject> Obj = MakeShared<FJsonObject>();
+        if (!Actor)
+        {
+            return Obj;
+        }
+
+        UClass* Class = Actor->GetClass();
+        Obj->SetStringField(TEXT("label"), Actor->GetActorLabel());
+        Obj->SetStringField(TEXT("name"), Actor->GetName());
+        Obj->SetStringField(TEXT("path"), Actor->GetPathName());
+        Obj->SetStringField(TEXT("class"), Class ? Class->GetName() : TEXT(""));
+        Obj->SetStringField(TEXT("class_path"), Class ? Class->GetPathName() : TEXT(""));
+        Obj->SetArrayField(TEXT("class_chain"), ClassChainToJson(Class));
+        return Obj;
+    }
+
+    static UBlueprint* LoadBlueprintByPathOrName(const FString& Query)
+    {
+        if (Query.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        TArray<FString> Candidates;
+        Candidates.Add(Query);
+        if (Query.StartsWith(TEXT("/Game/")) && !Query.Contains(TEXT(".")))
+        {
+            const FString AssetName = FPackageName::GetShortName(Query);
+            Candidates.Add(Query + TEXT(".") + AssetName);
+        }
+
+        for (const FString& Candidate : Candidates)
+        {
+            if (UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *Candidate))
+            {
+                return Blueprint;
+            }
+        }
+
+        return FUnrealMCPCommonUtils::FindBlueprint(Query);
+    }
+
+    static UInputMappingContext* LoadInputMappingContextByPathOrName(const FString& Query)
+    {
+        if (Query.IsEmpty())
+        {
+            return nullptr;
+        }
+
+        TArray<FString> Candidates;
+        Candidates.Add(Query);
+        if (Query.StartsWith(TEXT("/Game/")) && !Query.Contains(TEXT(".")))
+        {
+            const FString AssetName = FPackageName::GetShortName(Query);
+            Candidates.Add(Query + TEXT(".") + AssetName);
+        }
+
+        for (const FString& Candidate : Candidates)
+        {
+            if (UInputMappingContext* IMC = LoadObject<UInputMappingContext>(nullptr, *Candidate))
+            {
+                return IMC;
+            }
+        }
+
+        const FString ShortName = FPackageName::GetShortName(Query);
+        FAssetRegistryModule& AssetRegistryModule =
+            FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry"));
+        FARFilter Filter;
+        Filter.PackagePaths.Add(FName(TEXT("/Game")));
+        Filter.bRecursivePaths = true;
+        Filter.ClassPaths.Add(UInputMappingContext::StaticClass()->GetClassPathName());
+
+        TArray<FAssetData> Assets;
+        AssetRegistryModule.Get().GetAssets(Filter, Assets);
+        for (const FAssetData& Asset : Assets)
+        {
+            if (Asset.AssetName.ToString().Equals(ShortName, ESearchCase::IgnoreCase) ||
+                Asset.PackageName.ToString().EndsWith(TEXT("/") + ShortName, ESearchCase::IgnoreCase))
+            {
+                return Cast<UInputMappingContext>(Asset.GetAsset());
+            }
+        }
+        return nullptr;
+    }
+}
 
 FUnrealMCPEditorCommands::FUnrealMCPEditorCommands()
 {
@@ -37,9 +387,21 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     {
         return HandleGetActorsInLevel(Params);
     }
+    else if (CommandType == TEXT("get_actor_identity"))
+    {
+        return HandleGetActorIdentity(Params);
+    }
+    else if (CommandType == TEXT("inspect_static_mesh_sections"))
+    {
+        return HandleInspectStaticMeshSections(Params);
+    }
     else if (CommandType == TEXT("find_actors_by_name"))
     {
         return HandleFindActorsByName(Params);
+    }
+    else if (CommandType == TEXT("find_actors_by_class"))
+    {
+        return HandleFindActorsByClass(Params);
     }
     else if (CommandType == TEXT("spawn_actor") || CommandType == TEXT("create_actor"))
     {
@@ -65,6 +427,14 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     {
         return HandleSetActorProperty(Params);
     }
+    else if (CommandType == TEXT("check_blueprint_generated_class"))
+    {
+        return HandleCheckBlueprintGeneratedClass(Params);
+    }
+    else if (CommandType == TEXT("inspect_input_mapping_context"))
+    {
+        return HandleInspectInputMappingContext(Params);
+    }
     // Blueprint actor spawning
     else if (CommandType == TEXT("spawn_blueprint_actor"))
     {
@@ -78,6 +448,26 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCommand(const FString& C
     else if (CommandType == TEXT("take_screenshot"))
     {
         return HandleTakeScreenshot(Params);
+    }
+    else if (CommandType == TEXT("wp_load_region"))
+    {
+        return HandleWorldPartitionLoadRegion(Params);
+    }
+    else if (CommandType == TEXT("wp_unload_region"))
+    {
+        return HandleWorldPartitionUnloadRegion(Params);
+    }
+    else if (CommandType == TEXT("wp_create_data_layer"))
+    {
+        return HandleWorldPartitionCreateDataLayer(Params);
+    }
+    else if (CommandType == TEXT("hlod_generate"))
+    {
+        return HandleHLODGenerate(Params);
+    }
+    else if (CommandType == TEXT("hlod_assign_layer"))
+    {
+        return HandleHLODAssignLayer(Params);
     }
     else if (CommandType == TEXT("exec_python"))
     {
@@ -107,6 +497,227 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleGetActorsInLevel(const T
     return ResultObj;
 }
 
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleGetActorIdentity(const TSharedPtr<FJsonObject>& Params)
+{
+    FString Query;
+    Params->TryGetStringField(TEXT("actor_name_or_label"), Query);
+
+    bool bIncludeAll = false;
+    Params->TryGetBoolField(TEXT("include_all"), bIncludeAll);
+
+    TArray<AActor*> AllActors;
+    UGameplayStatics::GetAllActorsOfClass(GWorld, AActor::StaticClass(), AllActors);
+
+    TArray<TSharedPtr<FJsonValue>> MatchingActors;
+    for (AActor* Actor : AllActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        UClass* Class = Actor->GetClass();
+        const FString SearchText = FString::Printf(
+            TEXT("%s %s %s %s %s"),
+            *Actor->GetActorLabel(),
+            *Actor->GetName(),
+            *Actor->GetPathName(),
+            Class ? *Class->GetName() : TEXT(""),
+            Class ? *Class->GetPathName() : TEXT(""));
+
+        if (bIncludeAll || Query.IsEmpty() || SearchText.Contains(Query, ESearchCase::IgnoreCase))
+        {
+            MatchingActors.Add(MakeShared<FJsonValueObject>(
+                UnrealMCPEditorCommandDetail::ActorIdentityToJson(Actor)));
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("query"), Query);
+    ResultObj->SetNumberField(TEXT("count"), MatchingActors.Num());
+    ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleInspectStaticMeshSections(
+    const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    FString RequestedPath;
+    if (!Params.IsValid() || !Params->TryGetStringField(TEXT("asset_path"), RequestedPath))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'asset_path' parameter"));
+    }
+    const FString AssetPath = NormalizeAssetPath(RequestedPath);
+    if (AssetPath != RequestedPath || !AssetPath.StartsWith(TEXT("/Game/")) || AssetPath.Len() > 512)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("asset_path must name one project asset under /Game/"));
+    }
+
+    double LodNumber = 0.0;
+    Params->TryGetNumberField(TEXT("lod_index"), LodNumber);
+    const int32 LodIndex = FMath::FloorToInt(LodNumber);
+    if (!FMath::IsNearlyEqual(LodNumber, static_cast<double>(LodIndex)) || LodIndex < 0 || LodIndex > 7)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("lod_index must be an integer from 0 through 7"));
+    }
+
+    double MaxSectionsNumber = 64.0;
+    Params->TryGetNumberField(TEXT("max_sections"), MaxSectionsNumber);
+    const int32 MaxSections = FMath::FloorToInt(MaxSectionsNumber);
+    if (!FMath::IsNearlyEqual(MaxSectionsNumber, static_cast<double>(MaxSections)) ||
+        MaxSections < 1 || MaxSections > 128)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("max_sections must be an integer from 1 through 128"));
+    }
+
+    UStaticMesh* StaticMesh = Cast<UStaticMesh>(LoadAsset(AssetPath));
+    if (!StaticMesh)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Static mesh asset not found: %s"), *AssetPath));
+    }
+    if (LodIndex >= StaticMesh->GetNumSourceModels())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("LOD %d is unavailable; source model count is %d"),
+                LodIndex, StaticMesh->GetNumSourceModels()));
+    }
+
+    UPackage* Package = StaticMesh->GetOutermost();
+    const bool bPackageDirtyBefore = Package && Package->IsDirty();
+    const FMeshDescription* MeshDescription = StaticMesh->GetMeshDescription(LodIndex);
+    if (!MeshDescription || MeshDescription->IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("LOD %d MeshDescription is unavailable or empty"), LodIndex));
+    }
+
+    FStaticMeshConstAttributes Attributes(*MeshDescription);
+    const TPolygonGroupAttributesConstRef<FName> PolygonGroupSlotNames =
+        Attributes.GetPolygonGroupMaterialSlotNames();
+    const TArray<FStaticMaterial>& StaticMaterials = StaticMesh->GetStaticMaterials();
+    const int32 PolygonGroupCount = MeshDescription->PolygonGroups().Num();
+
+    const FStaticMeshRenderData* RenderData = StaticMesh->GetRenderData();
+    const FStaticMeshLODResources* RenderLod =
+        RenderData && RenderData->LODResources.IsValidIndex(LodIndex)
+            ? &RenderData->LODResources[LodIndex]
+            : nullptr;
+    const int32 RenderSectionCount = RenderLod ? RenderLod->Sections.Num() : 0;
+    if (PolygonGroupCount > MaxSections || StaticMaterials.Num() > MaxSections ||
+        RenderSectionCount > MaxSections)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+            TEXT("Static mesh section budget exceeded (polygon groups=%d, materials=%d, render sections=%d, max=%d)"),
+            PolygonGroupCount, StaticMaterials.Num(), RenderSectionCount, MaxSections));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> MaterialValues;
+    MaterialValues.Reserve(StaticMaterials.Num());
+    for (int32 MaterialIndex = 0; MaterialIndex < StaticMaterials.Num(); ++MaterialIndex)
+    {
+        const FStaticMaterial& Material = StaticMaterials[MaterialIndex];
+        TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+        Entry->SetNumberField(TEXT("material_index"), MaterialIndex);
+        Entry->SetStringField(TEXT("slot_name"), Material.MaterialSlotName.ToString());
+        Entry->SetStringField(TEXT("imported_slot_name"), Material.ImportedMaterialSlotName.ToString());
+        Entry->SetStringField(TEXT("material_path"),
+            Material.MaterialInterface ? Material.MaterialInterface->GetPathName() : TEXT(""));
+        MaterialValues.Add(MakeShared<FJsonValueObject>(Entry));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> PolygonGroupValues;
+    PolygonGroupValues.Reserve(PolygonGroupCount);
+    for (const FPolygonGroupID PolygonGroupId : MeshDescription->PolygonGroups().GetElementIDs())
+    {
+        const FName ImportedSlotName = PolygonGroupSlotNames[PolygonGroupId];
+        int32 MaterialIndex = StaticMesh->GetMaterialIndexFromImportedMaterialSlotName(ImportedSlotName);
+        if (MaterialIndex == INDEX_NONE && StaticMaterials.IsValidIndex(PolygonGroupId.GetValue()))
+        {
+            MaterialIndex = PolygonGroupId.GetValue();
+        }
+
+        TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+        Entry->SetNumberField(TEXT("polygon_group_id"), PolygonGroupId.GetValue());
+        Entry->SetStringField(TEXT("imported_slot_name"), ImportedSlotName.ToString());
+        Entry->SetNumberField(TEXT("material_index"), MaterialIndex);
+        Entry->SetNumberField(TEXT("polygon_count"),
+            MeshDescription->GetPolygonGroupPolygonIDs(PolygonGroupId).Num());
+        Entry->SetNumberField(TEXT("triangle_count"),
+            MeshDescription->GetPolygonGroupTriangles(PolygonGroupId).Num());
+        if (StaticMaterials.IsValidIndex(MaterialIndex))
+        {
+            const FStaticMaterial& Material = StaticMaterials[MaterialIndex];
+            Entry->SetStringField(TEXT("resolved_slot_name"), Material.MaterialSlotName.ToString());
+            Entry->SetStringField(TEXT("resolved_imported_slot_name"),
+                Material.ImportedMaterialSlotName.ToString());
+            Entry->SetStringField(TEXT("resolved_material_path"),
+                Material.MaterialInterface ? Material.MaterialInterface->GetPathName() : TEXT(""));
+        }
+        else
+        {
+            Entry->SetStringField(TEXT("resolved_slot_name"), TEXT(""));
+            Entry->SetStringField(TEXT("resolved_imported_slot_name"), TEXT(""));
+            Entry->SetStringField(TEXT("resolved_material_path"), TEXT(""));
+        }
+        PolygonGroupValues.Add(MakeShared<FJsonValueObject>(Entry));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> RenderSectionValues;
+    if (RenderLod)
+    {
+        RenderSectionValues.Reserve(RenderLod->Sections.Num());
+        for (int32 SectionIndex = 0; SectionIndex < RenderLod->Sections.Num(); ++SectionIndex)
+        {
+            const FStaticMeshSection& Section = RenderLod->Sections[SectionIndex];
+            TSharedPtr<FJsonObject> Entry = MakeShared<FJsonObject>();
+            Entry->SetNumberField(TEXT("section_index"), SectionIndex);
+            Entry->SetNumberField(TEXT("material_index"), Section.MaterialIndex);
+            Entry->SetNumberField(TEXT("first_index"), Section.FirstIndex);
+            Entry->SetNumberField(TEXT("triangle_count"), Section.NumTriangles);
+            Entry->SetNumberField(TEXT("min_vertex_index"), Section.MinVertexIndex);
+            Entry->SetNumberField(TEXT("max_vertex_index"), Section.MaxVertexIndex);
+            Entry->SetBoolField(TEXT("collision_enabled"), Section.bEnableCollision);
+            Entry->SetBoolField(TEXT("casts_shadow"), Section.bCastShadow);
+            RenderSectionValues.Add(MakeShared<FJsonValueObject>(Entry));
+        }
+    }
+
+    const bool bPackageDirtyAfter = Package && Package->IsDirty();
+    if (bPackageDirtyAfter != bPackageDirtyBefore)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Read-only mesh inspection changed package dirty state"));
+    }
+
+    TSharedPtr<FJsonObject> Result = MakeShared<FJsonObject>();
+    Result->SetBoolField(TEXT("success"), true);
+    Result->SetStringField(TEXT("schema"), TEXT("unreal-mcp/static-mesh-section-snapshot/v1"));
+    Result->SetBoolField(TEXT("read_only"), true);
+    Result->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+    Result->SetStringField(TEXT("asset_path"), AssetPath);
+    Result->SetStringField(TEXT("object_path"), StaticMesh->GetPathName());
+    Result->SetNumberField(TEXT("lod_index"), LodIndex);
+    Result->SetNumberField(TEXT("source_model_count"), StaticMesh->GetNumSourceModels());
+    Result->SetNumberField(TEXT("vertex_count"), MeshDescription->Vertices().Num());
+    Result->SetNumberField(TEXT("vertex_instance_count"), MeshDescription->VertexInstances().Num());
+    Result->SetNumberField(TEXT("polygon_count"), MeshDescription->Polygons().Num());
+    Result->SetNumberField(TEXT("triangle_count"), MeshDescription->Triangles().Num());
+    Result->SetNumberField(TEXT("uv_channel_count"), Attributes.GetVertexInstanceUVs().GetNumChannels());
+    Result->SetNumberField(TEXT("lightmap_coordinate_index"), StaticMesh->GetLightMapCoordinateIndex());
+    Result->SetBoolField(TEXT("render_data_available"), RenderLod != nullptr);
+    Result->SetBoolField(TEXT("package_dirty_before"), bPackageDirtyBefore);
+    Result->SetBoolField(TEXT("package_dirty_after"), bPackageDirtyAfter);
+    Result->SetArrayField(TEXT("static_materials"), MaterialValues);
+    Result->SetArrayField(TEXT("polygon_groups"), PolygonGroupValues);
+    Result->SetArrayField(TEXT("render_sections"), RenderSectionValues);
+    return Result;
+}
+
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByName(const TSharedPtr<FJsonObject>& Params)
 {
     FString Pattern;
@@ -130,6 +741,57 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByName(const T
     TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
     ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
     
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString ClassName;
+    if (!Params->TryGetStringField(TEXT("class_name"), ClassName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'class_name' parameter"));
+    }
+
+    bool bExact = false;
+    Params->TryGetBoolField(TEXT("exact"), bExact);
+
+    TArray<AActor*> AllActors;
+    UGameplayStatics::GetAllActorsOfClass(GWorld, AActor::StaticClass(), AllActors);
+
+    TArray<TSharedPtr<FJsonValue>> MatchingActors;
+    for (AActor* Actor : AllActors)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+
+        TArray<FString> ClassNames;
+        UnrealMCPEditorCommandDetail::AppendClassChainStrings(Actor->GetClass(), ClassNames);
+
+        bool bMatched = false;
+        for (const FString& Candidate : ClassNames)
+        {
+            if (UnrealMCPEditorCommandDetail::MatchesText(Candidate, ClassName, bExact))
+            {
+                bMatched = true;
+                break;
+            }
+        }
+
+        if (bMatched)
+        {
+            MatchingActors.Add(MakeShared<FJsonValueObject>(
+                UnrealMCPEditorCommandDetail::ActorIdentityToJson(Actor)));
+        }
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("class_name"), ClassName);
+    ResultObj->SetBoolField(TEXT("exact"), bExact);
+    ResultObj->SetNumberField(TEXT("count"), MatchingActors.Num());
+    ResultObj->SetArrayField(TEXT("actors"), MatchingActors);
     return ResultObj;
 }
 
@@ -429,18 +1091,12 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Blueprint name is empty"));
     }
 
-    FString Root      = TEXT("/Game/Blueprints/");
-    FString AssetPath = Root + BlueprintName;
-
-    if (!FPackageName::DoesPackageExist(AssetPath))
+    // Resolve by short asset name anywhere under /Game (same as other MCP blueprint commands).
+    UBlueprint* Blueprint = FUnrealMCPCommonUtils::FindBlueprint(BlueprintName);
+    if (!Blueprint || !IsValid(Blueprint))
     {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint '%s' not found ? it must reside under /Game/Blueprints"), *BlueprintName));
-    }
-
-    UBlueprint* Blueprint = LoadObject<UBlueprint>(nullptr, *AssetPath);
-    if (!Blueprint)
-    {
-        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintName));
     }
 
     // Get transform parameters
@@ -483,6 +1139,98 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleSpawnBlueprintActor(cons
     }
 
     return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to spawn blueprint actor"));
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleCheckBlueprintGeneratedClass(const TSharedPtr<FJsonObject>& Params)
+{
+    FString BlueprintPathOrName;
+    if (!Params->TryGetStringField(TEXT("blueprint_path_or_name"), BlueprintPathOrName) &&
+        !Params->TryGetStringField(TEXT("blueprint_name"), BlueprintPathOrName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Missing 'blueprint_path_or_name' parameter"));
+    }
+
+    UBlueprint* Blueprint = UnrealMCPEditorCommandDetail::LoadBlueprintByPathOrName(BlueprintPathOrName);
+    if (!Blueprint)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Blueprint not found: %s"), *BlueprintPathOrName));
+    }
+
+    UClass* GeneratedClass = Blueprint->GeneratedClass;
+    UClass* ParentClass = Blueprint->ParentClass;
+    UObject* CDO = GeneratedClass ? GeneratedClass->GetDefaultObject(false) : nullptr;
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), GeneratedClass != nullptr);
+    ResultObj->SetStringField(TEXT("query"), BlueprintPathOrName);
+    ResultObj->SetStringField(TEXT("blueprint_name"), Blueprint->GetName());
+    ResultObj->SetStringField(TEXT("blueprint_path"), Blueprint->GetPathName());
+    ResultObj->SetBoolField(TEXT("has_generated_class"), GeneratedClass != nullptr);
+    ResultObj->SetStringField(TEXT("generated_class_name"), GeneratedClass ? GeneratedClass->GetName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("generated_class_path"), GeneratedClass ? GeneratedClass->GetPathName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("parent_class_name"), ParentClass ? ParentClass->GetName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("parent_class_path"), ParentClass ? ParentClass->GetPathName() : TEXT(""));
+    ResultObj->SetStringField(TEXT("class_default_object_path"), CDO ? CDO->GetPathName() : TEXT(""));
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleInspectInputMappingContext(const TSharedPtr<FJsonObject>& Params)
+{
+    FString IMCPathOrName;
+    if (!Params->TryGetStringField(TEXT("imc_path_or_name"), IMCPathOrName) &&
+        !Params->TryGetStringField(TEXT("imc_name"), IMCPathOrName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            TEXT("Missing 'imc_path_or_name' parameter"));
+    }
+
+    UInputMappingContext* IMC =
+        UnrealMCPEditorCommandDetail::LoadInputMappingContextByPathOrName(IMCPathOrName);
+    if (!IMC)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("Input Mapping Context not found: %s"), *IMCPathOrName));
+    }
+
+    TArray<TSharedPtr<FJsonValue>> MappingArray;
+    const TArray<FEnhancedActionKeyMapping>& Mappings = IMC->GetMappings();
+    for (int32 Index = 0; Index < Mappings.Num(); ++Index)
+    {
+        const FEnhancedActionKeyMapping& Mapping = Mappings[Index];
+        TSharedPtr<FJsonObject> MappingObj = MakeShared<FJsonObject>();
+        MappingObj->SetNumberField(TEXT("index"), Index);
+        MappingObj->SetStringField(TEXT("action_name"), Mapping.Action ? Mapping.Action->GetName() : TEXT(""));
+        MappingObj->SetStringField(TEXT("action_path"), Mapping.Action ? Mapping.Action->GetPathName() : TEXT(""));
+        MappingObj->SetStringField(TEXT("key"), Mapping.Key.ToString());
+
+        TArray<TSharedPtr<FJsonValue>> Modifiers;
+        for (const UInputModifier* Modifier : Mapping.Modifiers)
+        {
+            Modifiers.Add(MakeShared<FJsonValueString>(
+                Modifier && Modifier->GetClass() ? Modifier->GetClass()->GetName() : TEXT("")));
+        }
+        MappingObj->SetArrayField(TEXT("modifiers"), Modifiers);
+
+        TArray<TSharedPtr<FJsonValue>> Triggers;
+        for (const UInputTrigger* Trigger : Mapping.Triggers)
+        {
+            Triggers.Add(MakeShared<FJsonValueString>(
+                Trigger && Trigger->GetClass() ? Trigger->GetClass()->GetName() : TEXT("")));
+        }
+        MappingObj->SetArrayField(TEXT("triggers"), Triggers);
+        MappingArray.Add(MakeShared<FJsonValueObject>(MappingObj));
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("query"), IMCPathOrName);
+    ResultObj->SetStringField(TEXT("name"), IMC->GetName());
+    ResultObj->SetStringField(TEXT("path"), IMC->GetPathName());
+    ResultObj->SetNumberField(TEXT("mapping_count"), MappingArray.Num());
+    ResultObj->SetArrayField(TEXT("mappings"), MappingArray);
+    return ResultObj;
 }
 
 TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleFocusViewport(const TSharedPtr<FJsonObject>& Params)
@@ -652,6 +1400,451 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleTakeScreenshot(const TSh
     return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to take screenshot"));
 }
 
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleWorldPartitionLoadRegion(const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active editor world"));
+    }
+
+    UWorldPartition* WorldPartition = World->GetWorldPartition();
+    if (!WorldPartition)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Active world is not a World Partition world"));
+    }
+
+    const FBox RegionBox = ReadRegionBox(Params);
+    if (!RegionBox.IsValid)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Invalid region bounds"));
+    }
+
+    FString Label = TEXT("MCP Loaded Region");
+    Params->TryGetStringField(TEXT("label"), Label);
+    if (Label.IsEmpty())
+    {
+        Label = TEXT("MCP Loaded Region");
+    }
+
+    UWorldPartitionEditorLoaderAdapter* EditorLoaderAdapter =
+        WorldPartition->CreateEditorLoaderAdapter<FLoaderAdapterShape>(World, RegionBox, Label);
+    if (!EditorLoaderAdapter || !EditorLoaderAdapter->GetLoaderAdapter())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create World Partition loader adapter"));
+    }
+
+    IWorldPartitionActorLoaderInterface::ILoaderAdapter* LoaderAdapter = EditorLoaderAdapter->GetLoaderAdapter();
+    LoaderAdapter->SetUserCreated(true);
+    LoaderAdapter->Load();
+
+    if (GEditor)
+    {
+        GEditor->RedrawLevelEditingViewports();
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("label"), Label);
+    ResultObj->SetBoolField(TEXT("is_loaded"), LoaderAdapter->IsLoaded());
+    ResultObj->SetObjectField(TEXT("region"), BoxToJson(RegionBox));
+    ResultObj->SetStringField(TEXT("world"), World->GetPathName());
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleWorldPartitionUnloadRegion(const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active editor world"));
+    }
+
+    UWorldPartition* WorldPartition = World->GetWorldPartition();
+    if (!WorldPartition)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Active world is not a World Partition world"));
+    }
+
+    FString Label;
+    Params->TryGetStringField(TEXT("label"), Label);
+
+    bool bExact = false;
+    Params->TryGetBoolField(TEXT("exact"), bExact);
+
+    const bool bHasRegion = Params->HasField(TEXT("center")) || Params->HasField(TEXT("extent")) ||
+        Params->HasField(TEXT("min")) || Params->HasField(TEXT("max"));
+    const FBox RegionBox = bHasRegion ? ReadRegionBox(Params) : FBox(ForceInit);
+    if (bHasRegion && !RegionBox.IsValid)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Invalid region bounds"));
+    }
+
+    if (Label.IsEmpty() && !bHasRegion)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Provide a loader 'label' or region bounds to unload"));
+    }
+
+    TArray<UWorldPartitionEditorLoaderAdapter*> MatchedAdapters;
+    for (const TObjectPtr<UWorldPartitionEditorLoaderAdapter>& EditorLoaderAdapterPtr : WorldPartition->GetRegisteredEditorLoaderAdapters())
+    {
+        UWorldPartitionEditorLoaderAdapter* EditorLoaderAdapter = EditorLoaderAdapterPtr.Get();
+        if (!EditorLoaderAdapter || !EditorLoaderAdapter->GetLoaderAdapter())
+        {
+            continue;
+        }
+
+        IWorldPartitionActorLoaderInterface::ILoaderAdapter* LoaderAdapter = EditorLoaderAdapter->GetLoaderAdapter();
+        bool bMatches = true;
+
+        if (!Label.IsEmpty())
+        {
+            const TOptional<FString> AdapterLabel = LoaderAdapter->GetLabel();
+            bMatches = AdapterLabel.IsSet() && AdapterLabel.GetValue().Equals(Label, ESearchCase::IgnoreCase);
+        }
+
+        if (bMatches && bHasRegion)
+        {
+            const TOptional<FBox> AdapterBox = LoaderAdapter->GetBoundingBox();
+            if (!AdapterBox.IsSet())
+            {
+                bMatches = false;
+            }
+            else if (bExact)
+            {
+                bMatches = AdapterBox.GetValue().Min.Equals(RegionBox.Min, 1.0) &&
+                    AdapterBox.GetValue().Max.Equals(RegionBox.Max, 1.0);
+            }
+            else
+            {
+                bMatches = AdapterBox.GetValue().Intersect(RegionBox);
+            }
+        }
+
+        if (bMatches)
+        {
+            MatchedAdapters.Add(EditorLoaderAdapter);
+        }
+    }
+
+    TArray<FString> UnloadedLabels;
+    for (UWorldPartitionEditorLoaderAdapter* EditorLoaderAdapter : MatchedAdapters)
+    {
+        IWorldPartitionActorLoaderInterface::ILoaderAdapter* LoaderAdapter = EditorLoaderAdapter->GetLoaderAdapter();
+        if (LoaderAdapter)
+        {
+            const TOptional<FString> AdapterLabel = LoaderAdapter->GetLabel();
+            UnloadedLabels.Add(AdapterLabel.IsSet() ? AdapterLabel.GetValue() : EditorLoaderAdapter->GetName());
+            LoaderAdapter->Unload();
+        }
+        WorldPartition->ReleaseEditorLoaderAdapter(EditorLoaderAdapter);
+    }
+
+    if (GEditor)
+    {
+        GEditor->RedrawLevelEditingViewports();
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetNumberField(TEXT("unloaded_count"), MatchedAdapters.Num());
+    ResultObj->SetArrayField(TEXT("unloaded_labels"), MakeStringArray(UnloadedLabels));
+    if (bHasRegion)
+    {
+        ResultObj->SetObjectField(TEXT("region"), BoxToJson(RegionBox));
+    }
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleWorldPartitionCreateDataLayer(const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    FString Name;
+    if (!Params->TryGetStringField(TEXT("name"), Name) || Name.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'name' parameter"));
+    }
+
+    FString Type = TEXT("runtime");
+    Params->TryGetStringField(TEXT("type"), Type);
+    const bool bRuntime = !Type.Equals(TEXT("editor"), ESearchCase::IgnoreCase);
+
+    FString AssetPath;
+    Params->TryGetStringField(TEXT("asset_path"), AssetPath);
+    if (AssetPath.IsEmpty())
+    {
+        AssetPath = FString::Printf(TEXT("/Game/DataLayers/%s"), *Name);
+    }
+    AssetPath = NormalizeAssetPath(AssetPath);
+
+    FString PackagePath;
+    FString AssetName;
+    if (!SplitPackagePath(AssetPath, PackagePath, AssetName))
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("asset_path must be under /Game and include an asset name"));
+    }
+
+    bool bPrivate = false;
+    Params->TryGetBoolField(TEXT("private"), bPrivate);
+    bool bInitiallyVisible = true;
+    Params->TryGetBoolField(TEXT("initially_visible"), bInitiallyVisible);
+    bool bLoadedInEditor = true;
+    Params->TryGetBoolField(TEXT("loaded_in_editor"), bLoadedInEditor);
+    bool bSave = true;
+    Params->TryGetBoolField(TEXT("save"), bSave);
+
+    FString RuntimeStateText = TEXT("unloaded");
+    Params->TryGetStringField(TEXT("initial_runtime_state"), RuntimeStateText);
+
+    UDataLayerEditorSubsystem* DataLayerSubsystem = UDataLayerEditorSubsystem::Get();
+    if (!DataLayerSubsystem)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Data Layer editor subsystem is unavailable"));
+    }
+
+    UDataLayerAsset* DataLayerAsset = Cast<UDataLayerAsset>(LoadAsset(AssetPath));
+    bool bCreatedAsset = false;
+    if (!DataLayerAsset)
+    {
+        IAssetTools& AssetTools = FModuleManager::GetModuleChecked<FAssetToolsModule>(TEXT("AssetTools")).Get();
+        UDataLayerFactory* DataLayerFactory = NewObject<UDataLayerFactory>();
+        UObject* CreatedAsset = AssetTools.CreateAsset(AssetName, PackagePath, UDataLayerAsset::StaticClass(), DataLayerFactory);
+        DataLayerAsset = Cast<UDataLayerAsset>(CreatedAsset);
+        bCreatedAsset = DataLayerAsset != nullptr;
+    }
+
+    if (!DataLayerAsset)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create or load Data Layer asset"));
+    }
+
+    DataLayerAsset->Modify();
+    DataLayerAsset->SetType(bRuntime ? EDataLayerType::Runtime : EDataLayerType::Editor);
+
+    UDataLayerInstance* DataLayerInstance = DataLayerSubsystem->GetDataLayerInstance(FName(*Name));
+    bool bCreatedInstance = false;
+    if (!DataLayerInstance)
+    {
+        FDataLayerCreationParameters CreationParams;
+        CreationParams.DataLayerAsset = DataLayerAsset;
+        CreationParams.bIsPrivate = bPrivate;
+        DataLayerInstance = DataLayerSubsystem->CreateDataLayerInstance(CreationParams);
+        bCreatedInstance = DataLayerInstance != nullptr;
+    }
+
+    if (!DataLayerInstance)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Failed to create Data Layer instance"));
+    }
+
+    DataLayerSubsystem->SetDataLayerShortName(DataLayerInstance, Name);
+    DataLayerSubsystem->SetDataLayerIsInitiallyVisible(DataLayerInstance, bInitiallyVisible);
+    DataLayerSubsystem->SetDataLayerIsLoadedInEditor(DataLayerInstance, bLoadedInEditor, true);
+    if (bRuntime)
+    {
+        DataLayerSubsystem->SetDataLayerInitialRuntimeState(DataLayerInstance, ParseRuntimeState(RuntimeStateText));
+    }
+
+    if (bSave)
+    {
+        UEditorAssetLibrary::SaveAsset(MakeObjectPath(AssetPath), false);
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetBoolField(TEXT("created_asset"), bCreatedAsset);
+    ResultObj->SetBoolField(TEXT("created_instance"), bCreatedInstance);
+    ResultObj->SetObjectField(TEXT("data_layer"), SummarizeDataLayer(DataLayerInstance, DataLayerAsset));
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleHLODGenerate(const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active editor world"));
+    }
+    if (!World->GetWorldPartition())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Active world is not a World Partition world"));
+    }
+
+    bool bSetup = true;
+    Params->TryGetBoolField(TEXT("setup"), bSetup);
+    bool bBuild = true;
+    Params->TryGetBoolField(TEXT("build"), bBuild);
+    bool bDelete = false;
+    Params->TryGetBoolField(TEXT("delete"), bDelete);
+    bool bStats = false;
+    Params->TryGetBoolField(TEXT("stats"), bStats);
+    bool bForce = false;
+    Params->TryGetBoolField(TEXT("force"), bForce);
+    bool bReportOnly = false;
+    Params->TryGetBoolField(TEXT("report_only"), bReportOnly);
+
+    FString Layer;
+    Params->TryGetStringField(TEXT("layer"), Layer);
+    FString Actor;
+    Params->TryGetStringField(TEXT("actor"), Actor);
+    FString ExtraArgs;
+    Params->TryGetStringField(TEXT("extra_args"), ExtraArgs);
+
+    TArray<FString> BuilderArgs;
+    BuilderArgs.Add(TEXT("-run=WorldPartitionBuilderCommandlet"));
+    BuilderArgs.Add(World->GetPackage()->GetName());
+    BuilderArgs.Add(TEXT("-Builder=WorldPartitionHLODsBuilder"));
+    BuilderArgs.Add(TEXT("-AllowCommandletRendering"));
+    BuilderArgs.Add(TEXT("-log=WorldPartitionHLODBuilderLog.txt"));
+    if (bDelete)
+    {
+        BuilderArgs.Add(TEXT("-DeleteHLODs"));
+    }
+    if (bSetup)
+    {
+        BuilderArgs.Add(TEXT("-SetupHLODs"));
+    }
+    if (bBuild)
+    {
+        BuilderArgs.Add(bForce ? TEXT("-RebuildHLODs") : TEXT("-BuildHLODs"));
+    }
+    if (bStats)
+    {
+        BuilderArgs.Add(TEXT("-DumpStats"));
+    }
+    if (bReportOnly)
+    {
+        BuilderArgs.Add(TEXT("-ReportOnly"));
+    }
+    if (!Layer.IsEmpty())
+    {
+        BuilderArgs.Add(FString::Printf(TEXT("-BuildHLODLayer=%s"), *Layer));
+    }
+    if (!Actor.IsEmpty())
+    {
+        BuilderArgs.Add(FString::Printf(TEXT("-BuildSingleHLOD=%s"), *Actor));
+    }
+    if (!ExtraArgs.IsEmpty())
+    {
+        BuilderArgs.Add(ExtraArgs);
+    }
+
+    const FString ProjectFile = FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath());
+    if (ProjectFile.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Project file path is unavailable"));
+    }
+
+    FString CommandLineArguments = FString::Printf(TEXT("\"%s\" %s"), *ProjectFile, *FString::Join(BuilderArgs, TEXT(" ")));
+    const FString MapPackage = World->GetPackage()->GetName();
+    const bool bSuccess = FEditorBuildUtils::RunWorldPartitionBuilder(
+        MapPackage,
+        FText::FromString(TEXT("Running World Partition HLOD builder")),
+        FText::FromString(TEXT("World Partition HLOD builder cancelled")),
+        FText::FromString(TEXT("World Partition HLOD builder failed")),
+        CommandLineArguments);
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), bSuccess);
+    ResultObj->SetStringField(TEXT("map"), MapPackage);
+    ResultObj->SetStringField(TEXT("command_line_arguments"), CommandLineArguments);
+    ResultObj->SetArrayField(TEXT("builder_args"), MakeStringArray(BuilderArgs));
+    return ResultObj;
+}
+
+TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleHLODAssignLayer(const TSharedPtr<FJsonObject>& Params)
+{
+    using namespace UnrealMCPEditorCommandDetail;
+
+    UWorld* World = GetEditorWorld();
+    if (!World)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No active editor world"));
+    }
+
+    FString HLODLayerPath;
+    if (!Params->TryGetStringField(TEXT("hlod_layer"), HLODLayerPath) || HLODLayerPath.IsEmpty())
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("Missing 'hlod_layer' parameter"));
+    }
+
+    UHLODLayer* HLODLayer = Cast<UHLODLayer>(LoadAsset(HLODLayerPath));
+    if (!HLODLayer)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(
+            FString::Printf(TEXT("HLOD Layer asset not found: %s"), *HLODLayerPath));
+    }
+
+    TArray<FString> ActorQueries = GetStringArrayField(Params, TEXT("actors"));
+    FString SingleActor;
+    if (Params->TryGetStringField(TEXT("actor"), SingleActor) && !SingleActor.IsEmpty())
+    {
+        ActorQueries.Add(SingleActor);
+    }
+
+    TArray<AActor*> ActorsToUpdate;
+    TArray<FString> MissingActors;
+    for (const FString& ActorQuery : ActorQueries)
+    {
+        AActor* Actor = FindActorByNameOrLabel(World, ActorQuery);
+        if (Actor)
+        {
+            ActorsToUpdate.Add(Actor);
+        }
+        else
+        {
+            MissingActors.Add(ActorQuery);
+        }
+    }
+
+    if (ActorsToUpdate.Num() == 0 && ActorQueries.Num() == 0 && GEditor)
+    {
+        USelection* Selection = GEditor->GetSelectedActors();
+        if (Selection)
+        {
+            for (FSelectionIterator It(*Selection); It; ++It)
+            {
+                if (AActor* Actor = Cast<AActor>(*It))
+                {
+                    ActorsToUpdate.Add(Actor);
+                }
+            }
+        }
+    }
+
+    if (ActorsToUpdate.Num() == 0)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("No target actors found; pass 'actors', 'actor', or select actors in the editor"));
+    }
+
+    TArray<FString> AssignedActors;
+    for (AActor* Actor : ActorsToUpdate)
+    {
+        if (!Actor)
+        {
+            continue;
+        }
+        Actor->Modify();
+        Actor->SetHLODLayer(HLODLayer);
+        AssignedActors.Add(Actor->GetActorLabel());
+    }
+
+    TSharedPtr<FJsonObject> ResultObj = MakeShared<FJsonObject>();
+    ResultObj->SetBoolField(TEXT("success"), true);
+    ResultObj->SetStringField(TEXT("hlod_layer"), HLODLayer->GetPathName());
+    ResultObj->SetNumberField(TEXT("assigned_count"), AssignedActors.Num());
+    ResultObj->SetArrayField(TEXT("assigned_actors"), MakeStringArray(AssignedActors));
+    ResultObj->SetArrayField(TEXT("missing_actors"), MakeStringArray(MissingActors));
+    return ResultObj;
+}
+
 // ?????????????????????????????????????????????????????????????????????????????
 // exec_python ? execute arbitrary Python code inside the UE editor context
 //
@@ -692,6 +1885,15 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     if (Code.IsEmpty())
     {
         return FUnrealMCPCommonUtils::CreateErrorResponse(TEXT("'code' parameter must not be empty"));
+    }
+
+    // Hard cap: huge scripts blow up the repr-wrapper, Python lexer, and editor observers.
+    constexpr int32 MaxExecPythonChars = 384 * 1024;
+    if (Code.Len() > MaxExecPythonChars)
+    {
+        return FUnrealMCPCommonUtils::CreateErrorResponse(FString::Printf(
+            TEXT("code too large (%d chars, max %d). Split into multiple exec_python calls or use native MCP commands."),
+            Code.Len(), MaxExecPythonChars));
     }
 
     // ?? 3. Parse optional 'mode' parameter ??????????????????????????????????
@@ -810,7 +2012,25 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         : EPythonCommandExecutionMode::ExecuteFile;
     Command.FileExecutionScope = EPythonFileExecutionScope::Public; // share globals/locals with console
 
-    const bool bOk = PythonPlugin->ExecPythonCommandEx(Command);
+    // NOTE: UE 5.6+ no longer ships a stable public `EditorScriptExecutionGuard.h` on all
+    // installs; notification batching was removed here. SEH below is the primary guard.
+
+    bool bSehCrashMain = false;
+    const bool bOk = UnrealMCPExecPythonDetail::ExecPythonWithSeh(PythonPlugin, Command, bSehCrashMain);
+    if (bSehCrashMain)
+    {
+        TSharedPtr<FJsonObject> CrashObj = MakeShared<FJsonObject>();
+        CrashObj->SetBoolField(TEXT("success"), false);
+        CrashObj->SetStringField(TEXT("output"), TEXT(""));
+        CrashObj->SetStringField(TEXT("command_result"), TEXT(""));
+        CrashObj->SetStringField(
+            TEXT("error"),
+            TEXT("exec_python: native access violation inside ExecPythonCommandEx (often EditorScriptingUtilities / "
+                 "MassEntityEditor observers on synchronous asset work). The crash was caught — split the script into "
+                 "smaller exec_python payloads and prefer MCP compile_blueprint / save_blueprint / add_component."));
+        UE_LOG(LogTemp, Error, TEXT("[MCP] exec_python SEH crash (main ExecPythonCommandEx)"));
+        return CrashObj;
+    }
 
     // ── Detect Python exceptions ──────────────────────────────────────────
     // The wrapper stores errors silently in builtins._mcp_last_error to
@@ -826,7 +2046,16 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
         ReadCmd.Command       = TEXT("getattr(__import__('builtins'), '_mcp_last_error', '')");
         ReadCmd.ExecutionMode = EPythonCommandExecutionMode::EvaluateStatement;
         ReadCmd.FileExecutionScope = EPythonFileExecutionScope::Public;
-        if (PythonPlugin->ExecPythonCommandEx(ReadCmd) && ReadCmd.CommandResult.StartsWith(TEXT("__MCP_ERR__")))
+        bool bSehCrashRead = false;
+        const bool bReadOk =
+            UnrealMCPExecPythonDetail::ExecPythonWithSeh(PythonPlugin, ReadCmd, bSehCrashRead);
+        if (bSehCrashRead)
+        {
+            bHasPythonError  = true;
+            PythonErrorDetail =
+                TEXT("exec_python: SEH crash while reading _mcp_last_error after main run (Python interpreter unstable).");
+        }
+        else if (bReadOk && ReadCmd.CommandResult.StartsWith(TEXT("__MCP_ERR__")))
         {
             bHasPythonError  = true;
             PythonErrorDetail = ReadCmd.CommandResult.Mid(11); // strip "__MCP_ERR__" prefix
@@ -892,4 +2121,4 @@ TSharedPtr<FJsonObject> FUnrealMCPEditorCommands::HandleExecPython(const TShared
     }
 
     return ResultObj;
-} 
+}

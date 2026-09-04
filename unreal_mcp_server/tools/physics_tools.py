@@ -42,8 +42,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Location' node returning a Vector (world location).
+        """Add a 'Get Actor Location' node returning a Vector (world location).
 
         Ch.14: The Location variable of Transform is type Vector (X,Y,Z in cm).
         Use this to read where an actor is in world space.
@@ -51,7 +50,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_actor_location_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -65,15 +67,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Actor Location' node to teleport an actor to a new Vector.
+        """Add a 'Set Actor Location' node to teleport an actor to a new Vector.
 
         Ch.14: Sets New Location directly; use AddActorWorldOffset for relative moves.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_actor_location_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -87,8 +91,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Add Actor World Offset' node - moves actor by DeltaLocation Vector.
+        """Add an 'Add Actor World Offset' node - moves actor by DeltaLocation Vector.
 
         Ch.14: AddActorWorldOffset uses Delta Location to modify the current location.
         More appropriate than SetActorLocation for incremental movement each tick.
@@ -96,7 +99,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_actor_world_offset_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -110,15 +116,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Rotation' node returning a Rotator (Pitch, Yaw, Roll in degrees).
+        """Add a 'Get Actor Rotation' node returning a Rotator (Pitch, Yaw, Roll in degrees).
 
         Ch.14: The Rotation variable of Transform is type Rotator.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_actor_rotation_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "Actor",
@@ -132,13 +140,15 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Actor Rotation' node to assign a new Rotator.
+        """Add a 'Set Actor Rotation' node to assign a new Rotator.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_actor_rotation_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "Actor",
@@ -152,15 +162,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Add Actor World Rotation' node - rotates actor by DeltaRotation.
+        """Add an 'Add Actor World Rotation' node - rotates actor by DeltaRotation.
 
         Ch.14: AddActorWorldRotation adds the Delta Rotation to the current rotation.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_actor_world_rotation_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -174,15 +186,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Scale 3D' node returning the actor's scale as a Vector.
+        """Add a 'Get Actor Scale 3D' node returning the actor's scale as a Vector.
 
         Ch.14: Scale variable has X, Y, Z values. Use SetActorScale3D to modify.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_actor_scale_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -196,13 +210,15 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Actor Scale 3D' node to set the actor's 3D scale.
+        """Add a 'Set Actor Scale 3D' node to set the actor's 3D scale.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_actor_scale_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -217,8 +233,7 @@ def register_physics_tools(mcp: FastMCP):
         component_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Relative Location' node for a specific component.
+        """Add a 'Get Relative Location' node for a specific component.
 
         Ch.14: Component transforms are relative to their parent component.
         DefaultSceneRoot is the actor root; all sub-components have relative transforms.
@@ -227,7 +242,10 @@ def register_physics_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             component_name: Component to get relative location from
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_relative_location_node(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         return _send("add_component_function_node", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -242,8 +260,7 @@ def register_physics_tools(mcp: FastMCP):
         component_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Relative Location' node to move a component relative to its parent.
+        """Add a 'Set Relative Location' node to move a component relative to its parent.
 
         Ch.14: Relative location is local to the component's parent transform.
 
@@ -251,7 +268,10 @@ def register_physics_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             component_name: Component to move
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_relative_location_node(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         return _send("add_component_function_node", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -267,8 +287,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Vector + Vector addition node.
+        """Add a Vector + Vector addition node.
 
         Ch.14: couch_location = character_location + movement_vector
         Adds each element: (X1+X2, Y1+Y2, Z1+Z2).
@@ -276,7 +295,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_vector_add_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetMathLibrary",
@@ -290,15 +312,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Vector - Vector subtraction node.
+        """Add a Vector - Vector subtraction node.
 
         Ch.14: movement = destination - start_point. Subtracts element-wise.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_vector_subtract_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetMathLibrary",
@@ -312,15 +336,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Vector * Float multiplication node.
+        """Add a Vector * Float multiplication node.
 
         Ch.14: To find the opposite vector, multiply by -1 (e.g., backward = forward * -1).
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_vector_multiply_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetMathLibrary",
@@ -334,8 +360,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Normalize' vector node - returns a unit vector (length = 1).
+        """Add a 'Normalize' vector node - returns a unit vector (length = 1).
 
         Ch.14: Normalization gives direction without magnitude.
         Used before multiplying by speed to get direction-based movement.
@@ -343,7 +368,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_normalize_vector_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetMathLibrary",
@@ -357,15 +385,17 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Vector Length' node - returns the magnitude/distance of a vector.
+        """Add a 'Vector Length' node - returns the magnitude/distance of a vector.
 
         Ch.14: Length = sqrt(X*X + Y*Y + Z*Z). Use to measure distances.
 
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_vector_length_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetMathLibrary",
@@ -379,8 +409,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Dot Product' node between two vectors.
+        """Add a 'Dot Product' node between two vectors.
 
         Ch.14: Dot product = X1*X2 + Y1*Y2 + Z1*Z2.
         Returns 1 if parallel, 0 if perpendicular, -1 if opposite.
@@ -389,7 +418,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_dot_product_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetMathLibrary",
@@ -403,8 +435,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Cross Product' node between two vectors.
+        """Add a 'Cross Product' node between two vectors.
 
         Ch.14: Returns a vector perpendicular to both inputs.
         Useful for computing normals and right-angle vectors.
@@ -412,7 +443,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_cross_product_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetMathLibrary",
@@ -426,8 +460,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Forward Vector' node.
+        """Add a 'Get Actor Forward Vector' node.
 
         Ch.14: Returns normalized forward direction vector of the actor.
         Multiply by speed to move in the actor's forward direction.
@@ -435,7 +468,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_forward_vector_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -449,8 +485,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Right Vector' node.
+        """Add a 'Get Actor Right Vector' node.
 
         Ch.14: Returns normalized right direction vector of the actor.
         Multiply by -1 to get the left vector.
@@ -458,7 +493,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_right_vector_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -472,8 +510,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Actor Up Vector' node.
+        """Add a 'Get Actor Up Vector' node.
 
         Ch.14: Returns normalized up direction vector of the actor.
         Multiply by -1 to get the down vector.
@@ -481,7 +518,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_up_vector_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "self",
@@ -495,8 +535,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Unit Direction Vector' node - normalized direction from A to B.
+        """Add a 'Get Unit Direction Vector' node - normalized direction from A to B.
 
         Ch.14: Normalized (unit length) vector pointing from From to To.
         Equivalent to normalize(To - From).
@@ -504,7 +543,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_get_unit_direction_vector_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetMathLibrary",
@@ -522,8 +564,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Line Trace By Channel' node.
+        """Add a 'Line Trace By Channel' node.
 
         Ch.14: Tests for collisions along a line using Visibility or Camera channel.
         Returns a single Hit Result (first actor hit).
@@ -534,7 +575,10 @@ def register_physics_tools(mcp: FastMCP):
             trace_channel: "Visibility" or "Camera"
             draw_debug: "None", "ForOneFrame", "ForDuration", "Persistent"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_line_trace_by_channel_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_line_trace_by_channel_node", {
             "blueprint_name": blueprint_name,
             "trace_channel": trace_channel,
@@ -550,8 +594,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Multi Line Trace By Channel' node - returns ALL actors hit as array.
+        """Add a 'Multi Line Trace By Channel' node - returns ALL actors hit as array.
 
         Ch.14: MultiLineTraceByChannel is more expensive but returns every hit
         along the trace line as an array of Hit Result structures.
@@ -561,7 +604,10 @@ def register_physics_tools(mcp: FastMCP):
             trace_channel: "Visibility" or "Camera"
             draw_debug: "None", "ForOneFrame", "ForDuration", "Persistent"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_multi_line_trace_by_channel_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_multi_line_trace_by_channel_node", {
             "blueprint_name": blueprint_name,
             "trace_channel": trace_channel,
@@ -577,8 +623,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Line Trace For Objects' node - traces for specific object types.
+        """Add a 'Line Trace For Objects' node - traces for specific object types.
 
         Ch.14: LineTraceForObjects filters by Object Type instead of channel.
         Object types: WorldStatic, WorldDynamic, Pawn, PhysicsBody, Vehicle,
@@ -589,7 +634,10 @@ def register_physics_tools(mcp: FastMCP):
             object_types: List of object types to trace against
             draw_debug: "None", "ForOneFrame", "ForDuration", "Persistent"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_line_trace_for_objects_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_line_trace_for_objects_node", {
             "blueprint_name": blueprint_name,
             "object_types": object_types or ["WorldStatic", "WorldDynamic", "Pawn"],
@@ -605,8 +653,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Multi Line Trace For Objects' node - returns all hits for object types.
+        """Add a 'Multi Line Trace For Objects' node - returns all hits for object types.
 
         Ch.14: Returns array of Hit Results for all matching objects along the trace line.
 
@@ -615,7 +662,10 @@ def register_physics_tools(mcp: FastMCP):
             object_types: List of object types to trace against
             draw_debug: "None", "ForOneFrame", "ForDuration", "Persistent"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_multi_line_trace_for_objects_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_multi_line_trace_for_objects_node", {
             "blueprint_name": blueprint_name,
             "object_types": object_types or ["WorldStatic", "WorldDynamic", "Pawn"],
@@ -632,8 +682,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Sphere Trace For Objects' node - sphere-shaped collision test.
+        """Add a 'Sphere Trace For Objects' node - sphere-shaped collision test.
 
         Ch.14: Shape traces test along a volume instead of a line. More expensive
         but detects wider areas. SphereTraceForObjects sweeps a sphere.
@@ -644,7 +693,10 @@ def register_physics_tools(mcp: FastMCP):
             object_types: Object types to detect
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_sphere_trace_for_objects_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetSystemLibrary",
@@ -661,8 +713,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Sphere Trace By Channel' node - sphere sweep using trace channel.
+        """Add a 'Sphere Trace By Channel' node - sphere sweep using trace channel.
 
         Ch.14: SphereTraceByChannel uses Visibility or Camera channel to filter hits.
 
@@ -672,7 +723,10 @@ def register_physics_tools(mcp: FastMCP):
             trace_channel: "Visibility" or "Camera"
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_sphere_trace_by_channel_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetSystemLibrary",
@@ -690,8 +744,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Capsule Trace By Channel' node - capsule-shaped sweep trace.
+        """Add a 'Capsule Trace By Channel' node - capsule-shaped sweep trace.
 
         Ch.14: CapsuleTrace is more expensive than LineTrace but covers a capsule volume,
         useful for character-sized sweeps (characters use capsules for collision).
@@ -703,7 +756,10 @@ def register_physics_tools(mcp: FastMCP):
             trace_channel: "Visibility" or "Camera"
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_capsule_trace_by_channel_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetSystemLibrary",
@@ -720,8 +776,7 @@ def register_physics_tools(mcp: FastMCP):
         draw_debug: str = "None",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Box Trace By Channel' node - box-shaped sweep trace.
+        """Add a 'Box Trace By Channel' node - box-shaped sweep trace.
 
         Ch.14: BoxTraceByChannel sweeps a box shape along the trace line.
 
@@ -731,7 +786,10 @@ def register_physics_tools(mcp: FastMCP):
             trace_channel: "Visibility" or "Camera"
             draw_debug: Debug visualization type
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_box_trace_by_channel_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "KismetSystemLibrary",
@@ -745,8 +803,7 @@ def register_physics_tools(mcp: FastMCP):
         blueprint_name: str,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Break Hit Result' node - decomposes Hit Result structure.
+        """Add a 'Break Hit Result' node - decomposes Hit Result structure.
 
         Ch.14: Hit Result contains:
         - Blocking Hit (bool): Whether trace hit something
@@ -760,7 +817,10 @@ def register_physics_tools(mcp: FastMCP):
         Args:
             blueprint_name: Blueprint name
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_break_hit_result_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_break_hit_result_node", {
             "blueprint_name": blueprint_name,
             "node_position": node_position or [0, 0]
@@ -776,8 +836,7 @@ def register_physics_tools(mcp: FastMCP):
         color: List[float] = None,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Draw Debug Line' node - draws a line in the viewport for debugging.
+        """Add a 'Draw Debug Line' node - draws a line in the viewport for debugging.
 
         Ch.14: Trace functions have Draw Debug Type option. This node explicitly
         draws a 3D line for custom debug visualization.
@@ -788,7 +847,10 @@ def register_physics_tools(mcp: FastMCP):
             duration: How long the line persists (0 = one frame)
             color: [R, G, B, A] 0-255 color of the debug line
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_draw_debug_line_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetSystemLibrary",
@@ -809,8 +871,7 @@ def register_physics_tools(mcp: FastMCP):
         color: List[float] = None,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Draw Debug Sphere' node for 3D debug visualization.
+        """Add a 'Draw Debug Sphere' node for 3D debug visualization.
 
         Args:
             blueprint_name: Blueprint name
@@ -818,7 +879,10 @@ def register_physics_tools(mcp: FastMCP):
             duration: How long the sphere persists (0 = one frame)
             color: [R, G, B, A] color of the debug sphere
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_draw_debug_sphere_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetSystemLibrary",
@@ -840,8 +904,7 @@ def register_physics_tools(mcp: FastMCP):
         color: List[float] = None,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Draw Debug Point' node - draws a dot in world space.
+        """Add a 'Draw Debug Point' node - draws a dot in world space.
 
         Args:
             blueprint_name: Blueprint name
@@ -849,7 +912,10 @@ def register_physics_tools(mcp: FastMCP):
             duration: How long the point persists
             color: [R, G, B, A] color of the debug point
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_draw_debug_point_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UKismetSystemLibrary",
@@ -872,8 +938,7 @@ def register_physics_tools(mcp: FastMCP):
         profile_name: str = "BlockAll",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Collision Profile Name' node for a component.
+        """Add a 'Set Collision Profile Name' node for a component.
 
         Ch.14: Collision Presets define how a component responds to traces/overlaps.
         Common presets: BlockAll, OverlapAll, OverlapAllDynamic, Pawn, Custom.
@@ -884,7 +949,10 @@ def register_physics_tools(mcp: FastMCP):
             profile_name: Collision preset: "BlockAll", "OverlapAll",
                          "OverlapAllDynamic", "Pawn", "BlockAllDynamic", "NoCollision"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_collision_profile_node(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         return _send("add_component_function_node", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -901,8 +969,7 @@ def register_physics_tools(mcp: FastMCP):
         collision_enabled: str = "QueryAndPhysics",
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Collision Enabled' node to toggle collision on a component.
+        """Add a 'Set Collision Enabled' node to toggle collision on a component.
 
         Args:
             blueprint_name: Blueprint name
@@ -910,7 +977,10 @@ def register_physics_tools(mcp: FastMCP):
             collision_enabled: "NoCollision", "QueryOnly", "PhysicsOnly",
                                "QueryAndPhysics", "QueryAndProbe", "ProbeOnly"
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_collision_enabled_node(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         return _send("add_component_function_node", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -927,8 +997,7 @@ def register_physics_tools(mcp: FastMCP):
         generate_overlap: bool = True,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Generate Overlap Events' node.
+        """Add a 'Set Generate Overlap Events' node.
 
         Ch.5: Required to enable collision overlap callbacks.
         Without this set to True, OnComponentBeginOverlap won't fire.
@@ -938,7 +1007,10 @@ def register_physics_tools(mcp: FastMCP):
             component_name: Component to configure
             generate_overlap: True to enable overlap events
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_set_generate_overlap_events_node(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         return _send("add_component_function_node", {
             "blueprint_name": blueprint_name,
             "component_name": component_name,
@@ -954,8 +1026,7 @@ def register_physics_tools(mcp: FastMCP):
         damage_amount: float = 25.0,
         node_position: List[float] = None
     ) -> Dict[str, Any]:
-        """
-        Add an 'Apply Point Damage' node - damage at a specific world location/direction.
+        """Add an 'Apply Point Damage' node - damage at a specific world location/direction.
 
         Similar to Apply Damage but includes hit location and direction,
         allowing physics reactions (e.g. pushback from projectile impact).
@@ -964,7 +1035,10 @@ def register_physics_tools(mcp: FastMCP):
             blueprint_name: Blueprint name
             damage_amount: Default damage amount
             node_position: Optional [X, Y] graph position
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            add_apply_point_damage_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "UGameplayStatics",
@@ -981,8 +1055,7 @@ def register_physics_tools(mcp: FastMCP):
         trace_channel: str = "Visibility",
         input_key: str = "E"
     ) -> Dict[str, Any]:
-        """
-        Build a complete trace-based interaction system from Ch.14.
+        """Build a complete trace-based interaction system from Ch.14.
 
         Creates the full example from the book:
         1. Adds a 'Trace Locations' macro (camera position + range ahead)
@@ -996,7 +1069,10 @@ def register_physics_tools(mcp: FastMCP):
             trace_range: How far the trace reaches in cm (default 300cm)
             trace_channel: Trace channel to use
             input_key: Key to trigger interaction (default "E")
-        """
+
+        KB: see knowledge_base/26_CHAOS_PHYSICS_AND_DESTRUCTION.md#overview
+        Example:
+            build_trace_interaction_blueprint()"""
         return _send("build_trace_interaction_blueprint", {
             "blueprint_name": blueprint_name,
             "trace_range": trace_range,

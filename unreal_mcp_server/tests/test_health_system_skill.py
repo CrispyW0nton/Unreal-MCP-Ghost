@@ -117,12 +117,14 @@ def _mock_exec_transactional_success(user_code, tx_name):
 
 class TestHealthSystemSkillRegistration(unittest.TestCase):
 
-    def test_registers_exactly_one_tool(self):
-        """skill registration must add exactly 1 MCP tool."""
+    def test_registers_expected_tools(self):
+        """skill registration must add the expected MCP tools."""
         from skills.health_system import register_health_system_skill
         mock_mcp = _MockMCP()
         register_health_system_skill(mock_mcp)
-        self.assertEqual(len(mock_mcp.list_tool_names()), 1)
+        self.assertEqual(len(mock_mcp.list_tool_names()), 2)
+        self.assertIn("skill_create_health_system", mock_mcp.list_tool_names())
+        self.assertIn("skill_package_vertical_slice_report", mock_mcp.list_tool_names())
 
     def test_tool_name_is_skill_create_health_system(self):
         """The registered tool must be named skill_create_health_system."""

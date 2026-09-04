@@ -487,68 +487,29 @@ class TestResultSchemaContract(unittest.TestCase):
 class TestToolCountAudit(unittest.TestCase):
     """
     Verifies that the actual number of registered tools matches the documented
-    count.  This acts as a canary — if someone adds/removes tools without
+    count.  This acts as a canary - if someone adds/removes tools without
     updating the README, this test will catch it.
     """
 
     def test_actual_tool_count_documented(self):
         """
-        The ACTUAL tool count must be documented in the server's info prompt.
-        This test reads the info prompt string and checks it cites the correct
-        number.
+        The ACTUAL tool count must be documented without mutating tracked
+        files. The canonical count lives in scripts/tool_inventory.py and is
+        checked more strictly by test_tool_count.py.
         """
-        import sys, re
-        sys.path.insert(0, _SERVER_ROOT)
-        from mcp.server.fastmcp import FastMCP
-        from tools.editor_tools import register_editor_tools
-        from tools.blueprint_tools import register_blueprint_tools
-        from tools.node_tools import register_blueprint_node_tools
-        from tools.project_tools import register_project_tools
-        from tools.umg_tools import register_umg_tools
-        from tools.gameplay_tools import register_gameplay_tools
-        from tools.animation_tools import register_animation_tools
-        from tools.ai_tools import register_ai_tools
-        from tools.data_tools import register_data_tools
-        from tools.communication_tools import register_communication_tools
-        from tools.advanced_node_tools import register_advanced_node_tools
-        from tools.material_tools import register_material_tools
-        from tools.savegame_tools import register_savegame_tools
-        from tools.library_tools import register_library_tools
-        from tools.procedural_tools import register_procedural_tools
-        from tools.vr_tools import register_vr_tools
-        from tools.variant_tools import register_variant_tools
-        from tools.physics_tools import register_physics_tools
-        from tools.knowledge_tools import register_knowledge_tools
-        from tools.audio_tools import register_audio_tools
-        from tools.asset_import_tools import register_asset_import_tools
-        from tools.folder_import_tools import register_folder_import_tools
-        from tools.ghostrigger_tools import register_ghostrigger_tools
-        from tools.exec_substrate import register_exec_substrate_tools
-        from tools.reflection_tools import register_reflection_tools
-        from tools.graph_tools import register_graph_tools
-        sys.path.insert(0, os.path.join(os.path.dirname(_HERE), "skills"))
-        from skills.health_system import register_health_system_skill
+        import importlib.util
+        import pathlib
 
-        mcp = FastMCP("count_audit")
-        for reg in [register_editor_tools, register_blueprint_tools, register_blueprint_node_tools,
-                    register_project_tools, register_umg_tools, register_gameplay_tools,
-                    register_animation_tools, register_ai_tools, register_data_tools,
-                    register_communication_tools, register_advanced_node_tools, register_material_tools,
-                    register_savegame_tools, register_library_tools, register_procedural_tools,
-                    register_vr_tools, register_variant_tools, register_physics_tools,
-                    register_knowledge_tools, register_audio_tools, register_asset_import_tools,
-                    register_folder_import_tools, register_ghostrigger_tools,
-                    register_exec_substrate_tools, register_reflection_tools,
-                    register_graph_tools, register_health_system_skill]:
-            reg(mcp)
+        repo_root = pathlib.Path(_SERVER_ROOT).parent
+        spec = importlib.util.spec_from_file_location("tool_inventory", repo_root / "scripts" / "tool_inventory.py")
+        module = importlib.util.module_from_spec(spec)
+        assert spec and spec.loader
+        spec.loader.exec_module(module)
 
-        actual = len(mcp._tool_manager.list_tools())
-        # Store for reference
-        with open(os.path.join(_HERE, "last_tool_count.txt"), "w") as f:
-            f.write(str(actual))
+        actual = module.build_inventory()["tool_count"]
+        recorded = int(pathlib.Path(_HERE, "last_tool_count.txt").read_text(encoding="utf-8").strip())
 
-        # Must be >= 379 (362 legacy + 16 graph/mat tools + 1 health_system skill)
-        assert actual >= 379, f"Tool count dropped below 379: {actual}"
+        assert actual == recorded, f"Tool count drift: inventory={actual}, recorded={recorded}"
         print(f"\n  [Tool count audit] Actual: {actual} tools registered")
 
 
@@ -557,7 +518,7 @@ class TestToolCountAudit(unittest.TestCase):
 # ─────────────────────────────────────────────────────────────────────────────
 
 class TestExecSubstrateRegistration(unittest.TestCase):
-    """Verify exec_substrate registers 3 tools and the make_result helper works."""
+    """Verify exec_substrate registers safe execution tools and schema helpers."""
 
     def setUp(self):
         from tools.exec_substrate import register_exec_substrate_tools
@@ -640,6 +601,16 @@ class TestReflectionToolsRegistration(unittest.TestCase):
 
     def test_ue_describe_asset_registered(self):
         assert "ue_describe_asset" in self._names
+
+    def test_ue_describe_asset_uses_ue58_object_path_compatibility(self):
+        from pathlib import Path
+        source = (
+            Path(__file__).resolve().parents[1]
+            / "tools"
+            / "reflection_tools.py"
+        ).read_text(encoding="utf-8")
+        assert 'result["package_name"] + "." + result["asset_name"]' in source
+        assert "asset_data.object_path" not in source
 
     def test_ue_find_assets_by_class_registered(self):
         assert "ue_find_assets_by_class" in self._names

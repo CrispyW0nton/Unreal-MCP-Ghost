@@ -20,7 +20,7 @@ Workflow:
 Run from a machine that can reach UE5:
   python3 demo_b_live.py [--host HOST] [--port PORT]
 
-Default connection: 127.0.0.1:55557
+Default connection: 127.0.0.1:55655
 Use --host lie-instability.with.playit.plus --port 5462 for Playit tunnel.
 
 Note: mat_* tools use exec_python which is slower than native C++ commands.
@@ -36,7 +36,7 @@ import argparse
 # ── Connection ────────────────────────────────────────────────────────────────
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 55557
+DEFAULT_PORT = 55655
 
 
 def _parse_args():

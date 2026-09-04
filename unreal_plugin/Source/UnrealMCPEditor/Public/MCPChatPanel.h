@@ -1,0 +1,415 @@
+#pragma once
+
+#include "CoreMinimal.h"
+#include "Containers/Ticker.h"
+#include "Widgets/SCompoundWidget.h"
+
+class SScrollBox;
+class SEditableTextBox;
+class SMultiLineEditableTextBox;
+class STextBlock;
+class SVerticalBox;
+
+class SMCPChatPanel : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SMCPChatPanel) {}
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs);
+	virtual ~SMCPChatPanel() override;
+
+private:
+	struct FChatMessage
+	{
+		FString MessageId;
+		FString Sender;
+		FString Message;
+		FString Timestamp;
+	};
+
+	struct FToolCallView
+	{
+		FString MessageId;
+		FString ToolName;
+		FString ArgsSummary;
+		FString Status;
+		FString ResultSummary;
+		FString DetailJson;
+		FString LogTail;
+		TArray<FString> ScreenshotPaths;
+		TArray<FString> LogSnippets;
+		TArray<FString> PieResults;
+		float ProgressFraction = 0.0f;
+		bool bHasProgress = false;
+		bool bError = false;
+	};
+
+	struct FToolPaletteEntry
+	{
+		FString Name;
+		FString Description;
+		FString Category;
+		TArray<FString> Parameters;
+	};
+
+	struct FChatSessionEntry
+	{
+		FString Name;
+		FString UpdatedAt;
+		int32 MessageCount = 0;
+		bool bPinned = false;
+	};
+
+	struct FCommandPaletteItem
+	{
+		FString Label;
+		FString Detail;
+		FString InsertText;
+		FString Kind;
+	};
+
+	struct FSamplePromptItem
+	{
+		FString Label;
+		FString Prompt;
+	};
+
+	struct FCockpitOverview
+	{
+		FString Session;
+		FString BlockersSummary;
+		FString QueueSummary;
+		FString QueueActionsSummary;
+		FString EvidenceSummary;
+		FString EvidenceRecordingSummary;
+		FString EvidenceTargetSummary;
+		FString EvidenceTargetDetailSummary;
+		FString EvidenceReviewTargetSummary;
+		FString QueuedEvidenceTargetSummary;
+		FString RuntimeEvidenceTargetSummary;
+		FString PaidGenerationEvidenceTargetSummary;
+		FString GeneratedAssetEvidenceTargetSummary;
+		FString GeneratedAnimationEvidenceTargetSummary;
+		FString FeatureCompletionContractTargetSummary;
+		FString EvidenceLedgerTargetSummary;
+		FString StartTargetSummary;
+		FString StatusTargetSummary;
+		FString WorkOrderTargetSummary;
+		FString GameplayTemplateTargetSummary;
+		FString PlaceholderTargetSummary;
+		FString ResumeTargetSummary;
+		FString DashboardTargetSummary;
+		FString BlockerTargetSummary;
+		FString ReadinessTargetSummary;
+		FString ReadinessRepairTargetSummary;
+		FString PlatformPreflightTargetSummary;
+		FString LiveEditorBridgeTargetSummary;
+		FString WipPromotionTargetSummary;
+		FString BlueprintMutationTargetSummary;
+		FString BridgeWrapperTargetSummary;
+		FString TestLaneTargetSummary;
+		FString GeneratedAssetReviewTargetSummary;
+		FString GeneratedAssetLifecycleTargetSummary;
+		FString AssetLifecycleCompileTargetSummary;
+		FString GeneratedAnimationLifecycleTargetSummary;
+		FString GeneratedAnimationCompileTargetSummary;
+		FString GeneratedAssetImportTargetSummary;
+		FString GeneratedAssetQualityProofTargetSummary;
+		FString GeneratedAssetReplacementTargetSummary;
+		FString GeneratedAssetTargetSummary;
+		FString GeneratedAssetProviderTaskTargetSummary;
+		FString ProviderSpendTargetSummary;
+		FString QueueReviewTargetSummary;
+		FString QueueTargetSummary;
+		FString RepairTargetSummary;
+		FString RepairReviewTargetSummary;
+		FString ExecuteTargetSummary;
+		FString ExecutionReviewTargetSummary;
+		FString RuntimeReviewTargetSummary;
+		FString EvidenceTimelineSummary;
+		FString NextSafeStepSummary;
+		FString FailureTriageSummary;
+		FString AssetQualitySummary;
+		FString ReadinessPolicySummary;
+		FString ReadinessRepairSummary;
+		FString HudStateSummary;
+		FString HudReadinessSummary;
+		FString HudFeatureSummary;
+		FString HudNextStepSummary;
+		FString HudGenerationSummary;
+		FString HudAnimationSummary;
+		FString HudEvidenceSummary;
+		FString HudOperatorHandoffSummary;
+		FString HudBlueprintMutationSummary;
+		FString SuggestedAction;
+		int32 BlockingGateCount = 0;
+		int32 QueuedActionCount = 0;
+		int32 FailureTriageCount = 0;
+		int32 HudVisibleCardCount = 0;
+		int32 WorkflowActionCount = 0;
+		int32 EnabledWorkflowActionCount = 0;
+		bool bLoaded = false;
+		bool bBlocked = false;
+		bool bQueueExecutable = false;
+		bool bHasHudSummary = false;
+	};
+
+	FReply HandleSendClicked();
+	FReply HandleClearClicked();
+	FReply HandleNewSessionClicked();
+	FReply HandleContinueLastSessionClicked();
+	FReply HandleRenameSessionClicked();
+	FReply HandlePinSessionClicked();
+	FReply HandleDeleteSessionClicked();
+	FReply HandleExportSessionClicked();
+	FReply HandleSessionClicked(FChatSessionEntry Session);
+	FReply HandleToggleToolPaletteClicked();
+	FReply HandleRefreshToolPaletteClicked();
+	FReply HandleToolPaletteToolClicked(FToolPaletteEntry Tool);
+	FReply HandleOpenCommandPaletteClicked();
+	FReply HandleOpenWorkflowActionsClicked();
+	FReply HandleRefreshCockpitClicked();
+	void HandleCommandPaletteTextChanged(const FText& Text);
+	FReply HandleCommandPaletteItemClicked(FCommandPaletteItem Item);
+	FReply HandleToggleTelemetryClicked();
+	FReply HandleOpenGenerateAssetClicked();
+	FReply HandleOpenTripoWorkspaceClicked();
+	FReply HandleInsertGenerateAssetToolCallClicked();
+	FReply HandleToggleGenerativeSettingsClicked();
+	FReply HandleSaveGenerativeSettingsClicked();
+	FReply HandleConfirmGenerativeSpendClicked();
+	FReply HandleRefreshGenerativeBalanceClicked();
+	FReply HandleOnboardingNextClicked();
+	FReply HandleOnboardingDismissClicked();
+	FReply HandleToggleSamplePromptsClicked();
+	FReply HandleSamplePromptClicked(FSamplePromptItem Item);
+	FReply HandleComposerKeyDown(const FGeometry& MyGeometry, const FKeyEvent& InKeyEvent);
+	FReply HandleCopyClicked(FString Message) const;
+	FReply HandleRerunClicked(FString Message, FString Sender);
+	FReply HandleOpenLogClicked();
+	FReply HandleRevealAssetClicked(FString Message);
+	FReply HandleOpenTripoWorkspaceAssetClicked(FString Message);
+	FReply HandleToolDetailsClicked(FToolCallView ToolCall);
+	FReply HandleRepairToolClicked(FToolCallView ToolCall);
+	FReply HandleContextChipClicked(FString Reference);
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override;
+	bool HandlePollTick(float DeltaTime);
+
+	void LoadHistory();
+	void PollAgentMessages();
+	void SendHumanMessage(const FString& Message);
+	void ClearHistoryOnServer();
+	void LoadToolPalette();
+	void LoadSessions();
+	void LoadCockpitOverview();
+	void SendSessionAction(const FString& Path, const TSharedPtr<class FJsonObject>& Payload, const FText& StatusOnSuccess);
+
+	void LoadLayoutSettings();
+	void SaveLayoutSettings() const;
+	void RecordHorizontalSplitterResize(float Size, int32 SlotIndex);
+	void RecordVerticalSplitterResize(float Size, int32 SlotIndex);
+	void RecordServerLatency(double RequestStartSeconds);
+	void RecordTelemetryEvent(const FString& EventName);
+	FString GetMetricsFilePath() const;
+	void AddMessage(const FChatMessage& ChatMessage);
+	void RebuildMessageList();
+	void RebuildToolPaletteList();
+	void RebuildSessionList();
+	void RefreshCommandPaletteItems();
+	void RebuildCommandPaletteResults();
+	void AddCommandPaletteItem(const FString& Label, const FString& Detail, const FString& InsertText, const FString& Kind);
+	void OpenCommandPaletteWithFilter(const FString& Filter, const FText& InStatusText);
+	TArray<FSamplePromptItem> GetSamplePromptItems() const;
+	TSharedRef<SWidget> BuildMessageWidget(const FChatMessage& ChatMessage);
+	TSharedRef<SWidget> BuildMarkdownMessageBody(const FChatMessage& ChatMessage);
+	TSharedRef<SWidget> BuildToolCallCards(const FChatMessage& ChatMessage);
+	TSharedRef<SWidget> BuildToolCallCard(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildTripoProgressPanel(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildEvidencePanel(const FToolCallView& ToolCall);
+	TSharedRef<SWidget> BuildScreenshotEvidenceWidget(const FString& ScreenshotPath);
+	TSharedRef<SWidget> BuildSessionSidebar();
+	TSharedRef<SWidget> BuildToolPalette();
+	TSharedRef<SWidget> BuildToolPaletteCategory(const FString& Category, const TArray<FToolPaletteEntry>& Tools);
+	TSharedRef<SWidget> BuildCockpitOverviewBar();
+	TSharedRef<SWidget> BuildCommandPalette();
+	TSharedRef<SWidget> BuildGenerateAssetDialog();
+	TSharedRef<SWidget> BuildGenerativeSettingsPanel();
+	TSharedRef<SWidget> BuildOnboardingOverlay();
+	TSharedRef<SWidget> BuildSamplePrompts();
+	TSharedRef<SWidget> BuildContextChips();
+	void AddMarkdownBlocks(const FString& MarkdownText, const FString& MessageId, TSharedRef<SVerticalBox> BodyBox);
+	void AppendStreamingDelta(const FString& MessageId, const FString& Sender, const FString& Delta, bool bDone);
+	bool ApplySseLine(const FString& Line);
+	void InsertComposerText(const FString& Text);
+	void ShowToolDetailDrawer(const FToolCallView& ToolCall);
+	void SetStatus(const FText& Text, const FSlateColor& Color);
+	void UpdateLastAgentTimestamp(const TArray<FChatMessage>& Messages);
+
+	void ExtractToolCallsFromMessage(const FChatMessage& ChatMessage, TArray<FToolCallView>& OutToolCalls) const;
+	void ExtractEvidenceFromJsonObject(const TSharedPtr<class FJsonObject>& Object, FToolCallView& OutToolCall) const;
+	void ExtractEvidenceFromJsonValue(const FString& FieldName, const TSharedPtr<class FJsonValue>& Value, FToolCallView& OutToolCall) const;
+	void UpdateLastCompileStateFromMessage(const FChatMessage& ChatMessage);
+	bool TryBuildToolCallFromJsonObject(const TSharedPtr<class FJsonObject>& Object, const FString& MessageId, FToolCallView& OutToolCall) const;
+	FString JsonObjectToString(const TSharedPtr<class FJsonObject>& Object) const;
+	FString JsonValueToString(const TSharedPtr<class FJsonValue>& Value) const;
+	FString SummarizeJsonObject(const TSharedPtr<class FJsonObject>& Object, int32 MaxChars = 180) const;
+	FString SummarizeJsonValue(const TSharedPtr<class FJsonValue>& Value, int32 MaxChars = 180) const;
+	FString TruncateForCard(const FString& Text, int32 MaxChars = 180) const;
+	FText GetOpenLevelChipText() const;
+	FText GetSelectedActorChipText() const;
+	FText GetDirtyAssetsChipText() const;
+	FText GetLastCompileChipText() const;
+	FText GetServerChipText() const;
+	FText GetCockpitSessionText() const;
+	FText GetCockpitBlockersText() const;
+	FText GetCockpitQueueText() const;
+	FText GetCockpitQueueActionsText() const;
+	FText GetCockpitEvidenceText() const;
+	FText GetCockpitEvidenceTimelineText() const;
+	FText GetCockpitRecoveryText() const;
+	FText GetCockpitHudSummaryText() const;
+	FText GetCockpitActionText() const;
+	FText GetCockpitWorkflowActionsText() const;
+	FText GetCockpitWorkflowActionsTooltip() const;
+	FString GetOpenLevelReference() const;
+	FString GetSelectedActorReference() const;
+	FString GetDirtyAssetsReference() const;
+	FString GetLastCompileReference() const;
+	FString GetServerReference() const;
+	FString GetOpenLevelName() const;
+	FString GetSelectedActorName() const;
+	int32 CountDirtyPackages() const;
+	FString MakeLocalMessageId() const;
+	FString NormaliseSender(const FString& Sender) const;
+	FText GetSenderLabel(const FString& Sender) const;
+	FSlateColor GetMessageColor(const FString& Sender) const;
+	EVisibility GetToolPaletteVisibility() const;
+	EVisibility GetCommandPaletteVisibility() const;
+	EVisibility GetGenerativeSettingsVisibility() const;
+	EVisibility GetOnboardingVisibility() const;
+	EVisibility GetSamplePromptsVisibility() const;
+	FText GetToolPaletteToggleText() const;
+	FText GetGenerativeSettingsToggleText() const;
+	FText GetGenerativeAuthStatusText() const;
+	FText GetGenerativeBudgetText() const;
+	FText GetGenerativeApiWalletText() const;
+	FText GetOnboardingStepText() const;
+	FText GetOnboardingStepTitle() const;
+	FText GetOnboardingNextText() const;
+	FText GetSamplePromptsToggleText() const;
+	FText GetStatusFooterText() const;
+	FText GetTelemetryToggleText() const;
+	FString BuildSessionQueryParam() const;
+	FString BuildNewSessionName() const;
+	FString BuildRenamedSessionName() const;
+	FString BuildToolPromptTemplate(const FToolPaletteEntry& Tool) const;
+	FString BuildGenerateAssetToolCallPrompt() const;
+	FText GetGenerateAssetPreviewText() const;
+	EVisibility GetGenerateAssetDialogVisibility() const;
+	FString GetGenerateAssetMode() const;
+	FString GetGenerativeSettingsFilePath() const;
+	FString GetGenerativeSecretsFilePath() const;
+	FString GetGenerativeApiKeySource() const;
+	FString GetGenerativeUthanaApiKeySource() const;
+	void RequestGenerativeBalanceRefresh();
+	void LoadGenerativeSettings();
+	void SaveGenerativeSettingsToDisk() const;
+	TSharedPtr<class FJsonObject> BuildGenerativeSettingsJson() const;
+	bool CommandPaletteItemMatches(const FString& Filter, const FCommandPaletteItem& Item) const;
+	bool ParseSessionsResponse(const FString& JsonText, TArray<FChatSessionEntry>& OutSessions, FString& OutLastSession) const;
+	bool ParseToolPaletteResponse(const FString& JsonText, TMap<FString, TArray<FToolPaletteEntry>>& OutToolsByCategory) const;
+	bool ParseCockpitOverviewResponse(const FString& JsonText, FCockpitOverview& OutOverview) const;
+	FString BuildDropReference(const TSharedPtr<class FDragDropOperation>& Operation) const;
+	FString ExtractFirstAssetReference(const FString& Message) const;
+	FString BuildServerUrl(const FString& PathAndQuery) const;
+	FString MakeCurrentTimestamp() const;
+	TSharedRef<class IHttpRequest, ESPMode::ThreadSafe> MakeJsonRequest(const FString& Url, const FString& Verb) const;
+	TSharedPtr<class FJsonObject> BuildEditorContext() const;
+	bool ParseMessagesResponse(const FString& JsonText, TArray<FChatMessage>& OutMessages) const;
+
+	TArray<FChatMessage> Messages;
+	TArray<TSharedPtr<class IHttpRequest, ESPMode::ThreadSafe>> ActiveRequests;
+	FString LastAgentPollTimestamp;
+	bool bAgentPollInFlight = false;
+	FString LastCompileStatus = TEXT("unknown");
+	FString ServerBaseUrl = TEXT("http://127.0.0.1:8000");
+	FString CurrentSessionName = TEXT("default");
+	FString LastSessionName = TEXT("default");
+	bool bToolPaletteVisible = true;
+	bool bToolPaletteLoaded = false;
+	bool bCommandPaletteVisible = false;
+	bool bGenerateAssetDialogVisible = false;
+	bool bGenerativeSettingsVisible = false;
+	bool bGenerativeSpendConfirmed = false;
+	bool bTelemetryEnabled = false;
+	bool bOnboardingVisible = false;
+	bool bOnboardingCompleted = false;
+	bool bSamplePromptsVisible = false;
+	FString CommandPaletteFilter;
+	int32 OnboardingStepIndex = 0;
+	float SessionSidebarSize = 0.18f;
+	float ToolPaletteSize = 0.22f;
+	float ChatWorkspaceSize = 0.60f;
+	float ConversationSize = 0.78f;
+	float ComposerSize = 0.22f;
+	int32 LastServerLatencyMs = 0;
+	int32 ToolCount = 0;
+	int32 KbDocCount = 5;
+	int32 TelemetryEventCount = 0;
+	int32 GenerativeSessionCreditBudget = 1000;
+	int32 GenerativePendingSpendCredits = 0;
+	FString GenerativeApiKey;
+	FString GenerativeUthanaApiKey;
+	FString GenerativeApiWalletBalance = TEXT("unknown");
+	FString GenerativeApiWalletFrozen = TEXT("unknown");
+	FString GenerativeApiWalletStatus = TEXT("not checked");
+	FString GenerativeModelVersion = TEXT("tripo-default");
+	FString GenerativeTextureQuality = TEXT("standard");
+	FString GenerativeOutputFolder = TEXT("/Game/Generated");
+	FString GenerateAssetMode = TEXT("text_to_model");
+	FString GenerateAssetPrompt = TEXT("stylized slime enemy, game-ready proportions, clean silhouette, PBR textures");
+	FString GenerateAssetName = TEXT("SM_GeneratedAsset");
+	FString GenerateAssetReferenceImages;
+	FString GenerateAssetExistingTaskId;
+	FString GenerateAssetTexturePrompt;
+	FString GenerateAssetPaintViewLabel = TEXT("source_view");
+	float GenerateAssetPaintBrushStrength = 0.65f;
+	float GenerateAssetPaintBlend = 0.50f;
+	float GenerateAssetPaintBrushRadius = 0.25f;
+	bool bGenerateAssetUploadPaintSnapshot = false;
+	TMap<FString, TArray<FToolPaletteEntry>> ToolPaletteByCategory;
+	TArray<FChatSessionEntry> ChatSessions;
+	TArray<FCommandPaletteItem> CommandPaletteItems;
+	FCockpitOverview CockpitOverview;
+
+	TSharedPtr<SVerticalBox> SessionList;
+	TSharedPtr<SVerticalBox> ToolPaletteList;
+	TSharedPtr<SVerticalBox> CommandPaletteResults;
+	TSharedPtr<SScrollBox> MessageScrollBox;
+	TSharedPtr<SEditableTextBox> GenerativeApiKeyInput;
+	TSharedPtr<SEditableTextBox> GenerativeUthanaApiKeyInput;
+	TSharedPtr<SEditableTextBox> GenerativeModelVersionInput;
+	TSharedPtr<SEditableTextBox> GenerativeTextureQualityInput;
+	TSharedPtr<SEditableTextBox> GenerativeOutputFolderInput;
+	TSharedPtr<SEditableTextBox> GenerativeCreditBudgetInput;
+	TSharedPtr<SEditableTextBox> GenerativePendingSpendInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetModeInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetPromptInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetNameInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetReferenceImagesInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetExistingTaskIdInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetTexturePromptInput;
+	TSharedPtr<SEditableTextBox> GenerateAssetPaintViewLabelInput;
+	TSharedPtr<SEditableTextBox> CommandPaletteInput;
+	TSharedPtr<SMultiLineEditableTextBox> MessageInput;
+	TSharedPtr<STextBlock> StatusText;
+	TSharedPtr<SVerticalBox> ToolDetailDrawer;
+	TSharedPtr<STextBlock> ToolDetailTitle;
+	TSharedPtr<STextBlock> ToolDetailBody;
+	TMap<FString, TSharedPtr<STextBlock>> StreamingMessageTextBlocks;
+	TArray<TSharedPtr<struct FSlateDynamicImageBrush>> EvidenceImageBrushes;
+
+	FTSTicker::FDelegateHandle PollTickerHandle;
+};

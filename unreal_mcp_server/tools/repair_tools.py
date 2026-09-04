@@ -308,7 +308,10 @@ def register_repair_tools(mcp: FastMCP) -> None:
               repairs_applied[]   — list of repair records
               repairs_skipped[]   — list of skipped records
               safe_to_continue    — bool
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_repair_exec_chain(blueprint_path="/Game/MCP_Test/BP_Example", graph_name="EventGraph", source_node_name="ExampleName", destination_node_name="ExampleName")"""
         tool_name = "bp_repair_exec_chain"
         t0 = time.monotonic()
         repairs_applied: List[Dict] = []
@@ -397,7 +400,10 @@ def register_repair_tools(mcp: FastMCP) -> None:
               skipped_nodes[]     — [{name, reason}]
               repairs_applied[]   — list of repair records
               safe_to_continue    — bool
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_remove_orphaned_nodes(blueprint_path="/Game/MCP_Test/BP_Example", graph_name="EventGraph", node_guids=[])"""
         tool_name = "bp_remove_orphaned_nodes"
         t0 = time.monotonic()
         repairs_applied: List[Dict] = []
@@ -507,7 +513,10 @@ def register_repair_tools(mcp: FastMCP) -> None:
               repair_detail       — str
               repairs_applied[]   — list of repair records
               safe_to_continue    — bool
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            bp_set_pin_default(blueprint_path="/Game/MCP_Test/BP_Example", graph_name="EventGraph", node_guid="Example", pin_name="Exec", default_value=0.0)"""
         tool_name = "bp_set_pin_default"
         t0 = time.monotonic()
 

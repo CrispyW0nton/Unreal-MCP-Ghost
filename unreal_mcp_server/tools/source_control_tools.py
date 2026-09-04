@@ -144,7 +144,10 @@ def register_source_control_tools(mcp: FastMCP):  # noqa: C901
               workspace  — workspace/client name (Perforce only, else '')
               server     — server address (else '')
               user       — SC username (else '')
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            sc_get_provider_info()"""
         t0 = time.monotonic()
 
         code = textwrap.dedent("""
@@ -229,7 +232,10 @@ def register_source_control_tools(mcp: FastMCP):  # noqa: C901
               state     — 'checked_out' | 'added' | 'unchanged' | 'deleted' |
                           'conflicted' | 'not_in_depot' | 'ignored' | 'unknown'
               revision  — revision string (e.g. '#12') or '' if unavailable
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            sc_get_status(path="/Game/MCP_Test/Example")"""
         t0 = time.monotonic()
 
         code = textwrap.dedent(f"""
@@ -311,7 +317,10 @@ def register_source_control_tools(mcp: FastMCP):  # noqa: C901
               description — changelist description (empty string if unavailable)
               available   — bool — False when no SC provider
               files       — [{path, state}]
-        """
+
+        KB: see knowledge_base/32_AGENT_PLAYABLE_SLICE_RECIPE.md#overview
+        Example:
+            sc_get_changelist()"""
         t0 = time.monotonic()
 
         code = textwrap.dedent(f"""

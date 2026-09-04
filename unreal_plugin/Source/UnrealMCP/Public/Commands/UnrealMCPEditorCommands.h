@@ -1,7 +1,7 @@
 #pragma once
 
 #include "CoreMinimal.h"
-#include "Json.h"
+#include "Dom/JsonObject.h"
 
 /**
  * Handler class for Editor-related MCP commands
@@ -18,12 +18,17 @@ public:
 private:
     // Actor manipulation commands
     TSharedPtr<FJsonObject> HandleGetActorsInLevel(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleGetActorIdentity(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleInspectStaticMeshSections(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleFindActorsByName(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleFindActorsByClass(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSpawnActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleDeleteActor(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetActorTransform(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleGetActorProperties(const TSharedPtr<FJsonObject>& Params);
     TSharedPtr<FJsonObject> HandleSetActorProperty(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleCheckBlueprintGeneratedClass(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleInspectInputMappingContext(const TSharedPtr<FJsonObject>& Params);
 
     // Blueprint actor spawning
     TSharedPtr<FJsonObject> HandleSpawnBlueprintActor(const TSharedPtr<FJsonObject>& Params);
@@ -34,4 +39,11 @@ private:
 
     // Python scripting
     TSharedPtr<FJsonObject> HandleExecPython(const TSharedPtr<FJsonObject>& Params);
-}; 
+
+    // World Partition / HLOD commands
+    TSharedPtr<FJsonObject> HandleWorldPartitionLoadRegion(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleWorldPartitionUnloadRegion(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleWorldPartitionCreateDataLayer(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleHLODGenerate(const TSharedPtr<FJsonObject>& Params);
+    TSharedPtr<FJsonObject> HandleHLODAssignLayer(const TSharedPtr<FJsonObject>& Params);
+};

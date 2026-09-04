@@ -385,7 +385,7 @@ After every batch of related graph mutations:
 
 ## 5. C++ Plugin Commands Required
 
-The Python MCP tools above will need corresponding C++ plugin commands on the TCP bridge (port 55557). Estimated new commands:
+The Python MCP tools above will need corresponding C++ plugin commands on the TCP bridge (port 55655). Estimated new commands:
 
 | Command | Category |
 |---|---|

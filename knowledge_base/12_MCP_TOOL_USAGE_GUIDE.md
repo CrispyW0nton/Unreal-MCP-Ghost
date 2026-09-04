@@ -29,7 +29,7 @@
 ```bash
 python3 sandbox_ue5cli.py get_actors_in_level '{}'
 ```
-If this returns actors or an empty array, the plugin is connected on port **55557**.
+If this returns actors or an empty array, the plugin is connected on port **55655**.
 
 ### Get UE5 Version
 ```bash
@@ -223,6 +223,23 @@ python3 sandbox_ue5cli.py set_static_mesh_properties '{
   "static_mesh_path": "/Game/MyProject/Art/Environment/SM_Workbench"
 }'
 ```
+
+#### `bp_copy_component`
+Copy an existing Blueprint SCS component, including editable template properties, from one Blueprint to another.
+```bash
+python3 sandbox_ue5cli.py bp_copy_component '{
+  "source_bp": "BP_SourceActor",
+  "dest_bp": "BP_DestActor",
+  "component_name": "WorkbenchMesh",
+  "new_component_name": "CopiedWorkbenchMesh"
+}'
+```
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `source_bp` | string | ✅ | Source Blueprint asset name or path |
+| `dest_bp` | string | ✅ | Destination Blueprint asset name or path |
+| `component_name` | string | ✅ | Source component variable name |
+| `new_component_name` | string | ❌ | Defaults to `component_name` |
 
 ---
 
@@ -427,6 +444,9 @@ python3 sandbox_ue5cli.py add_blueprint_for_each_loop_node '{"blueprint_name": "
 
 # For Loop node — pins: execute, First Index, Last Index, Index, Loop Body, Completed
 python3 sandbox_ue5cli.py add_blueprint_for_loop_node '{"blueprint_name": "BP_X", "graph_name": "EventGraph", "node_position": {"x": 200, "y": 0}}'
+
+# For Loop With Break node — pins: execute, First Index, Last Index, Break, Index, Loop Body, Completed
+python3 sandbox_ue5cli.py add_blueprint_for_loop_with_break_node '{"blueprint_name": "BP_X", "graph_name": "EventGraph", "first_index": 0, "last_index": 9, "node_position": {"x": 200, "y": 0}}'
 
 # While Loop node — pins: execute, Condition, Loop Body, Completed
 python3 sandbox_ue5cli.py add_blueprint_while_loop_node '{"blueprint_name": "BP_X", "graph_name": "EventGraph", "node_position": {"x": 200, "y": 0}}'
@@ -864,6 +884,18 @@ python3 sandbox_ue5cli.py add_interface_function_node '{
 }'
 ```
 
+#### `bp_add_call_interface_function`
+Preferred Python wrapper for Blueprint Interface message calls.
+```bash
+python3 sandbox_ue5cli.py add_call_interface_function_node '{
+  "blueprint_name": "BP_PlayerJediCharacter",
+  "interface_name": "BPI_Interactable",
+  "function_name": "Interact",
+  "node_position": {"x": 400, "y": 0}
+}'
+```
+> FastMCP tool name: `bp_add_call_interface_function`. Native bridge route: `add_call_interface_function_node`.
+
 #### `create_struct`
 Create a Blueprint Struct asset.
 ```bash
@@ -1059,6 +1091,23 @@ python3 sandbox_ue5cli.py bind_widget_event '{
   "function_name": "HandleRestartClicked"
 }'
 ```
+
+#### `umg_add_widget_binding`
+Bind a widget property path to a Widget Blueprint function or property.
+```bash
+python3 sandbox_ue5cli.py umg_add_widget_binding '{
+  "widget_blueprint_path": "/Game/MyProject/Widgets/WBP_HUD",
+  "property_path": "HealthText.Text",
+  "binding_target": "GetHealthText",
+  "binding_kind": "function"
+}'
+```
+| Parameter | Type | Required | Notes |
+|---|---|---|---|
+| `widget_blueprint_path` | string | ✅ | Widget Blueprint path or name |
+| `property_path` | string | ✅ | `WidgetName.PropertyName` |
+| `binding_target` | string | ✅ | Function or property to bind |
+| `binding_kind` | string | ❌ | `function` or `property`; default `function` |
 
 ---
 
@@ -1488,8 +1537,8 @@ for name, path, parent in assets_to_create:
 
 ## ASSET IMPORT PIPELINE — CATEGORY C (single-asset imports)
 
-> Module: `asset_import_tools.py`  
-> All three tools use the `exec_python` + JSON-return pattern.  
+> Module: `asset_import_tools.py`
+> All three tools use the `exec_python` + JSON-return pattern.
 > Files must exist on the **UE5 Windows host machine** (not the sandbox).
 
 ---
@@ -1527,7 +1576,7 @@ Imports a PNG/JPG/TGA/EXR/HDR/BMP file as a `Texture2D`, automatically setting t
 
 ### `import_static_mesh`
 
-Imports an FBX, OBJ, glTF, or GLB file as a `StaticMesh`.  
+Imports an FBX, OBJ, glTF, or GLB file as a `StaticMesh`.
 FBX import options are configured via `FbxImportUI`; glTF/GLB uses UE5's Interchange Framework automatically.
 
 **Parameters:**
@@ -1676,6 +1725,533 @@ python3 sandbox_ue5cli.py wire_play_sound_to_blueprint '{
 
 ---
 
+### B.5 MetaSounds and audio asset authoring
+
+Use these `audio_tools.py` additions when the audio pass needs created assets,
+MetaSound graph edits, 3D attenuation, or concurrency policy.
+
+#### MetaSound sources, patches, and graph edits
+```python
+metasound_create_source(name="MS_GeneratorHum", path="/Game/Audio/MetaSounds")
+metasound_create_patch(name="MSP_DamageCrackle")
+metasound_add_node(
+    metasound="/Game/Audio/MetaSounds/MS_GeneratorHum",
+    class_namespace="UE",
+    class_name="Sine",
+    node_position=[200, 80]
+)
+metasound_connect_pins(
+    metasound="/Game/Audio/MetaSounds/MS_GeneratorHum",
+    from_node_id="<node-guid>",
+    from_output_id="<output-guid>",
+    to_node_id="<node-guid>",
+    to_input_id="<input-guid>"
+)
+metasound_compile(metasound="/Game/Audio/MetaSounds/MS_GeneratorHum")
+```
+
+#### SoundCue, attenuation, and concurrency assets
+```python
+audio_create_soundcue(
+    name="SC_Footstep_Dirt",
+    sound_wave="/Game/Audio/SFX/SW_Footstep_Dirt"
+)
+audio_create_attenuation(
+    name="SA_RoomTone",
+    radius=500.0,
+    falloff_distance=3000.0
+)
+audio_create_concurrency(
+    name="SCN_Impacts",
+    max_count=6,
+    resolution_rule="stop_quietest"
+)
+```
+
+After B.5 edits, run `metasound_compile`, verify the created assets with
+`scan_project_assets`, and run a PIE/log pass for gameplay playback evidence.
+
+---
+
+### B.6 Geometry Script and Modeling (`geometry_tools.py`)
+
+Use these tools for editor-side DynamicMesh authoring, mesh cleanup, UV
+generation, and baking generated geometry to Static Mesh assets.
+
+#### DynamicMesh creation and modeling
+```python
+geom_create_dynamic_mesh(
+    actor_name="DM_CoverBlock",
+    primitive="box",
+    dimensions=[200, 80, 120],
+    location=[0, 0, 0],
+    overwrite=True
+)
+geom_create_dynamic_mesh(actor_name="DM_Cutter", primitive="cylinder", dimensions=[35, 35, 180])
+geom_boolean_op(target_actor="DM_CoverBlock", tool_actor="DM_Cutter", operation="subtract")
+geom_extrude(actor_name="DM_CoverBlock", distance=25, direction=[0, 0, 1])
+geom_remesh(actor_name="DM_CoverBlock", target_triangle_count=1500, iterations=10)
+```
+
+#### UVs, displacement, and baking
+```python
+geom_uv_unwrap(actor_name="DM_CoverBlock", method="xatlas", texture_resolution=2048)
+geom_apply_displacement(actor_name="DM_CoverBlock", magnitude=8, frequency=0.08, seed=7)
+geom_bake_to_static_mesh(
+    actor_name="DM_CoverBlock",
+    asset_path="/Game/Geometry/SM_CoverBlock_A",
+    enable_collision=True,
+    overwrite=True,
+    save=True
+)
+```
+
+After B.6 edits, run `scan_project_assets` on the baked Static Mesh and verify
+UVs, collision, material slots, and in-level rendering before using the asset in
+gameplay content.
+
+---
+
+### B.7 MassEntity, StateTree, and SmartObject (`mass_tools.py`)
+
+Use these tools for editor-side setup of MassEntity configs, StateTree assets,
+and SmartObject definitions before runtime population or behavior testing.
+
+#### MassEntity configs
+```python
+mass_create_entity_config(
+    name="EC_CrowdAgent",
+    path="/Game/Mass/EntityConfigs",
+    traits=["MassAssortedFragmentsTrait"],
+    overwrite=True,
+    save=True
+)
+mass_add_trait(
+    config_asset="/Game/Mass/EntityConfigs/EC_CrowdAgent",
+    trait_class="MassLODTrait",
+    save=True
+)
+mass_inspect_entity_config(
+    config_asset="/Game/Mass/EntityConfigs/EC_CrowdAgent",
+    validate=True
+)
+```
+
+#### StateTree assets
+```python
+statetree_create(
+    name="ST_CrowdAmbient",
+    path="/Game/AI/StateTrees",
+    schema_class="/Script/GameplayStateTreeModule.StateTreeComponentSchema",
+    overwrite=True,
+    save=True
+)
+statetree_add_state(
+    state_tree="/Game/AI/StateTrees/ST_CrowdAmbient",
+    name="Idle",
+    parent_state="Root",
+    description="Wait for a usable ambient activity",
+    state_type="state",
+    save=True
+)
+statetree_inspect(state_tree="/Game/AI/StateTrees/ST_CrowdAmbient")
+```
+
+#### SmartObject definitions
+```python
+smartobject_create_definition(
+    name="SO_BenchInteraction",
+    path="/Game/AI/SmartObjects",
+    slot_name="Sit",
+    overwrite=True,
+    save=True
+)
+smartobject_add_slot(
+    definition="/Game/AI/SmartObjects/SO_BenchInteraction",
+    slot_name="ApproachLeft",
+    offset=[0, -80, 0],
+    rotation=[0, 0, 0],
+    activity_tags=["AI.Activity.Sit"],
+    enabled=True,
+    save=True
+)
+smartobject_inspect_definition(definition="/Game/AI/SmartObjects/SO_BenchInteraction")
+```
+
+After B.7 edits, inspect the returned trait/state/slot summaries, then verify
+the assets in the editor before wiring runtime spawners, processors, or behavior
+tasks around them.
+
+---
+
+### B.8 Motion Matching and Chooser (`animation_tools.py`)
+
+Use these tools to create Pose Search schemas/databases for Motion Matching and
+seed Chooser tables with asset result rows. Tune schema channels, Chooser
+conditions, and runtime AnimBP nodes in the editor after the initial MCP setup.
+
+#### Pose Search assets
+```python
+motion_create_pose_search_schema(
+    name="PSS_Locomotion",
+    path="/Game/Animation/MotionMatching",
+    skeleton="/Game/Characters/Hero/SK_Hero",
+    sample_rate=30,
+    add_default_channels=True,
+    overwrite=True,
+    save=True
+)
+motion_create_pose_search_database(
+    name="PSD_Locomotion",
+    schema="/Game/Animation/MotionMatching/PSS_Locomotion",
+    sequences=["/Game/Characters/Hero/Animations/A_Run"],
+    search_mode="pca_kd_tree",
+    overwrite=True,
+    save=True
+)
+motion_add_database_sequence(
+    database="/Game/Animation/MotionMatching/PSD_Locomotion",
+    sequence="/Game/Characters/Hero/Animations/A_Stop",
+    enabled=True,
+    disable_reselection=False,
+    mirror_option="both",
+    sampling_range=[0.0, 0.0],
+    save=True
+)
+motion_inspect_pose_search_asset(asset="/Game/Animation/MotionMatching/PSD_Locomotion")
+```
+
+#### Chooser tables
+```python
+chooser_create_table(
+    name="CH_Locomotion",
+    path="/Game/Animation/Choosers",
+    result_class="/Script/Engine.AnimationAsset",
+    overwrite=True,
+    save=True
+)
+chooser_add_asset_row(
+    chooser="/Game/Animation/Choosers/CH_Locomotion",
+    asset="/Game/Characters/Hero/Animations/A_Run",
+    enabled=True,
+    save=True
+)
+chooser_inspect_table(chooser="/Game/Animation/Choosers/CH_Locomotion")
+```
+
+After B.8 edits, inspect the returned schema/database/table summaries, then
+open the assets in the editor to tune channel weights, Chooser context columns,
+and AnimBP Motion Matching nodes against real locomotion clips.
+
+---
+
+### B.9 World Partition and HLOD (`editor_tools.py`)
+
+Use these tools in World Partition editor worlds to load temporary edit regions,
+create Data Layers, assign HLOD layers, and launch HLOD commandlet passes from
+MCP. Always verify generated HLOD output in-editor before treating it as final.
+
+#### World Partition edit regions
+```python
+wp_load_region(
+    center=[0, 0, 0],
+    extent=[50000, 50000, 50000],
+    label="Downtown Edit Window"
+)
+wp_unload_region(label="Downtown Edit Window")
+```
+
+#### Data Layers
+```python
+wp_create_data_layer(
+    name="Gameplay_POIs",
+    type="runtime",
+    asset_path="/Game/DataLayers/Gameplay_POIs",
+    initially_visible=True,
+    loaded_in_editor=True,
+    initial_runtime_state="unloaded",
+    save=True
+)
+```
+
+#### HLOD setup and assignment
+```python
+hlod_assign_layer(
+    hlod_layer="/Game/HLOD/HLODLayer_Buildings",
+    actors=["SM_BlockoutTower_01", "SM_BlockoutTower_02"]
+)
+hlod_generate(
+    setup=True,
+    build=True,
+    force=False,
+    layer="HLODLayer_Buildings"
+)
+```
+
+After B.9 edits, inspect returned region/Data Layer/HLOD summaries, review the
+World Partition HLOD builder log, and test runtime streaming behavior with PIE
+and streaming-source movement.
+
+---
+
+### B.10 Chaos Destruction and Cloth (`chaos_tools.py`)
+
+Use these tools to configure Chaos solver actors, Geometry Collection runtime
+destruction policy, and cloth simulation controls after the underlying assets
+have been authored or imported.
+
+#### Chaos solver
+```python
+chaos_create_solver_actor(
+    actor_name="ChaosSolver_Destruction",
+    set_as_world_solver=True,
+    overwrite=False
+)
+chaos_configure_solver_actor(
+    actor_name="ChaosSolver_Destruction",
+    generate_break_data=True,
+    generate_collision_data=False,
+    optimize_runtime_memory=True,
+    per_advance_breaks_allowed=64
+)
+```
+
+#### Geometry Collection policy
+```python
+chaos_inspect_geometry_collection(actor_name="GC_Barrier_A")
+chaos_configure_geometry_collection(
+    actor_name="GC_Barrier_A",
+    simulate_physics=True,
+    gravity_enabled=True,
+    notify_breaks=True,
+    enable_damage_from_collision=True,
+    damage_thresholds=[500000, 50000, 5000],
+    solver_actor="ChaosSolver_Destruction"
+)
+```
+
+#### Cloth simulation
+```python
+chaos_configure_cloth_component(
+    actor_name="BP_CloakedHero_0",
+    component_name="HeroMesh",
+    update_in_editor=True,
+    cloth_max_distance_scale=1.0,
+    force_reset=True
+)
+```
+
+After B.10 edits, validate destruction and cloth behavior in PIE, then capture
+logs/screenshots if break events, cloth resets, or solver event streams are part
+of the gameplay proof.
+
+---
+
+### B.11 Movie Render Queue (`mrq_tools.py`)
+
+Use these tools to create editor MRQ jobs, configure render settings, and validate
+or start the current queue after Sequencer assets and camera cuts are ready.
+
+#### Queue job creation
+```python
+mrq_create_job(
+    job_name="Trailer_Master",
+    sequence="/Game/Cinematics/LS_Trailer",
+    map="/Game/Maps/L_Cinematic",
+    output_directory="C:/Renders/Trailer",
+    file_name_format="{sequence_name}/{shot_name}.{frame_number}",
+    resolution=[3840, 2160],
+    image_format="exr",
+    clear_queue=True
+)
+```
+
+#### Render settings
+```python
+mrq_add_render_setting(
+    job_name="Trailer_Master",
+    setting_type="anti_aliasing",
+    temporal_samples=8,
+    spatial_samples=2,
+    warmup_frames=16
+)
+mrq_add_render_setting(
+    job_name="Trailer_Master",
+    setting_type="console_variables",
+    console_variables={"r.MotionBlurQuality": 4.0}
+)
+```
+
+#### Queue validation or render start
+```python
+mrq_render_queue(dry_run=True)
+mrq_render_queue(executor="pie", dry_run=False)
+```
+
+`mrq_render_queue` defaults to `dry_run=True`; start a real render only after
+checking queue summaries, camera cuts, sequence bindings, output folders, and
+simulation warm-up needs.
+
+---
+
+### B.12 Online Subsystem and EOS (`online_tools.py`)
+
+Use these tools to inspect and configure Online Subsystem/EOS project settings
+before generating Blueprint login, lobby, or session flows.
+
+#### Inspect current config
+```python
+online_inspect_config(include_plugins=True)
+```
+
+#### Select the default online service
+```python
+online_configure_default_subsystem(
+    default_service="EOS",
+    native_service="EOS",
+    enable_online_subsystem=True
+)
+```
+
+#### Create or update EOS artifact settings
+```python
+online_create_eos_artifact_config(
+    artifact_name="Dev",
+    product_id="...",
+    sandbox_id="...",
+    deployment_id="...",
+    client_id="...",
+    store_secrets=False
+)
+```
+
+#### Configure EOS session flags
+```python
+online_configure_eos_sessions(
+    use_eos_sessions=True,
+    use_eos_lobbies=True,
+    use_eos_presence=True,
+    use_eos_connect=True,
+    mirror_stats_to_eos=False
+)
+```
+
+Keep `store_secrets=False` for normal automation. If secrets are required,
+prefer secure deployment config and avoid committing credentials.
+
+---
+
+### B.13 Pixel Streaming and Remote Access (`pixelstream_tools.py`)
+
+Use these tools to inspect Pixel Streaming plugin availability, configure local
+streamer settings, and store launch profiles before standalone or packaged
+remote-demo validation.
+
+#### Inspect current config
+```python
+pixelstream_inspect_config(include_plugins=True)
+```
+
+#### Select Pixel Streaming generation
+```python
+pixelstream_configure_plugin(
+    enable_pixel_streaming=True,
+    enable_pixel_streaming_2=False,
+    prefer_pixel_streaming_2=False
+)
+```
+
+#### Configure local streamer settings
+```python
+pixelstream_configure_streamer(
+    signalling_url="ws://127.0.0.1:8888",
+    streamer_id="LocalDemo",
+    web_server_port=80,
+    signalling_port=8888,
+    render_offscreen=True
+)
+```
+
+#### Create a launch profile
+```python
+pixelstream_create_launch_profile(
+    profile_name="LocalPixelStreaming",
+    signalling_url="ws://127.0.0.1:8888",
+    streamer_id="LocalDemo",
+    resolution_x=1280,
+    resolution_y=720
+)
+```
+
+Validate Pixel Streaming in standalone or packaged execution. PIE-only checks do
+not prove the WebRTC/signalling path, GPU encoder support, browser input, or
+firewall/port readiness.
+
+---
+
+### B.14 MetaHuman Pipeline (`animation_tools.py`)
+
+Use these tools after creating or assembling a MetaHuman package through the
+UE/Fab/MetaHuman workflow. They register the multi-asset package, persist the
+important animation references, and make later wrapper/retargeting automation
+repeatable.
+
+#### Register imported package
+```python
+metahuman_import(
+    character_name="Ada",
+    metahuman_root="/Game/MetaHumans/Ada",
+    expected_blueprint="/Game/MetaHumans/Ada/BP_Ada",
+    body_skeletal_mesh="/Game/MetaHumans/Ada/Body/SK_Ada_Body",
+    face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face"
+)
+```
+
+#### Inspect package manifest
+```python
+metahuman_inspect_package(
+    character_name="Ada",
+    metahuman_root="/Game/MetaHumans/Ada"
+)
+```
+
+#### Link skeleton and animation assets
+```python
+metahuman_link_to_skeleton(
+    character_name="Ada",
+    body_skeletal_mesh="/Game/MetaHumans/Ada/Body/SK_Ada_Body",
+    target_skeleton="/Game/MetaHumans/Ada/Body/SKEL_Ada",
+    ik_rig="/Game/Animation/IK/IK_Ada",
+    retargeter="/Game/Animation/Retargeters/RTG_Ada",
+    anim_blueprint="/Game/MetaHumans/Ada/ABP_Ada"
+)
+```
+
+#### Assign DNA metadata
+```python
+metahuman_assign_dna(
+    character_name="Ada",
+    dna_asset="/Game/MetaHumans/Ada/Face/Ada_DNA",
+    face_skeletal_mesh="/Game/MetaHumans/Ada/Face/SK_Ada_Face",
+    rig_logic_asset="/Game/MetaHumans/Ada/Face/CR_Ada_Face"
+)
+```
+
+#### Configure gameplay wrapper metadata
+```python
+metahuman_configure_wrapper(
+    character_name="Ada",
+    wrapper_blueprint="/Game/Characters/BP_AdaWrapper",
+    parent_class="/Script/Engine.Character",
+    gameplay_tag="Character.MetaHuman.NPC"
+)
+```
+
+Keep gameplay logic in wrapper/base Blueprints and use these manifest entries
+as references for retargeting, animation validation, and performance audits.
+
+---
+
 ## ERROR REFERENCE
 
 | Error | Cause | Fix |
@@ -1740,7 +2316,7 @@ python3 sandbox_ue5cli.py wire_play_sound_to_blueprint '{
 ### Overview
 
 The import pipeline uses **three communication channels**:
-- **TCP 55557** → UE5 C++ plugin (all existing 315 tools)
+- **TCP 55655** → UE5 C++ plugin (all existing 315 tools)
 - **HTTP 7001** → GhostRigger IPC server (KotOR model pipeline)
 - **Filesystem export folder** → shared path for FBX/texture transfer
 
@@ -2074,6 +2650,194 @@ Take a snapshot of the Content Browser before/after to see what changed.
 
 ---
 
+### B.2 Graph-Aware Diagnostics (`diagnostics_tools.py`)
+
+Use these report tools after Blueprint graph edits, material graph edits, and
+asset imports. They return the standard StructuredResult shape and are designed
+for higher-order skills that need evidence before continuing.
+
+#### compile_blueprint_and_report
+```
+compile_blueprint_and_report(
+  blueprint_path: str,
+  include_graphs: bool = True,
+  graph_names: list[str] | None = None
+) → StructuredResult JSON
+```
+Returns compile status, graph summaries, structured errors/warnings, and
+`safe_to_continue`.
+
+```python
+compile_blueprint_and_report(
+    blueprint_path="/Game/MCP_Test/BP_Example",
+    graph_names=["EventGraph"]
+)
+```
+
+#### compile_material_and_report
+```
+compile_material_and_report(
+  material_path: str,
+  include_expressions: bool = True
+) → StructuredResult JSON
+```
+Returns compile status, expression count, optional expression summaries, and
+material warnings such as empty graphs.
+
+```python
+compile_material_and_report(material_path="/Game/MCP_Test/M_Example")
+```
+
+#### validate_import_result
+```
+validate_import_result(
+  expected_asset_path: str,
+  expected_class: str = "",
+  source_file: str = "",
+  require_saved: bool = True
+) → StructuredResult JSON
+```
+Use after import tools or generative imports. Returns existence, class match,
+dirty state, source-file presence, dependency count, and `valid`.
+
+```python
+validate_import_result(
+    expected_asset_path="/Game/MCP_Test/SM_Example",
+    expected_class="StaticMesh",
+    source_file="C:/Imports/SM_Example.fbx"
+)
+```
+
+#### get_changed_assets_since
+```
+get_changed_assets_since(
+  timestamp: str,
+  path: str = "/Game",
+  include_dirty: bool = True,
+  include_unreal_generated: bool = False,
+  limit: int = 200
+) → StructuredResult JSON
+```
+Accepts epoch seconds or ISO-8601 timestamps. Returns changed package files and
+unsaved dirty packages so agents can produce asset-diff evidence.
+
+```python
+get_changed_assets_since(
+    timestamp="2026-06-07T00:00:00Z",
+    path="/Game/MCP_Test"
+)
+```
+
+Recommended post-mutation sequence:
+
+```text
+1. Run get_changed_assets_since(timestamp=before_edit).
+2. Run compile_blueprint_and_report or compile_material_and_report.
+3. For imports, run validate_import_result on every expected asset path.
+4. Continue only when safe_to_continue or valid is true.
+```
+
+---
+
+### B.3 Gameplay Ability System (`gas_tools.py`)
+
+Use these tools to create a small GAS asset slice before wiring project-specific
+runtime grant, input, replication, and prediction code.
+
+#### GAS asset creation
+```python
+gas_create_ability(name="GA_Dash", path="/Game/GAS/Abilities")
+gas_create_gameplay_effect(name="GE_DashCooldown", path="/Game/GAS/Effects")
+gas_create_gameplay_cue(name="GCN_DashTrail", notify_type="actor")
+gas_create_attribute_set(name="AS_HeroCombat", path="/Game/GAS/Attributes")
+```
+
+#### GAS Blueprint annotations
+```python
+gas_grant_ability(
+    target_bp="/Game/BP_Hero",
+    ability="/Game/GAS/Abilities/GA_Dash",
+    level=1
+)
+gas_apply_effect(target_bp="/Game/BP_Hero", effect="/Game/GAS/Effects/GE_StartupStats")
+gas_add_tag(target_bp="/Game/BP_Hero", tag="Ability.Movement.Dash")
+```
+
+`gas_grant_ability`, `gas_apply_effect`, and `gas_add_tag` can ensure an
+`AbilitySystemComponent` exists on the target Blueprint and record auditable
+package metadata. They are authoring helpers; production runtime grant and
+attribute replication still belong in project C++ or verified Blueprint startup
+logic.
+
+#### Ability task nodes
+```python
+gas_create_ability_task_node(
+    blueprint_name="/Game/GAS/Abilities/GA_Dash",
+    task_class="AbilityTask_WaitDelay",
+    task_function="WaitDelay",
+    position_x=200,
+    position_y=120
+)
+```
+
+Follow any GAS authoring pass with `compile_blueprint_and_report` and a PIE
+slice that confirms activation, effect application, tag state, and replication.
+
+---
+
+### B.4 Networking and Replication (`network_tools.py`)
+
+Use these tools to author the common multiplayer surface on Actor Blueprints:
+replicated variables, RPC Custom Events, replicated component templates,
+role/authority branching, and runtime replication state inspection.
+
+#### Replicated properties and conditions
+```python
+net_set_property_replicated(
+    blueprint_name="/Game/BP_Door",
+    variable_name="bIsOpen",
+    repnotify=True,
+    replication_condition="none"
+)
+net_set_replication_condition(
+    blueprint_name="/Game/BP_Door",
+    variable_name="OwningPlayerState",
+    replication_condition="owner_only"
+)
+```
+
+#### RPC events and replicated components
+```python
+net_set_function_rpc(
+    blueprint_name="/Game/BP_Door",
+    function_name="Server_RequestOpen",
+    rpc_type="server",
+    reliable=True
+)
+net_set_function_rpc(
+    blueprint_name="/Game/BP_Door",
+    function_name="Multicast_PlayOpenFX",
+    rpc_type="netmulticast",
+    reliable=False
+)
+net_add_replicated_component(
+    blueprint_name="/Game/BP_Door",
+    component_name="ReplicatedMesh",
+    component_type="StaticMeshComponent"
+)
+```
+
+#### Role helpers and runtime state
+```python
+net_set_role_override(blueprint_name="/Game/BP_Door", node_position=[400, 0])
+net_get_replication_graph_state(max_actors=25)
+```
+
+After B.4 edits, run `compile_blueprint_and_report`, `net_validate_common_mistakes`,
+and a two-player PIE slice before treating the replication pass as complete.
+
+---
+
 ### StructuredResult Schema
 
 All substrate + import tools return this schema:
@@ -2088,4 +2852,3 @@ All substrate + import tools return this schema:
 | `warnings` | list[str] | Non-fatal warnings |
 | `errors` | list[str] | Error messages (also in exception if `success=false`) |
 | `log_tail` | list[str] | Last 10 lines of the traceback if an exception occurred |
-

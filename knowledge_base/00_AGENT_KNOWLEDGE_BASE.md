@@ -1,17 +1,17 @@
 # AGENT KNOWLEDGE BASE — Unreal-MCP-Ghost
 > Master reference for any AI agent using this repository.
 > Read this file FIRST before taking any action in a UE5 project.
-> Version: 2026-04-10 | UE5.6 | MyProject Project (YourUnrealProject)
+> Version: 2026-09-03 | UE5.6 | Public edition
 > Built from: 4 professional UE5 books + project experience
 
 ---
 
 ## WHAT THIS REPOSITORY IS
 
-**Unreal-MCP-Ghost** is a plugin + toolchain that lets an AI agent control Unreal Engine 5 via a socket connection. The plugin (`UnrealMCP`) runs inside UE5 and listens on port **55557**. The agent communicates through `sandbox_ue5cli.py`.
+**Unreal-MCP-Ghost** is a plugin + toolchain that lets an AI agent control Unreal Engine 5 via a socket connection. The plugin (`UnrealMCP`) runs inside UE5 and listens on port **55655**. The agent communicates through `sandbox_ue5cli.py`.
 
 ```
-AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←──→ UE5 Editor
+AI Agent (sandbox_ue5cli.py) ←──socket:55655──→ UnrealMCP Plugin ←──→ UE5 Editor
 ```
 
 ---
@@ -34,7 +34,6 @@ AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←
 | `11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md` | Function Libraries, Macro Libraries, Actor/Scene Components, procedural gen, VR patterns | Before creating reusable systems |
 | `12_MCP_TOOL_USAGE_GUIDE.md` | **Every MCP command** — exact params, pin names, exec_python patterns, error ref | Before using ANY MCP tool |
 | `13_TOOL_EXPANSION_ROADMAP.md` | 20 new commands to implement — specs, priority, workarounds | When current tools aren't enough |
-| `14_MYPROJECT_PROJECT_REFERENCE.md` | All 49 assets, 52 folders, implementation status, pending tasks, asset paths | For all MyProject-specific work |
 | `15_INPUT_SYSTEM_AND_UMG.md` | Enhanced Input deep-dive, IMC setup, Widget Blueprint patterns, dialogue/quest/sparring HUD | Extended Input/UI reference |
 | `16_ANIMATION_DEEP_DIVE.md` | ABP deep-dive, State Machines, Blend Spaces, Montages, IK, Notifies, MyProject ABP reference | Advanced animation work |
 | `17_GAME_SYSTEMS_COOKBOOK.md` | Step-by-step recipes: health/damage, interaction, dialogue, quests, sparring, save/load | Implementation of all game systems |
@@ -63,7 +62,6 @@ AI Agent (sandbox_ue5cli.py) ←──socket:55557──→ UnrealMCP Plugin ←
 Before ANY action in UE5:
 1. `12_MCP_TOOL_USAGE_GUIDE.md` — know which commands exist and their EXACT parameters
 2. The relevant KB file for the system you're touching (AI → file 04, UI → file 06, etc.)
-3. `14_MYPROJECT_PROJECT_REFERENCE.md` — know what already exists
 
 ### Rule 2: Never Guess — Verify
 ```
@@ -138,12 +136,11 @@ WRONG: "AController" → CORRECT: "PlayerController" or "AIController"
 
 ---
 
-## PROJECT: ENCLAVE PROJECT — MYPROJECT
+## EXAMPLE PROJECT — MYPROJECT
 
 ### Project Path
-```
-C:\Users\YourName\Documents\UnrealProjects\YourUnrealProject
-```
+
+Use the active Unreal project root; do not assume a machine-specific absolute path.
 
 ### Content Root
 ```
@@ -350,10 +347,8 @@ python3 sandbox_ue5cli.py add_blueprint_function_node '{"blueprint_name":"BP_MyP
 | 2026-04-10 | Added: 11_BLUEPRINT_LIBRARIES_AND_COMPONENTS (complete, 10K chars) |
 | 2026-04-10 | Added: 12_MCP_TOOL_USAGE_GUIDE (definitive, 27K chars) |
 | 2026-04-10 | Added: 13_TOOL_EXPANSION_ROADMAP (20 new commands, 10K chars) |
-| 2026-04-10 | Added: 14_MYPROJECT_PROJECT_REFERENCE (complete asset registry, 14K chars) |
 | 2026-04-10 | Added: 15_INPUT_SYSTEM_AND_UMG (Enhanced Input + UMG deep-dive, 12.6K chars) |
 | 2026-04-10 | Added: 16_ANIMATION_DEEP_DIVE (ABP, State Machines, Montages, IK, MyProject reference, 10.9K chars) |
 | 2026-04-10 | Added: 17_GAME_SYSTEMS_COOKBOOK (complete recipe book for all MyProject systems, 12.5K chars) |
 | 2026-04-10 | Added: 18_PACKAGING_AND_OPTIMIZATION (build configs, packaging, profiling, optimization, 10.9K chars) |
-| 2026-04-10 | **FINAL REVISION**: All 19 KB files (00–18) verified complete; INDEX.md created; 14_MYPROJECT_PROJECT_REFERENCE expanded with Phase 9 implementation detail |
 | 2026-04-10 | **BUG FIXES**: 3 parameter name corrections discovered via C++ source audit: `game_mode_path`→`game_mode_name`, `interface_path`→`interface_name`, `row_struct_path`→`row_struct`. Roadmap updated: 6 commands marked ✅ DONE, workarounds rewritten. |

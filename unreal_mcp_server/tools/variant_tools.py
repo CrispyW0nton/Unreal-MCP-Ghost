@@ -40,8 +40,7 @@ def register_variant_tools(mcp: FastMCP):
         variant_sets: List[Dict[str, Any]] = None,
         folder_path: str = "/Game/Configurator"
     ) -> Dict[str, Any]:
-        """
-        Create a Level Variant Sets asset for product configurator / variant switching.
+        """Create a Level Variant Sets asset for product configurator / variant switching.
 
         From Ch. 20: Level Variant Sets is an asset containing multiple Variant Sets,
         each containing Variants. Each Variant captures specific property changes
@@ -49,30 +48,21 @@ def register_variant_tools(mcp: FastMCP):
 
         Structure:
         LevelVariantSets (asset)
-        └── VariantSet (e.g., \"Color\", \"Wheels\", \"Interior\")
-            ├── Variant (e.g., \"Red\", \"Blue\", \"Green\")
+        └── VariantSet (e.g., "Color", "Wheels", "Interior")
+            ├── Variant (e.g., "Red", "Blue", "Green")
             │   └── Captured Properties (actor -> property -> value)
-            └── Variant (e.g., \"Black\")
+            └── Variant (e.g., "Black")
 
         Args:
             name: Level Variant Sets asset name
             variant_sets: List of variant set definitions:
-                [{\"name\": str, \"variants\": [{\"name\": str, \"captures\": [...]}]}]
+                [{"name": str, "variants": [{"name": str, "captures": [...]}]}]
             folder_path: Content browser folder
 
         Example:
-            variant_sets=[
-              {\"name\": \"Color\",
-               \"variants\": [
-                 {\"name\": \"Red\",
-                  \"captures\": [{\"actor\": \"SM_CarBody\", \"property\": \"Material\",
-                                 \"value\": \"/Game/Materials/M_CarRed\"}]},
-                 {\"name\": \"Blue\",
-                  \"captures\": [{\"actor\": \"SM_CarBody\", \"property\": \"Material\",
-                                 \"value\": \"/Game/Materials/M_CarBlue\"}]}
-               ]}
-            ]
-        """
+            create_level_variant_sets()
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview"""
         if variant_sets is None:
             variant_sets = []
 
@@ -90,8 +80,7 @@ def register_variant_tools(mcp: FastMCP):
         variant_name: str,
         captured_properties: List[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
-        """
-        Add a Variant to an existing Variant Set in a Level Variant Sets asset.
+        """Add a Variant to an existing Variant Set in a Level Variant Sets asset.
 
         Each Variant stores property captures - snapshots of property values on
         level actors that are applied when the variant is activated.
@@ -101,9 +90,12 @@ def register_variant_tools(mcp: FastMCP):
             variant_set_name: Target Variant Set name within the LVS
             variant_name: New Variant name to create
             captured_properties: List of property captures:
-                [{\"actor_name\": str, \"property_type\": str, \"property_value\": any}]
-                property_type: \"Material\", \"Visibility\", \"Transform\", \"Mesh\"
-        """
+                [{"actor_name": str, "property_type": str, "property_value": any}]
+                property_type: "Material", "Visibility", "Transform", "Mesh"
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview
+        Example:
+            add_variant_to_level_variant_sets(lvs_name="ExampleName", variant_set_name="ExampleName", variant_name="ExampleName")"""
         if captured_properties is None:
             captured_properties = []
 
@@ -123,8 +115,7 @@ def register_variant_tools(mcp: FastMCP):
         variant_name: str = "",
         node_position: List[int] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add an ActivateVariant node to switch variants via Blueprint.
+        """Add an ActivateVariant node to switch variants via Blueprint.
 
         From Ch. 20: The BP_Configurator Blueprint calls ActivateVariant
         to switch between product variants when buttons are pressed.
@@ -135,7 +126,10 @@ def register_variant_tools(mcp: FastMCP):
             variant_set_name: Name of the Variant Set to switch in
             variant_name: Name of the Variant to activate
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview
+        Example:
+            add_activate_variant_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": lvs_variable,
@@ -155,8 +149,7 @@ def register_variant_tools(mcp: FastMCP):
         variant_set_name: str = "",
         node_position: List[int] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add an ActivateVariantSet node to activate all variants in a set.
+        """Add an ActivateVariantSet node to activate all variants in a set.
 
         From Ch. 20: Activates all variants within a Variant Set.
         Useful for resetting or applying a full configuration.
@@ -166,7 +159,10 @@ def register_variant_tools(mcp: FastMCP):
             lvs_variable: Variable holding the Level Variant Sets reference
             variant_set_name: Variant Set name to fully activate
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview
+        Example:
+            add_activate_variant_set_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": lvs_variable,
@@ -183,8 +179,7 @@ def register_variant_tools(mcp: FastMCP):
         widget_blueprint_name: str = "WBP_ConfiguratorUI",
         folder_path: str = "/Game/Configurator"
     ) -> Dict[str, Any]:
-        """
-        Create the BP_Configurator Blueprint from Ch. 20.
+        """Create the BP_Configurator Blueprint from Ch. 20.
 
         Creates a Blueprint that:
         1. Holds a reference to the Level Variant Sets asset
@@ -200,7 +195,10 @@ def register_variant_tools(mcp: FastMCP):
             lvs_asset_name: Level Variant Sets asset to reference
             widget_blueprint_name: Widget Blueprint to create for the UI
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview
+        Example:
+            create_product_configurator_blueprint()"""
         return _send("create_product_configurator_blueprint", {
             "name": name,
             "lvs_asset_name": lvs_asset_name,
@@ -216,8 +214,7 @@ def register_variant_tools(mcp: FastMCP):
         variant_set_name: str = "",
         node_position: List[int] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a GetVariants node to get all variants in a Variant Set.
+        """Add a GetVariants node to get all variants in a Variant Set.
 
         From Ch. 20: Used in BP_Configurator to iterate over all variants
         and generate UI buttons dynamically.
@@ -229,7 +226,10 @@ def register_variant_tools(mcp: FastMCP):
             lvs_variable: Level Variant Sets variable name
             variant_set_name: Variant Set to get variants from
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview
+        Example:
+            add_get_all_variants_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": lvs_variable,
@@ -245,8 +245,7 @@ def register_variant_tools(mcp: FastMCP):
         lvs_variable: str = "LevelVariantSets",
         node_position: List[int] = [300, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a GetVariantSets node to get all Variant Sets in a Level Variant Sets asset.
+        """Add a GetVariantSets node to get all Variant Sets in a Level Variant Sets asset.
 
         From Ch. 20: Used in BP_Configurator to iterate over all Variant Sets
         and generate tab-style category buttons for each set.
@@ -255,7 +254,10 @@ def register_variant_tools(mcp: FastMCP):
             blueprint_name: Blueprint to add the node to
             lvs_variable: Level Variant Sets variable name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/17_GAME_SYSTEMS_COOKBOOK.md#overview
+        Example:
+            add_get_variant_sets_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": lvs_variable,

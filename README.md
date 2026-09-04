@@ -1,284 +1,419 @@
 # Unreal-MCP-Ghost
 
-Unreal-MCP-Ghost lets MCP-capable AI clients control Unreal Engine 5 through a local Python MCP server and a UE editor plugin. It is intended for developers who want repeatable AI-assisted editor automation for Blueprint authoring, level inspection, actor spawning, UMG work, asset setup, diagnostics, and related UE workflows.
+Unreal-MCP-Ghost is an Unreal Engine 5.6 editor plugin plus a Python FastMCP server that lets AI agents inspect and modify live UE projects through the Model Context Protocol.
 
-`main` is the stable public branch. Experimental work belongs on `wip`.
+The current server registers **713 MCP tools**. The plugin exposes a TCP bridge to Unreal Editor on port `55655`, and the Python server exposes MCP over `stdio`, `sse`, or `streamable-http`. The plugin also includes an optional dockable **MCP Chat** editor window with a compact IDE cockpit overview, queued-action preview, evidence timeline and artifact preview, live context chips, typed drag/drop references, and a categorized tool palette that can send messages to Cursor through the server.
 
-## What Is Included
+`main` is the stable public branch. Experimental work belongs on `wip`. Project-specific knowledge, generated reports, and development logs remain local and are excluded from the public repository.
 
-- `unreal_plugin/` - Unreal Engine editor plugin source.
-- `unreal_mcp_server/` - Python MCP server and tool wrappers.
-- `skills/` - Higher-level workflow skills built on top of MCP tools.
-- `cursor_setup/` and `cursor_mcp_config.json` - Generic local client setup examples.
-- `knowledge_base/` - Reusable MCP and Unreal guidance, including curated book-derived knowledge files used by agents.
+## What It Can Do
 
-## What Is Not Included
+- Inspect levels, actors, Blueprints, components, variables, graphs, nodes, pins, compile diagnostics, references, source control state, and project assets.
+- Create and edit Blueprints, Blueprint Interfaces, variables, functions, graph nodes, comments, connections, timers, input handlers, UMG widgets, materials, data assets, save-game systems, and gameplay framework classes.
+- Work with AI systems: Behavior Trees, Blackboards, AI Controllers, BT tasks/decorators/services, navmesh helpers, and higher-level AI setup workflows.
+- Work with animation systems: Animation Blueprints, state machines, blend spaces, AnimGraph slot insertion, Control Rig asset/control/constraint helpers, IK Rig creation, IK Retargeter creation, skeleton bone inspection, and batch retargeting.
+- Import assets: textures, static meshes, skeletal meshes, audio, folders, and KotOR/GhostRigger assets.
+- Add VFX/audio/material logic: Niagara components, spawn Niagara nodes, sound nodes, material instance parameters, collision settings, and Sequencer transform tracks.
+- Validate and repair Blueprints with diagnostic, repair, execution journal, action risk-evaluation, PIE, log, and viewport evidence tools.
+- Provide a repo knowledge base for UE5 workflows, Blueprint patterns, MCP usage, first-person systems, retargeting, Sequencer, Control Rig, weapons, melee, force powers, and boss AI.
+- Provide an editor-side chat panel with a compact IDE cockpit overview, queued-action preview, evidence timeline and artifact preview, live level, actor, dirty-asset, compile, and SSE server context chips, typed asset/actor/file drag-drop references, a categorized tool palette, and an optional Cursor SDK watcher for automatic replies.
 
-This repository intentionally does not ship private Unreal projects, generated game assets, raw PDFs, local-only book paths, or per-client secrets. Keep those in your own project workspace or in ignored local knowledge-base folders.
+## Architecture
 
-Ignored private locations include:
-
-- `knowledge_base/Projects/`
-- `knowledge_base/private/`
-- `docs/knowledge-base/local-book-paths.json`
-- `local-book-paths.json`
-
-## Requirements
-
-- Unreal Engine 5.4 or newer.
-- Visual Studio 2022 with the "Game development with C++" workload.
-- Python 3.10 or newer.
-- Git.
-- An MCP client such as Cursor, Claude Desktop, or another compatible client.
-
-## User Guide
-
-This guide covers the normal first-time path:
-
-1. Install Unreal-MCP-Ghost.
-2. Add your game project context to the local knowledge base.
-3. Work with an AI agent effectively while building a game.
-
-## 1. Install
-
-Clone the stable branch:
-
-```powershell
-git clone https://github.com/CrispyW0nton/Unreal-MCP-Ghost.git C:\Dev\Unreal-MCP-Ghost
-cd C:\Dev\Unreal-MCP-Ghost
-git checkout main
+```text
+AI client or Cursor watcher
+  |
+  | MCP stdio / SSE / streamable-http
+  v
+Python FastMCP server
+  - unreal_mcp_server/unreal_mcp_server.py
+  - 713 registered MCP tools
+  - optional /chat/* HTTP routes on port 8000
+  |
+  | TCP JSON, one command per connection
+  v
+UnrealMCP UE plugin
+  - localhost:55655
+  - runs commands on the editor GameThread
+  - UnrealMCP module: TCP bridge and command handlers
+  - UnrealMCPEditor module: Window > MCP Chat
+  |
+  v
+Unreal Engine Editor
 ```
 
-Create and activate a Python virtual environment:
+## Repository Layout
 
-```powershell
-python -m venv .venv
-.\.venv\Scripts\Activate.ps1
-python -m pip install --upgrade pip
-python -m pip install -e .
+```text
+Unreal-MCP-Ghost/
+|-- unreal_plugin/                 # UE5 editor plugin to copy into a project
+|-- unreal_mcp_server/             # Python FastMCP server and tool modules
+|-- knowledge_base/                # General Unreal/MCP reference docs
+|-- docs/knowledge-base/           # Packt study guides used by agents
+|-- scripts/ue-chat-agent.mjs      # Optional Cursor SDK chat watcher
+|-- docs/ue-editor-chat-agent.md   # Chat watcher instructions
+|-- package.json                   # Node dependency for chat watcher
+`-- pyproject.toml                 # Python dependency metadata
 ```
 
-Copy the Unreal plugin into your Unreal project:
+## First-Time Setup
+
+### 1. Install Prerequisites
+
+- Unreal Engine `5.6`
+- Visual Studio 2022 with **Game development with C++**
+- Python `3.10+`
+- Git
+- Node.js `20+` if you want automatic editor chat replies
+- `uv` is recommended for Python dependency/running workflows
+
+Check basics:
 
 ```powershell
-$Repo = "C:\Dev\Unreal-MCP-Ghost"
-$Project = "C:\Users\YourName\Documents\UnrealProjects\MyGame"
-
-New-Item -ItemType Directory -Force -Path "$Project\Plugins\UnrealMCP"
-Copy-Item -Recurse -Force "$Repo\unreal_plugin\*" "$Project\Plugins\UnrealMCP\"
+python --version
+uv --version
+node --version
+git --version
 ```
 
-Regenerate project files and build:
-
-1. Right-click your `.uproject`.
-2. Select `Generate Visual Studio project files`.
-3. Open the generated `.sln`.
-4. Build `Development Editor | Win64`.
-5. Open the Unreal project.
-
-Confirm the plugin is running:
-
-- In Unreal Editor, open `Edit > Plugins` and verify `UnrealMCP` is enabled.
-- In the Output Log, look for the plugin listening on `127.0.0.1:55557`.
-
-Start the MCP server:
+### 2. Clone the Repo
 
 ```powershell
-cd C:\Dev\Unreal-MCP-Ghost
-.\.venv\Scripts\Activate.ps1
-python unreal_mcp_server\unreal_mcp_server.py
+git clone https://github.com/CrispyW0nton/Unreal-MCP-Ghost.git "C:\Dev\Unreal-MCP-Ghost"
+cd "C:\Dev\Unreal-MCP-Ghost"
 ```
 
-Configure your MCP client. For Cursor or another stdio MCP client, use a config like:
+### 3. Copy the Plugin into Your UE Project
+
+The plugin must live under your project's `Plugins` folder.
+
+```powershell
+$REPO    = "C:\Dev\Unreal-MCP-Ghost"
+$PROJECT = "C:\Users\You\Documents\UnrealProjects\MyGame"
+
+New-Item -ItemType Directory -Force -Path "$PROJECT\Plugins\UnrealMCP"
+Copy-Item -Recurse -Force "$REPO\unreal_plugin\*" "$PROJECT\Plugins\UnrealMCP\"
+```
+
+When updating an existing project plugin, close Unreal Editor first and remove old plugin build artifacts:
+
+```powershell
+Stop-Process -Name UnrealEditor -Force -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$PROJECT\Plugins\UnrealMCP\Binaries" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$PROJECT\Plugins\UnrealMCP\Intermediate" -ErrorAction SilentlyContinue
+Copy-Item -Recurse -Force "$REPO\unreal_plugin\*" "$PROJECT\Plugins\UnrealMCP\"
+```
+
+### 4. Generate Project Files
+
+Right-click your `.uproject` and choose **Generate Visual Studio project files**, or run:
+
+```powershell
+$UPROJECT = "$PROJECT\MyGame.uproject"
+& "C:\Program Files\Epic Games\UE_5.6\Engine\Build\BatchFiles\GenerateProjectFiles.bat" `
+  -project="$UPROJECT" -game -rocket
+```
+
+### 5. Build the Plugin
+
+Open the generated `.sln` in Visual Studio 2022:
+
+- Configuration: `Development Editor`
+- Platform: `Win64`
+- Build: `Ctrl+Shift+B`
+
+Or build from PowerShell:
+
+```powershell
+& "C:\Program Files\Epic Games\UE_5.6\Engine\Build\BatchFiles\Build.bat" `
+  MyGameEditor Win64 Development `
+  -Project="$UPROJECT" `
+  -WaitMutex -FromMsBuild -architecture=x64
+```
+
+Expected result:
+
+```text
+Result: Succeeded
+```
+
+Notes:
+
+- `Visual Studio 2022 compiler is not a preferred version` is usually a warning, not a blocker.
+- If build fails with exit code `6`, scroll up for the actual `error C...` compiler line.
+- If Live Coding is active, close Unreal Editor or press `Ctrl+Alt+F11`.
+
+### 6. Open Unreal and Verify the Plugin
+
+Open the `.uproject`. In **Window > Output Log**, confirm:
+
+```text
+UnrealMCPBridge: Server started on 127.0.0.1:55655
+```
+
+PowerShell port check:
+
+```powershell
+python -c "import socket; s=socket.socket(); s.settimeout(2); r=s.connect_ex(('127.0.0.1',55655)); s.close(); print('PLUGIN RUNNING' if r==0 else 'PLUGIN NOT RUNNING')"
+```
+
+## Running the MCP Server
+
+### Local AI Clients: stdio
+
+Use this when Cursor, Claude Desktop, Windsurf, or another local MCP client launches the server itself:
 
 ```json
 {
   "mcpServers": {
-    "unreal-mcp": {
-      "command": "C:/Dev/Unreal-MCP-Ghost/.venv/Scripts/python.exe",
-      "args": ["C:/Dev/Unreal-MCP-Ghost/unreal_mcp_server/unreal_mcp_server.py"],
-      "env": {
-        "UNREAL_HOST": "127.0.0.1",
-        "UNREAL_PORT": "55557"
-      }
+    "unrealMCP": {
+      "command": "uv",
+      "args": [
+        "--directory",
+        "C:\\Dev\\Unreal-MCP-Ghost",
+        "run",
+        "python",
+        "unreal_mcp_server\\unreal_mcp_server.py"
+      ]
     }
   }
 }
 ```
 
-Restart your MCP client after changing its config.
+If you do not use `uv`:
 
-Run a smoke test in your AI client:
-
-```text
-List the actors in the current Unreal level. If Unreal is not reachable, tell me exactly what connection step failed.
+```json
+{
+  "mcpServers": {
+    "unrealMCP": {
+      "command": "python",
+      "args": ["C:\\Dev\\Unreal-MCP-Ghost\\unreal_mcp_server\\unreal_mcp_server.py"]
+    }
+  }
+}
 ```
 
-If the tool is wired correctly, the agent should call an Unreal-MCP tool and return level data.
+Restart the AI client after editing MCP config.
 
-## 2. Set Up Your Project In The Knowledge Base
+### HTTP/SSE Server
 
-Agents work best when they know your project rules, asset paths, gameplay goals, and current state. Put that context in `knowledge_base/Projects/`, which is ignored by git so your private game details do not ship in the public repo.
-
-Create a project folder:
+Use this when remote clients, Cursor SDK processes, or the Unreal editor chat panel need HTTP routes:
 
 ```powershell
-New-Item -ItemType Directory -Force -Path knowledge_base\Projects\MyGame
+cd "C:\Dev\Unreal-MCP-Ghost"
+python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000
 ```
 
-Create `knowledge_base/Projects/MyGame/PROJECT_CONTEXT.md`:
-
-```markdown
-# MyGame Project Context
-
-## Engine
-
-- Unreal version: 5.4/5.5/5.6
-- Project path: C:\Users\YourName\Documents\UnrealProjects\MyGame
-- Content root: /Game/MyGame
-
-## Game Vision
-
-Describe the game in 3-5 sentences. Include genre, camera, player fantasy, and the target slice you are building first.
-
-## Current Milestone
-
-Describe what "done" means for the current week or prototype.
-
-## Existing Assets
-
-- Player pawn:
-- Game mode:
-- Player controller:
-- Main level:
-- Key UI widgets:
-- Important folders:
-
-## Naming Rules
-
-- Blueprints: BP_
-- Widgets: WBP_
-- Interfaces: BPI_
-- Input actions: IA_
-- Input mapping contexts: IMC_
-- Materials: M_ or MI_
-
-## Agent Rules
-
-- Inspect assets before changing them.
-- Prefer small verified changes over large blind rewrites.
-- Compile affected Blueprints after editing them.
-- Save only assets touched by the requested task.
-- Report exact asset paths, compile errors, and follow-up risks.
-
-## Current Task Backlog
-
-1. First task
-2. Second task
-3. Third task
-```
-
-Optional but useful files:
-
-- `knowledge_base/Projects/MyGame/ASSET_MAP.md` - important asset paths and folder layout.
-- `knowledge_base/Projects/MyGame/ROADMAP.md` - milestone plan.
-- `knowledge_base/Projects/MyGame/BUGS.md` - known broken assets and reproduction steps.
-- `knowledge_base/Projects/MyGame/STYLE_GUIDE.md` - naming, folder, UI, and gameplay conventions.
-- `knowledge_base/Projects/MyGame/SESSION_LOG.md` - what changed each work session.
-
-Start each agent session by pointing the agent at your private context:
+Expected:
 
 ```text
-Before editing Unreal, read:
-- knowledge_base/00_AGENT_KNOWLEDGE_BASE.md
-- knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md
-- knowledge_base/Projects/MyGame/PROJECT_CONTEXT.md
-- knowledge_base/Projects/MyGame/ASSET_MAP.md if it exists
-
-Then inspect the current Unreal level and summarize what you can safely work on.
+[UnrealMCP] SSE server listening on http://127.0.0.1:8000/sse
+[UnrealMCP] UE5 plugin target: 127.0.0.1:55655
 ```
 
-Keep project context current. When an agent creates or changes important assets, ask it to update your local `ASSET_MAP.md` or `SESSION_LOG.md`.
+The HTTP chat routes do not provide application-layer authentication, so the server only accepts loopback binds. For remote access, keep this loopback bind and put an authenticated tunnel or reverse proxy in front of it.
 
-## 3. Work Effectively On A Game With This Tool
+Quick HTTP checks:
 
-Unreal-MCP-Ghost is strongest when you use it as a disciplined development loop, not as a one-shot "make my game" button.
+```powershell
+Invoke-RestMethod "http://127.0.0.1:8000/chat/history?limit=1"
+```
 
-### The Recommended Loop
+### Streamable HTTP
 
-1. **Choose one small feature.**
-   Good: "Create a health component and show health on the HUD."
-   Risky: "Build the whole combat system."
+For MCP clients supporting the newer streamable HTTP transport:
 
-2. **Ask the agent to inspect first.**
-   The agent should list relevant Blueprints, components, graphs, widgets, and assets before changing anything.
+```powershell
+python unreal_mcp_server\unreal_mcp_server.py --transport streamable-http --mcp-host 127.0.0.1 --mcp-port 8000
+```
 
-3. **Ask for a short implementation plan.**
-   Require exact assets to be touched and how success will be verified.
+Endpoint: `http://127.0.0.1:8000/mcp`
 
-4. **Let the agent implement one slice.**
-   Prefer one Blueprint, one widget, one mechanic, or one level pass at a time.
+## Unreal Editor Chat
 
-5. **Compile, validate, and report.**
-   The agent should compile affected Blueprints, run available diagnostics, and report any remaining manual steps.
-
-6. **Test in PIE.**
-   Play the game yourself. Keep notes on what worked, what broke, and what should be next.
-
-7. **Update project context.**
-   Add new asset paths, decisions, and known issues to your ignored project knowledge base.
-
-### Good Prompts
+The plugin registers a dockable tab:
 
 ```text
-Read my project context, inspect the current level, then create a plan for a simple interactable door. Do not edit anything until you list the assets you intend to touch.
+Window > MCP Chat
 ```
 
-```text
-Implement only the health component slice: create or update the component, add variables, expose clear functions, compile it, and report exact asset paths.
+The tab is implemented in the editor-only `UnrealMCPEditor` module so the core
+`UnrealMCP` module can stay focused on TCP bridge command handling.
+
+The panel:
+
+- Loads previous messages from `/chat/history`
+- Sends human messages to `/chat/send`
+- Polls agent replies from `/chat/poll?sender=agent`
+- Uses a resizable conversation/composer split with multiline input, drag/drop reference insertion, and Enter-to-send / Shift+Enter newline behavior
+- Renders role-tagged user, agent, and tool message bubbles with Copy, Re-run, Open Log, and Reveal Asset actions
+- Renders structured MCP tool invocations as collapsible cards with args, status, result summaries, full-detail drawer, log tail, and a Repair action for failed tool results
+- Renders fenced Markdown code blocks as highlighted monospaced blocks and updates streaming `data:` deltas in place when available
+- Includes editor context such as current level and selected actor
+- Shows connection status against `http://127.0.0.1:8000`
+
+Start the MCP server in SSE mode before opening the chat panel:
+
+```powershell
+python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000
 ```
 
-```text
-Audit BP_PlayerCharacter and WBP_HUD for health display wiring. Inspect first, then tell me what is missing before making changes.
+### Automatic Cursor Replies
+
+The editor chat window is a message bridge. To make Cursor answer automatically, run the watcher in a separate terminal:
+
+```powershell
+cd "C:\Dev\Unreal-MCP-Ghost"
+npm install
+$env:CURSOR_API_KEY = "cursor_..."
+npm run chat:agent
 ```
 
-```text
-Create a SESSION_LOG entry summarizing what changed today, what compiled, what failed, and the next safest task.
+Useful options:
+
+```powershell
+$env:UE_CHAT_SERVER_URL = "http://127.0.0.1:8000"
+$env:UE_CHAT_POLL_INTERVAL_MS = "2000"
+$env:UE_CHAT_CATCH_UP = "1"
+$env:UE_CHAT_SESSION = "My Session"
+$env:CURSOR_MODEL = "auto"
 ```
 
-### Habits That Keep The Project Healthy
+More detail: [`docs/ue-editor-chat-agent.md`](docs/ue-editor-chat-agent.md).
 
-- Keep tasks small and testable.
-- Prefer existing project patterns over new architecture.
-- Ask the agent to inspect before mutation.
-- Ask for exact asset paths in every report.
-- Compile after Blueprint edits.
-- Save intentionally.
-- Keep private project notes in `knowledge_base/Projects/`.
-- Commit stable progress to your game repo separately from this tool repo.
+## Knowledge Base
 
-### What To Avoid
+Agents should read repository knowledge before making Unreal changes:
 
-- Do not ask the agent to rewrite many unrelated systems at once.
-- Do not let private project notes, generated assets, secrets, or raw PDFs into `main`.
-- Do not trust a claimed asset path unless the agent inspected or created it.
-- Do not skip PIE testing just because a Blueprint compiled.
-- Do not expose your MCP server to the public internet unless you understand the security risks.
+- `docs/knowledge-base/README.md`
+- `docs/knowledge-base/unreal-cpp-li-2023.md`
+- `docs/knowledge-base/elevating-game-experiences-ue5-2e.md`
+- `docs/knowledge-base/game-ai-unreal-sapio-2019.md`
+- `knowledge_base/`
 
-## Development Branches
+## Current Tool Surface
 
-- `main` - stable public branch.
-- `wip` - experimental branch for active feature work.
+The server currently registers **713 MCP tools**, including:
 
-Do not publish private project folders, generated media, raw PDF files, API keys, or Unreal project assets to `main`.
+- Core editor/actor tools
+- Blueprint creation, graph editing, node connection, variable/function tools
+- UMG/widget tools
+- Gameplay framework tools
+- AI, Behavior Tree, Blackboard, BT task/decorator/service tools
+- Animation Blueprint, IK Rig, IK Retargeter, skeleton, and batch retargeting tools
+- Data, struct, enum, DataTable, save-game, input, and Enhanced Input tools
+- Material, VFX, Niagara, audio, physics, math, trace, procedural, VR, and variant tools
+- Asset import and folder import tools
+- GhostRigger bridge tools
+- Safe execution substrate, execution journals, action risk evaluation, PIE/log/viewport evidence capture, reflection, diagnostics, source control, project intelligence, C++ bridge, and repair tools
+- Higher-level skills such as IDE companion session orchestration/status receipts/work orders/evidence ledgers/resume packets/dashboards/blocker resolution/placeholder manifests/generated asset lifecycle manifests/editor action queues, gameplay mechanic planning, blueprint health audit, health system creation, vertical slice report packaging, and broken blueprint repair
+- Chat tools: `chat_poll_messages`, `chat_send_response`, `chat_get_context`, `chat_list_sessions`, `chat_get_session_resume_context`, `chat_get_cockpit_overview`, `chat_get_cockpit_ledger_detail`
+- Native-alignment meta-tools for toolset search, clean-room tool contribution contracts, client config generation, bridge descriptors, guarded bridge command calls, server lifecycle status, transport diagnostics, protocol contract/session guidance, operation status/cancel requests, safe metadata refresh, spatial awareness of live UE scenes, spatial room-bounds designation contracts for Ghost.RoomBounds/Ghost.Zone/Ghost.Opening/Ghost.Path/Ghost.Surface markers, live room analysis for dimensions/zones/surfaces/clearances, authored marker recognition, functional zone inference for kitchen/living/bedroom/entry/hallway/utility planning, zone-aware interior prop programming for fixtures/furniture/clutter/architectural fill, analysis-driven and support-surface-informed interior composition planning, semantic composition constraints/preflight for support contact, counter adjacency, kitchen work triangles, living groupings, circulation, hallway linear-clearance review, opening/egress clearance, entry-to-anchor visual sightlines, and per-prop front-facing interaction clearance, screenshot vision-decomposition requests, screenshot scene-graph relationship inference, size-aware live project asset cataloging and candidate resolution before Tripo spend, local screenshot crop manifests for Tripo image inputs, guarded Tripo generation batch manifests with project-asset-filtered unresolved-prop jobs and per-job prompt/spend/import/placement/validation lifecycle metadata, spatial generation briefs, concrete image-crop readiness gates, and binding handoffs that merge reused project assets plus generated imports into one dry-run composition, post-binding spatial pipeline handoffs for scale review, support anchoring, layout/candidate-clearance preflight, dry-run apply, validation, iteration, and viewport evidence, generated-asset binding from Tripo import results with spatial-fit review, generated-asset scale correction before dry-run placement, support-surface anchoring for floor/counter/table/shelf/wall contact, composition-derived support surfaces for screenshot/generated counters and tables, composition-derived room/zone wall anchors for generated wall props, dry-run-first and spatial-fit-gated composition batch application, spatial worldbuilding work orders/readiness gates with screenshot crop-manifest blockers before Tripo image-to-model spend and live candidate-clearance blockers before mutation, local layout preflight for room bounds/footprints/spacing/opening clearance/front-facing interaction clearance/visual sightlines, local layout-preflight correction planning for room-bound/overlap/circulation repair before mutation, live actor-bounds candidate clearance preflight, iterative correction planning from placement validation or live candidate-clearance blockers with corrected composition-plan handoffs, surface-aware placement probes, placement validation/evidence planning, placement policy inference, screenshot detection preflight/normalization, screenshot-driven detected-prop programming, screenshot reconstruction planning with scene-graph-guided placement hints, screenshot-detected opening/window clearance constraints, and guarded Tripo generation/import/crop handoffs, Content Browser selection handoff/batch placement, selection-aware viewport/evidence setup, and dry-run-first spatial asset placement with actor tags/Data Layer-aware planning
 
-## Legal
+Use `list_knowledge_base_topics`, `get_knowledge_base`, and `search_knowledge_base` before implementing systems. Use `get_blueprint_nodes`, `get_blueprint_variables`, and `get_blueprint_components` before modifying any Blueprint.
 
-Unreal-MCP-Ghost is distributed under the GNU Affero General Public License v3.0 or later. See [LICENSE](LICENSE).
+Canonical offline inventory command:
 
-Portions of this project are derived from or inspired by the original `chongdashu/unreal-mcp` project. See [NOTICE.md](NOTICE.md) for attribution and license notes.
+```powershell
+python scripts\tool_inventory.py --markdown
+```
 
-The AGPL is intended to preserve user freedom and discourage closed-source appropriation of this codebase. It is not a substitute for legal advice; consult counsel before relying on it for commercial enforcement.
+The inventory uses [unreal_mcp_server/tool_inventory_categories.json](unreal_mcp_server/tool_inventory_categories.json) to map modules to roadmap categories and phases. Keep this in sync when adding new tool modules.
+
+Phase 7 startup/tool-discovery profiler:
+
+```powershell
+python scripts\profile_mcp_startup.py --iterations 3 --markdown-out knowledge_base\Reports\mcp_startup_profile.md --json-out knowledge_base\Reports\mcp_startup_profile.json
+```
+
+The generated report files remain local and are ignored by Git.
+
+Phase 7 bridge command metadata audit:
+
+```powershell
+python scripts\bridge_command_audit.py
+```
+
+For repeatable offline CI smoke commands, see [docs/ci-smoke.md](docs/ci-smoke.md).
+
+## Safe Blueprint Workflow
+
+1. Read relevant knowledge docs.
+2. Inspect current state:
+   - `get_blueprint_nodes`
+   - `get_blueprint_variables`
+   - `get_blueprint_components`
+   - `get_blueprint_graphs`
+3. Report findings and plan.
+4. Make one scoped change.
+5. Compile and save.
+6. Read back and verify.
+7. Keep the project playable after each change.
+
+Never hard-code node IDs. Always query nodes after creation before connecting pins.
+
+## Troubleshooting
+
+### `/chat/history` or `/chat/poll` returns 404
+
+You are running an old MCP server process. Stop the process listening on port 8000 and restart the current server:
+
+```powershell
+Get-NetTCPConnection -LocalPort 8000 -State Listen | Select-Object OwningProcess
+Stop-Process -Id <PID> -Force
+python unreal_mcp_server\unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000
+```
+
+### Editor chat says "MCP Server offline"
+
+- Confirm the SSE server is running on port `8000`.
+- Confirm `/chat/history` returns `200`.
+- Close and reopen `Window > MCP Chat`.
+
+### AI cannot reach Unreal
+
+- Confirm Unreal Editor is open.
+- Confirm Output Log says the bridge started on `127.0.0.1:55655`.
+- Confirm no firewall or tunnel is blocking the port.
+- Restart the MCP server after restarting Unreal.
+
+### Build fails with Live Coding active
+
+Close Unreal Editor or press `Ctrl+Alt+F11`, then rebuild.
+
+### PawnSensing deprecation warnings
+
+The plugin suppresses the known UE 5.6 deprecation warning around legacy `UPawnSensingComponent` usage. New AI work should prefer AI Perception.
+
+## Updating the Plugin in a Project
+
+From a clean repo checkout:
+
+```powershell
+cd "C:\Dev\Unreal-MCP-Ghost"
+git fetch origin
+git status
+```
+
+Review local changes before updating. Then copy the plugin source into your project:
+
+```powershell
+$REPO    = "C:\Dev\Unreal-MCP-Ghost"
+$PROJECT = "C:\Users\You\Documents\UnrealProjects\MyGame"
+
+Stop-Process -Name UnrealEditor -Force -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$PROJECT\Plugins\UnrealMCP\Binaries" -ErrorAction SilentlyContinue
+Remove-Item -Recurse -Force "$PROJECT\Plugins\UnrealMCP\Intermediate" -ErrorAction SilentlyContinue
+Copy-Item -Recurse -Force "$REPO\unreal_plugin\*" "$PROJECT\Plugins\UnrealMCP\"
+```
+
+Regenerate project files and rebuild `Development Editor | Win64`.
+
+## License
+
+Unreal-MCP-Ghost is licensed under the [GNU Affero General Public License v3.0](LICENSE).
+
+Portions of this project are derived from or inspired by [chongdashu/unreal-mcp](https://github.com/chongdashu/unreal-mcp). See [NOTICE.md](NOTICE.md) for attribution and license details.
 
 ## Security
 

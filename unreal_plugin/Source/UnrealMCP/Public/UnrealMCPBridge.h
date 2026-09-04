@@ -5,9 +5,10 @@
 #include "Sockets.h"
 #include "SocketSubsystem.h"
 #include "Http.h"
-#include "Json.h"
+#include "Dom/JsonObject.h"
 #include "Interfaces/IPv4/IPv4Address.h"
 #include "Interfaces/IPv4/IPv4Endpoint.h"
+#include "Containers/Ticker.h"
 #include "Commands/UnrealMCPEditorCommands.h"
 #include "Commands/UnrealMCPBlueprintCommands.h"
 #include "Commands/UnrealMCPBlueprintNodeCommands.h"
@@ -17,7 +18,68 @@
 #include "Engine/TimerHandle.h"
 #include "UnrealMCPBridge.generated.h"
 
+class AActor;
+class APawn;
 class FMCPServerRunnable;
+class UAudioComponent;
+class UNavigationSystemV1;
+
+struct FSithTrooperCombatState
+{
+	TWeakObjectPtr<AActor> Target;
+	FVector SpawnLocation = FVector::ZeroVector;
+	float LastSeenTime = -1000.0f;
+	float NextMoveTime = 0.0f;
+	float NextShotTime = 0.0f;
+	float BurstEndTime = 0.0f;
+	float ArrivalSettleUntil = 0.0f;
+	int32 ShotsRemaining = 0;
+	int32 BurstsBeforeMove = 0;
+	bool bWasInCombat = false;
+	bool bPlayedRaise = false;
+	bool bMoveInProgress = false;
+	bool bClearedBlueprintMoveTimer = false;
+	bool bAppliedRuntimeOptimizations = false;
+	bool bDeathMontageStarted = false;
+	bool bDeathRagdollActivated = false;
+	float DeathRagdollTime = 0.0f;
+	float SmoothedAnimSpeed = 0.0f;
+	float SmoothedAnimDirection = 0.0f;
+};
+
+struct FDarkJediBossCombatState
+{
+	TWeakObjectPtr<AActor> Target;
+	TWeakObjectPtr<UAudioComponent> SaberHumComponent;
+	FVector SpawnLocation = FVector::ZeroVector;
+	float LastSeenTime = -1000.0f;
+	float LostSightStartTime = -1.0f;
+	float StateEnterTime = 0.0f;
+	float NextMoveTime = 0.0f;
+	float NextAttackTime = 0.0f;
+	float NextDecisionTime = 0.0f;
+	float NextIncomingDamageTime = 0.0f;
+	float ForceEffectTime = 0.0f;
+	float ForceEndTime = 0.0f;
+	float NextLightningTickTime = 0.0f;
+	float NextLightningVfxTime = 0.0f;
+	float DeathRagdollTime = 0.0f;
+	float SmoothedAnimSpeed = 0.0f;
+	float SmoothedAnimDirection = 0.0f;
+	int32 CombatState = 0;
+	int32 ComboAttempts = 0;
+	int32 DesiredComboLength = 2;
+	int32 LastForceState = 4;
+	bool bAppliedRuntimeSetup = false;
+	bool bWasInCombat = false;
+	bool bSaberActivated = false;
+	bool bIssuedStateMove = false;
+	bool bDamageAppliedThisSwing = false;
+	bool bForceEffectApplied = false;
+	bool bDeathMontageStarted = false;
+	bool bDeathRagdollActivated = false;
+	float StrafeSign = 1.0f;
+};
 
 /**
  * Editor subsystem for MCP Bridge
@@ -49,6 +111,8 @@ public:
 
 	// Command execution
 	FString ExecuteCommand(const FString& CommandType, const TSharedPtr<FJsonObject>& Params);
+	bool ValidateRequestAuthentication(const TSharedPtr<FJsonObject>& Request) const;
+	bool IsAuthenticationRequired() const { return bRequireAuthentication; }
 
 private:
 	// Server state
@@ -60,9 +124,24 @@ private:
 	// Server configuration
 	FIPv4Address ServerAddress;
 	uint16 Port;
+	bool bRequireAuthentication;
+	FString BridgeAuthToken;
+	bool LoadAuthenticationConfiguration();
 
 	// Watchdog timer handle
 	FTimerHandle WatchdogTimerHandle;
+	FTSTicker::FDelegateHandle SithCombatTickerHandle;
+	TMap<TWeakObjectPtr<AActor>, FSithTrooperCombatState> SithCombatStates;
+	TMap<TWeakObjectPtr<AActor>, FDarkJediBossCombatState> DarkJediBossStates;
+
+	bool SithCombatDirectorTick(float DeltaTime);
+	void DarkJediBossDirectorTick(
+		AActor* BossActor,
+		FDarkJediBossCombatState& State,
+		APawn* PlayerPawn,
+		UNavigationSystemV1* NavSystem,
+		float DeltaTime,
+		float Now);
 
 	// Command handler instances
 	TSharedPtr<FUnrealMCPEditorCommands> EditorCommands;
@@ -71,4 +150,4 @@ private:
 	TSharedPtr<FUnrealMCPProjectCommands> ProjectCommands;
 	TSharedPtr<FUnrealMCPUMGCommands> UMGCommands;
 	TSharedPtr<FUnrealMCPExtendedCommands> ExtendedCommands;
-}; 
+};

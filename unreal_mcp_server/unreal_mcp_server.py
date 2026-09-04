@@ -21,12 +21,12 @@ Architecture:
   Remote AI Agent (GenSpark)
     → HTTP POST/SSE to MCP server  (MCP_SERVER_HOST:MCP_SERVER_PORT, default 8000)
     → unreal_mcp_server.py  (this file, running on developer's machine)
-    → TCP JSON  (UNREAL_HOST:UNREAL_PORT, default 55557, via Playit tunnel if needed)
+    → TCP JSON  (UNREAL_HOST:UNREAL_PORT, default 55655, via Playit tunnel if needed)
     → UnrealMCP C++ Plugin inside UE5 Editor
 
 Quick start for remote agents (GenSpark AI Developer):
   # On the developer's machine, run:
-  python unreal_mcp_server.py --transport sse --mcp-host 0.0.0.0 --mcp-port 8000 \\
+  python unreal_mcp_server.py --transport sse --mcp-host 127.0.0.1 --mcp-port 8000 \\
       --unreal-host lie-instability.with.playit.plus --unreal-port 5462
 
   # Set up a second Playit tunnel pointing to localhost:8000 (or use any port-forward)
@@ -37,6 +37,7 @@ Quick start for remote agents (GenSpark AI Developer):
 import argparse
 import asyncio
 import logging
+from logging.handlers import RotatingFileHandler
 import os
 import socket
 import sys
@@ -45,6 +46,9 @@ import functools
 from contextlib import asynccontextmanager
 from typing import AsyncIterator, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
+from chat.routes import register_chat_routes
+from server_runtime import bridge_response_succeeded, is_loopback_http_host, runtime_state
+from bridge_auth import load_bridge_authentication
 
 # ─── Async thread-offload patch ─────────────────────────────────────────────
 # Problem: FastMCP calls sync tool functions with a plain `return fn(**args)`,
@@ -59,10 +63,11 @@ from mcp.server.fastmcp import FastMCP
 # callables in anyio's default thread pool (run_sync_in_worker_thread), exactly
 # as FastMCP would do if every tool were declared `async def`.
 # Async callables are still awaited directly — no change to async tools.
-# This is a one-line patch at startup, requires zero changes across the 321 tool
+# This is a one-line patch at startup, requiring no changes across the registered tool
 # functions spread over 21 files.
 import anyio
 from mcp.server.fastmcp.utilities import func_metadata as _fm_module
+from toolset_registry import ToolsetRegistry, is_tool_search_mode_enabled
 
 async def _threaded_call_fn(self, fn, fn_is_async, arguments_to_validate, arguments_to_pass_directly):
     """Replacement for FuncMetadata.call_fn_with_arg_validation.
@@ -101,7 +106,12 @@ logging.basicConfig(
     level=logging.DEBUG,
     format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s',
     handlers=[
-        logging.FileHandler('unreal_mcp.log', encoding='utf-8'),
+        RotatingFileHandler(
+            'unreal_mcp.log',
+            maxBytes=10 * 1024 * 1024,
+            backupCount=3,
+            encoding='utf-8',
+        ),
     ]
 )
 logger = logging.getLogger("UnrealMCP")
@@ -110,10 +120,10 @@ logger = logging.getLogger("UnrealMCP")
 # UE5 plugin connection (the TCP socket to Unreal Engine)
 # Priority: CLI flags > environment variables > defaults
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
-UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55557"))
+UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55655"))
 
 # MCP HTTP server settings (used for sse / streamable-http transports)
-MCP_SERVER_HOST = os.environ.get("MCP_SERVER_HOST", "0.0.0.0")
+MCP_SERVER_HOST = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
 MCP_SERVER_PORT = int(os.environ.get("MCP_SERVER_PORT", "8000"))
 
 
@@ -124,6 +134,7 @@ class UnrealConnection:
     def __init__(self):
         self.socket = None
         self.connected = False
+        self.authentication = load_bridge_authentication()
 
     def connect(self) -> bool:
         try:
@@ -227,7 +238,7 @@ class UnrealConnection:
         """Public dispatcher — routes to _send_command_raw (no health-check).
 
         After get_unreal_connection() has been called once, this is monkey-
-        patched to point at send_command_with_health_check so all 321 tool
+        patched to point at send_command_with_health_check so all registered tool
         functions transparently benefit from the GameThread backoff logic.
         """
         return self._send_command_raw(command, params)
@@ -255,6 +266,7 @@ class UnrealConnection:
             "get_blueprint_functions",    # same AR scan path
             "get_blueprint_graphs",       # same AR scan path
             "add_component_to_blueprint", # SCS node creation + MarkStructurallyModified
+            "add_skeleton_socket",        # SavePackage on skeleton + PostEditChange
             "focus_viewport",             # GetAllActorsOfClass scan over 4256 actors
         }
         # exec_python is tier 3 — heavy factory scripts can run 60-120 s
@@ -308,12 +320,14 @@ class UnrealConnection:
             return {"status": "error", "error": "Socket became None after connect (internal error). Retry the command."}
 
         try:
-            command_obj = {
-                "type": command,
-                "params": params or {}
-            }
+            command_obj = self.authentication.command_payload(command, params)
             command_json = json.dumps(command_obj) + "\n"
-            logger.info(f"Sending command: {command_json[:200]}...")
+            logger.info(
+                "Sending authenticated Unreal command '%s' (%d UTF-8 bytes, auth=%s)",
+                command,
+                len(command_json.encode("utf-8")),
+                self.authentication.enabled,
+            )
             self.socket.sendall(command_json.encode('utf-8'))
 
             response_data = self.receive_full_response(self.socket, timeout=timeout)
@@ -421,7 +435,7 @@ class UnrealConnection:
             if not self.connect():
                 return False
 
-            ping_json = json.dumps({"type": "ping", "params": {}}) + "\n"
+            ping_json = json.dumps(self.authentication.command_payload("ping", {})) + "\n"
             self.socket.sendall(ping_json.encode('utf-8'))
             data = self.receive_full_response(self.socket, timeout=timeout)
             resp = json.loads(data.decode('utf-8'))
@@ -450,6 +464,7 @@ class UnrealConnection:
         "save_blueprint",
         "add_blueprint_variable",
         "add_component_to_blueprint",
+        "add_skeleton_socket",
         "exec_python",
     }
 
@@ -526,7 +541,7 @@ def get_unreal_connection() -> Optional["UnrealConnection"]:
 
     All tool functions call unreal.send_command(…).  That method now routes
     through send_command_with_health_check so the GameThread health-check
-    logic is transparent to the 321 tool implementations.
+    logic is transparent to the registered tool implementations.
     """
     global _unreal_connection
     try:
@@ -535,9 +550,13 @@ def get_unreal_connection() -> Optional["UnrealConnection"]:
             if not _unreal_connection.connect():
                 logger.warning("Could not connect to Unreal Engine")
                 _unreal_connection = None
+                runtime_state.record_unreal_connection(
+                    connected=False,
+                    detail="Lazy connection attempt failed; will retry on next tool call.",
+                )
         if _unreal_connection is not None:
             # Redirect .send_command → .send_command_with_health_check so all
-            # 321 tool functions automatically benefit from the GameThread
+            # Registered tool functions automatically benefit from the GameThread
             # backoff logic without requiring changes to 21 individual files.
             # send_command_with_health_check calls _send_command_raw internally
             # so there is no infinite recursion.
@@ -546,20 +565,33 @@ def get_unreal_connection() -> Optional["UnrealConnection"]:
                 lambda self, cmd, params=None: self.send_command_with_health_check(cmd, params),
                 _unreal_connection,
             )
+            runtime_state.record_unreal_connection(
+                connected=True,
+                detail="Lazy connection established.",
+            )
         return _unreal_connection
     except Exception as e:
         logger.error(f"Error getting Unreal connection: {e}")
+        runtime_state.record_unreal_connection(
+            connected=False,
+            detail=f"Lazy connection raised {type(e).__name__}: {e}",
+        )
         return None
 
 
 @asynccontextmanager
 async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
     global _unreal_connection
+    runtime_state.mark_starting("FastMCP lifespan entered.")
     logger.info("UnrealMCP server starting up")
     try:
         _unreal_connection = get_unreal_connection()
         if _unreal_connection:
             logger.info("Connected to Unreal Engine on startup")
+            runtime_state.record_unreal_connection(
+                connected=True,
+                detail="Connected during FastMCP startup.",
+            )
             # ── Python interpreter warm-up ────────────────────────────────
             # UE5's Python plugin cold-starts on the FIRST ExecPythonCommandEx
             # call per session — it loads all 'unreal' module stubs, which can
@@ -573,18 +605,40 @@ async def server_lifespan(server: FastMCP) -> AsyncIterator[Dict[str, Any]]:
                     "exec_python",
                     {"code": "pass", "mode": "execute_statement"}
                 )
-                logger.info(f"Python warm-up complete: {str(warmup_result)[:100]}")
+                warmup_success = bridge_response_succeeded(warmup_result)
+                log_warmup = logger.info if warmup_success else logger.warning
+                log_warmup(f"Python warm-up {'complete' if warmup_success else 'failed'}: {str(warmup_result)[:100]}")
+                runtime_state.record_warmup(
+                    attempted=True,
+                    success=warmup_success,
+                    detail=str(warmup_result)[:200],
+                )
             except Exception as warmup_err:
                 # Non-fatal — warm-up failure just means the first real call pays the cost
                 logger.warning(f"Python warm-up skipped (UE5 not ready yet): {warmup_err}")
+                runtime_state.record_warmup(
+                    attempted=True,
+                    success=False,
+                    detail=str(warmup_err),
+                )
         else:
             logger.warning("Could not connect to Unreal Engine on startup - will retry on first tool call")
+            runtime_state.record_unreal_connection(
+                connected=False,
+                detail="Startup connection failed; lazy retry remains enabled.",
+            )
     except Exception as e:
         logger.error(f"Error on startup: {e}")
         _unreal_connection = None
+        runtime_state.record_unreal_connection(
+            connected=False,
+            detail=f"Startup raised {type(e).__name__}: {e}",
+        )
+    runtime_state.mark_running("FastMCP startup complete.")
     try:
         yield {}
     finally:
+        runtime_state.mark_shutting_down("FastMCP lifespan exiting.")
         if _unreal_connection:
             _unreal_connection.disconnect()
             _unreal_connection = None
@@ -597,6 +651,7 @@ mcp = FastMCP(
     instructions="Full Unreal Engine 5 Blueprint Visual Scripting via Model Context Protocol",
     lifespan=server_lifespan
 )
+runtime_state.configure(server_name="UnrealMCP")
 
 # ─── Import & register all tool modules ─────────────────────────────────────
 from tools.editor_tools import register_editor_tools
@@ -604,6 +659,7 @@ from tools.blueprint_tools import register_blueprint_tools
 from tools.node_tools import register_blueprint_node_tools
 from tools.project_tools import register_project_tools
 from tools.umg_tools import register_umg_tools
+from tools.widget_tools import register_widget_tools
 from tools.gameplay_tools import register_gameplay_tools
 from tools.animation_tools import register_animation_tools
 from tools.ai_tools import register_ai_tools
@@ -615,6 +671,8 @@ from tools.material_tools import register_material_tools
 from tools.savegame_tools import register_savegame_tools
 from tools.library_tools import register_library_tools
 from tools.procedural_tools import register_procedural_tools
+from tools.pcg_tools import register_pcg_tools
+from tools.spatial_awareness_tools import register_spatial_awareness_tools
 from tools.vr_tools import register_vr_tools
 from tools.variant_tools import register_variant_tools
 # 3rd pass: Physics/Math/Trace tools (Ch.14), expanded AI (Ch.10)
@@ -622,6 +680,18 @@ from tools.physics_tools import register_physics_tools
 from tools.knowledge_tools import register_knowledge_tools
 # Audio import tools
 from tools.audio_tools import register_audio_tools
+# B.10 Chaos destruction / cloth tools
+from tools.chaos_tools import register_chaos_tools
+# B.11 Movie Render Queue tools
+from tools.mrq_tools import register_mrq_tools
+# B.12 Online Subsystem / EOS tools
+from tools.online_tools import register_online_tools
+# B.13 Pixel Streaming / remote access tools
+from tools.pixelstream_tools import register_pixelstream_tools
+# B.6 Geometry Script / Modeling tools
+from tools.geometry_tools import register_geometry_tools
+# B.7 MassEntity / StateTree / SmartObject tools
+from tools.mass_tools import register_mass_tools
 # Asset import pipeline — Category C (single-asset)
 from tools.asset_import_tools import register_asset_import_tools
 # Folder/batch import pipeline — Category B
@@ -648,60 +718,128 @@ from skills.audit_blueprint_health.skill import register_audit_blueprint_health_
 from tools.diagnostics_tools import register_diagnostics_tools
 # V6 Repair Atomics — bp_repair_exec_chain, bp_remove_orphaned_nodes, bp_set_pin_default
 from tools.repair_tools import register_repair_tools
+# Niagara-first VFX inspection and authoring recipes
+from tools.niagara_tools import register_niagara_tools
 # V6 Skills — skill_repair_broken_blueprint
 from skills.repair_broken_blueprint.skill import register_repair_broken_blueprint_skill
+# D.7 Skills — skill_generate_playable_slice
+from skills.playable_slice.skill import register_playable_slice_skill
+# Native-aligned city/district world generation skill
+from skills.city_district.skill import register_city_district_skill
+# B.3 Gameplay Ability System authoring tools
+from tools.gas_tools import register_gas_tools
+# B.4 Networking & Replication authoring tools
+from tools.network_tools import register_network_tools
+# UE editor chat bridge — HTTP routes + MCP tools
+from tools.chat_tools import register_chat_tools
+# D.1 Generative content provider and import scaffold
+from tools.generative_tools import register_generative_tools
+from client_config_tools import register_client_config_tools
+from bridge_descriptor_tools import register_bridge_descriptor_tools
+from server_runtime_tools import register_server_runtime_tools
 
-register_editor_tools(mcp)
-register_blueprint_tools(mcp)
-register_blueprint_node_tools(mcp)
-register_project_tools(mcp)
-register_umg_tools(mcp)
-register_gameplay_tools(mcp)
-register_animation_tools(mcp)
-register_ai_tools(mcp)
-register_data_tools(mcp)
-register_communication_tools(mcp)
-register_advanced_node_tools(mcp)
+register_chat_routes(mcp)
+
+toolset_registry = ToolsetRegistry()
+_tool_search_mode = is_tool_search_mode_enabled()
+runtime_state.attach_toolset_registry(toolset_registry)
+toolset_registry.attach_runtime_state(runtime_state)
+runtime_state.configure(
+    tool_search_mode=_tool_search_mode,
+    direct_tools_enabled=not _tool_search_mode,
+)
+tool_mcp = toolset_registry.bind(
+    mcp,
+    expose_direct_tools=not _tool_search_mode,
+)
+
+register_editor_tools(tool_mcp)
+register_blueprint_tools(tool_mcp)
+register_blueprint_node_tools(tool_mcp)
+register_project_tools(tool_mcp)
+register_umg_tools(tool_mcp)
+register_widget_tools(tool_mcp)
+register_gameplay_tools(tool_mcp)
+register_animation_tools(tool_mcp)
+register_ai_tools(tool_mcp)
+register_data_tools(tool_mcp)
+register_communication_tools(tool_mcp)
+register_advanced_node_tools(tool_mcp)
 # New tool modules
-register_material_tools(mcp)
-register_savegame_tools(mcp)
-register_library_tools(mcp)
-register_procedural_tools(mcp)
-register_vr_tools(mcp)
-register_variant_tools(mcp)
+register_material_tools(tool_mcp)
+register_savegame_tools(tool_mcp)
+register_library_tools(tool_mcp)
+register_procedural_tools(tool_mcp)
+register_pcg_tools(tool_mcp)
+register_spatial_awareness_tools(tool_mcp)
+register_server_runtime_tools(tool_mcp)
+register_vr_tools(tool_mcp)
+register_variant_tools(tool_mcp)
 # 3rd pass additions
-register_physics_tools(mcp)
-register_knowledge_tools(mcp)
+register_physics_tools(tool_mcp)
+register_knowledge_tools(tool_mcp)
 # Audio import tools
-register_audio_tools(mcp)
+register_audio_tools(tool_mcp)
+# B.10 Chaos destruction / cloth tools
+register_chaos_tools(tool_mcp)
+# B.11 Movie Render Queue tools
+register_mrq_tools(tool_mcp)
+# B.12 Online Subsystem / EOS tools
+register_online_tools(tool_mcp)
+# B.13 Pixel Streaming / remote access tools
+register_pixelstream_tools(tool_mcp)
+# B.6 Geometry Script / Modeling tools
+register_geometry_tools(tool_mcp)
+# B.7 MassEntity / StateTree / SmartObject tools
+register_mass_tools(tool_mcp)
 # Asset import pipeline — Category C (single-asset)
-register_asset_import_tools(mcp)
+register_asset_import_tools(tool_mcp)
 # Folder/batch import pipeline — Category B
-register_folder_import_tools(mcp)
+register_folder_import_tools(tool_mcp)
 # GhostRigger IPC bridge — Category A
-register_ghostrigger_tools(mcp)
+register_ghostrigger_tools(tool_mcp)
 # Safe execution substrate — ue_exec_safe, ue_exec_transact, ue_exec_progress
-register_exec_substrate_tools(mcp)
+register_exec_substrate_tools(tool_mcp)
 # Reflection & diagnostics — ue_reflect_class, ue_list_uclass_*, ue_describe_asset, etc.
-register_reflection_tools(mcp)
+register_reflection_tools(tool_mcp)
 # V4 Graph Scripting Core — bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile, etc.
-register_graph_tools(mcp)
+register_graph_tools(tool_mcp)
 # V4 Skills — skill_create_health_system
-register_health_system_skill(mcp)
+register_health_system_skill(tool_mcp)
 # V5 Project Intelligence — project_find_assets, project_get_references, etc.
-register_project_intelligence_tools(mcp)
+register_project_intelligence_tools(tool_mcp)
 # V5 C++ Bridge — cpp_set_codebase_path, cpp_analyze_class, cpp_find_references
-register_cpp_bridge_tools(mcp)
+register_cpp_bridge_tools(tool_mcp)
 # V5 Source Control — sc_get_provider_info, sc_get_status, sc_get_changelist
-register_source_control_tools(mcp)
+register_source_control_tools(tool_mcp)
 # V5 Skills — skill_audit_blueprint_health
-register_audit_blueprint_health_skill(mcp)
+register_audit_blueprint_health_skill(tool_mcp)
 # V6 Diagnostics — compiler-aware diagnostic tools
-register_diagnostics_tools(mcp)
+register_diagnostics_tools(tool_mcp)
 # V6 Repair atomics — deterministic repair helpers
-register_repair_tools(mcp)
+register_repair_tools(tool_mcp)
+# Niagara-first VFX tools
+register_niagara_tools(tool_mcp)
 # V6 Skills — skill_repair_broken_blueprint
-register_repair_broken_blueprint_skill(mcp)
+register_repair_broken_blueprint_skill(tool_mcp)
+# D.7 Skills — skill_generate_playable_slice
+register_playable_slice_skill(tool_mcp)
+# Native-aligned city/district workflow skill
+register_city_district_skill(tool_mcp)
+# B.3 Gameplay Ability System tools
+register_gas_tools(tool_mcp)
+# B.4 Networking & Replication tools
+register_network_tools(tool_mcp)
+# UE editor chat bridge
+register_chat_tools(tool_mcp)
+# D.1 Generative content provider and import scaffold
+register_generative_tools(tool_mcp)
+# Native-alignment client config generation
+register_client_config_tools(tool_mcp)
+# Native-alignment bridge command descriptors
+register_bridge_descriptor_tools(tool_mcp)
+
+toolset_registry.register_meta_tools(mcp)
 
 
 # ─── Info Prompt ─────────────────────────────────────────────────────────────
@@ -793,6 +931,7 @@ def info():
 - `add_state_transition(anim_blueprint_name, state_machine_name, from_state, to_state, condition_var)` - Transitions
 - `set_animation_for_state(anim_blueprint_name, state_machine_name, state_name, animation_asset)` - Assign anim
 - `add_blend_space_node(anim_blueprint_name, blend_space_asset, node_position)` - BlendSpace
+- `insert_anim_graph_slot(anim_blueprint_name, slot_name, graph_name)` - Slot before Root (montage layering)
 
 ## AI TOOLS (NEW)
 - `create_behavior_tree(name)` - Create BehaviorTree asset
@@ -1023,7 +1162,7 @@ def info():
 - `add_make_struct_node(blueprint_name, struct_type)` - Make struct from members
 - `add_get_data_table_row_node(blueprint_name, data_table_variable, row_name)` - DataTable lookup
 
-## COMMON COMPONENT TYPES  
+## COMMON COMPONENT TYPES
 - StaticMeshComponent, SkeletalMeshComponent, CameraComponent
 - SpringArmComponent, BoxComponent, SphereComponent, CapsuleComponent
 - PointLightComponent, SpotLightComponent, AudioComponent
@@ -1094,7 +1233,7 @@ Transport modes:
                    any cloud MCP client). Starts an HTTP server that remote
                    agents connect to via the /sse endpoint.
                    Example: python unreal_mcp_server.py --transport sse
-                            --mcp-host 0.0.0.0 --mcp-port 8000
+                            --mcp-host 127.0.0.1 --mcp-port 8000
 
   streamable-http  Modern HTTP streaming (MCP 2025-03-26). Recommended for
                    new integrations. Exposes /mcp endpoint.
@@ -1103,7 +1242,7 @@ Transport modes:
 Unreal Engine connection:
   --unreal-host    Hostname/IP of the UE5 machine (default: 127.0.0.1)
                    Set to your Playit tunnel address when UE5 is remote.
-  --unreal-port    Port the UnrealMCP plugin listens on (default: 55557)
+  --unreal-port    Port the UnrealMCP plugin listens on (default: 55655)
                    Set to your Playit tunnel port when using a tunnel.
 
 Environment variable equivalents:
@@ -1140,7 +1279,7 @@ Environment variable equivalents:
         "--mcp-host",
         default=None,
         metavar="HOST",
-        help="Host to bind the MCP HTTP server to (default: 0.0.0.0). sse/streamable-http only."
+        help="Loopback host for the MCP HTTP server (default: 127.0.0.1). Use a local tunnel or authenticated reverse proxy for remote access."
     )
     parser.add_argument(
         "--mcp-port",
@@ -1151,6 +1290,7 @@ Environment variable equivalents:
     )
 
     args = parser.parse_args()
+    os.environ["UNREAL_MCP_TRANSPORT"] = args.transport
 
     # ── Apply CLI overrides ─────────────────────────────────────────────────
     if args.unreal_host is not None:
@@ -1161,6 +1301,24 @@ Environment variable equivalents:
         MCP_SERVER_HOST = args.mcp_host
     if args.mcp_port is not None:
         MCP_SERVER_PORT = args.mcp_port
+
+    if args.transport in ("sse", "streamable-http") and not is_loopback_http_host(MCP_SERVER_HOST):
+        parser.error(
+            "Non-loopback MCP HTTP binds are refused because the chat and MCP routes do not provide "
+            "application-layer authentication. Bind to 127.0.0.1 and expose it only through an "
+            "authenticated tunnel or reverse proxy."
+        )
+
+    runtime_state.configure(
+        transport=args.transport,
+        mcp_host=MCP_SERVER_HOST,
+        mcp_port=MCP_SERVER_PORT,
+        unreal_host=UNREAL_HOST,
+        unreal_port=UNREAL_PORT,
+        tool_search_mode=is_tool_search_mode_enabled(),
+        direct_tools_enabled=not is_tool_search_mode_enabled(),
+        sse_tunnel_compatibility=args.transport == "sse",
+    )
 
     # ── Apply MCP server HTTP host/port settings ────────────────────────────
     # FastMCP reads these from its settings object; patch them before run()
@@ -1252,6 +1410,7 @@ Environment variable equivalents:
 
         starlette_app = Starlette(
             routes=[
+                *mcp._custom_starlette_routes,
                 Route("/sse", endpoint=SseEndpoint(), methods=["GET"]),
                 Mount("/messages/", app=sse.handle_post_message),
             ]

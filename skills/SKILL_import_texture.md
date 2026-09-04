@@ -74,7 +74,7 @@ On success, the result includes:
 | Symptom | Cause | Fix |
 |---|---|---|
 | `"Import returned no paths"` | File doesn't exist on UE5 machine | Verify path on the Windows host; use `import_sound_asset_from_sandbox` pattern if file is on sandbox |
-| `success: false, error: "exec_python failed"` | UE5 not connected | Check TCP 55557 connection; restart plugin |
+| `success: false, error: "exec_python failed"` | UE5 not connected | Check TCP 55655 connection; restart plugin |
 | sRGB is True on a normal map | auto-detection missed suffix | Pass `texture_type="normal"` explicitly |
 | Import succeeds but texture looks wrong | Wrong compression | Re-call `import_texture` with explicit `texture_type` |
 

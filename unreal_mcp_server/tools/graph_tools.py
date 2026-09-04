@@ -95,6 +95,131 @@ def _exec_transactional(code: str, tx_name: str) -> Dict[str, Any]:
 # ── Registration ──────────────────────────────────────────────────────────────
 
 def register_graph_tools(mcp: FastMCP):  # noqa: C901
+    def _bridge_structured_result(
+        *,
+        raw: Dict[str, Any],
+        stage: str,
+        message: str,
+        outputs: Optional[Dict[str, Any]] = None,
+        warnings: Optional[List[str]] = None,
+    ) -> str:
+        """Normalize a native bridge response into the graph StructuredResult."""
+        raw = raw or {}
+        error_message = raw.get("error") or raw.get("message") or ""
+        success = raw.get("success") is not False and raw.get("status") != "error" and not raw.get("error")
+        if not success:
+            return json.dumps(_make_result(
+                success=False,
+                stage=stage,
+                message=error_message or f"{stage} failed",
+                outputs=outputs or {},
+                warnings=warnings or [],
+                errors=[error_message or f"{stage} failed"],
+            ))
+
+        result_outputs = dict(outputs or {})
+        for key, value in raw.items():
+            if key not in {"success", "status", "message", "error"}:
+                result_outputs.setdefault(key, value)
+        return json.dumps(_make_result(
+            success=True,
+            stage=stage,
+            message=message,
+            outputs=result_outputs,
+            warnings=warnings or [],
+        ))
+
+    @mcp.tool()
+    async def bp_add_call_interface_function(
+        ctx: Context,
+        blueprint_name: str,
+        interface_name: str,
+        function_name: str,
+        node_position: Optional[List[float]] = None,
+    ) -> str:
+        """Add a Blueprint Interface message-call node to a Blueprint graph.
+
+        Use this when a graph should call an interface function on a target object
+        without coupling to a concrete class. The returned node exposes the
+        interface message pins; connect target and exec pins with bp_connect_pins.
+
+        Args:
+            blueprint_name: Blueprint asset name or path that receives the node.
+            interface_name: Blueprint Interface asset name or path.
+            function_name: Interface function to call.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/02_BLUEPRINT_COMMUNICATION.md#overview
+        Example:
+            bp_add_call_interface_function(blueprint_name="/Game/MCP_Test/BP_Example", interface_name="/Game/MCP_Test/BPI_Interactable", function_name="Interact")
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        raw = _send("add_call_interface_function_node", {
+            "blueprint_name": blueprint_name,
+            "interface_name": interface_name,
+            "function_name": function_name,
+            "node_position": node_position,
+        })
+        return _bridge_structured_result(
+            raw=raw,
+            stage="bp_add_call_interface_function",
+            message=f"Added interface call '{function_name}' to '{blueprint_name}'",
+            outputs={
+                "blueprint_name": blueprint_name,
+                "interface_name": interface_name,
+                "function_name": function_name,
+                "node_position": node_position,
+            },
+        )
+
+    @mcp.tool()
+    async def bp_add_for_loop_with_break_node(
+        ctx: Context,
+        blueprint_name: str,
+        graph_name: str = "EventGraph",
+        first_index: int = 0,
+        last_index: int = 9,
+        node_position: Optional[List[float]] = None,
+    ) -> str:
+        """Add a ForLoopWithBreak macro node to a Blueprint graph.
+
+        Pins include execute, First Index, Last Index, Loop Body, Index, Break,
+        and Completed. Use this when generated loop logic needs an early exit
+        path instead of a fixed ForLoop.
+
+        Args:
+            blueprint_name: Blueprint asset name or path.
+            graph_name: Graph to mutate. Default EventGraph.
+            first_index: Starting index default value.
+            last_index: Ending index default value.
+            node_position: Optional [X, Y] graph position.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_add_for_loop_with_break_node(blueprint_name="/Game/MCP_Test/BP_Example", graph_name="EventGraph", first_index=0, last_index=9)
+        """
+        if node_position is None:
+            node_position = [0, 0]
+        raw = _send("add_blueprint_for_loop_with_break_node", {
+            "blueprint_name": blueprint_name,
+            "graph_name": graph_name,
+            "first_index": int(first_index),
+            "last_index": int(last_index),
+            "node_position": node_position,
+        })
+        return _bridge_structured_result(
+            raw=raw,
+            stage="bp_add_for_loop_with_break_node",
+            message=f"Added ForLoopWithBreak to '{blueprint_name}.{graph_name}'",
+            outputs={
+                "blueprint_name": blueprint_name,
+                "graph_name": graph_name,
+                "first_index": int(first_index),
+                "last_index": int(last_index),
+                "node_position": node_position,
+            },
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # bp_get_graph_summary
@@ -254,9 +379,39 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON string with StructuredResult.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_get_graph_summary(blueprint_name="/Game/MCP_Test/BP_Example")"""
         import time as _time
         t0 = _time.monotonic()
+
+        outputs = None
+        raw_native = _send("bp_get_graph_summary", {
+            "blueprint_name": blueprint_name,
+            "blueprint_path": blueprint_name,
+            "graph_name": graph_name,
+            "include_hidden_pins": False,
+            "format": "compact",
+        })
+        if raw_native and raw_native.get("success") is not False and raw_native.get("status") != "error":
+            outputs = raw_native.get("outputs") or raw_native.get("result") or raw_native
+            if not (
+                isinstance(outputs, dict)
+                and ("graphs" in outputs or "node_count" in outputs)
+            ):
+                outputs = None
+        if outputs:
+            if not include_nodes:
+                for graph in outputs.get("graphs", []) or []:
+                    graph["nodes"] = []
+            outputs["duration_ms"] = int((_time.monotonic() - t0) * 1000)
+            return json.dumps(_make_result(
+                success=True,
+                stage="bp_get_graph_summary",
+                message=f"Graph summary for '{blueprint_name}'",
+                outputs=outputs,
+            ))
 
         # ── fetch node data ──────────────────────────────────────────────────
         nodes_raw: List[Any] = []
@@ -361,7 +516,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON string with StructuredResult.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_get_graph_detail(blueprint_path="/Game/MCP_Test/BP_Example", graph_name="EventGraph")"""
         import time as _time
         t0 = _time.monotonic()
 
@@ -496,7 +654,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
         Returns:
             JSON string with StructuredResult.
             outputs.graph_name — confirmed graph name created
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_create_graph(blueprint_name="/Game/MCP_Test/BP_Example", graph_name="EventGraph")"""
         allowed_types = ("function", "macro")
         if graph_type not in allowed_types:
             return json.dumps(_make_result(
@@ -553,12 +714,19 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
     @mcp.tool()
     async def bp_add_node(
         ctx: Context,
-        blueprint_name: str,
-        node_type: str,
+        blueprint_name: str = "",
+        node_type: str = "",
         graph_name: str = "EventGraph",
         node_params: Optional[Dict[str, Any]] = None,
         position_x: int = 0,
         position_y: int = 0,
+        blueprint_path: str = "",
+        node_class: str = "",
+        function_name: str = "",
+        event_name: str = "",
+        variable_name: str = "",
+        target_class: str = "",
+        custom_params: Optional[Dict[str, Any]] = None,
     ) -> str:
         """Add a node to a Blueprint graph and return its stable node_id.
 
@@ -601,9 +769,84 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             node_params:    Optional dict of extra params for the node type
             position_x:     Canvas X position
             position_y:     Canvas Y position
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_add_node()"""
         if node_params is None:
             node_params = {}
+        if custom_params is None:
+            custom_params = {}
+
+        use_native_phase2a = bool(
+            node_class or function_name or event_name or variable_name
+            or target_class or custom_params or blueprint_path
+        )
+        if use_native_phase2a:
+            # Phase 2A: delegate to the native generic graph command. Keep the
+            # legacy node_type/node_params arguments as aliases for callers that
+            # opt into the new shape with node_class or blueprint_path.
+            params: Dict[str, Any] = {
+                "blueprint_name": blueprint_name or blueprint_path,
+                "blueprint_path": blueprint_path or blueprint_name,
+                "graph_name": graph_name,
+                "node_class": node_class or node_type,
+                "node_type": node_type or node_class,
+                "position_x": int(position_x),
+                "position_y": int(position_y),
+                "custom_params": custom_params,
+            }
+            merged_params = {**node_params, **custom_params}
+            if function_name:
+                params["function_name"] = function_name
+            elif merged_params.get("function_name"):
+                params["function_name"] = merged_params["function_name"]
+            if event_name:
+                params["event_name"] = event_name
+            elif merged_params.get("event_name"):
+                params["event_name"] = merged_params["event_name"]
+            if variable_name:
+                params["variable_name"] = variable_name
+            elif merged_params.get("variable_name"):
+                params["variable_name"] = merged_params["variable_name"]
+            if target_class:
+                params["target_class"] = target_class
+            elif merged_params.get("target_class"):
+                params["target_class"] = merged_params["target_class"]
+            elif merged_params.get("target"):
+                params["target_class"] = merged_params["target"]
+            if "params" in merged_params and isinstance(merged_params["params"], dict):
+                params["params"] = merged_params["params"]
+
+            raw = _send("bp_add_node", params)
+            if not raw or raw.get("success") is False or raw.get("status") == "error":
+                msg = (raw or {}).get("message") or (raw or {}).get("error") or "bp_add_node failed"
+                return json.dumps(_make_result(
+                    success=False,
+                    stage="bp_add_node",
+                    message=msg,
+                    errors=[msg],
+                ))
+
+            result_data = raw.get("result") or raw
+            node_id = result_data.get("node_id") or result_data.get("node_guid") or ""
+            return json.dumps(_make_result(
+                success=True,
+                stage="bp_add_node",
+                message=f"Node '{params['node_class']}' added to '{graph_name}' in '{params['blueprint_name']}'",
+                outputs={
+                    "node_id": node_id,
+                    "node_guid": node_id,
+                    "node_name": result_data.get("node_name", ""),
+                    "node_type": result_data.get("node_type") or params["node_class"],
+                    "pins": result_data.get("pins", []),
+                    "pos_x": result_data.get("pos_x", position_x),
+                    "pos_y": result_data.get("pos_y", position_y),
+                    "blueprint": params["blueprint_name"],
+                    "graph": graph_name,
+                },
+                warnings=[] if node_id else ["Native bp_add_node did not return a node GUID."],
+            ))
 
         node_type_lower = node_type.lower()
         pos = [float(position_x), float(position_y)]
@@ -837,8 +1080,11 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON string with StructuredResult.
-        """
-        raw = _send("get_node_by_id", {
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_inspect_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example")"""
+        raw = _send("bp_inspect_node", {
             "blueprint_name": blueprint_name,
             "node_id": node_id,
             "graph_name": graph_name,
@@ -940,7 +1186,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON string with StructuredResult.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_connect_pins(blueprint_name="/Game/MCP_Test/BP_Example", source_node_id="Example", source_pin="Exec", target_node_id="Example", target_pin="Exec")"""
         if not source_pin or not target_pin:
             return json.dumps(_make_result(
                 success=False,
@@ -949,7 +1198,7 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
                 errors=["source_pin and target_pin must not be empty — use bp_inspect_node to find exact pin names"],
             ))
 
-        raw = _send("connect_blueprint_nodes", {
+        raw = _send("bp_connect_pins", {
             "blueprint_name": blueprint_name,
             "source_node_id": source_node_id,
             "source_pin": source_pin,
@@ -1039,7 +1288,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
         Returns:
             JSON string with StructuredResult.
             outputs.node_id, pin_name, previous_value, new_value
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_set_pin_default(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example", pin_name="Exec", default_value=0.0)"""
         if not pin_name:
             return json.dumps(_make_result(
                 success=False,
@@ -1128,7 +1380,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
         Returns:
             JSON string with StructuredResult.
             outputs.variable_name, variable_type, is_exposed, default_value
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_add_variable(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", variable_type="ExampleName")"""
         valid_simple_types = {
             "boolean", "bool", "integer", "int", "integer64", "int64",
             "float", "double", "string", "name", "text",
@@ -1219,7 +1474,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON string with StructuredResult.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_compile(blueprint_name="/Game/MCP_Test/BP_Example")"""
         raw = _send("compile_blueprint", {"blueprint_name": blueprint_name})
 
         if not raw or raw.get("status") == "error" or raw.get("success") is False:
@@ -1320,7 +1578,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             JSON string with StructuredResult.
             outputs.nodes_repositioned — count of nodes moved
             outputs.layout_summary     — list of {node_id, title, new_x, new_y}
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_auto_format_graph(blueprint_name="/Game/MCP_Test/BP_Example")"""
         # Get current graph state
         raw = _send("get_blueprint_nodes", {
             "blueprint_name": blueprint_name,
@@ -1529,7 +1790,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             outputs.deleted_node_id   — GUID of the removed node
             outputs.deleted_node_name — Object name of the removed node
             outputs.next_steps        — Suggested follow-up actions
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_remove_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example")"""
         raw = _send("delete_blueprint_node", {
             "blueprint_name": blueprint_name,
             "graph_name": graph_name,
@@ -1604,7 +1868,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             outputs.node_id          — GUID of the node whose pin was modified
             outputs.pin_name         — Pin that was disconnected
             outputs.mode             — 'break_all' or 'break_one'
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_disconnect_pin(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example", pin_name="Exec")"""
         # Choose Case A (break all) or Case B (break one) based on params
         if target_node_id:
             params: Dict[str, Any] = {
@@ -1698,7 +1965,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             outputs.function_name — Confirmed function name
             outputs.graph_name    — Graph name to use in subsequent bp_add_node calls
             outputs.next_steps    — Suggested follow-up actions
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            bp_add_function(blueprint_name="/Game/MCP_Test/BP_Example", function_name="ExampleName")"""
         # Parse params JSON if supplied
         param_list: List[Dict[str, str]] = []
         parse_warnings: List[str] = []
@@ -1850,7 +2120,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             JSON StructuredResult.
             outputs.material_path — Full asset path (e.g. '/Game/Materials/M_Rock')
             outputs.next_steps    — Suggested follow-up actions
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            mat_create_material(material_name="/Game/MCP_Test/M_Example")"""
         blend_map = {
             "opaque": "BLEND_Opaque",
             "masked": "BLEND_Masked",
@@ -1976,7 +2249,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             JSON StructuredResult.
             outputs.expression_index — Index for use in mat_connect_expressions
             outputs.expression_name  — Object name of the created expression
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            mat_add_expression(material_path="/Game/MCP_Test/M_Example", expression_type="Example")"""
         extra: Dict[str, Any] = {}
         if expression_params:
             try:
@@ -2151,7 +2427,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON StructuredResult.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            mat_connect_expressions(material_path="/Game/MCP_Test/M_Example", from_expression_name="ExampleName", from_output_name="ExampleName", to_expression_name="ExampleName", to_input_name="ExampleName")"""
         # Connecting to the material root (empty to_expression_name)
         if not to_expression_name:
             code = textwrap.dedent(f"""
@@ -2266,7 +2545,10 @@ def register_graph_tools(mcp: FastMCP):  # noqa: C901
             outputs.error_count    — int
             outputs.warning_count  — int
             outputs.saved          — bool
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            mat_compile(material_path="/Game/MCP_Test/M_Example")"""
         save_flag = "True" if save_after_compile else "False"
 
         code = textwrap.dedent(f"""

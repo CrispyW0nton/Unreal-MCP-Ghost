@@ -56,7 +56,7 @@ Imports, GhostRigger, model conversion, retargeting, and material creation are i
 AI Client (Claude Desktop / GDeveloper / GenSpark)
     ↓ stdio | SSE | streamable-HTTP
 Python MCP Server (unreal_mcp_server.py)
-    ↓ TCP JSON (port 55557)
+    ↓ TCP JSON (port 55655)
 C++ UnrealMCP Plugin (Editor Subsystem)
     ↓ UE5 Reflection / Editor APIs
 Unreal Engine 5 Editor

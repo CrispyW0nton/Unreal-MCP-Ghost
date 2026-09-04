@@ -1,6 +1,12 @@
 __pycache__/
+.pytest_cache/
+.venv/
+node_modules/
 *.pyc
 *.log
+.env
+.env.*
+!.env.example
 *.mp4
 *.mp3
 *.jpg
@@ -13,38 +19,70 @@ preview_*
 *.patch
 
 # -------------------------------------------------------
-# Public repo hygiene
+# Local scratch / one-off probes (regenerate at will)
 # -------------------------------------------------------
-# Keep private project context local. The public KB can include curated
-# reusable knowledge, but project-specific folders must not be committed.
+# Local-only: absolute paths to licensed PDFs for agent retrieval (copy from docs/knowledge-base/local-book-paths.example.json)
+local-book-paths.json
+docs/knowledge-base/local-book-paths.json
+
+# Public-repository boundary: retain project-specific knowledge and reports only
+# on developer machines. These paths are intentionally absent from GitHub.
 knowledge_base/Projects/
 knowledge_base/private/
 knowledge_base/Reports/
-docs/knowledge-base/local-book-paths.json
-local-book-paths.json
+knowledge_base/Limitation log/
+.cursor/rules/insanitii-knowledge-first-response.mdc
+DEVELOPER_LOG.md
 
-# Secrets and local environment
-.env
-.env.*
-!.env.example
-*.pem
-*.key
-*.p12
-*.pfx
-secrets/
-
-# Generated artifacts and local MCP/session output
-.mcp_artifacts/
+# Runtime receipts, generated media, and disposable root captures stay local.
+.mcp_journals/
 generated_audio/
-.tmp_*/
-uv.lock
-package-lock.json
-node_modules/
+/.tmp*
+
+/_*.txt
+audio_*.json
+audit_*.txt
+.cursor/mcp.json
+bug_*.py
+bug2_*.py
+bug3_*.py
+abp_*.py
+_probe*.py
+_tmp*.py
 
 # -------------------------------------------------------
 # Project-specific one-off scripts (never commit these)
 # -------------------------------------------------------
 fix_*.py
+scripts/blackhole_*.py
+scripts/cleanup_*.py
+scripts/diag_*.py
+scripts/dump_*.py
+scripts/final_*_recovery.py
+scripts/inspect_*.py
+scripts/instrument_*.py
+scripts/lab*_*.py
+scripts/list_blackholes.py
+scripts/list_casts.py
+scripts/list_project_materials.py
+scripts/pie_*.py
+scripts/probe_*.py
+scripts/recover_*.py
+scripts/round*_fixes.py
+scripts/scan_*.py
+scripts/show_*.py
+scripts/trace_*.py
+scripts/verify_*.py
+scripts/compare_plugin.ps1
+scripts/rebuild_plugin.ps1
+# Named project runs are useful locally, but are not reusable toolchain source.
+scripts/*enclave*.py
+scripts/*insanitii*.py
+scripts/*insanitii*.ps1
+scripts/*scifi_duelist*.py
+scripts/*tripo_duelist*.py
+scripts/*uthana*.py
+scripts/export_game_animation_sample_anims.py
 build_enhanced_input.py
 diagnose_*.py
 build_*.py
@@ -55,7 +93,7 @@ books/
 pdf_books/
 reference_books/
 pdf_pages/
-*_setup/
+dantooine_setup/
 *_PROJECT_REFERENCE.md
 *_SESSION_PROMPT.md
 cursor_system_prompt.md
@@ -87,6 +125,8 @@ BP_PASSIVEBOT_*.md
 # Common UE project-specific dumps (added V4)
 # -------------------------------------------------------
 # Saved/Intermediate UE build artefacts dropped into root
+.mcp_artifacts/
+build_artifacts/
 Saved/
 Intermediate/
 Binaries/
@@ -104,3 +144,44 @@ SFX_*.wav
 *.egg-info/
 dist/
 build/
+
+# Per-project Unreal replay scripts and their fixture tests are intentionally
+# retained on developer machines, not shipped as part of the generic MCP server.
+unreal_mcp_server/fixed_scripts/*
+!unreal_mcp_server/fixed_scripts/enclave_ebon_hawk_v1_apply.py
+!unreal_mcp_server/fixed_scripts/enclave_ebon_hawk_v1_dry_run.py
+!unreal_mcp_server/fixed_scripts/enclave_ebon_hawk_v1_rollback.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_daylight_pass_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_exposure_repair_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_ground_material_repair_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_ground_refine_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_lighting_audit_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_material_pass_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_review_capture_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_landing_scale_bake_v1.py
+!unreal_mcp_server/fixed_scripts/enclave_sandstone_pilot_v1_apply.py
+!unreal_mcp_server/fixed_scripts/enclave_sandstone_pilot_v1_dry_run.py
+!unreal_mcp_server/fixed_scripts/enclave_sandstone_pilot_v1_rollback.py
+!unreal_mcp_server/fixed_scripts/enclave_staged_prop_scale_bake_v1.py
+unreal_mcp_server/data/enclave_*.json
+unreal_mcp_server/tests/test_*enclave*.py
+!unreal_mcp_server/tests/test_enclave_ebon_hawk_handoff_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_daylight_pass_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_exposure_repair_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_ground_material_repair_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_ground_refine_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_lighting_audit_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_material_pass_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_review_capture_tools.py
+!unreal_mcp_server/tests/test_enclave_landing_scale_bake_tools.py
+!unreal_mcp_server/tests/test_enclave_material_pilot_tools.py
+!unreal_mcp_server/tests/test_enclave_staged_prop_scale_bake_tools.py
+!unreal_mcp_server/tests/test_enclave_warp_actor_v1.py
+unreal_mcp_server/tests/test_blender_*.py
+unreal_mcp_server/tests/test_audit_m13aa_*.py
+unreal_mcp_server/tests/test_build_uneti_*.py
+unreal_mcp_server/tests/test_central_pavilion_*.py
+unreal_mcp_server/tests/test_protocol_smooth_locomotion_*.py
+
+# Reproducible reports are regenerated by the audit scripts into the ignored
+# knowledge_base/Reports/ directory.

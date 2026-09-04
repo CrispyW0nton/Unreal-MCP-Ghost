@@ -1,6 +1,6 @@
 # KNOWLEDGE BASE — MASTER INDEX
 > Unreal-MCP-Ghost Plugin | UE 5.6
-> Version: 2026-04-16 (V4)
+> Version: 2026-06-07
 > **START HERE** if you need to find anything quickly.
 
 ---
@@ -10,7 +10,7 @@
 This is the complete documentation library for the **Unreal-MCP-Ghost** project — an AI agent toolchain for controlling Unreal Engine 5. It contains:
 - Full reference for every MCP command the plugin supports
 - UE5 system knowledge extracted from 4 professional books
-- V4 roadmap, architecture specs, and research reports
+- Current roadmap, architecture specs, and research reports
 - Step-by-step implementation recipes for all game systems
 
 ---
@@ -20,7 +20,7 @@ This is the complete documentation library for the **Unreal-MCP-Ghost** project 
 ```
 What do you need?
 │
-├─ "Where do I start? What's the V4 plan?"  → Read v4/NEXT_DEVELOPER_PROMPT_V4.md
+├─ "Where do I start? What's the current plan?" → Read 13_TOOL_EXPANSION_ROADMAP.md
 ├─ "I need to use an MCP command"           → Read 12_MCP_TOOL_USAGE_GUIDE.md
 ├─ "I need to build AI / NavMesh"           → Read 04_AI_SYSTEMS.md
 ├─ "I need to build a Blueprint graph"      → Read 01_BLUEPRINT_FUNDAMENTALS.md + graph_tools.py (bp_* tools)
@@ -31,19 +31,52 @@ What do you need?
 ├─ "I need to understand GameMode/Controller" → Read 03_GAMEPLAY_FRAMEWORK.md
 ├─ "I need to set up player input"          → Read 15_INPUT_SYSTEM_AND_UMG.md
 ├─ "I need to add materials/shaders"        → Read 08_MATERIALS_AND_RENDERING.md
-├─ "I need to add VFX particles"            → Read 09_NIAGARA_VFX.md
+├─ "I need to add VFX particles"            → Read 09_NIAGARA_VFX.md + use niagara_* tools
 ├─ "I need to build the level/world"        → Read 10_WORLD_BUILDING.md
 ├─ "I need to work with data (arrays/structs)" → Read 07_DATA_STRUCTURES.md
 ├─ "I need to add new MCP commands"         → Read 13_TOOL_EXPANSION_ROADMAP.md + v4/GRAPH_SCRIPTING_SPEC_V4.md
+├─ "I need current tool counts/categories"  → Run scripts/tool_inventory.py
+├─ "I need CI smoke/profile commands"       → Read ../docs/ci-smoke.md + run scripts/profile_mcp_startup.py
+├─ "I need Python/C++ route drift status"   → Run scripts/bridge_command_audit.py
+├─ "I need recent KB changes"               → Read v5/CHANGELOG.md
 ├─ "I need to edit a Blueprint graph (V4)" → Use bp_get_graph_summary, bp_add_node, bp_connect_pins, bp_compile
 ├─ "I need to remove a node / break a pin" → Use bp_remove_node, bp_disconnect_pin
 ├─ "I need a new function in a Blueprint"   → Use bp_add_function, then bp_add_node with graph_name=<fn>
 ├─ "I need to create/edit a Material"       → Use mat_create_material, mat_add_expression, mat_connect_expressions, mat_compile
 ├─ "I need to ship/package the game"        → Read 18_PACKAGING_AND_OPTIMIZATION.md
+├─ "I need Gameplay Ability System"         → Read 19_GAMEPLAY_ABILITY_SYSTEM.md
+├─ "I need multiplayer/replication"         → Read 20_NETWORKING_AND_REPLICATION.md
+├─ "I need MetaSounds/audio DSP"            → Read 21_METASOUNDS_AND_AUDIO_DSP.md
+├─ "I need Geometry Script/modeling tools"  → Read 22_GEOMETRY_SCRIPT_AND_MODELING.md
+├─ "I need Mass/StateTree/Smart Objects"    → Read 23_MASS_ENTITY_AND_STATETREE.md
+├─ "I need Motion Matching/Choosers"        → Read 24_MOTION_MATCHING_AND_CHOOSERS.md
+├─ "I need World Partition/HLOD"            → Read 25_WORLD_PARTITION_AND_HLOD.md
+├─ "I need Chaos physics/destruction"       → Read 26_CHAOS_PHYSICS_AND_DESTRUCTION.md
+├─ "I need MetaHuman pipeline guidance"     → Read 27_METAHUMAN_PIPELINE.md
+├─ "I need Sequencer/Movie Render Queue"    → Read 28_MOVIE_RENDER_QUEUE_AND_SEQUENCER.md
+├─ "I need Pixel Streaming/remote demo"     → Read 29_PIXEL_STREAMING_AND_REMOTE.md
+├─ "I need Online Subsystem/EOS"            → Read 30_ONLINE_SUBSYSTEM_AND_EOS.md
+├─ "I need generated asset pipeline"        → Read 31_GENERATIVE_CONTENT_PIPELINE.md
+├─ "I need native Unreal editor UI patterns" → Read ../docs/knowledge-base/unreal-editor-ui-source-deep-dive.md
+├─ "I need an agent playable slice"         → Read 32_AGENT_PLAYABLE_SLICE_RECIPE.md
 ├─ "I need to understand the architecture"  → Read v4/ARCHITECTURE_BLUEPRINT.md
 ├─ "I need UE Python API references"        → Read v4/API_REFERENCE_CHEATSHEET.md
 └─ "I need everything"                      → Read 00_AGENT_KNOWLEDGE_BASE.md
 ```
+
+---
+
+## CURRENT ROADMAP
+
+| File | Purpose |
+|------|---------|
+| `13_TOOL_EXPANSION_ROADMAP.md` | Current 360-degree roadmap: registry hygiene, Niagara, AI/EQS, networking, technical art, animation closure, autonomous verification |
+| `../scripts/tool_inventory.py` | Canonical offline inventory command for tool counts, modules, roadmap categories, and status |
+| `../scripts/profile_mcp_startup.py` | Phase 7 offline startup and static tool-discovery profiler |
+| `../scripts/bridge_command_audit.py` | Phase 7 Python/C++ bridge command metadata audit and registry snapshot generator |
+| `../docs/ci-smoke.md` | Repeatable offline CI smoke and optional live bridge smoke commands |
+| `../docs/knowledge-base/unreal-editor-ui-source-deep-dive.md` | Local UE source guide for native asset editor windows, Slate viewport patterns, ToolMenus, details views, and mesh paint |
+| `../unreal_mcp_server/tool_inventory_categories.json` | Machine-readable module-to-category map used by the inventory script |
 
 ---
 
@@ -67,6 +100,14 @@ What do you need?
 | `v4/NATIVE_MODE_ENHANCEMENT_SPEC.md` | Making Claude Desktop experience equal to GenSpark |
 | `v4/SPRINT_TRACKER.md` | 12-sprint (24-week) delivery timeline |
 | `v4/README.md` | Package overview and 30/60/90 day summary |
+
+---
+
+## V5 CHANGELOG
+
+| File | Purpose |
+|------|---------|
+| `v5/CHANGELOG.md` | Append-only log of KB edits and related Workstream A documentation gates |
 
 ---
 
@@ -105,11 +146,25 @@ What do you need?
 
 | # | File | Key Topics |
 |---|------|------------|
-| 13 | `13_TOOL_EXPANSION_ROADMAP.md` | 20 new MCP commands to build, priority, C++ implementation hints, workarounds |
+| 13 | `13_TOOL_EXPANSION_ROADMAP.md` | Current roadmap for the MCP platform: phases, gaps, implementation order, validation criteria |
 | 15 | `15_INPUT_SYSTEM_AND_UMG.md` | Enhanced Input deep-dive, Input Modifiers, Widget hierarchy |
 | 16 | `16_ANIMATION_DEEP_DIVE.md` | Root Motion, advanced IK, montage callbacks, performance tips |
 | 17 | `17_GAME_SYSTEMS_COOKBOOK.md` | 11 step-by-step recipes (health, interaction, dialogue, AI, save/load, etc.) |
 | 18 | `18_PACKAGING_AND_OPTIMIZATION.md` | Build configs, packaging steps, stat commands, Blueprint/rendering/memory optimization |
+| 19 | `19_GAMEPLAY_ABILITY_SYSTEM.md` | GAS architecture, attributes, tags, effects, ability slices |
+| 20 | `20_NETWORKING_AND_REPLICATION.md` | Server authority, replicated state, RPCs, PIE validation |
+| 21 | `21_METASOUNDS_AND_AUDIO_DSP.md` | MetaSounds, DSP graphs, attenuation, runtime audio parameters |
+| 22 | `22_GEOMETRY_SCRIPT_AND_MODELING.md` | Dynamic mesh workflows, editor modeling automation, generated meshes |
+| 23 | `23_MASS_ENTITY_AND_STATETREE.md` | Mass fragments/processors, StateTree, Smart Objects |
+| 24 | `24_MOTION_MATCHING_AND_CHOOSERS.md` | Pose Search, Motion Matching databases, Chooser tables |
+| 25 | `25_WORLD_PARTITION_AND_HLOD.md` | Streaming grids, Data Layers, HLOD workflow and validation |
+| 26 | `26_CHAOS_PHYSICS_AND_DESTRUCTION.md` | Chaos simulation, Geometry Collections, fields, destruction events |
+| 27 | `27_METAHUMAN_PIPELINE.md` | MetaHuman 5.6 asset flow, assembly, wrappers, animation/performance checks |
+| 28 | `28_MOVIE_RENDER_QUEUE_AND_SEQUENCER.md` | Level Sequences, cameras, MRQ jobs, render validation |
+| 29 | `29_PIXEL_STREAMING_AND_REMOTE.md` | Pixel Streaming, WebRTC infrastructure, standalone/packaged validation |
+| 30 | `30_ONLINE_SUBSYSTEM_AND_EOS.md` | OSS, Online Services, EOS auth/session configuration |
+| 31 | `31_GENERATIVE_CONTENT_PIPELINE.md` | Generated asset provenance, import, materialization, audits |
+| 32 | `32_AGENT_PLAYABLE_SLICE_RECIPE.md` | End-to-end MCP playable slice workflow and evidence checklist |
 
 ### 🟣 V4 RESEARCH DOCS
 
@@ -182,12 +237,12 @@ What do you need?
 | Property | Value |
 |----------|-------|
 | Engine | UE 5.6 |
-| MCP Tools | 378 (362 + 16 V4 graph/mat tools) |
-| Modules | 25 (added graph_tools.py) |
-| C++ Commands | 119 |
+| MCP Tools | 713 |
+| Tool Modules | 51 categorized modules/skills |
+| C++ Commands | 382 |
 | Transports | stdio, SSE, streamable-HTTP |
-| Plugin Port | 55557 |
-| Tests | 103 (48 import + 55 graph-core) |
+| Plugin Port | 55655 |
+| Inventory Command | `python scripts/tool_inventory.py --markdown` |
 | GitHub | https://github.com/CrispyW0nton/Unreal-MCP-Ghost |
 
 ---
@@ -203,4 +258,4 @@ What do you need?
 
 ---
 
-*Updated: 2026-04-16 (V4) | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*
+*Updated: 2026-06-07 | Repository: https://github.com/CrispyW0nton/Unreal-MCP-Ghost*

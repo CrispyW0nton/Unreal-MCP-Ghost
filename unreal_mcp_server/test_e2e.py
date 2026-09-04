@@ -2,7 +2,7 @@
 """
 test_e2e.py — End-to-end tests for the UnrealMCP plugin.
 
-Sends real TCP commands to UE5 on localhost:55557 and verifies responses.
+Sends real TCP commands to UE5 on localhost:55655 and verifies responses.
 UE5 must be open with the UnrealMCP plugin loaded before running.
 
 Usage:
@@ -26,7 +26,7 @@ from typing import Any, Dict, Optional, List, Callable
 
 # ─── connection ───────────────────────────────────────────────────────────────
 HOST = "127.0.0.1"
-PORT = 55557
+PORT = 55655
 TIMEOUT = 20          # seconds per command
 VERBOSE = False       # set by -v flag
 
@@ -763,7 +763,7 @@ def test_rapid_sequential_commands():
 # ═══════════════════════════════════════════════════════════════════════════════
 GROUPS = {
     "connectivity": [
-        ("Can reach UE5 on port 55557",         test_can_reach_ue5),
+        ("Can reach UE5 on port 55655",         test_can_reach_ue5),
         ("Response is valid JSON",              test_response_is_valid_json),
         ("Unknown command returns error",       test_unknown_command_returns_error),
         ("Malformed params handled gracefully", test_malformed_params_handled),

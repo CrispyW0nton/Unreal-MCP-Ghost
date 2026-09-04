@@ -86,7 +86,7 @@ BAD (in Event Tick):
 GOOD:
   Event BeginPlay → Get Player Character → Cast To BP_Player
     Cast Succeeded → Set PlayerRef (variable)
-  
+
   Event Tick → Get PlayerRef → Is Valid → Get Health
 ```
 
@@ -156,7 +156,7 @@ Implement them:
 
 ### Calling an Interface Function (From Any Blueprint)
 ```
-Get OverlappedActor → 
+Get OverlappedActor →
   Does Implement Interface (BPI_Interactable) → Branch (True) →
   [Interface] Interact (Target: OverlappedActor, Instigator: Self)
 ```
@@ -302,3 +302,30 @@ BP_Sparring_AIController
   → Runs: BT_Sparring
   → Direct ref to player via Blackboard TargetActor key
 ```
+
+---
+
+## 10. MCP B.1 Interface Call Tool
+
+Use `bp_add_call_interface_function` when a generated Blueprint graph should
+call a Blueprint Interface function without hard-casting to the receiver class.
+
+```
+bp_add_call_interface_function(
+  blueprint_name="/Game/Blueprints/BP_Player",
+  interface_name="/Game/Blueprints/BPI_Interactable",
+  function_name="Interact"
+)
+```
+
+Recommended pattern:
+
+1. Confirm the receiver object implements the interface.
+2. Add the interface message-call node.
+3. Connect the target object pin from trace, overlap, selected actor, or stored
+   reference.
+4. Connect exec flow and any interface parameters.
+5. Compile and inspect the graph before PIE.
+
+This keeps the graph flexible: doors, terminals, pickups, and NPCs can all
+respond to the same interface call with their own implementation.

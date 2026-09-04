@@ -1,0 +1,281 @@
+{
+  "skills.audit_blueprint_health.skill": {
+    "category": "skill",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "skills.health_system": {
+    "category": "skill",
+    "roadmap_phase": "phase_8_production_skills_game_templates",
+    "status": "live"
+  },
+  "skills.playable_slice.skill": {
+    "category": "skill",
+    "roadmap_phase": "phase_4_generative_content",
+    "status": "live"
+  },
+  "skills.city_district.skill": {
+    "category": "skill",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "partial",
+    "coverage_note": "Plans native-aligned city/district workflows across PCG, World Partition, Data Layers, HLOD, screenshots, Blueprint blockout, and optional Mass scaffolding."
+  },
+  "skills.repair_broken_blueprint.skill": {
+    "category": "skill",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.advanced_node_tools": {
+    "category": "blueprint_graph",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.ai_tools": {
+    "category": "ai_behavior_tree",
+    "roadmap_phase": "phase_2_modern_ai_systems",
+    "status": "partial"
+  },
+  "tools.animation_tools": {
+    "category": "animation",
+    "roadmap_phase": "phase_5_animation_closure",
+    "status": "partial",
+    "coverage_note": "Includes B.8 Motion Matching/Chooser and B.14 MetaHuman package, manifest, skeleton, DNA, and wrapper metadata tools."
+  },
+  "tools.asset_import_tools": {
+    "category": "asset_import",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.audio_tools": {
+    "category": "audio",
+    "roadmap_phase": "phase_3_metasounds_audio",
+    "status": "live"
+  },
+  "tools.chaos_tools": {
+    "category": "chaos_destruction_cloth",
+    "roadmap_phase": "phase_3_chaos_destruction_cloth",
+    "status": "live"
+  },
+  "tools.mrq_tools": {
+    "category": "movie_render_queue",
+    "roadmap_phase": "phase_3_movie_render_queue",
+    "status": "live"
+  },
+  "tools.online_tools": {
+    "category": "online_subsystem_eos",
+    "roadmap_phase": "phase_3_online_subsystem_eos",
+    "status": "live"
+  },
+  "tools.pixelstream_tools": {
+    "category": "pixel_streaming_remote",
+    "roadmap_phase": "phase_3_pixel_streaming_remote",
+    "status": "live"
+  },
+  "tools.geometry_tools": {
+    "category": "geometry_modeling",
+    "roadmap_phase": "phase_3_geometry_script_modeling",
+    "status": "live"
+  },
+  "tools.generative_tools": {
+    "category": "generative_content_pipeline",
+    "roadmap_phase": "phase_4_generative_content",
+    "status": "live"
+  },
+  "tools.mass_tools": {
+    "category": "mass_statetree_smartobjects",
+    "roadmap_phase": "phase_3_mass_statetree_smartobjects",
+    "status": "live"
+  },
+  "tools.blueprint_tools": {
+    "category": "blueprint_asset",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.chat_tools": {
+    "category": "editor_chat",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "client_config_tools": {
+    "category": "native_mcp_client_config",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "live",
+    "coverage_note": "Clean-room config generation for Codex, Cursor, VS Code, Claude Code, and Gemini across Ghost stdio/SSE/streamable-http transports."
+  },
+  "bridge_descriptor_tools": {
+    "category": "native_mcp_bridge_descriptors",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "live",
+    "coverage_note": "Toolset-like descriptors and dry-run-first guarded command calls over the existing Ghost TCP bridge command registry for future Unreal-native adapter work."
+  },
+  "tools.communication_tools": {
+    "category": "blueprint_communication",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.cpp_bridge_tools": {
+    "category": "cpp_intelligence",
+    "roadmap_phase": "phase_7_performance_distribution",
+    "status": "live"
+  },
+  "tools.data_tools": {
+    "category": "data_systems",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.diagnostics_tools": {
+    "category": "diagnostics",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.editor_tools": {
+    "category": "editor_actor_viewport",
+    "roadmap_phase": "baseline",
+    "status": "live",
+    "coverage_note": "Includes B.9 World Partition, Data Layer, and HLOD editor tools."
+  },
+  "tools.exec_substrate": {
+    "category": "execution_substrate",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.folder_import_tools": {
+    "category": "asset_import",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.gas_tools": {
+    "category": "gameplay_ability_system",
+    "roadmap_phase": "phase_3_gas",
+    "status": "live"
+  },
+  "tools.network_tools": {
+    "category": "networking",
+    "roadmap_phase": "phase_3_networking_replication",
+    "status": "live"
+  },
+  "tools.gameplay_tools": {
+    "category": "gameplay_framework",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.ghostrigger_tools": {
+    "category": "ghostrigger_pipeline",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.graph_tools": {
+    "category": "blueprint_graph",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.knowledge_tools": {
+    "category": "knowledge_base",
+    "roadmap_phase": "phase_0_registry_hygiene",
+    "status": "live"
+  },
+  "tools.library_tools": {
+    "category": "blueprint_library_component",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.material_tools": {
+    "category": "technical_art_materials",
+    "roadmap_phase": "phase_4_technical_art_pipeline",
+    "status": "partial"
+  },
+  "tools.niagara_tools": {
+    "category": "niagara_vfx",
+    "roadmap_phase": "phase_1_niagara_native_authoring",
+    "status": "partial"
+  },
+  "tools.node_tools": {
+    "category": "blueprint_graph",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.physics_tools": {
+    "category": "physics_traces",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.procedural_tools": {
+    "category": "procedural_world",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.pcg_tools": {
+    "category": "pcg_world_generation",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "partial",
+    "coverage_note": "Clean-room Unreal Python wrappers for PCG support checks, graph asset shells, PCG volumes, and volume refresh. Full PCG node graph authoring still needs deeper native bridge work."
+  },
+  "tools.spatial_awareness_tools": {
+    "category": "spatial_awareness",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "live",
+    "coverage_note": "Clean-room scene intelligence tools for live actor overview, spatial room-bounds designation contracts for Ghost.RoomBounds/Ghost.Zone/Ghost.Opening/Ghost.Path/Ghost.Surface markers, live interior room analysis for dimensions/zones/surfaces/clearances, authored marker recognition, functional zone inference for kitchen/living/bedroom/entry/hallway/utility planning, zone-aware interior prop programming for fixtures/furniture/clutter/architectural fill, analysis-driven and support-surface-informed apartment/interior composition planning, semantic composition constraints/preflight for support contact, counter adjacency, kitchen work triangles, living groupings, circulation, hallway linear-clearance review, opening/egress clearance, entry-to-anchor visual sightlines, and per-prop front-facing interaction clearance, screenshot vision-decomposition requests, screenshot scene-graph relationship inference, size-aware live project asset cataloging and candidate resolution before Tripo spend, local screenshot crop manifests for Tripo image inputs, guarded Tripo generation batch manifests with project-asset-filtered unresolved-prop jobs and per-job prompt/spend/import/placement/validation lifecycle metadata, spatial generation briefs, concrete image-crop readiness gates, and binding handoffs that merge reused project assets plus generated imports into one dry-run composition, post-binding spatial pipeline handoffs for scale review, support anchoring, layout/candidate-clearance preflight, dry-run apply, validation, iteration, and viewport evidence, generated-asset binding from Tripo import results with spatial-fit review, generated-asset scale correction before dry-run placement, support-surface anchoring for floor/counter/table/shelf/wall contact, composition-derived support surfaces for screenshot/generated counters and tables, composition-derived room/zone wall anchors for generated wall props, dry-run-first and spatial-fit-gated composition batch application, spatial worldbuilding work orders/readiness gates with screenshot crop-manifest blockers before Tripo image-to-model spend and live candidate-clearance blockers before mutation, local layout preflight for room bounds/footprints/spacing/opening clearance/front-facing interaction clearance/visual sightlines, local layout-preflight correction planning for room-bound/overlap/circulation repair before mutation, live actor-bounds candidate clearance preflight, iterative correction planning from placement validation or live candidate-clearance blockers with corrected composition-plan handoffs, actor queries, actor descriptors, proximity maps, surface-aware placement probes, placement validation/evidence planning, placement policy inference, screenshot detection preflight/normalization, screenshot-driven detected-prop programming, screenshot reconstruction planning with scene-graph-guided placement hints, screenshot-detected opening/window clearance constraints, and crop-to-Tripo handoffs, Content Browser selection handoff/batch placement, selection-aware viewport/evidence setup, bounds, viewport camera context, and dry-run-first transactional asset placement with actor tags and best-effort Data Layer assignment."
+  },
+  "tools.static_mesh_section_tools": {
+    "category": "technical_art_materials",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "live",
+    "coverage_note": "Read-only static-mesh LOD and material-section inspection used by the editor and MCPStudio spatial surfaces."
+  },
+  "server_runtime_tools": {
+    "category": "native_mcp_runtime",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "live",
+    "coverage_note": "Clean-room lifecycle, transport diagnostics, protocol contract/session guidance, operation tracking/cancellation, and metadata refresh tools inspired by native Unreal MCP server behavior while preserving Ghost's Python/FastMCP client compatibility."
+  },
+  "tools.project_intelligence_tools": {
+    "category": "project_intelligence",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.project_tools": {
+    "category": "project_input",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.reflection_tools": {
+    "category": "reflection",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.repair_tools": {
+    "category": "blueprint_repair",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.savegame_tools": {
+    "category": "savegame_flow",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.source_control_tools": {
+    "category": "source_control",
+    "roadmap_phase": "phase_6_autonomous_verification",
+    "status": "live"
+  },
+  "tools.umg_tools": {
+    "category": "ui_umg",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.variant_tools": {
+    "category": "variant_management",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.vr_tools": {
+    "category": "vr",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  },
+  "tools.widget_tools": {
+    "category": "ui_umg",
+    "roadmap_phase": "baseline",
+    "status": "live"
+  }
+}

@@ -39,8 +39,8 @@ Project Settings → Maps & Modes
 ### Project Description
 ```
 Project Settings → Description
-  → Project Name: "Enclave Project — MyProject"
-  → Description: "GAM270 Project 2"
+  → Project Name: "MyProject"
+  → Description: "Example Unreal Engine project"
   → Version: "1.0"
   → Company Name: "Your Studio"
   → Copyright Notice: "2026"
@@ -52,7 +52,7 @@ Project Settings → Description
 Project Settings → Platforms
   → Windows: ✓ (primary target)
   → Mac: (if needed)
-  → Mobile: (not for this project)
+  → Mobile: (if needed)
 ```
 
 ---

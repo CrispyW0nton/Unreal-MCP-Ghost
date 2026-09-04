@@ -127,6 +127,33 @@ Blueprints Visual Scripting is a node-based programming system built into Unreal
 - Support `Call in Editor` flag for editor-time execution
 - Created in My Blueprint panel → Events → + button
 
+### MCP Events And Dispatch
+
+Use these native bridge wrappers when generated gameplay needs explicit event
+entry points or interface-driven interaction contracts:
+
+| Tool | Purpose |
+|------|---------|
+| `add_custom_event` | Adds a named Custom Event node to the Event Graph. |
+| `call_custom_event` | Adds a call node for a Custom Event defined on a target Blueprint. |
+| `add_interface_event_node` | Adds an event implementation node for a Blueprint Interface function. |
+
+Recommended companion flow:
+
+1. Inspect the target graph before adding events.
+2. Prefer Blueprint Interfaces for shared interactable/pickup/objective contracts.
+3. Add custom events only when the event name is intentionally part of the workflow.
+4. Wire execution and data pins with explicit node IDs.
+5. Compile, inspect diagnostics, read back the graph, and record evidence.
+
+### Graph Readability And Layout
+
+Use `add_blueprint_comment_node`, `rename_blueprint_comment_node`, and
+`move_blueprint_node` to keep generated graphs readable after automation. Comment
+boxes should name the gameplay responsibility of a node cluster, not the tool that
+created it. After layout changes, inspect the graph again so the evidence ledger
+captures final node IDs, comment text, and positions.
+
 ---
 
 ## 6. OOP Core Concepts
@@ -166,6 +193,38 @@ UObject (base of everything)
 - A child class overrides parent functions using the `Override` dropdown
 - Parent functions can be called from the child using `Parent: [FunctionName]` node
 - The `Cast To` node safely converts a base class reference to a specific subclass
+
+### MCP Class Setup And Construction Script Tools
+
+Use these wrappers when a generated gameplay class needs a safer class
+architecture or editor-time setup path:
+
+| Tool | Purpose |
+|------|---------|
+| `set_blueprint_parent_class` | Reparents an existing Blueprint to another Blueprint or C++ class through the native bridge route. |
+| `add_construction_script_node` | Adds a Construction Script entry node through the native bridge route. |
+| `add_blueprint_function_with_pins` | Creates or updates a function graph with typed input/output pins in one native bridge call. |
+| `set_spawn_actor_class` | Sets the class pin on an existing SpawnActorFromClass node without unsafe generic pin mutation. |
+| `add_arithmetic_operator_node` | Adds native Kismet math operator nodes for gameplay expressions. |
+| `add_relational_operator_node` | Adds native comparison nodes for branch conditions and validation gates. |
+| `reconstruct_blueprint_node` | Rebuilds a node after pin/default mutation so wildcard pins and generated pins can refresh. |
+
+Recommended companion flow:
+
+1. Inspect the Blueprint components, variables, and graphs.
+2. Reparent only when the new class matches the Blueprint's gameplay responsibility.
+3. Compile and inspect diagnostics after reparenting.
+4. Add or inspect the Construction Script before wiring editor-time setup logic.
+5. Use function-with-pins for reusable gameplay calculations instead of stuffing complex logic into Event Graphs.
+6. Set SpawnActor class pins with `set_spawn_actor_class`, then inspect the node to confirm the class default.
+7. Use `reconstruct_blueprint_node` after risky pin/default mutations, then inspect the graph again.
+8. Read back graph/component state and record evidence before continuing.
+
+### MCP Level Flow Node
+
+Use `add_open_level_node` for menu, portal, restart, and level-transition flows.
+After adding the node, set or inspect the level-name pin, compile the Blueprint,
+and record graph readback evidence before relying on the transition.
 
 ---
 
@@ -529,3 +588,31 @@ BAD: Giant monolithic Event Graph with 200 nodes
 GOOD: Functions named clearly; each doing one thing
 ```
 
+---
+
+## 20. MCP B.1 Graph Gap Tools
+
+### Breakable Loop Node
+
+Use `bp_add_for_loop_with_break_node` when generated graph logic needs an early
+exit path.
+
+```
+bp_add_for_loop_with_break_node(
+  blueprint_name="/Game/Blueprints/BP_Searcher",
+  graph_name="EventGraph",
+  first_index=0,
+  last_index=9
+)
+```
+
+Expected follow-up:
+
+1. Connect the incoming exec pin.
+2. Connect `Loop Body` to the repeated work.
+3. Connect a Branch or condition to the `Break` exec pin.
+4. Connect `Completed` to cleanup or success/failure reporting.
+
+Prefer `ForLoopWithBreak` over a plain `ForLoop` for searches, nearest-target
+selection, validation passes, or any loop that should stop once a result is
+found.

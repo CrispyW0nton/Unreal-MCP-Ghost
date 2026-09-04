@@ -1,8 +1,5 @@
 #include "UnrealMCPModule.h"
-#include "UnrealMCPBridge.h"
 #include "Modules/ModuleManager.h"
-#include "EditorSubsystem.h"
-#include "Editor.h"
 
 // Define the LogMCP category here (declared in UnrealMCPModule.h)
 DEFINE_LOG_CATEGORY(LogMCP);
@@ -23,4 +20,4 @@ void FUnrealMCPModule::ShutdownModule()
 
 #undef LOCTEXT_NAMESPACE
 	
-IMPLEMENT_MODULE(FUnrealMCPModule, UnrealMCP) 
+IMPLEMENT_MODULE(FUnrealMCPModule, UnrealMCP)

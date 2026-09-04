@@ -6,7 +6,7 @@ Run this ON YOUR MACHINE alongside UE5:
     python proxy.py
 
 It listens on HTTP port 8080 (localhost) and forwards requests to the
-UnrealMCP TCP plugin on 127.0.0.1:55557.
+UnrealMCP TCP plugin on 127.0.0.1:55655.
 
 Then expose port 8080 for free via localhost.run:
     ssh -R 80:localhost:8080 nokey@localhost.run
@@ -23,8 +23,10 @@ import socket
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from typing import Any, Dict
 
+from bridge_auth import load_bridge_authentication
+
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
-UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55557"))
+UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55655"))
 PROXY_PORT  = int(os.environ.get("PROXY_PORT", "8080"))
 TIMEOUT     = 20
 
@@ -60,7 +62,7 @@ def send_ue5(command: str, params: Dict[str, Any] = None) -> Dict:
     except Exception as e:
         return {"status": "error", "error": f"Connection failed: {e}"}
     try:
-        payload = json.dumps({"type": command, "params": params or {}})
+        payload = json.dumps(load_bridge_authentication().command_payload(command, params))
         sock.sendall(payload.encode("utf-8"))
         raw = _recv(sock)
         return json.loads(raw.decode("utf-8"))

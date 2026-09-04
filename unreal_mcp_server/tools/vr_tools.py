@@ -45,8 +45,7 @@ def register_vr_tools(mcp: FastMCP):
         enable_widget_interaction: bool = True,
         folder_path: str = "/Game/VR/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a VRPawn Blueprint with motion controller support.
+        """Create a VRPawn Blueprint with motion controller support.
 
         From Ch. 16: Replicates the VR template VRPawn structure with:
         - Camera component (player view / HMD position)
@@ -64,7 +63,10 @@ def register_vr_tools(mcp: FastMCP):
             enable_snap_turn: Add snap turn input event (rotate by fixed angle)
             enable_widget_interaction: Add WidgetInteraction component for menus
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            create_vr_pawn_blueprint()"""
         return _send("create_vr_pawn_blueprint", {
             "name": name,
             "enable_teleportation": enable_teleportation,
@@ -83,24 +85,26 @@ def register_vr_tools(mcp: FastMCP):
         display_device_model: bool = True,
         is_aim_controller: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Motion Controller component to a Blueprint.
+        """Add a Motion Controller component to a Blueprint.
 
         From Ch. 16: Motion Controller components track the physical VR controller
         position and rotation in real-time. The VR template uses pairs of controllers:
         - Grip controllers (MotionControllerRight/Left) - default grip location
         - Aim controllers (MotionControllerRightAim/LeftAim) - pointer/aim location
 
-        MotionSource values: \"Right\", \"Left\", \"RightAim\", \"LeftAim\",
-        \"Head\", \"Special1\" through \"Special8\"
+        MotionSource values: "Right", "Left", "RightAim", "LeftAim",
+        "Head", "Special1" through "Special8"
 
         Args:
             blueprint_name: Blueprint to add the component to
             component_name: Component name in the Components panel
-            motion_source: Controller source (\"Right\", \"Left\", \"RightAim\", \"LeftAim\")
+            motion_source: Controller source ("Right", "Left", "RightAim", "LeftAim")
             display_device_model: Whether to render the controller mesh in game
             is_aim_controller: If True, hide device model (for aim-only controllers)
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_motion_controller_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "MotionControllerComponent",
@@ -122,8 +126,7 @@ def register_vr_tools(mcp: FastMCP):
         interaction_distance: float = 500.0,
         show_debug: bool = False
     ) -> Dict[str, Any]:
-        """
-        Add a Widget Interaction component for VR UI interaction.
+        """Add a Widget Interaction component for VR UI interaction.
 
         From Ch. 16: The Widget Interaction component works like a laser pointer,
         allowing the user to interact with UMG Widget Blueprints placed in the world.
@@ -134,7 +137,10 @@ def register_vr_tools(mcp: FastMCP):
             component_name: Component name
             interaction_distance: Max distance for widget interaction (UE units)
             show_debug: Show debug visualization beam
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_widget_interaction_component(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_type": "WidgetInteractionComponent",
@@ -157,8 +163,7 @@ def register_vr_tools(mcp: FastMCP):
         target_variable: str = "",
         node_position: List[int] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a node to call a Blueprint Interface function on a target object.
+        """Add a node to call a Blueprint Interface function on a target object.
 
         From Ch. 16: The VRPawn calls TriggerPressed on whatever Grabbable Actor
         the controller is holding - if the Actor implements VRInteractionBPI, the
@@ -173,7 +178,10 @@ def register_vr_tools(mcp: FastMCP):
             function_name: Interface function name to call
             target_variable: Variable or node providing the target Actor reference
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_call_interface_function_node(blueprint_name="/Game/MCP_Test/BP_Example", interface_name="ExampleName", function_name="ExampleName")"""
         return _send("add_call_interface_function_node", {
             "blueprint_name": blueprint_name,
             "interface_name": interface_name,
@@ -189,26 +197,28 @@ def register_vr_tools(mcp: FastMCP):
         default_grab_type: str = "Free",
         folder_path: str = "/Game/VR/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a GrabComponent Scene Component for VR object grabbing.
+        """Create a GrabComponent Scene Component for VR object grabbing.
 
         From Ch. 16: The GrabComponent is added to any Actor you want to be
         grabbable in VR. It handles attachment to the motion controller and
         supports multiple grab types.
 
         Grab Types (from the book):
-        - \"None\": Grabbing disabled (without removing component)
-        - \"Free\": Object attaches at current relative position (cubes, balls)
-        - \"Snap\": Object snaps to predefined grip location/rotation (weapons)
-        - \"Custom\": Use OnGrabbed/OnDropped event dispatchers for custom logic
+        - "None": Grabbing disabled (without removing component)
+        - "Free": Object attaches at current relative position (cubes, balls)
+        - "Snap": Object snaps to predefined grip location/rotation (weapons)
+        - "Custom": Use OnGrabbed/OnDropped event dispatchers for custom logic
 
         The Actor must have Mobility set to Movable.
 
         Args:
             name: Component Blueprint name
-            default_grab_type: Default grab type (\"Free\", \"Snap\", \"None\", \"Custom\")
+            default_grab_type: Default grab type ("Free", "Snap", "None", "Custom")
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            create_grab_component()"""
         return _send("create_grab_component", {
             "name": name,
             "default_grab_type": default_grab_type,
@@ -223,8 +233,7 @@ def register_vr_tools(mcp: FastMCP):
         grab_component_name: str = "GrabComponent",
         simulate_physics: bool = True
     ) -> Dict[str, Any]:
-        """
-        Make a Blueprint Actor grabbable in VR by adding a GrabComponent.
+        """Make a Blueprint Actor grabbable in VR by adding a GrabComponent.
 
         From Ch. 16: To make any Actor grabbable, add GrabComponent and set
         Mobility to Movable on the root mesh. The VRPawn's InputAction GrabLeft/Right
@@ -232,10 +241,13 @@ def register_vr_tools(mcp: FastMCP):
 
         Args:
             blueprint_name: Blueprint to make grabbable
-            grab_type: Grab type (\"Free\", \"Snap\", \"None\", \"Custom\")
+            grab_type: Grab type ("Free", "Snap", "None", "Custom")
             grab_component_name: Name for the GrabComponent
             simulate_physics: Enable physics simulation for realistic grabbing
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            make_actor_vr_grabbable(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("make_actor_vr_grabbable", {
             "blueprint_name": blueprint_name,
             "grab_type": grab_type,
@@ -251,8 +263,7 @@ def register_vr_tools(mcp: FastMCP):
         deadzone_threshold: float = 0.5,
         use_projectile_path: bool = True
     ) -> Dict[str, Any]:
-        """
-        Add the complete teleportation system to a VR Pawn Blueprint.
+        """Add the complete teleportation system to a VR Pawn Blueprint.
 
         From Ch. 16: Implements the full teleport system:
         1. InputAxis MovementAxisRight_Y (thumbstick up detection + deadzone check)
@@ -269,7 +280,10 @@ def register_vr_tools(mcp: FastMCP):
             teleport_visualizer_blueprint: Blueprint to use as teleport destination marker
             deadzone_threshold: Minimum axis value to start teleport (prevents accidental triggers)
             use_projectile_path: Use projectile arc (True) or straight line (False)
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_teleport_system_to_pawn(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_teleport_system_to_pawn", {
             "blueprint_name": blueprint_name,
             "teleport_visualizer_blueprint": teleport_visualizer_blueprint,
@@ -284,24 +298,26 @@ def register_vr_tools(mcp: FastMCP):
         input_action: str,
         node_position: List[int] = [200, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a VR input action event node to a Blueprint.
+        """Add a VR input action event node to a Blueprint.
 
         From Ch. 16: VR input actions from the VR template include:
-        - \"GrabLeft\" / \"GrabRight\" (grip button)
-        - \"TriggerLeft\" / \"TriggerRight\" (trigger button)
-        - \"MenuToggleLeft\" / \"MenuToggleRight\" (menu button)
-        - \"TeleportLeft\" / \"TeleportRight\" (thumbstick)
+        - "GrabLeft" / "GrabRight" (grip button)
+        - "TriggerLeft" / "TriggerRight" (trigger button)
+        - "MenuToggleLeft" / "MenuToggleRight" (menu button)
+        - "TeleportLeft" / "TeleportRight" (thumbstick)
 
         VR axis inputs (use add_blueprint_input_action_node for these):
-        - \"MovementAxisRight_Y\" / \"MovementAxisRight_X\" (right thumbstick)
-        - \"MovementAxisLeft_Y\" / \"MovementAxisLeft_X\" (left thumbstick)
+        - "MovementAxisRight_Y" / "MovementAxisRight_X" (right thumbstick)
+        - "MovementAxisLeft_Y" / "MovementAxisLeft_X" (left thumbstick)
 
         Args:
             blueprint_name: Blueprint to add the input node to
             input_action: VR input action name
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_vr_input_action_node(blueprint_name="/Game/MCP_Test/BP_Example", input_action="Example")"""
         return _send("add_blueprint_input_action_node", {
             "blueprint_name": blueprint_name,
             "action_name": input_action,
@@ -316,8 +332,7 @@ def register_vr_tools(mcp: FastMCP):
         max_sim_time: float = 2.0,
         node_position: List[int] = [400, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a PredictProjectilePathByObjectType node for VR teleport arc.
+        """Add a PredictProjectilePathByObjectType node for VR teleport arc.
 
         From Ch. 16: The TeleportTrace function uses this node to calculate the
         arc trajectory of the teleport. Returns the predicted path positions array
@@ -328,7 +343,10 @@ def register_vr_tools(mcp: FastMCP):
             simulation_frequency: Path simulation frequency
             max_sim_time: Maximum simulation time for the arc (seconds)
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_predict_projectile_path_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_blueprint_function_node", {
             "blueprint_name": blueprint_name,
             "target": "GameplayStatics",
@@ -348,8 +366,7 @@ def register_vr_tools(mcp: FastMCP):
         cast_to_class: str = "",
         node_position: List[int] = [300, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a Validated Get node for safe object reference access.
+        """Add a Validated Get node for safe object reference access.
 
         From Ch. 16: A Validated Get node (right-click -> Convert to Validated Get)
         adds execution pins to check if an object reference is valid before using it.
@@ -364,7 +381,10 @@ def register_vr_tools(mcp: FastMCP):
             variable_name: Variable to access with validation
             cast_to_class: Optional class to cast to after validation
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            add_validated_get_node(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName")"""
         return _send("add_validated_get_node", {
             "blueprint_name": blueprint_name,
             "variable_name": variable_name,

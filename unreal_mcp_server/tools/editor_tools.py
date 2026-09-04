@@ -2,37 +2,4218 @@
 Editor Tools - Actor management, viewport, spawning.
 Ported from: https://github.com/chongdashu/unreal-mcp
 """
+import json
 import logging
+import sys
+import textwrap
+import time
 from typing import Dict, List, Any, Optional
 from mcp.server.fastmcp import FastMCP, Context
+from tools.static_mesh_section_tools import register_static_mesh_section_tools
+from tools.unreal_connection_tools import send_unreal_command as _send_unreal_command
 
 logger = logging.getLogger("UnrealMCP")
+
+
+def _parse_exec_python_json(response: Dict[str, Any]) -> Dict[str, Any]:
+    inner = (response or {}).get("result") or response or {}
+    output = inner.get("output", "") or ""
+    command_result = inner.get("command_result", "") or ""
+    candidates: List[str] = []
+
+    for line in output.splitlines():
+        line = line.strip()
+        if line.startswith("[Info] "):
+            line = line[len("[Info] "):].strip()
+        candidates.append(line)
+    if command_result:
+        candidates.append(command_result.strip())
+
+    for line in reversed(candidates):
+        if not line:
+            continue
+        if (line.startswith("{") and line.endswith("}")) or (line.startswith("[") and line.endswith("]")):
+            try:
+                parsed = json.loads(line)
+                if isinstance(parsed, dict):
+                    return parsed
+                return {"success": True, "items": parsed}
+            except json.JSONDecodeError:
+                continue
+
+    if inner.get("success") is False or (response or {}).get("status") == "error":
+        return {
+            "success": False,
+            "message": inner.get("error") or inner.get("message") or output or "exec_python failed",
+        }
+    return {"success": False, "message": f"Could not parse exec_python JSON output: {output!r}"}
+
+
+def _is_unknown_command(response: Dict[str, Any], command: str) -> bool:
+    if not isinstance(response, dict):
+        return False
+    message = str(response.get("error") or response.get("message") or "")
+    return response.get("status") == "error" and f"Unknown command: {command}" in message
+
+
+def _exec_python_json(code: str) -> Dict[str, Any]:
+    return _parse_exec_python_json(_send_unreal_command("exec_python", {"code": code}))
+
+
+def _native_or_python_json(command: str, params: Dict[str, Any], fallback_code: str) -> Dict[str, Any]:
+    native = _send_unreal_command(command, params)
+    if not _is_unknown_command(native, command):
+        native.setdefault("transport", "native")
+        return native
+
+    fallback = _exec_python_json(fallback_code)
+    fallback["transport"] = "exec_python_fallback"
+    fallback["native_unavailable"] = True
+    fallback["native_error"] = native.get("error") or native.get("message")
+    return fallback
+
+
+def _make_result(
+    *,
+    success: bool,
+    stage: str,
+    message: str,
+    inputs: Dict[str, Any],
+    outputs: Optional[Dict[str, Any]] = None,
+    warnings: Optional[List[str]] = None,
+    errors: Optional[List[str]] = None,
+    t0: float,
+) -> Dict[str, Any]:
+    return {
+        "success": success,
+        "stage": stage,
+        "message": message,
+        "inputs": inputs,
+        "outputs": outputs or {},
+        "warnings": warnings or [],
+        "errors": errors or [],
+        "log_tail": [],
+        "meta": {"tool": stage, "duration_ms": int((time.monotonic() - t0) * 1000)},
+    }
+
+
+def _bridge_result(
+    *,
+    stage: str,
+    raw: Dict[str, Any],
+    inputs: Dict[str, Any],
+    message: str,
+    t0: float,
+) -> str:
+    raw = raw or {}
+    failed = raw.get("success") is False or raw.get("status") == "error" or bool(raw.get("error"))
+    if failed:
+        msg = raw.get("error") or raw.get("message") or f"{stage} failed"
+        return json.dumps(_make_result(
+            success=False,
+            stage="error",
+            message=msg,
+            inputs=inputs,
+            errors=[msg],
+            t0=t0,
+        ))
+
+    warnings = raw.get("warnings") if isinstance(raw.get("warnings"), list) else []
+    outputs = {
+        key: value for key, value in raw.items()
+        if key not in {"success", "status", "message", "error", "warnings"}
+    }
+    return json.dumps(_make_result(
+        success=True,
+        stage=stage,
+        message=message,
+        inputs=inputs,
+        outputs=outputs,
+        warnings=warnings,
+        t0=t0,
+    ))
+
+
+def _insanitii_actor_fallback_code(actor_name_or_label: str = "INS_") -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        def _class_chain(cls):
+            names = []
+            seen = set()
+            while cls and cls not in seen:
+                seen.add(cls)
+                try:
+                    names.append(cls.get_name())
+                    cls = cls.get_super_class()
+                except Exception:
+                    break
+            return names
+
+        needle = {json.dumps(actor_name_or_label)}.lower()
+        actors = []
+        for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+            label = actor.get_actor_label()
+            name = actor.get_name()
+            full_path = actor.get_path_name()
+            if needle and needle not in label.lower() and needle not in name.lower() and needle not in full_path.lower():
+                continue
+            cls = actor.get_class()
+            actors.append({{
+                "label": label,
+                "name": name,
+                "path": full_path,
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+                "native_class_chain": _class_chain(cls),
+            }})
+
+        print(json.dumps({{"success": True, "count": len(actors), "actors": actors}}))
+    """)
+
+
+def _insanitii_class_fallback_code(class_name: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        def _class_chain(cls):
+            names = []
+            seen = set()
+            while cls and cls not in seen:
+                seen.add(cls)
+                try:
+                    names.append(cls.get_name())
+                    cls = cls.get_super_class()
+                except Exception:
+                    break
+            return names
+
+        needle = {json.dumps(class_name)}.lower()
+        actors = []
+        for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+            cls = actor.get_class()
+            chain = _class_chain(cls)
+            haystack = [cls.get_name() if cls else "", cls.get_path_name() if cls else ""] + chain
+            if not any(needle in str(item).lower() for item in haystack):
+                continue
+            actors.append({{
+                "label": actor.get_actor_label(),
+                "name": actor.get_name(),
+                "path": actor.get_path_name(),
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+                "native_class_chain": chain,
+            }})
+
+        print(json.dumps({{"success": True, "count": len(actors), "actors": actors}}))
+    """)
+
+
+def _insanitii_blueprint_fallback_code(blueprint_path_or_name: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        query = {json.dumps(blueprint_path_or_name)}
+        known_paths = {{
+            "BP_InsanitiiGameMode": "/Game/Insanitii/Core/Blueprints/BP_InsanitiiGameMode",
+            "BP_InsanitiiPlayerController": "/Game/Insanitii/Core/Blueprints/BP_InsanitiiPlayerController",
+            "BP_RuntimeBootstrap": "/Game/Insanitii/Core/Blueprints/BP_RuntimeBootstrap",
+            "BP_MentalStateComponent": "/Game/Insanitii/Core/Components/BP_MentalStateComponent",
+            "BP_InteractionDetector": "/Game/Insanitii/Core/Components/BP_InteractionDetector",
+            "BP_TestInteractable": "/Game/Insanitii/Gameplay/Interactions/BP_TestInteractable",
+            "BP_PostProcessController": "/Game/Insanitii/VFX/PostProcess/BP_PostProcessController",
+            "BP_InsanitiiHUD": "/Game/Insanitii/UI/HUD/BP_InsanitiiHUD",
+        }}
+        candidates = []
+        if query.startswith("/"):
+            candidates.append(query)
+        if query in known_paths:
+            candidates.append(known_paths[query])
+        try:
+            for asset_path in unreal.EditorAssetLibrary.list_assets("/Game/Insanitii", recursive=True, include_folder=False):
+                asset_name = asset_path.rsplit("/", 1)[-1].split(".", 1)[0]
+                if asset_name == query:
+                    candidates.append(asset_path)
+        except Exception:
+            pass
+
+        asset = None
+        chosen = ""
+        for candidate in candidates:
+            asset = unreal.load_asset(candidate)
+            if asset:
+                chosen = candidate
+                break
+
+        generated = None
+        parent = None
+        if asset:
+            try:
+                generated_attr = getattr(asset, "generated_class", None)
+                generated = generated_attr() if callable(generated_attr) else None
+            except Exception:
+                generated = None
+            try:
+                parent = generated.get_super_class() if generated else None
+            except Exception:
+                parent = None
+
+        print(json.dumps({{
+            "success": bool(asset),
+            "asset_path": chosen,
+            "asset_name": asset.get_name() if asset else query,
+            "has_generated_class": bool(generated),
+            "generated_class": generated.get_path_name() if generated else "",
+            "parent_class": parent.get_path_name() if parent else "",
+        }}))
+    """)
+
+
+def _insanitii_imc_fallback_code(imc_path_or_name: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        query = {json.dumps(imc_path_or_name)}
+        query_name = query.rsplit("/", 1)[-1].split(".", 1)[0]
+        candidates = [query] if query.startswith("/") else []
+        if query_name == "IMC_Default":
+            candidates.append("/Game/Input/IMC_Default")
+            candidates.append("/Game/Input/IMC_Default.IMC_Default")
+        try:
+            for asset_path in unreal.EditorAssetLibrary.list_assets("/Game", recursive=True, include_folder=False):
+                asset_name = asset_path.rsplit("/", 1)[-1].split(".", 1)[0]
+                if asset_name == query_name:
+                    candidates.append(asset_path)
+        except Exception:
+            pass
+
+        asset = None
+        chosen = ""
+        for candidate in candidates:
+            asset = unreal.load_asset(candidate)
+            if asset:
+                chosen = candidate
+                break
+
+        mappings = []
+        if asset:
+            try:
+                raw_mappings = asset.get_editor_property("mappings")
+            except Exception:
+                raw_mappings = []
+            for mapping in raw_mappings:
+                action = None
+                key = None
+                try:
+                    action = mapping.get_editor_property("action")
+                except Exception:
+                    pass
+                try:
+                    key = mapping.get_editor_property("key")
+                except Exception:
+                    pass
+                mappings.append({{
+                    "action_name": action.get_name() if action else "",
+                    "action_path": action.get_path_name() if action else "",
+                    "key": str(key) if key else "",
+                }})
+
+        print(json.dumps({{
+            "success": bool(asset),
+            "asset_path": chosen,
+            "mapping_count": len(mappings),
+            "mappings": mappings,
+        }}))
+    """)
+
+
+def _insanitii_phase2_lifestyle_fallback_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        class_paths = {
+            "time_of_day_component": "/Script/Insanitii.InsanitiiTimeOfDayComponent",
+            "economy_component": "/Script/Insanitii.InsanitiiEconomyComponent",
+            "lifestyle_manager": "/Script/Insanitii.InsanitiiLifestyleManager",
+        }
+        blueprint_path = "/Game/Insanitii/Gameplay/Lifestyles/BP_LifestyleManager"
+        actor_label = "INS_LifestyleManager"
+
+        class_checks = {}
+        for key, path in class_paths.items():
+            cls = unreal.load_class(None, path)
+            class_checks[key] = {
+                "success": bool(cls),
+                "class_path": path,
+                "loaded_name": cls.get_name() if cls else "",
+            }
+
+        asset = unreal.load_asset(blueprint_path)
+        generated = None
+        parent = None
+        if asset:
+            try:
+                generated_attr = getattr(asset, "generated_class", None)
+                generated = generated_attr() if callable(generated_attr) else None
+            except Exception:
+                generated = None
+            try:
+                parent = generated.get_super_class() if generated else None
+            except Exception:
+                parent = None
+        blueprint_check = {
+            "success": bool(asset),
+            "asset_path": blueprint_path,
+            "has_generated_class": bool(generated),
+            "generated_class": generated.get_path_name() if generated else "",
+            "parent_class": parent.get_path_name() if parent else "",
+        }
+
+        found_actor = None
+        for actor in unreal.EditorLevelLibrary.get_all_level_actors():
+            if actor.get_actor_label() == actor_label or actor.get_name() == actor_label:
+                found_actor = actor
+                break
+
+        actor_check = {"success": bool(found_actor), "label": actor_label}
+        if found_actor:
+            cls = found_actor.get_class()
+            actor_check.update({
+                "name": found_actor.get_name(),
+                "path": found_actor.get_path_name(),
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+            })
+
+        manager_probe = {
+            "success": False,
+            "debug_summary": "",
+            "task_count": 0,
+            "sample_tasks": [],
+            "time": {},
+            "economy": {},
+        }
+        if found_actor:
+            try:
+                summary_fn = getattr(found_actor, "get_debug_summary", None)
+                if callable(summary_fn):
+                    manager_probe["debug_summary"] = str(summary_fn())
+            except Exception as exc:
+                manager_probe["debug_summary_error"] = str(exc)
+
+            try:
+                jobs_fn = getattr(found_actor, "generate_daily_jobs", None)
+                tasks = list(jobs_fn()) if callable(jobs_fn) else []
+                manager_probe["task_count"] = len(tasks)
+                for task in tasks[:5]:
+                    def _prop(name, default=""):
+                        try:
+                            getter = getattr(task, "get_editor_property", None)
+                            value = getter(name) if callable(getter) else getattr(task, name)
+                            return str(value)
+                        except Exception:
+                            return default
+                    manager_probe["sample_tasks"].append({
+                        "task_id": _prop("task_id"),
+                        "display_name": _prop("display_name"),
+                        "base_payout": _prop("base_payout"),
+                        "mental_state_delta_on_success": _prop("mental_state_delta_on_success"),
+                        "mental_state_delta_on_failure": _prop("mental_state_delta_on_failure"),
+                    })
+            except Exception as exc:
+                manager_probe["task_error"] = str(exc)
+
+            try:
+                time_component = found_actor.get_editor_property("time_of_day")
+                if time_component:
+                    formatted_fn = getattr(time_component, "get_formatted_time", None)
+                    period_fn = getattr(time_component, "get_current_day_period", None)
+                    manager_probe["time"] = {
+                        "current_day": int(time_component.get_editor_property("current_day")),
+                        "minute_of_day": float(time_component.get_editor_property("current_minute_of_day")),
+                        "formatted_time": str(formatted_fn()) if callable(formatted_fn) else "",
+                        "period": str(period_fn()) if callable(period_fn) else "",
+                    }
+            except Exception as exc:
+                manager_probe["time_error"] = str(exc)
+
+            try:
+                economy = found_actor.get_editor_property("economy")
+                if economy:
+                    ledger = economy.get_editor_property("ledger")
+                    manager_probe["economy"] = {
+                        "cash_balance": float(economy.get_editor_property("cash_balance")),
+                        "daily_living_cost": float(economy.get_editor_property("daily_living_cost")),
+                        "ledger_count": len(ledger) if ledger else 0,
+                    }
+            except Exception as exc:
+                manager_probe["economy_error"] = str(exc)
+
+            manager_probe["success"] = manager_probe["task_count"] > 0
+
+        print(json.dumps({
+            "success": True,
+            "class_checks": class_checks,
+            "blueprint": blueprint_check,
+            "actor": actor_check,
+            "manager_probe": manager_probe,
+        }))
+    """)
+
+
+def _insanitii_phase3_objective_fallback_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        class_paths = {
+            "slice_objective_director": "/Script/Insanitii.InsanitiiSliceObjectiveDirector",
+            "task_station": "/Script/Insanitii.InsanitiiTaskStation",
+            "psychosis_event_director": "/Script/Insanitii.InsanitiiPsychosisEventDirector",
+        }
+        expected_labels = [
+            "INS_SliceObjectiveDirector",
+            "INS_PsychosisEventDirector",
+            "INS_TaskStation_Work_EmailTriage",
+            "INS_TaskStation_Food_Sandwich",
+            "INS_TaskStation_Medication",
+            "INS_TaskStation_Grocery_Corner",
+            "INS_TaskStation_Laundry_Washer",
+            "INS_TaskStation_Package_Dropoff",
+            "INS_TaskStation_Commute_Car",
+            "INS_TaskStation_Sleep_Bed",
+            "INS_TaskStation_Stress_OverwhelmingNoise",
+        ]
+
+        class_checks = {}
+        for key, path in class_paths.items():
+            cls = unreal.load_class(None, path)
+            class_checks[key] = {
+                "success": bool(cls),
+                "class_path": path,
+                "loaded_name": cls.get_name() if cls else "",
+            }
+
+        actors = {actor.get_actor_label(): actor for actor in unreal.EditorLevelLibrary.get_all_level_actors()}
+        actor_checks = {}
+        for label in expected_labels:
+            actor = actors.get(label)
+            cls = actor.get_class() if actor else None
+            actor_checks[label] = {
+                "success": bool(actor),
+                "name": actor.get_name() if actor else "",
+                "path": actor.get_path_name() if actor else "",
+                "class_name": cls.get_name() if cls else "",
+                "class_path": cls.get_path_name() if cls else "",
+            }
+
+        objective = actors.get("INS_SliceObjectiveDirector")
+        objective_probe = {"success": False}
+        if objective:
+            try:
+                objective_probe = {
+                    "success": True,
+                    "current_objective": str(objective.get_current_objective_text()),
+                    "progress_summary": str(objective.get_progress_summary()),
+                    "completion_percent": float(objective.get_completion_percent()),
+                    "stabilized_target": float(objective.get_editor_property("stabilized_mental_state_target")),
+                }
+            except Exception as exc:
+                objective_probe = {"success": False, "error": str(exc)}
+
+        station_probe = {"count": 0, "stations": []}
+        for label, actor in sorted(actors.items()):
+            if not label.startswith("INS_TaskStation"):
+                continue
+            station_probe["count"] += 1
+            try:
+                station_probe["stations"].append({
+                    "label": label,
+                    "action": str(actor.get_editor_property("action")),
+                    "task_index": int(actor.get_editor_property("task_index")),
+                    "mental_state_delta": float(actor.get_editor_property("mental_state_delta")),
+                    "prompt_text": str(actor.get_editor_property("prompt_text")),
+                    "reusable": bool(actor.get_editor_property("bReusable")),
+                })
+            except Exception as exc:
+                station_probe["stations"].append({"label": label, "error": str(exc)})
+
+        print(json.dumps({
+            "success": True,
+            "class_checks": class_checks,
+            "actors": actor_checks,
+            "objective_probe": objective_probe,
+            "station_probe": station_probe,
+        }))
+    """)
+
+
+def _insanitii_pie_status_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        try:
+            pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            pie_worlds = []
+
+        print(json.dumps({
+            "success": True,
+            "is_in_play_in_editor": bool(subsystem.is_in_play_in_editor()),
+            "pie_world_count": len(pie_worlds),
+            "pie_world_names": [w.get_name() for w in pie_worlds],
+        }))
+    """)
+
+
+def _insanitii_pie_launch_request_code(mode: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        requested_mode = {mode!r}
+        subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        was_in_pie = bool(subsystem.is_in_play_in_editor())
+        launch_requested = False
+        if not was_in_pie:
+            if str(requested_mode).lower() in ("simulate", "sie"):
+                subsystem.editor_play_simulate()
+                requested_mode = "simulate"
+            else:
+                subsystem.editor_request_begin_play()
+                requested_mode = "play"
+            launch_requested = True
+
+        print(json.dumps({{
+            "success": True,
+            "requested_mode": requested_mode,
+            "launch_requested": launch_requested,
+            "was_in_pie": was_in_pie,
+            "is_in_play_in_editor": bool(subsystem.is_in_play_in_editor()),
+        }}))
+    """)
+
+
+def _insanitii_pie_stop_request_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        was_in_pie = bool(subsystem.is_in_play_in_editor())
+        if was_in_pie:
+            subsystem.editor_request_end_play()
+            try:
+                unreal.EditorLevelLibrary.editor_end_play()
+            except Exception:
+                pass
+
+        print(json.dumps({
+            "success": True,
+            "stop_requested": was_in_pie,
+            "is_in_play_in_editor": bool(subsystem.is_in_play_in_editor()),
+        }))
+    """)
+
+
+def _insanitii_manual_control_runtime_read_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        result = {
+            "success": True,
+            "errors": [],
+            "is_in_play_in_editor": False,
+            "pie_world_count": 0,
+            "pie_world_names": [],
+            "controller_class": "",
+            "pawn_class": "",
+            "pawn_name": "",
+            "location": None,
+            "control_rotation": None,
+            "show_mouse_cursor": None,
+            "input_enabled": None,
+            "input_component_class": "",
+            "has_character_movement": False,
+            "movement_component_class": "",
+            "movement_mode": "",
+            "max_walk_speed": None,
+            "pending_input_size": None,
+            "has_mental_state": False,
+            "has_interaction_detector": False,
+        }
+
+        try:
+            subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            result["is_in_play_in_editor"] = bool(subsystem.is_in_play_in_editor())
+            try:
+                pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+            except Exception:
+                pie_worlds = []
+            result["pie_world_count"] = len(pie_worlds)
+            result["pie_world_names"] = [world.get_name() for world in pie_worlds]
+            world = pie_worlds[0] if pie_worlds else None
+            if not world:
+                result["success"] = False
+                result["errors"].append("No PIE world available.")
+                print(json.dumps(result))
+            else:
+                controller = unreal.GameplayStatics.get_player_controller(world, 0)
+                pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+                if not controller:
+                    result["success"] = False
+                    result["errors"].append("No player controller.")
+                if not pawn:
+                    result["success"] = False
+                    result["errors"].append("No possessed pawn.")
+
+                if controller:
+                    result["controller_class"] = controller.get_class().get_name()
+                    try:
+                        result["show_mouse_cursor"] = bool(controller.get_editor_property("bShowMouseCursor"))
+                    except Exception:
+                        result["show_mouse_cursor"] = None
+                    try:
+                        rot = controller.get_control_rotation()
+                        result["control_rotation"] = [float(rot.pitch), float(rot.yaw), float(rot.roll)]
+                    except Exception as exc:
+                        result["errors"].append("Could not read control rotation: " + str(exc))
+
+                if pawn:
+                    result["pawn_class"] = pawn.get_class().get_name()
+                    result["pawn_name"] = pawn.get_name()
+                    loc = pawn.get_actor_location()
+                    result["location"] = [float(loc.x), float(loc.y), float(loc.z)]
+                    try:
+                        result["input_enabled"] = bool(pawn.get_editor_property("input_enabled"))
+                    except Exception:
+                        result["input_enabled"] = None
+                    try:
+                        result["input_component_class"] = pawn.input_component.get_class().get_name() if pawn.input_component else ""
+                    except Exception:
+                        result["input_component_class"] = ""
+                    try:
+                        pending = pawn.get_pending_movement_input_vector()
+                        result["pending_input_size"] = float(pending.length())
+                    except Exception:
+                        result["pending_input_size"] = None
+
+                    try:
+                        movement = pawn.get_movement_component()
+                    except Exception:
+                        movement = None
+                    result["has_character_movement"] = bool(movement)
+                    if movement:
+                        result["movement_component_class"] = movement.get_class().get_name()
+                        try:
+                            result["movement_mode"] = str(movement.get_editor_property("movement_mode"))
+                        except Exception:
+                            result["movement_mode"] = ""
+                        try:
+                            result["max_walk_speed"] = float(movement.get_editor_property("max_walk_speed"))
+                        except Exception:
+                            result["max_walk_speed"] = None
+
+                    mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+                    detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+                    result["has_mental_state"] = bool(pawn.get_component_by_class(mental_cls)) if mental_cls else False
+                    result["has_interaction_detector"] = bool(pawn.get_component_by_class(detector_cls)) if detector_cls else False
+
+                result["success"] = result["success"] and not result["errors"]
+                print(json.dumps(result))
+        except Exception as exc:
+            result["success"] = False
+            result["errors"].append("Manual control runtime read exception: " + str(exc))
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_manual_control_apply_move_code(scale: float = 1.0) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        result = {{"success": True, "errors": [], "applied": False, "pending_input_size": None}}
+        try:
+            pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            pie_worlds = []
+        world = pie_worlds[0] if pie_worlds else None
+        controller = unreal.GameplayStatics.get_player_controller(world, 0) if world else None
+        pawn = unreal.GameplayStatics.get_player_pawn(world, 0) if world else None
+        if not pawn:
+            result["success"] = False
+            result["errors"].append("No pawn available for movement input.")
+        else:
+            try:
+                direction = pawn.get_actor_forward_vector()
+                pawn.add_movement_input(direction, float({scale!r}), False)
+                pending = pawn.get_pending_movement_input_vector()
+                result["pending_input_size"] = float(pending.length())
+                result["applied"] = True
+            except Exception as exc:
+                result["success"] = False
+                result["errors"].append(str(exc))
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_manual_control_apply_look_code(yaw_delta: float = 30.0) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        result = {{"success": True, "errors": [], "applied": False, "before": None, "after": None}}
+        try:
+            pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            pie_worlds = []
+        world = pie_worlds[0] if pie_worlds else None
+        controller = unreal.GameplayStatics.get_player_controller(world, 0) if world else None
+        if not controller:
+            result["success"] = False
+            result["errors"].append("No player controller available for look input.")
+        else:
+            try:
+                before = controller.get_control_rotation()
+                result["before"] = [float(before.pitch), float(before.yaw), float(before.roll)]
+                new_rotation = unreal.Rotator()
+                new_rotation.pitch = float(before.pitch)
+                new_rotation.yaw = float(before.yaw) + float({yaw_delta!r})
+                new_rotation.roll = float(before.roll)
+                controller.set_control_rotation(new_rotation)
+                after = controller.get_control_rotation()
+                result["after"] = [float(after.pitch), float(after.yaw), float(after.roll)]
+                result["applied"] = True
+            except Exception as exc:
+                result["success"] = False
+                result["errors"].append(str(exc))
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_player_station_interaction_route_code() -> str:
+    station_labels = [
+        "INS_TaskStation_Food_Sandwich",
+        "INS_TaskStation_Medication",
+        "INS_TaskStation_Sleep_Bed",
+        "INS_TaskStation_Grocery_Corner",
+        "INS_TaskStation_Laundry_Washer",
+        "INS_TaskStation_Package_Dropoff",
+        "INS_TaskStation_Commute_Car",
+        "INS_TaskStation_Work_EmailTriage",
+        "INS_TaskStation_Stress_OverwhelmingNoise",
+        "INS_TaskStation_Grounding_Card",
+        "INS_TaskStation_Grounding_Snack",
+    ]
+    return textwrap.dedent(f"""
+        import json, math, unreal
+
+        expected_labels = {json.dumps(station_labels)}
+        result = {{
+            "success": True,
+            "errors": [],
+            "route": [],
+            "controller_class": "",
+            "pawn_class": "",
+            "detector_class": "",
+            "initial_mental_state": None,
+            "final_mental_state": None,
+        }}
+
+        def _round_vec(vec):
+            return [round(float(vec.x), 2), round(float(vec.y), 2), round(float(vec.z), 2)]
+
+        def _normalize_xy(vec):
+            length = math.sqrt(float(vec.x) * float(vec.x) + float(vec.y) * float(vec.y))
+            if length < 1.0:
+                return unreal.Vector(1.0, 0.0, 0.0)
+            return unreal.Vector(float(vec.x) / length, float(vec.y) / length, 0.0)
+
+        def _line_trace(world, start, end, actors_to_ignore):
+            try:
+                hit = world.line_trace_single_by_channel(start, end, unreal.CollisionChannel.ECC_VISIBILITY)
+                if hit:
+                    return hit
+            except Exception:
+                pass
+            try:
+                trace_channel = unreal.TraceTypeQuery.TRACE_TYPE_QUERY1
+                draw_type = unreal.DrawDebugTrace.NONE
+                hit_tuple = unreal.SystemLibrary.line_trace_single(
+                    world,
+                    start,
+                    end,
+                    trace_channel,
+                    False,
+                    actors_to_ignore,
+                    draw_type,
+                    True,
+                    unreal.LinearColor(1.0, 0.0, 0.0, 1.0),
+                    unreal.LinearColor(0.0, 1.0, 0.0, 1.0),
+                    0.05,
+                )
+                if isinstance(hit_tuple, tuple) and len(hit_tuple) >= 2 and hit_tuple[0]:
+                    return hit_tuple[1]
+            except Exception:
+                pass
+            return None
+
+        def _hit_actor(hit):
+            if not hit:
+                return None
+            try:
+                return hit.get_actor()
+            except Exception:
+                try:
+                    return hit.actor
+                except Exception:
+                    return None
+
+        def _impact_point(hit):
+            if not hit:
+                return None
+            try:
+                return _round_vec(hit.impact_point)
+            except Exception:
+                try:
+                    return _round_vec(hit.location)
+                except Exception:
+                    return None
+
+        try:
+            worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            worlds = []
+        world = worlds[0] if worlds else None
+        if not world:
+            result["success"] = False
+            result["errors"].append("No PIE world available.")
+            print(json.dumps(result))
+        else:
+            controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+            detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+            mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+            station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+            camera_cls = unreal.load_class(None, "/Script/Engine.CameraComponent")
+            detector = pawn.get_component_by_class(detector_cls) if pawn and detector_cls else None
+            mental = pawn.get_component_by_class(mental_cls) if pawn and mental_cls else None
+            camera = pawn.get_component_by_class(camera_cls) if pawn and camera_cls else None
+
+            if controller:
+                result["controller_class"] = controller.get_class().get_name()
+            else:
+                result["errors"].append("No player controller.")
+            if pawn:
+                result["pawn_class"] = pawn.get_class().get_name()
+            else:
+                result["errors"].append("No player pawn.")
+            if detector:
+                result["detector_class"] = detector.get_class().get_name()
+            else:
+                result["errors"].append("No InsanitiiInteractionDetectorComponent on pawn.")
+            if not camera:
+                result["errors"].append("No camera component on pawn.")
+
+            if mental:
+                try:
+                    result["initial_mental_state"] = float(mental.get_editor_property("MentalState"))
+                except Exception:
+                    pass
+
+            actors = list(unreal.GameplayStatics.get_all_actors_of_class(world, station_cls)) if station_cls else []
+            by_label = {{actor.get_actor_label(): actor for actor in actors}}
+            missing = [label for label in expected_labels if label not in by_label]
+            for label in missing:
+                result["errors"].append("Missing PIE station: " + label)
+
+            if not result["errors"]:
+                original_pawn_location = pawn.get_actor_location()
+                original_pawn_rotation = pawn.get_actor_rotation()
+                original_control_rotation = controller.get_control_rotation()
+                original_detector_range = None
+                try:
+                    original_detector_range = float(detector.get_editor_property("InteractionRange"))
+                    detector.set_editor_property("InteractionRange", max(original_detector_range, 260.0))
+                except Exception:
+                    pass
+
+                for label in expected_labels:
+                    station = by_label[label]
+                    mesh = station.get_component_by_class(unreal.StaticMeshComponent)
+                    prompt = ""
+                    try:
+                        prompt = str(station.get_interaction_prompt())
+                    except Exception:
+                        prompt = ""
+
+                    if mental:
+                        try:
+                            mental.set_editor_property("MentalState", 1.0)
+                            mental.set_editor_property("bIsFocusActive", False)
+                        except Exception:
+                            pass
+                    try:
+                        station.set_editor_property("bHasBeenUsed", False)
+                        station.set_editor_property("bRequiresStabilizedRetry", False)
+                        station.set_editor_property("bLastUseSucceeded", True)
+                    except Exception:
+                        pass
+
+                    bounds_origin, bounds_extent = station.get_actor_bounds(False)
+                    direction = _normalize_xy(bounds_origin)
+                    approach_distance = max(115.0, min(170.0, max(float(bounds_extent.x), float(bounds_extent.y)) + 95.0))
+                    approach = unreal.Vector(
+                        float(bounds_origin.x) - float(direction.x) * approach_distance,
+                        float(bounds_origin.y) - float(direction.y) * approach_distance,
+                        92.0,
+                    )
+
+                    pawn.set_actor_location(approach, False, True)
+                    horizontal = math.sqrt((float(bounds_origin.x) - float(approach.x)) ** 2 + (float(bounds_origin.y) - float(approach.y)) ** 2)
+                    yaw = math.degrees(math.atan2(float(bounds_origin.y) - float(approach.y), float(bounds_origin.x) - float(approach.x)))
+                    pitch = math.degrees(math.atan2(float(bounds_origin.z) - (float(approach.z) + 72.0), max(1.0, horizontal)))
+                    aim = unreal.Rotator(0.0, float(pitch), float(yaw))
+                    controller.set_control_rotation(aim)
+                    pawn.set_actor_rotation(unreal.Rotator(0.0, 0.0, float(yaw)), False)
+
+                    yaw_rad = math.radians(float(yaw))
+                    pitch_rad = math.radians(float(pitch))
+                    start = approach + unreal.Vector(0.0, 0.0, 75.0)
+                    forward = unreal.Vector(
+                        math.cos(pitch_rad) * math.cos(yaw_rad),
+                        math.cos(pitch_rad) * math.sin(yaw_rad),
+                        math.sin(pitch_rad),
+                    )
+                    trace_range = float(detector.get_editor_property("InteractionRange")) if detector else 260.0
+                    end = start + forward * trace_range
+                    hit = _line_trace(world, start, end, [pawn])
+                    hit_actor = _hit_actor(hit)
+                    hit_label = hit_actor.get_actor_label() if hit_actor else ""
+                    trace_hit_station = bool(hit_actor == station)
+
+                    focus_ready = trace_hit_station and bool(prompt)
+                    before_used = bool(station.get_editor_property("bHasBeenUsed"))
+                    if focus_ready:
+                        try:
+                            detector.set_editor_property("CurrentFocusedActor", station)
+                            detector.set_editor_property("CurrentPromptText", unreal.Text.cast(prompt))
+                        except Exception:
+                            try:
+                                detector.set_editor_property("CurrentFocusedActor", station)
+                            except Exception:
+                                pass
+                        try:
+                            detector.attempt_interact()
+                        except Exception as exc:
+                            result["errors"].append(label + " detector AttemptInteract failed: " + str(exc))
+
+                    after_used = bool(station.get_editor_property("bHasBeenUsed"))
+                    last_succeeded = bool(station.get_editor_property("bLastUseSucceeded"))
+                    route_row = {{
+                        "label": label,
+                        "prompt": prompt,
+                        "mesh": mesh.static_mesh.get_path_name() if mesh and mesh.static_mesh else "",
+                        "mesh_is_tripo": bool(mesh and mesh.static_mesh and "/Game/TripoModels/" in mesh.static_mesh.get_path_name()),
+                        "pawn_location": _round_vec(approach),
+                        "camera_location": _round_vec(start),
+                        "control_rotation": [round(float(pitch), 2), round(float(yaw), 2), 0.0],
+                        "trace_hit_label": hit_label,
+                        "trace_hit_station": trace_hit_station,
+                        "trace_impact": _impact_point(hit),
+                        "focus_prompt_ready": focus_ready,
+                        "used_before": before_used,
+                        "used_after_attempt": after_used,
+                        "last_use_succeeded": last_succeeded,
+                    }}
+                    result["route"].append(route_row)
+
+                    if not route_row["mesh_is_tripo"]:
+                        result["errors"].append(label + " does not use a Tripo mesh.")
+                    if not trace_hit_station:
+                        result["errors"].append(label + " player-view trace hit '" + hit_label + "' instead of the station.")
+                    if not focus_ready:
+                        result["errors"].append(label + " did not produce a focus-ready prompt.")
+                    if not after_used or not last_succeeded:
+                        result["errors"].append(label + " did not complete through detector AttemptInteract.")
+
+                if original_detector_range is not None:
+                    try:
+                        detector.set_editor_property("InteractionRange", original_detector_range)
+                    except Exception:
+                        pass
+                pawn.set_actor_location(original_pawn_location, False, True)
+                pawn.set_actor_rotation(original_pawn_rotation, False)
+                controller.set_control_rotation(original_control_rotation)
+
+                if mental:
+                    try:
+                        result["final_mental_state"] = float(mental.get_editor_property("MentalState"))
+                    except Exception:
+                        pass
+
+            result["success"] = not result["errors"] and len(result["route"]) == len(expected_labels)
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_player_station_prepare_focus_code(label: str) -> str:
+    return textwrap.dedent(f"""
+        import json, math, unreal
+
+        label = {json.dumps(label)}
+        result = {{"success": True, "errors": [], "label": label}}
+
+        try:
+            worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            worlds = []
+        world = worlds[0] if worlds else None
+        if not world:
+            result["success"] = False
+            result["errors"].append("No PIE world available.")
+            print(json.dumps(result))
+        else:
+            controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+            station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+            mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+            detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+            stations = list(unreal.GameplayStatics.get_all_actors_of_class(world, station_cls)) if station_cls else []
+            station = next((actor for actor in stations if actor.get_actor_label() == label), None)
+            mental = pawn.get_component_by_class(mental_cls) if pawn and mental_cls else None
+            detector = pawn.get_component_by_class(detector_cls) if pawn and detector_cls else None
+
+            if controller:
+                result["controller_class"] = controller.get_class().get_name()
+            if pawn:
+                result["pawn_class"] = pawn.get_class().get_name()
+            if detector:
+                result["detector_class"] = detector.get_class().get_name()
+
+            if not controller:
+                result["errors"].append("No player controller.")
+            if not pawn:
+                result["errors"].append("No player pawn.")
+            if not station:
+                result["errors"].append("Missing station: " + label)
+            if not detector:
+                result["errors"].append("No interaction detector.")
+
+            if not result["errors"]:
+                mesh = station.get_component_by_class(unreal.StaticMeshComponent)
+                camera = pawn.get_component_by_class(unreal.CameraComponent)
+                try:
+                    station.set_editor_property("bHasBeenUsed", False)
+                    station.set_editor_property("bRequiresStabilizedRetry", False)
+                    station.set_editor_property("bLastUseSucceeded", True)
+                except Exception:
+                    pass
+                if mental:
+                    try:
+                        mental.set_editor_property("MentalState", 1.0)
+                        mental.set_editor_property("bIsFocusActive", False)
+                    except Exception:
+                        pass
+                try:
+                    detector.set_editor_property("InteractionRange", max(float(detector.get_editor_property("InteractionRange")), 260.0))
+                except Exception:
+                    pass
+
+                bounds_origin, bounds_extent = station.get_actor_bounds(False)
+                focus_target = bounds_origin
+                focus_extent = bounds_extent
+                focus_component_name = ""
+                try:
+                    for component in station.get_components_by_class(unreal.BoxComponent):
+                        if component and component.get_name() == "StationFocusTrace":
+                            focus_target = component.get_world_location()
+                            focus_extent = component.get_scaled_box_extent()
+                            focus_component_name = component.get_name()
+                            break
+                except Exception:
+                    pass
+
+                length = math.sqrt(float(focus_target.x) * float(focus_target.x) + float(focus_target.y) * float(focus_target.y))
+                if length < 1.0:
+                    direction_x = 1.0
+                    direction_y = 0.0
+                else:
+                    direction_x = float(focus_target.x) / length
+                    direction_y = float(focus_target.y) / length
+                approach_distance = max(115.0, min(170.0, max(float(focus_extent.x), float(focus_extent.y)) + 95.0))
+                approach = unreal.Vector(
+                    float(focus_target.x) - direction_x * approach_distance,
+                    float(focus_target.y) - direction_y * approach_distance,
+                    92.0,
+                )
+                eye_z = float(approach.z) + 75.0
+                horizontal = math.sqrt((float(focus_target.x) - float(approach.x)) ** 2 + (float(focus_target.y) - float(approach.y)) ** 2)
+                yaw = math.degrees(math.atan2(float(focus_target.y) - float(approach.y), float(focus_target.x) - float(approach.x)))
+                pitch = math.degrees(math.atan2(float(focus_target.z) - eye_z, max(1.0, horizontal)))
+
+                pawn.set_actor_location(approach, False, True)
+                pawn.set_actor_rotation(unreal.Rotator(0.0, 0.0, float(yaw)), False)
+                controller.set_control_rotation(unreal.Rotator(0.0, float(pitch), float(yaw)))
+                try:
+                    if camera:
+                        camera.set_world_rotation(unreal.Rotator(0.0, float(pitch), float(yaw)), False, None, False)
+                except Exception:
+                    pass
+
+                result.update({{
+                    "prompt": str(station.get_interaction_prompt()),
+                    "mesh": mesh.static_mesh.get_path_name() if mesh and mesh.static_mesh else "",
+                    "mesh_is_tripo": bool(mesh and mesh.static_mesh and "/Game/TripoModels/" in mesh.static_mesh.get_path_name()),
+                    "focus_component": focus_component_name,
+                    "pawn_location": [round(float(approach.x), 2), round(float(approach.y), 2), round(float(approach.z), 2)],
+                    "target_location": [round(float(focus_target.x), 2), round(float(focus_target.y), 2), round(float(focus_target.z), 2)],
+                    "control_rotation": [round(float(pitch), 2), round(float(yaw), 2), 0.0],
+                }})
+
+            result["success"] = not result["errors"]
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_player_station_read_and_interact_code(label: str) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        label = {json.dumps(label)}
+        result = {{
+            "success": True,
+            "errors": [],
+            "label": label,
+            "controller_class": "",
+            "pawn_class": "",
+            "detector_class": "",
+            "focused_label": "",
+            "focused_prompt": "",
+            "has_focus": False,
+            "station_used_before": False,
+            "station_used_after": False,
+            "last_use_succeeded": False,
+        }}
+
+        try:
+            worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+        except Exception:
+            worlds = []
+        world = worlds[0] if worlds else None
+        if not world:
+            result["success"] = False
+            result["errors"].append("No PIE world available.")
+            print(json.dumps(result))
+        else:
+            controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+            detector_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiInteractionDetectorComponent")
+            station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+            detector = pawn.get_component_by_class(detector_cls) if pawn and detector_cls else None
+            stations = list(unreal.GameplayStatics.get_all_actors_of_class(world, station_cls)) if station_cls else []
+            station = next((actor for actor in stations if actor.get_actor_label() == label), None)
+
+            if not detector:
+                result["errors"].append("No interaction detector.")
+            if not station:
+                result["errors"].append("Missing station: " + label)
+            if controller:
+                result["controller_class"] = controller.get_class().get_name()
+            if pawn:
+                result["pawn_class"] = pawn.get_class().get_name()
+            if detector:
+                result["detector_class"] = detector.get_class().get_name()
+
+            if detector:
+                if controller:
+                    try:
+                        control_rotation = controller.get_control_rotation()
+                        result["controller_rotation"] = [round(float(control_rotation.pitch), 2), round(float(control_rotation.yaw), 2), round(float(control_rotation.roll), 2)]
+                    except Exception as exc:
+                        result["controller_rotation_error"] = str(exc)
+                    try:
+                        view_location, view_rotation = controller.get_player_view_point()
+                        view_direction = view_rotation.get_forward_vector()
+                        result["controller_view_location"] = [round(float(view_location.x), 2), round(float(view_location.y), 2), round(float(view_location.z), 2)]
+                        result["controller_view_rotation"] = [round(float(view_rotation.pitch), 2), round(float(view_rotation.yaw), 2), round(float(view_rotation.roll), 2)]
+                        result["controller_view_forward"] = [round(float(view_direction.x), 3), round(float(view_direction.y), 3), round(float(view_direction.z), 3)]
+                    except Exception as exc:
+                        result["controller_view_error"] = str(exc)
+                camera = pawn.get_component_by_class(unreal.CameraComponent) if pawn else None
+                if camera:
+                    try:
+                        camera_location = camera.get_world_location()
+                        camera_forward = camera.get_forward_vector()
+                        result["camera_location"] = [round(float(camera_location.x), 2), round(float(camera_location.y), 2), round(float(camera_location.z), 2)]
+                        result["camera_forward"] = [round(float(camera_forward.x), 3), round(float(camera_forward.y), 3), round(float(camera_forward.z), 3)]
+                    except Exception as exc:
+                        result["camera_report_error"] = str(exc)
+                try:
+                    focused = detector.get_editor_property("CurrentFocusedActor")
+                except Exception:
+                    focused = None
+                if focused:
+                    result["focused_label"] = focused.get_actor_label()
+                try:
+                    result["focused_prompt"] = str(detector.get_editor_property("CurrentPromptText"))
+                except Exception:
+                    result["focused_prompt"] = ""
+                try:
+                    result["has_focus"] = bool(detector.has_focused_actor())
+                except Exception:
+                    result["has_focus"] = bool(focused)
+
+            if station:
+                result["station_used_before"] = bool(station.get_editor_property("bHasBeenUsed"))
+
+            if detector and station and result["focused_label"] == label:
+                try:
+                    detector.attempt_interact()
+                except Exception as exc:
+                    result["errors"].append("AttemptInteract failed: " + str(exc))
+
+            if station:
+                result["station_used_after"] = bool(station.get_editor_property("bHasBeenUsed"))
+                result["last_use_succeeded"] = bool(station.get_editor_property("bLastUseSucceeded"))
+
+            if result["focused_label"] != label:
+                result["errors"].append("Focused actor was '" + result["focused_label"] + "', expected '" + label + "'.")
+            if not result["focused_prompt"]:
+                result["errors"].append("Focused prompt was empty.")
+            if not result["station_used_after"] or not result["last_use_succeeded"]:
+                result["errors"].append("Station did not complete through detector AttemptInteract.")
+
+            result["success"] = not result["errors"]
+            print(json.dumps(result))
+    """)
+
+
+def _insanitii_phase3_pie_runtime_probe_code(
+    mode: str,
+    wait_seconds: float,
+    stop_after_probe: bool,
+    exercise_loop: bool,
+    allow_launch: bool = True,
+) -> str:
+    return textwrap.dedent(f"""
+        import json, time, unreal
+
+        requested_mode = {mode!r}
+        wait_seconds = max(0.5, min(float({wait_seconds!r}), 15.0))
+        stop_after_probe = {bool(stop_after_probe)!r}
+        exercise_loop = {bool(exercise_loop)!r}
+        allow_launch = {bool(allow_launch)!r}
+
+        def _prop(obj, *names, default=None):
+            if not obj:
+                return default
+            for name in names:
+                try:
+                    return obj.get_editor_property(name)
+                except Exception:
+                    pass
+                try:
+                    return getattr(obj, name)
+                except Exception:
+                    pass
+            return default
+
+        def _call(obj, name, *args):
+            fn = getattr(obj, name, None)
+            if callable(fn):
+                return fn(*args)
+            raise RuntimeError(f"{{obj.get_name() if obj else 'None'}} has no callable {{name}}")
+
+        def _actors_by_label(world, cls):
+            actors = {{}}
+            if not world or not cls:
+                return actors
+            try:
+                found = unreal.GameplayStatics.get_all_actors_of_class(world, cls)
+            except Exception:
+                found = []
+            for actor in found:
+                label = ""
+                try:
+                    label = actor.get_actor_label()
+                except Exception:
+                    label = actor.get_name()
+                actors[label] = actor
+            return actors
+
+        subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+        was_in_pie = bool(subsystem.is_in_play_in_editor())
+        launch_requested = False
+        if not was_in_pie and allow_launch:
+            if str(requested_mode).lower() in ("simulate", "sie"):
+                subsystem.editor_play_simulate()
+                requested_mode = "simulate"
+            else:
+                subsystem.editor_request_begin_play()
+                requested_mode = "play"
+            launch_requested = True
+
+        deadline = time.time() + wait_seconds
+        pie_worlds = []
+        while time.time() < deadline:
+            try:
+                pie_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+            except Exception:
+                pie_worlds = []
+            if pie_worlds:
+                break
+            time.sleep(0.25)
+
+        world = pie_worlds[0] if pie_worlds else None
+        if world is None:
+            try:
+                world = unreal.EditorLevelLibrary.get_game_world()
+            except Exception:
+                world = None
+
+        result = {{
+            "success": bool(world),
+            "requested_mode": requested_mode,
+            "launch_requested": launch_requested,
+            "was_in_pie": was_in_pie,
+            "is_in_play_in_editor": bool(subsystem.is_in_play_in_editor()),
+            "pie_world_count": len(pie_worlds),
+            "pie_world_names": [w.get_name() for w in pie_worlds],
+            "world_name": world.get_name() if world else "",
+            "mode_note": "Scripted station interactions are runtime API probes, not human movement/mouse validation.",
+            "exercise": {{"requested": exercise_loop, "steps": [], "errors": []}},
+            "runtime": {{}},
+            "stop": {{}},
+        }}
+
+        controller = None
+        pawn = None
+        hud = None
+        if world:
+            try:
+                controller = unreal.GameplayStatics.get_player_controller(world, 0)
+            except Exception:
+                controller = None
+            try:
+                pawn = controller.get_pawn() if controller else None
+            except Exception:
+                pawn = None
+            if not pawn:
+                try:
+                    pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+                except Exception:
+                    pawn = None
+            if not pawn and controller:
+                try:
+                    repair_fn = getattr(controller, "ensure_possessed_pawn", None)
+                    if callable(repair_fn):
+                        repair_fn()
+                        time.sleep(0.1)
+                        result["pawn_repair"] = {{"attempted": True, "method": "ensure_possessed_pawn"}}
+                except Exception as exc:
+                    result["pawn_repair"] = {{"attempted": True, "error": str(exc)}}
+                try:
+                    pawn = controller.get_pawn()
+                except Exception:
+                    pawn = None
+                if not pawn:
+                    try:
+                        pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+                    except Exception:
+                        pawn = None
+            try:
+                hud = controller.get_hud() if controller else None
+            except Exception:
+                hud = None
+
+        mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+        objective_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiSliceObjectiveDirector")
+        psychosis_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiPsychosisEventDirector")
+        lifestyle_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiLifestyleManager")
+        station_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiTaskStation")
+        world_reactivity_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiWorldReactiveDirector")
+        post_process_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiPostProcessController")
+        audio_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiAudioFeedbackDirector")
+
+        mental = None
+        try:
+            mental = pawn.get_component_by_class(mental_cls) if pawn and mental_cls else None
+        except Exception:
+            mental = None
+
+        objectives = _actors_by_label(world, objective_cls)
+        psychosis_directors = _actors_by_label(world, psychosis_cls)
+        lifestyle_managers = _actors_by_label(world, lifestyle_cls)
+        stations = _actors_by_label(world, station_cls)
+        world_reactivity_directors = _actors_by_label(world, world_reactivity_cls)
+        post_process_controllers = _actors_by_label(world, post_process_cls)
+        audio_directors = _actors_by_label(world, audio_cls)
+
+        objective = objectives.get("INS_SliceObjectiveDirector") or next(iter(objectives.values()), None)
+        psychosis = psychosis_directors.get("INS_PsychosisEventDirector") or next(iter(psychosis_directors.values()), None)
+        lifestyle = lifestyle_managers.get("INS_LifestyleManager") or next(iter(lifestyle_managers.values()), None)
+        world_reactivity = world_reactivity_directors.get("INS_WorldReactiveDirector") or next(iter(world_reactivity_directors.values()), None)
+        post_process = post_process_controllers.get("INS_PostProcessController") or next(iter(post_process_controllers.values()), None)
+        audio = audio_directors.get("INS_AudioFeedbackDirector") or next(iter(audio_directors.values()), None)
+
+        def _read_runtime():
+            objective_text = ""
+            progress = ""
+            completion = None
+            if objective:
+                try:
+                    objective_text = str(objective.get_current_objective_text())
+                except Exception as exc:
+                    objective_text = f"<error: {{exc}}>"
+                try:
+                    progress = str(objective.get_progress_summary())
+                except Exception as exc:
+                    progress = f"<error: {{exc}}>"
+                try:
+                    completion = float(objective.get_completion_percent())
+                except Exception:
+                    completion = None
+
+            psychosis_summary = ""
+            psychosis_active = False
+            if psychosis:
+                try:
+                    psychosis_summary = str(psychosis.get_debug_summary())
+                except Exception as exc:
+                    psychosis_summary = f"<error: {{exc}}>"
+                try:
+                    psychosis_active = bool(psychosis.is_event_active())
+                except Exception:
+                    psychosis_active = False
+
+            economy = None
+            time_of_day = None
+            if lifestyle:
+                economy = _prop(lifestyle, "economy")
+                time_of_day = _prop(lifestyle, "time_of_day")
+
+            world_reactivity_summary = ""
+            world_reactivity_tracked_count = 0
+            world_reactivity_intensity = None
+            world_reactivity_pattern_intensity = None
+            world_reactivity_pattern_actor_count = 0
+            if world_reactivity:
+                try:
+                    summary_fn = getattr(world_reactivity, "get_debug_summary", None)
+                    world_reactivity_summary = str(summary_fn()) if callable(summary_fn) else ""
+                except Exception as exc:
+                    world_reactivity_summary = f"<error: {{exc}}>"
+                try:
+                    count_fn = getattr(world_reactivity, "get_tracked_actor_count", None)
+                    world_reactivity_tracked_count = int(count_fn()) if callable(count_fn) else 0
+                except Exception:
+                    world_reactivity_tracked_count = 0
+                try:
+                    world_reactivity_intensity = float(world_reactivity.get_editor_property("current_reactive_intensity"))
+                except Exception:
+                    world_reactivity_intensity = None
+                try:
+                    world_reactivity_pattern_intensity = float(world_reactivity.get_editor_property("current_pattern_flood_intensity"))
+                except Exception:
+                    world_reactivity_pattern_intensity = None
+                try:
+                    pattern_count_fn = getattr(world_reactivity, "get_pattern_flood_actor_count", None)
+                    world_reactivity_pattern_actor_count = int(pattern_count_fn()) if callable(pattern_count_fn) else 0
+                except Exception:
+                    world_reactivity_pattern_actor_count = 0
+
+            hud_status = ""
+            objective_marker_summary = ""
+            completion_summary = ""
+            if hud:
+                try:
+                    status_fn = getattr(hud, "get_demo_status_debug_summary", None)
+                    hud_status = str(status_fn()) if callable(status_fn) else ""
+                except Exception as exc:
+                    hud_status = f"<error: {{exc}}>"
+                try:
+                    marker_fn = getattr(hud, "get_objective_marker_debug_summary", None)
+                    objective_marker_summary = str(marker_fn()) if callable(marker_fn) else ""
+                except Exception as exc:
+                    objective_marker_summary = f"<error: {{exc}}>"
+                try:
+                    completion_fn = getattr(hud, "get_demo_completion_debug_summary", None)
+                    completion_summary = str(completion_fn()) if callable(completion_fn) else ""
+                except Exception as exc:
+                    completion_summary = f"<error: {{exc}}>"
+
+            post_process_summary = ""
+            task_feedback_pulse = None
+            task_feedback_color_shift = None
+            if post_process:
+                try:
+                    summary_fn = getattr(post_process, "get_debug_summary", None)
+                    post_process_summary = str(summary_fn()) if callable(summary_fn) else ""
+                except Exception as exc:
+                    post_process_summary = f"<error: {{exc}}>"
+                try:
+                    task_feedback_pulse = float(post_process.get_task_feedback_pulse_strength())
+                    task_feedback_color_shift = float(post_process.get_task_feedback_color_shift())
+                except Exception:
+                    task_feedback_pulse = None
+                    task_feedback_color_shift = None
+
+            return {{
+                "controller_class": controller.get_class().get_name() if controller else "",
+                "controller_name": controller.get_name() if controller else "",
+                "pawn_class": pawn.get_class().get_name() if pawn else "",
+                "pawn_name": pawn.get_name() if pawn else "",
+                "hud_class": hud.get_class().get_name() if hud else "",
+                "hud_status": hud_status,
+                "objective_marker_summary": objective_marker_summary,
+                "completion_summary": completion_summary,
+                "post_process_summary": post_process_summary,
+                "task_feedback_pulse": task_feedback_pulse,
+                "task_feedback_color_shift": task_feedback_color_shift,
+                "mental_state": float(_prop(mental, "mental_state", "MentalState", default=-1.0)) if mental else None,
+                "focus_charges": float(_prop(mental, "focus_charges", "FocusCharges", default=-1.0)) if mental else None,
+                "breathe_cooldown": float(_prop(mental, "breathe_cooldown", "BreatheCooldown", default=-1.0)) if mental else None,
+                "in_psychosis_event": bool(_prop(mental, "b_is_in_psychosis_event", "bIsInPsychosisEvent", default=False)) if mental else False,
+                "objective_text": objective_text,
+                "objective_progress": progress,
+                "objective_completion_percent": completion,
+                "psychosis_summary": psychosis_summary,
+                "psychosis_active": psychosis_active,
+                "station_count": len(stations),
+                "world_reactivity_tracked_count": world_reactivity_tracked_count,
+                "world_reactivity_intensity": world_reactivity_intensity,
+                "world_reactivity_pattern_intensity": world_reactivity_pattern_intensity,
+                "world_reactivity_pattern_actor_count": world_reactivity_pattern_actor_count,
+                "world_reactivity_summary": world_reactivity_summary,
+                "cash_balance": float(_prop(economy, "cash_balance", "CashBalance", default=-1.0)) if economy else None,
+                "formatted_time": str(time_of_day.get_formatted_time()) if time_of_day and hasattr(time_of_day, "get_formatted_time") else "",
+            }}
+
+        result["runtime"]["before_exercise"] = _read_runtime()
+
+        def _refresh_world_reactivity(debug_seconds=0.35):
+            if not world_reactivity:
+                return False
+            try:
+                refresh_fn = getattr(world_reactivity, "force_refresh_for_debug", None)
+                if callable(refresh_fn):
+                    refresh_fn(float(debug_seconds))
+                    return True
+            except Exception as exc:
+                result["exercise"]["errors"].append(f"world_reactivity_refresh: {{exc}}")
+            return False
+
+        if hud and mental:
+            anchor_samples = {{}}
+            original_mental_state = float(_prop(mental, "mental_state", "MentalState", default=1.0))
+            try:
+                mental.set_editor_property("MentalState", 1.0)
+                _refresh_world_reactivity(0.2)
+                time.sleep(0.1)
+                anchor_samples["clean"] = _read_runtime().get("objective_marker_summary", "")
+
+                mental.set_editor_property("MentalState", 0.15)
+                _refresh_world_reactivity(0.2)
+                time.sleep(0.1)
+                anchor_samples["strained"] = _read_runtime().get("objective_marker_summary", "")
+
+                if psychosis:
+                    if not psychosis.is_event_active():
+                        psychosis.start_random_psychosis_event(0.05)
+                    _refresh_world_reactivity(0.35)
+                    time.sleep(0.2)
+                    anchor_samples["psychosis"] = _read_runtime().get("objective_marker_summary", "")
+                    if psychosis.is_event_active():
+                        psychosis.end_active_psychosis_event()
+
+                if audio:
+                    false_fn = getattr(audio, "trigger_false_instruction_for_debug", None)
+                    if callable(false_fn):
+                        false_fn()
+                        _refresh_world_reactivity(0.2)
+                        time.sleep(0.15)
+                        anchor_samples["false_cue"] = _read_runtime().get("objective_marker_summary", "")
+
+                mental.set_editor_property("MentalState", original_mental_state)
+                _refresh_world_reactivity(0.2)
+                result["objective_anchor_samples"] = anchor_samples
+            except Exception as exc:
+                try:
+                    mental.set_editor_property("MentalState", original_mental_state)
+                    _refresh_world_reactivity(0.2)
+                except Exception:
+                    pass
+                result["objective_anchor_samples"] = anchor_samples
+                result["exercise"]["errors"].append(f"objective_anchor_samples: {{exc}}")
+
+        if exercise_loop and pawn:
+            if mental:
+                try:
+                    mental.set_editor_property("MentalState", 0.35)
+                    mental.set_editor_property("BreatheCooldown", 0.0)
+                    mental.set_editor_property("FocusCharges", 100.0)
+                    mental.set_editor_property("bIsFocusActive", False)
+                    breathe_result = bool(mental.attempt_breathe())
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    breathe_after = _read_runtime()
+                    focus_result = bool(mental.activate_focus(1.0))
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    focus_after = _read_runtime()
+                    try:
+                        mental.deactivate_focus()
+                    except Exception:
+                        pass
+                    result["exercise"]["stabilization_tools"] = {{
+                        "breathe_result": breathe_result,
+                        "breathe_after": breathe_after,
+                        "focus_result": focus_result,
+                        "focus_after": focus_after,
+                    }}
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"stabilization_tools: {{exc}}")
+
+            if objective:
+                try:
+                    reset_objective = getattr(objective, "reset_slice_progress_for_debug", None)
+                    if callable(reset_objective):
+                        reset_objective()
+                        result["exercise"]["fresh_start_after_preflight"] = _read_runtime()
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"objective_fresh_start_reset: {{exc}}")
+
+            ordered = [
+                ("food", "INS_TaskStation_Food_Sandwich"),
+                ("medication", "INS_TaskStation_Medication"),
+                ("grocery", "INS_TaskStation_Grocery_Corner"),
+                ("laundry", "INS_TaskStation_Laundry_Washer"),
+                ("package", "INS_TaskStation_Package_Dropoff"),
+                ("commute", "INS_TaskStation_Commute_Car"),
+                ("work", "INS_TaskStation_Work_EmailTriage"),
+                ("stress", "INS_TaskStation_Stress_OverwhelmingNoise"),
+            ]
+            for step_name, label in ordered:
+                station = stations.get(label)
+                if not station:
+                    result["exercise"]["errors"].append(f"Missing station {{label}}")
+                    continue
+                try:
+                    before = _read_runtime()
+                    _call(station, "on_interact", pawn)
+                    if mental:
+                        try:
+                            mental.tick_mental_state(0.25)
+                        except Exception:
+                            pass
+                    _refresh_world_reactivity(0.35 if step_name == "stress" else 0.2)
+                    time.sleep(0.1)
+                    after = _read_runtime()
+                    result["exercise"]["steps"].append({{"step": step_name, "station": label, "before": before, "after": after}})
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"{{label}}: {{exc}}")
+
+            if psychosis:
+                try:
+                    if not psychosis.is_event_active():
+                        psychosis.start_random_psychosis_event(float(_prop(mental, "mental_state", "MentalState", default=0.0)) if mental else 0.0)
+                    _refresh_world_reactivity(0.35)
+                    time.sleep(0.2)
+                    result["exercise"]["after_psychosis_start"] = _read_runtime()
+                    if psychosis.is_event_active():
+                        psychosis.end_active_psychosis_event()
+                    if mental:
+                        try:
+                            mental.adjust_mental_state(1.0)
+                        except Exception:
+                            pass
+                    _refresh_world_reactivity(0.35)
+                    time.sleep(0.1)
+                    result["exercise"]["after_psychosis_end"] = _read_runtime()
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"psychosis: {{exc}}")
+
+            sleep_station = stations.get("INS_TaskStation_Sleep_Bed")
+            if sleep_station:
+                try:
+                    before = _read_runtime()
+                    _call(sleep_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    after = _read_runtime()
+                    result["exercise"]["steps"].append({{"step": "sleep", "station": "INS_TaskStation_Sleep_Bed", "before": before, "after": after}})
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"sleep: {{exc}}")
+            else:
+                result["exercise"]["errors"].append("Missing station INS_TaskStation_Sleep_Bed")
+
+            friction_station = stations.get("INS_TaskStation_Grocery_Corner")
+            if friction_station and mental:
+                try:
+                    friction_station.set_editor_property("bHasBeenUsed", False)
+                    friction_station.set_editor_property("bUseMentalFriction", True)
+                    friction_station.set_editor_property("FrictionThreshold", 0.90)
+                    friction_station.set_editor_property("CriticalFrictionThreshold", 0.25)
+                    friction_station.set_editor_property("MaxFrictionSlipChance", 1.0)
+                    friction_station.set_editor_property("FrictionFailurePenalty", 0.08)
+                    mental.set_editor_property("MentalState", 0.05)
+                    mental.set_editor_property("bIsFocusActive", False)
+                    _call(friction_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.35)
+                    time.sleep(0.1)
+                    result["exercise"]["friction_slip"] = {{
+                        "station": "INS_TaskStation_Grocery_Corner",
+                        "station_used": bool(friction_station.get_editor_property("bHasBeenUsed")),
+                        "last_use_succeeded": bool(friction_station.get_editor_property("bLastUseSucceeded")),
+                        "friction_risk": float(friction_station.get_editor_property("LastFrictionRisk")),
+                        "requires_stabilized_retry": bool(friction_station.get_editor_property("bRequiresStabilizedRetry")),
+                        "used_stabilized_grace": bool(friction_station.get_editor_property("bLastRetryUsedStabilizedGrace")),
+                        "feedback": str(friction_station.get_editor_property("LastUseFeedback")),
+                        "after": _read_runtime(),
+                    }}
+
+                    _call(friction_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    result["exercise"]["friction_unrecovered_retry"] = {{
+                        "station": "INS_TaskStation_Grocery_Corner",
+                        "station_used": bool(friction_station.get_editor_property("bHasBeenUsed")),
+                        "last_use_succeeded": bool(friction_station.get_editor_property("bLastUseSucceeded")),
+                        "friction_risk": float(friction_station.get_editor_property("LastFrictionRisk")),
+                        "requires_stabilized_retry": bool(friction_station.get_editor_property("bRequiresStabilizedRetry")),
+                        "used_stabilized_grace": bool(friction_station.get_editor_property("bLastRetryUsedStabilizedGrace")),
+                        "feedback": str(friction_station.get_editor_property("LastUseFeedback")),
+                        "after": _read_runtime(),
+                    }}
+
+                    mental.set_editor_property("MentalState", 0.30)
+                    mental.set_editor_property("bIsFocusActive", False)
+                    _call(friction_station, "on_interact", pawn)
+                    _refresh_world_reactivity(0.2)
+                    time.sleep(0.1)
+                    result["exercise"]["friction_stabilized_retry"] = {{
+                        "station": "INS_TaskStation_Grocery_Corner",
+                        "station_used": bool(friction_station.get_editor_property("bHasBeenUsed")),
+                        "last_use_succeeded": bool(friction_station.get_editor_property("bLastUseSucceeded")),
+                        "friction_risk": float(friction_station.get_editor_property("LastFrictionRisk")),
+                        "requires_stabilized_retry": bool(friction_station.get_editor_property("bRequiresStabilizedRetry")),
+                        "used_stabilized_grace": bool(friction_station.get_editor_property("bLastRetryUsedStabilizedGrace")),
+                        "feedback": str(friction_station.get_editor_property("LastUseFeedback")),
+                        "after": _read_runtime(),
+                    }}
+                except Exception as exc:
+                    result["exercise"]["errors"].append(f"friction_slip: {{exc}}")
+            else:
+                result["exercise"]["errors"].append("Missing station or mental state for friction slip check")
+
+        result["runtime"]["after_exercise"] = _read_runtime()
+
+        if stop_after_probe:
+            was_in_pie_before_stop = bool(subsystem.is_in_play_in_editor())
+            if was_in_pie_before_stop:
+                subsystem.editor_request_end_play()
+                try:
+                    unreal.EditorLevelLibrary.editor_end_play()
+                except Exception:
+                    pass
+                time.sleep(0.5)
+            try:
+                remaining_worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+            except Exception:
+                remaining_worlds = []
+            result["stop"] = {{
+                "requested": was_in_pie_before_stop,
+                "is_in_play_in_editor": bool(subsystem.is_in_play_in_editor()),
+                "pie_world_count": len(remaining_worlds),
+                "pie_world_names": [w.get_name() for w in remaining_worlds],
+            }}
+
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_load_level_code(level_path: str = "/Game/FirstPerson/Lvl_FirstPerson") -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        result = {{"success": True, "level_path": {json.dumps(level_path)}, "errors": []}}
+        try:
+            level_subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            result["loaded"] = bool(level_subsystem.load_level({json.dumps(level_path)}))
+        except Exception as exc:
+            result["success"] = False
+            result["loaded"] = False
+            result["errors"].append(str(exc))
+
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_place_task_station_code(spec: Dict[str, Any]) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        spec = {json.dumps(spec)}
+        result = {{"success": True, "errors": []}}
+        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actors = {{actor.get_actor_label(): actor for actor in actor_subsystem.get_all_level_actors()}}
+        label = spec["label"]
+        location = unreal.Vector(*spec["location"])
+        rotation = unreal.Rotator(0.0, 0.0, 0.0)
+        scale = unreal.Vector(*spec["scale"])
+        action = getattr(unreal.InsanitiiTaskStationAction, spec["action"])
+
+        actor = actors.get(label)
+        if actor is None:
+            actor = actor_subsystem.spawn_actor_from_class(unreal.InsanitiiTaskStation, location, rotation)
+            actor.set_actor_label(label)
+            result["created"] = True
+        else:
+            result["created"] = False
+
+        actor.set_actor_location(location, False, False)
+        actor.set_actor_scale3d(scale)
+        for prop, value in [
+            ("action", action),
+            ("prompt_text", spec["prompt"]),
+            ("mental_state_delta", float(spec["mental_state_delta"])),
+            ("money_delta", int(spec["money_delta"])),
+            ("task_index", int(spec.get("task_index", 0))),
+            ("bReusable", True),
+        ]:
+            try:
+                actor.set_editor_property(prop, value)
+            except Exception as exc:
+                result["errors"].append(f"{{prop}}: {{exc}}")
+
+        try:
+            label_component = actor.get_editor_property("label_component")
+            if label_component:
+                label_component.set_text(spec["prompt"])
+                label_component.set_world_size(26.0)
+        except Exception as exc:
+            result["errors"].append(f"label_component: {{exc}}")
+
+        loc = actor.get_actor_location()
+        final_scale = actor.get_actor_scale3d()
+        result.update({{
+            "label": actor.get_actor_label(),
+            "action": str(actor.get_editor_property("action")),
+            "prompt": str(actor.get_editor_property("prompt_text")),
+            "money_delta": int(actor.get_editor_property("money_delta")),
+            "mental_state_delta": float(actor.get_editor_property("mental_state_delta")),
+            "location": [round(loc.x, 2), round(loc.y, 2), round(loc.z, 2)],
+            "scale": [round(final_scale.x, 2), round(final_scale.y, 2), round(final_scale.z, 2)],
+        }})
+        result["success"] = result["success"] and not result["errors"]
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_save_current_level_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        result = {"success": True, "errors": []}
+        try:
+            level_subsystem = unreal.get_editor_subsystem(unreal.LevelEditorSubsystem)
+            result["saved_current_level"] = bool(level_subsystem.save_current_level())
+        except Exception as exc:
+            result["success"] = False
+            result["saved_current_level"] = False
+            result["errors"].append(str(exc))
+
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_ordinary_errand_station_specs() -> List[Dict[str, Any]]:
+    return [
+        {
+            "label": "INS_TaskStation_Grocery_Corner",
+            "action": "GROCERY",
+            "prompt": "Buy Groceries",
+            "location": [-1150.0, -620.0, 120.0],
+            "scale": [0.75, 0.75, 0.42],
+            "mental_state_delta": 0.07,
+            "money_delta": 32,
+        },
+        {
+            "label": "INS_TaskStation_Laundry_Washer",
+            "action": "LAUNDRY",
+            "prompt": "Do Laundry",
+            "location": [-250.0, -900.0, 120.0],
+            "scale": [0.70, 0.70, 0.50],
+            "mental_state_delta": 0.05,
+            "money_delta": 12,
+        },
+        {
+            "label": "INS_TaskStation_Package_Dropoff",
+            "action": "PACKAGE_DELIVERY",
+            "prompt": "Deliver Package",
+            "location": [650.0, -880.0, 120.0],
+            "scale": [0.58, 0.58, 0.35],
+            "mental_state_delta": 0.08,
+            "money_delta": 35,
+        },
+        {
+            "label": "INS_TaskStation_Commute_Car",
+            "action": "COMMUTE",
+            "prompt": "Drive to Work",
+            "location": [1250.0, -560.0, 110.0],
+            "scale": [1.50, 0.68, 0.28],
+            "mental_state_delta": 0.10,
+            "money_delta": 0,
+        },
+    ]
+
+
+def _insanitii_day1_set_dressing_specs() -> List[Dict[str, Any]]:
+    cube = "/Engine/BasicShapes/Cube.Cube"
+    cylinder = "/Engine/BasicShapes/Cylinder.Cylinder"
+    sphere = "/Engine/BasicShapes/Sphere.Sphere"
+    return [
+        {"kind": "static_mesh", "label": "INS_Day1_Path_HomeFloor", "mesh": cube, "location": [-1250.0, 820.0, 72.0], "scale": [2.85, 1.80, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Home_KitchenCounter", "mesh": cube, "location": [-1405.0, 700.0, 115.0], "scale": [0.35, 1.05, 0.32]},
+        {"kind": "static_mesh", "label": "INS_Day1_Home_MedicineShelf", "mesh": cube, "location": [-1375.0, 895.0, 160.0], "scale": [0.25, 0.55, 0.65]},
+        {"kind": "static_mesh", "label": "INS_Day1_Home_BedBackdrop", "mesh": cube, "location": [-1065.0, 930.0, 110.0], "scale": [1.20, 0.32, 0.28]},
+        {"kind": "text", "label": "INS_Day1_Sign_Home", "text": "HOME", "location": [-1250.0, 1080.0, 220.0], "rotation": [0.0, 155.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [255, 221, 170, 255], "world_size": 34.0},
+        {"kind": "light", "label": "INS_Day1_Light_Home", "location": [-1250.0, 820.0, 330.0], "color": [255, 191, 128, 255], "intensity": 1750.0, "radius": 580.0},
+
+        {"kind": "static_mesh", "label": "INS_Day1_Path_GroceryFloor", "mesh": cube, "location": [-1150.0, -620.0, 72.0], "scale": [2.25, 1.25, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Grocery_ShelvesLeft", "mesh": cube, "location": [-1365.0, -640.0, 135.0], "scale": [0.28, 1.05, 0.55]},
+        {"kind": "static_mesh", "label": "INS_Day1_Grocery_ShelvesRight", "mesh": cube, "location": [-905.0, -640.0, 135.0], "scale": [0.28, 1.05, 0.55]},
+        {"kind": "static_mesh", "label": "INS_Day1_Grocery_Checkout", "mesh": cube, "location": [-1145.0, -505.0, 112.0], "scale": [1.10, 0.24, 0.30]},
+        {"kind": "text", "label": "INS_Day1_Sign_Grocery", "text": "GROCERY", "location": [-1150.0, -470.0, 230.0], "rotation": [0.0, 170.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [146, 255, 179, 255], "world_size": 30.0},
+        {"kind": "light", "label": "INS_Day1_Light_Grocery", "location": [-1150.0, -620.0, 330.0], "color": [120, 255, 170, 255], "intensity": 1450.0, "radius": 520.0},
+
+        {"kind": "static_mesh", "label": "INS_Day1_Path_LaundryFloor", "mesh": cube, "location": [-250.0, -900.0, 72.0], "scale": [2.15, 1.15, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Laundry_WasherLeft", "mesh": cylinder, "location": [-420.0, -925.0, 122.0], "scale": [0.42, 0.42, 0.45]},
+        {"kind": "static_mesh", "label": "INS_Day1_Laundry_WasherRight", "mesh": cylinder, "location": [80.0, -925.0, 122.0], "scale": [0.42, 0.42, 0.45]},
+        {"kind": "text", "label": "INS_Day1_Sign_Laundry", "text": "LAUNDRY", "location": [-250.0, -745.0, 230.0], "rotation": [0.0, -165.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [153, 220, 255, 255], "world_size": 30.0},
+        {"kind": "light", "label": "INS_Day1_Light_Laundry", "location": [-250.0, -900.0, 330.0], "color": [130, 210, 255, 255], "intensity": 1350.0, "radius": 500.0},
+
+        {"kind": "static_mesh", "label": "INS_Day1_Path_PackageFloor", "mesh": cube, "location": [650.0, -880.0, 72.0], "scale": [2.1, 1.1, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Package_DoorLeft", "mesh": cube, "location": [500.0, -895.0, 145.0], "scale": [0.18, 0.28, 0.85]},
+        {"kind": "static_mesh", "label": "INS_Day1_Package_DoorRight", "mesh": cube, "location": [755.0, -895.0, 145.0], "scale": [0.18, 0.28, 0.85]},
+        {"kind": "static_mesh", "label": "INS_Day1_Package_DoorTop", "mesh": cube, "location": [630.0, -895.0, 230.0], "scale": [1.45, 0.25, 0.16]},
+        {"kind": "static_mesh", "label": "INS_Day1_Package_BoxStack", "mesh": cube, "location": [900.0, -820.0, 112.0], "scale": [0.45, 0.35, 0.30]},
+        {"kind": "text", "label": "INS_Day1_Sign_Package", "text": "DELIVERY", "location": [650.0, -735.0, 265.0], "rotation": [0.0, 125.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [255, 205, 120, 255], "world_size": 29.0},
+        {"kind": "light", "label": "INS_Day1_Light_Package", "location": [650.0, -880.0, 320.0], "color": [255, 190, 95, 255], "intensity": 1500.0, "radius": 520.0},
+
+        {"kind": "static_mesh", "label": "INS_Day1_Path_CommuteRoad", "mesh": cube, "location": [1250.0, -560.0, 72.0], "scale": [3.7, 1.20, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Commute_LaneLineA", "mesh": cube, "location": [1110.0, -560.0, 76.0], "scale": [0.20, 1.0, 0.025]},
+        {"kind": "static_mesh", "label": "INS_Day1_Commute_LaneLineB", "mesh": cube, "location": [1390.0, -560.0, 76.0], "scale": [0.20, 1.0, 0.025]},
+        {"kind": "text", "label": "INS_Day1_Sign_Commute", "text": "COMMUTE", "location": [1250.0, -710.0, 225.0], "rotation": [0.0, 55.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [178, 202, 255, 255], "world_size": 29.0},
+        {"kind": "light", "label": "INS_Day1_Light_Commute", "location": [1250.0, -560.0, 315.0], "color": [150, 175, 255, 255], "intensity": 1250.0, "radius": 540.0},
+
+        {"kind": "static_mesh", "label": "INS_Day1_Path_WorkFloor", "mesh": cube, "location": [1280.0, 150.0, 72.0], "scale": [2.25, 1.25, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Work_Desk", "mesh": cube, "location": [1140.0, 150.0, 120.0], "scale": [0.55, 1.05, 0.30]},
+        {"kind": "static_mesh", "label": "INS_Day1_Work_Monitor", "mesh": cube, "location": [1140.0, 150.0, 168.0], "scale": [0.12, 0.58, 0.34]},
+        {"kind": "text", "label": "INS_Day1_Sign_Work", "text": "WORK", "location": [1280.0, 300.0, 225.0], "rotation": [0.0, -125.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [160, 244, 255, 255], "world_size": 32.0},
+        {"kind": "light", "label": "INS_Day1_Light_Work", "location": [1280.0, 150.0, 320.0], "color": [145, 238, 255, 255], "intensity": 1400.0, "radius": 500.0},
+
+        {"kind": "static_mesh", "label": "INS_Day1_Path_StressFloor", "mesh": cube, "location": [760.0, 820.0, 72.0], "scale": [2.25, 1.25, 0.04]},
+        {"kind": "static_mesh", "label": "INS_Day1_Stress_SpeakerLeft", "mesh": cube, "location": [580.0, 795.0, 155.0], "scale": [0.32, 0.28, 0.75]},
+        {"kind": "static_mesh", "label": "INS_Day1_Stress_SpeakerRight", "mesh": cube, "location": [950.0, 795.0, 155.0], "scale": [0.32, 0.28, 0.75]},
+        {"kind": "static_mesh", "label": "INS_Day1_Stress_PulseOrb", "mesh": sphere, "location": [760.0, 820.0, 205.0], "scale": [0.38, 0.38, 0.38]},
+        {"kind": "text", "label": "INS_Day1_Sign_Stress", "text": "NOISE", "location": [760.0, 975.0, 265.0], "rotation": [0.0, -140.0, 0.0], "scale": [1.0, 1.0, 1.0], "color": [255, 95, 130, 255], "world_size": 35.0},
+        {"kind": "light", "label": "INS_Day1_Light_Stress", "location": [760.0, 820.0, 330.0], "color": [255, 65, 125, 255], "intensity": 2200.0, "radius": 610.0},
+    ]
+
+
+def _insanitii_place_set_dressing_actor_code(spec: Dict[str, Any]) -> str:
+    return textwrap.dedent(f"""
+        import json, unreal
+
+        spec = {json.dumps(spec)}
+        result = {{"success": True, "errors": []}}
+        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actors = {{actor.get_actor_label(): actor for actor in actor_subsystem.get_all_level_actors()}}
+        label = spec["label"]
+        kind = spec["kind"]
+        location = unreal.Vector(*spec["location"])
+        rotation_values = spec.get("rotation", [0.0, 0.0, 0.0])
+        rotation = unreal.Rotator(*rotation_values)
+        scale_values = spec.get("scale", [1.0, 1.0, 1.0])
+
+        actor = actors.get(label)
+        if actor is None:
+            if kind == "static_mesh":
+                actor = actor_subsystem.spawn_actor_from_class(unreal.StaticMeshActor, location, rotation)
+            elif kind == "text":
+                actor = actor_subsystem.spawn_actor_from_class(unreal.TextRenderActor, location, rotation)
+            elif kind == "light":
+                actor = actor_subsystem.spawn_actor_from_class(unreal.PointLight, location, rotation)
+            else:
+                raise RuntimeError(f"Unsupported set-dressing kind: {{kind}}")
+            actor.set_actor_label(label)
+            result["created"] = True
+        else:
+            result["created"] = False
+
+        actor.set_actor_location(location, False, False)
+        actor.set_actor_rotation(rotation, False)
+        tags = list(actor.get_editor_property("tags") or [])
+        reactive_tag = unreal.Name("InsanitiiWorldReactive")
+        if reactive_tag not in tags:
+            tags.append(reactive_tag)
+            actor.set_editor_property("tags", tags)
+        if kind != "light":
+            actor.set_actor_scale3d(unreal.Vector(*scale_values))
+
+        if kind == "static_mesh":
+            component = actor.get_component_by_class(unreal.StaticMeshComponent)
+            mesh = unreal.load_asset(spec["mesh"])
+            if component and mesh:
+                component.set_static_mesh(mesh)
+                component.set_collision_enabled(unreal.CollisionEnabled.NO_COLLISION)
+                component.set_cast_shadow(True)
+            else:
+                result["errors"].append("Missing static mesh component or mesh asset")
+        elif kind == "text":
+            component = actor.get_component_by_class(unreal.TextRenderComponent)
+            if component:
+                color = spec.get("color", [255, 255, 255, 255])
+                component.set_text(spec["text"])
+                component.set_text_render_color(unreal.Color(*color))
+                component.set_world_size(float(spec.get("world_size", 30.0)))
+                component.set_horizontal_alignment(unreal.HorizTextAligment.EHTA_CENTER)
+                component.set_vertical_alignment(unreal.VerticalTextAligment.EVRTA_TEXT_CENTER)
+            else:
+                result["errors"].append("Missing text render component")
+        elif kind == "light":
+            component = actor.get_component_by_class(unreal.PointLightComponent)
+            if component:
+                color = spec.get("color", [255, 255, 255, 255])
+                component.set_editor_property("intensity", float(spec.get("intensity", 1000.0)))
+                component.set_editor_property("attenuation_radius", float(spec.get("radius", 400.0)))
+                component.set_editor_property("light_color", unreal.Color(*color))
+            else:
+                result["errors"].append("Missing point light component")
+
+        loc = actor.get_actor_location()
+        actor_scale = actor.get_actor_scale3d()
+        result.update({{
+            "label": actor.get_actor_label(),
+            "kind": kind,
+            "location": [round(loc.x, 2), round(loc.y, 2), round(loc.z, 2)],
+            "scale": [round(actor_scale.x, 2), round(actor_scale.y, 2), round(actor_scale.z, 2)],
+        }})
+        result["success"] = result["success"] and not result["errors"]
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_world_reactivity_probe_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        result = {"success": True, "errors": []}
+        world_director_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiWorldReactiveDirector")
+        result["class"] = {
+            "success": bool(world_director_cls),
+            "class_path": "/Script/Insanitii.InsanitiiWorldReactiveDirector",
+            "loaded_name": world_director_cls.get_name() if world_director_cls else "",
+        }
+
+        actor_subsystem = unreal.get_editor_subsystem(unreal.EditorActorSubsystem)
+        actors = actor_subsystem.get_all_level_actors()
+        reactive_actors = []
+        director = None
+        for actor in actors:
+            label = actor.get_actor_label()
+            tags = [str(tag) for tag in actor.tags]
+            if "InsanitiiWorldReactive" in tags:
+                reactive_actors.append({
+                    "label": label,
+                    "class": actor.get_class().get_name(),
+                    "tags": tags,
+                })
+            if label == "INS_WorldReactiveDirector" or actor.get_class().get_name() == "InsanitiiWorldReactiveDirector":
+                director = actor
+
+        director_probe = {"success": False}
+        if director:
+            try:
+                rebind = getattr(director, "rebind_world_actors", None)
+                if callable(rebind):
+                    rebind()
+            except Exception as exc:
+                result["errors"].append("rebind: %s" % exc)
+            try:
+                summary_fn = getattr(director, "get_debug_summary", None)
+                tracked_fn = getattr(director, "get_tracked_actor_count", None)
+                pattern_count_fn = getattr(director, "get_pattern_flood_actor_count", None)
+                director_probe = {
+                    "success": True,
+                    "label": director.get_actor_label(),
+                    "class": director.get_class().get_name(),
+                    "tracked_actor_count": int(tracked_fn()) if callable(tracked_fn) else -1,
+                    "pattern_flood_actor_count": int(pattern_count_fn()) if callable(pattern_count_fn) else -1,
+                    "current_reactive_intensity": float(director.get_editor_property("current_reactive_intensity")),
+                    "current_pattern_flood_intensity": float(director.get_editor_property("current_pattern_flood_intensity")),
+                    "debug_summary": str(summary_fn()) if callable(summary_fn) else "",
+                    "reactive_actor_tag": str(director.get_editor_property("reactive_actor_tag")),
+                }
+            except Exception as exc:
+                director_probe = {"success": False, "error": str(exc)}
+
+        result["director"] = director_probe
+        result["reactive_actor_count"] = len(reactive_actors)
+        result["reactive_actors"] = sorted(reactive_actors, key=lambda item: item["label"])
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_save_load_runtime_probe_code() -> str:
+    return textwrap.dedent("""
+        import json, time, unreal
+
+        result = {"success": False, "errors": []}
+
+        def _pie_world():
+            try:
+                worlds = list(unreal.EditorLevelLibrary.get_pie_worlds(False))
+            except Exception:
+                worlds = []
+            if worlds:
+                return worlds[0]
+            try:
+                return unreal.EditorLevelLibrary.get_editor_world()
+            except Exception:
+                return None
+
+        def _actors_by_label(world, cls):
+            actors = {}
+            if not world or not cls:
+                return actors
+            try:
+                found = unreal.GameplayStatics.get_all_actors_of_class(world, cls)
+            except Exception:
+                found = []
+            for actor in found:
+                try:
+                    label = actor.get_actor_label()
+                except Exception:
+                    label = actor.get_name()
+                actors[label] = actor
+            return actors
+
+        def _read_state(world, manager, lifestyle, mental):
+            economy = None
+            time_of_day = None
+            if lifestyle:
+                try:
+                    economy = lifestyle.get_editor_property("economy")
+                except Exception:
+                    economy = None
+                try:
+                    time_of_day = lifestyle.get_editor_property("time_of_day")
+                except Exception:
+                    time_of_day = None
+            return {
+                "day": int(time_of_day.get_editor_property("current_day")) if time_of_day else None,
+                "minute": float(time_of_day.get_editor_property("current_minute_of_day")) if time_of_day else None,
+                "cash": int(economy.get_editor_property("cash_balance")) if economy else None,
+                "ledger_count": len(economy.get_editor_property("ledger")) if economy else None,
+                "lifestyle_skill": float(lifestyle.get_editor_property("lifestyle_skill")) if lifestyle else None,
+                "reputation": float(lifestyle.get_editor_property("reputation")) if lifestyle else None,
+                "mental_state": float(mental.get_editor_property("mental_state")) if mental else None,
+                "focus_charges": float(mental.get_editor_property("focus_charges")) if mental else None,
+                "save_summary": str(manager.get_debug_summary()) if manager else "",
+            }
+
+        try:
+            world = _pie_world()
+            result["world_name"] = world.get_name() if world else ""
+            if not world:
+                result["errors"].append("No PIE/editor world available")
+            else:
+                save_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiSaveGameManager")
+                lifestyle_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiLifestyleManager")
+                mental_cls = unreal.load_class(None, "/Script/Insanitii.InsanitiiMentalStateComponent")
+                manager = _actors_by_label(world, save_cls).get("INS_SaveGameManager") if save_cls else None
+                lifestyle = _actors_by_label(world, lifestyle_cls).get("INS_LifestyleManager") if lifestyle_cls else None
+                controller = unreal.GameplayStatics.get_player_controller(world, 0)
+                pawn = None
+                try:
+                    pawn = controller.get_pawn() if controller else None
+                except Exception:
+                    pawn = None
+                if not pawn:
+                    try:
+                        pawn = unreal.GameplayStatics.get_player_pawn(world, 0)
+                    except Exception:
+                        pawn = None
+                mental = pawn.get_component_by_class(mental_cls) if pawn and mental_cls else None
+
+                if not manager:
+                    result["errors"].append("INS_SaveGameManager not found")
+                if not lifestyle:
+                    result["errors"].append("INS_LifestyleManager not found")
+                if not mental:
+                    result["errors"].append("Mental state component not found")
+
+                if not result["errors"]:
+                    try:
+                        manager.rebind_runtime_state()
+                    except Exception as exc:
+                        result["errors"].append("rebind: %s" % exc)
+
+                if not result["errors"]:
+                    before = _read_state(world, manager, lifestyle, mental)
+                    save_success = bool(manager.save_demo_state())
+                    saved = _read_state(world, manager, lifestyle, mental)
+
+                    economy = lifestyle.get_editor_property("economy")
+                    time_of_day = lifestyle.get_editor_property("time_of_day")
+                    economy.set_cash_balance(int(before["cash"] or 0) + 77, "MCP_SaveProbeMutation", int(before["day"] or 1), int(before["minute"] or 480))
+                    time_of_day.set_clock_time(int(before["day"] or 1) + 2, min(float(before["minute"] or 480.0) + 123.0, 1439.0))
+                    mental.adjust_mental_state(-0.23)
+                    mutated = _read_state(world, manager, lifestyle, mental)
+
+                    load_success = bool(manager.load_demo_state())
+                    time.sleep(0.1)
+                    restored = _read_state(world, manager, lifestyle, mental)
+
+                    result.update({
+                        "success": save_success and load_success,
+                        "save_success": save_success,
+                        "load_success": load_success,
+                        "save_exists": bool(manager.does_demo_save_exist()),
+                        "before": before,
+                        "saved": saved,
+                        "mutated": mutated,
+                        "restored": restored,
+                        "restored_matches": {
+                            "day": restored["day"] == before["day"],
+                            "cash": restored["cash"] == before["cash"],
+                            "mental_state": abs(float(restored["mental_state"] or 0.0) - float(before["mental_state"] or 0.0)) < 0.01,
+                        },
+                    })
+        except Exception as exc:
+            result["errors"].append("exception: %s" % exc)
+        print(json.dumps(result))
+    """)
+
+
+def _insanitii_audio_feedback_probe_code() -> str:
+    return textwrap.dedent("""
+        import json, unreal
+
+        level_path = "/Game/FirstPerson/Lvl_FirstPerson"
+        asset_paths = {
+            "room_tone": "/Game/Insanitii/Audio/Generated/INS_Audio_RoomTone.INS_Audio_RoomTone",
+            "stress_layer": "/Game/Insanitii/Audio/Generated/INS_Audio_PsychosisStress.INS_Audio_PsychosisStress",
+            "stabilize": "/Game/Insanitii/Audio/Generated/INS_Audio_Stabilize.INS_Audio_Stabilize",
+            "psychosis_start": "/Game/Insanitii/Audio/Generated/INS_Audio_PsychosisStart.INS_Audio_PsychosisStart",
+            "psychosis_end": "/Game/Insanitii/Audio/Generated/INS_Audio_PsychosisEnd.INS_Audio_PsychosisEnd",
+        }
+        slot_names = {
+            "room_tone": "room_tone_sound",
+            "stress_layer": "stress_layer_sound",
+            "stabilize": "stabilize_cue_sound",
+            "psychosis_start": "psychosis_start_sound",
+            "psychosis_end": "psychosis_end_sound",
+        }
+        looping_expected = {
+            "room_tone": True,
+            "stress_layer": True,
+            "stabilize": False,
+            "psychosis_start": False,
+            "psychosis_end": False,
+        }
+
+        def _asset_info(path):
+            asset = unreal.load_asset(path)
+            info = {
+                "exists": bool(asset),
+                "path": path,
+                "class": asset.get_class().get_name() if asset else "",
+                "looping": None,
+                "duration": None,
+            }
+            if asset:
+                for prop in ("looping", "duration"):
+                    try:
+                        info[prop] = asset.get_editor_property(prop)
+                    except Exception:
+                        try:
+                            info[prop] = getattr(asset, prop)
+                        except Exception:
+                            pass
+            return info
+
+        result = {
+            "success": True,
+            "level_path": level_path,
+            "assets": {key: _asset_info(path) for key, path in asset_paths.items()},
+            "actor": None,
+            "slot_assignments": {},
+            "looping_expected": looping_expected,
+            "errors": [],
+        }
+
+        try:
+            unreal.EditorLevelLibrary.load_level(level_path)
+        except Exception as exc:
+            result["errors"].append(f"level_load: {exc}")
+
+        actor = None
+        try:
+            for candidate in unreal.EditorLevelLibrary.get_all_level_actors():
+                try:
+                    label = candidate.get_actor_label()
+                except Exception:
+                    label = candidate.get_name()
+                if label == "INS_AudioFeedbackDirector" or candidate.get_class().get_name() == "InsanitiiAudioFeedbackDirector":
+                    actor = candidate
+                    break
+        except Exception as exc:
+            result["errors"].append(f"actor_scan: {exc}")
+
+        if actor:
+            result["actor"] = {
+                "name": actor.get_name(),
+                "label": actor.get_actor_label(),
+                "class": actor.get_class().get_name(),
+            }
+            for key, slot_name in slot_names.items():
+                assigned = None
+                try:
+                    assigned = actor.get_editor_property(slot_name)
+                except Exception as exc:
+                    result["errors"].append(f"{slot_name}: {exc}")
+                assigned_path = assigned.get_path_name() if assigned else ""
+                expected_prefix = asset_paths[key].split(".")[0]
+                result["slot_assignments"][key] = {
+                    "slot": slot_name,
+                    "assigned": bool(assigned),
+                    "path": assigned_path,
+                    "expected": asset_paths[key],
+                    "matches_expected": bool(assigned_path.startswith(expected_prefix)),
+                }
+        else:
+            result["errors"].append("INS_AudioFeedbackDirector actor was not found in Lvl_FirstPerson.")
+
+        print(json.dumps(result))
+    """)
+
+
+def _list_windows(process_name_contains: str = "UnrealEditor") -> Dict[str, Any]:
+    """Enumerate visible Windows top-level dialogs using ctypes only."""
+    if sys.platform != "win32":
+        return {
+            "success": False,
+            "message": "Window prompt automation is only available on Windows",
+            "windows": [],
+        }
+
+    import ctypes
+    from ctypes import wintypes
+
+    user32 = ctypes.WinDLL("user32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    psapi = ctypes.WinDLL("psapi", use_last_error=True)
+
+    PROCESS_QUERY_LIMITED_INFORMATION = 0x1000
+    PROCESS_VM_READ = 0x0010
+
+    EnumWindowsProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    EnumChildProc = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+
+    user32.EnumWindows.argtypes = [EnumWindowsProc, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.EnumChildWindows.argtypes = [wintypes.HWND, EnumChildProc, wintypes.LPARAM]
+    user32.EnumChildWindows.restype = wintypes.BOOL
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetClassNameW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetClassNameW.restype = ctypes.c_int
+    user32.GetWindowThreadProcessId.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.DWORD)]
+    user32.GetWindowThreadProcessId.restype = wintypes.DWORD
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.QueryFullProcessImageNameW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.DWORD,
+        wintypes.LPWSTR,
+        ctypes.POINTER(wintypes.DWORD),
+    ]
+    kernel32.QueryFullProcessImageNameW.restype = wintypes.BOOL
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    psapi.GetModuleFileNameExW.argtypes = [
+        wintypes.HANDLE,
+        wintypes.HMODULE,
+        wintypes.LPWSTR,
+        wintypes.DWORD,
+    ]
+    psapi.GetModuleFileNameExW.restype = wintypes.DWORD
+
+    def _window_text(hwnd) -> str:
+        length = user32.GetWindowTextLengthW(hwnd)
+        if length <= 0:
+            return ""
+        buffer = ctypes.create_unicode_buffer(length + 1)
+        user32.GetWindowTextW(hwnd, buffer, length + 1)
+        return buffer.value
+
+    def _class_name(hwnd) -> str:
+        buffer = ctypes.create_unicode_buffer(256)
+        user32.GetClassNameW(hwnd, buffer, 256)
+        return buffer.value
+
+    def _process_image(pid: int) -> str:
+        access = PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_VM_READ
+        handle = kernel32.OpenProcess(access, False, pid)
+        if not handle:
+            return ""
+        try:
+            buffer = ctypes.create_unicode_buffer(1024)
+            size = wintypes.DWORD(len(buffer))
+            if psapi.GetModuleFileNameExW(handle, None, buffer, len(buffer)):
+                return buffer.value
+            if kernel32.QueryFullProcessImageNameW(handle, 0, buffer, ctypes.byref(size)):
+                return buffer.value
+            return ""
+        finally:
+            kernel32.CloseHandle(handle)
+
+    def _children(hwnd) -> List[Dict[str, Any]]:
+        found: List[Dict[str, Any]] = []
+
+        def _enum_child(child_hwnd, _lparam):
+            text = _window_text(child_hwnd)
+            cls = _class_name(child_hwnd)
+            if text or cls in ("Button", "Edit", "Static"):
+                found.append({
+                    "hwnd": int(child_hwnd),
+                    "class": cls,
+                    "text": text,
+                })
+            return True
+
+        user32.EnumChildWindows(hwnd, EnumChildProc(_enum_child), 0)
+        return found
+
+    windows: List[Dict[str, Any]] = []
+
+    def _enum(hwnd, _lparam):
+        if not user32.IsWindowVisible(hwnd):
+            return True
+
+        title = _window_text(hwnd)
+        if not title:
+            return True
+
+        pid = wintypes.DWORD()
+        user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+        image = _process_image(pid.value)
+        image_lower = image.lower()
+        process_match = (
+            not process_name_contains
+            or process_name_contains.lower() in image_lower
+            or process_name_contains.lower() in title.lower()
+        )
+        if process_match:
+            child_controls = _children(hwnd)
+            windows.append({
+                "hwnd": int(hwnd),
+                "title": title,
+                "class": _class_name(hwnd),
+                "process_id": int(pid.value),
+                "process_image": image,
+                "children": child_controls,
+                "buttons": [
+                    child["text"] for child in child_controls
+                    if child.get("class") == "Button" and child.get("text")
+                ],
+            })
+        return True
+
+    user32.EnumWindows(EnumWindowsProc(_enum), 0)
+    return {"success": True, "windows": windows, "count": len(windows)}
 
 
 def register_editor_tools(mcp: FastMCP):
 
     @mcp.tool()
+    def ping_unreal(ctx: Context) -> Dict[str, Any]:
+        """Ping the UnrealMCP bridge and return its health response.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            ping_unreal()"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected to Unreal Engine"}
+            return unreal.send_command("ping", {}) or {}
+        except Exception as e:
+            logger.error(f"Error pinging Unreal bridge: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def get_actor_identity(
+        ctx: Context,
+        actor_name_or_label: str = "",
+        include_all: bool = False,
+    ) -> Dict[str, Any]:
+        """Return actor labels, object names, full paths, classes, and Blueprint generated-class paths.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            get_actor_identity()"""
+        try:
+            return _send_unreal_command("get_actor_identity", {
+                "actor_name_or_label": actor_name_or_label,
+                "include_all": include_all,
+            })
+        except Exception as e:
+            logger.error(f"Error getting actor identity: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def find_actors_by_class(
+        ctx: Context,
+        class_name: str,
+        exact: bool = False,
+    ) -> Dict[str, Any]:
+        """Find placed actors by native or Blueprint-generated class name/path.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            find_actors_by_class(class_name="Actor")"""
+        try:
+            return _send_unreal_command("find_actors_by_class", {
+                "class_name": class_name,
+                "exact": exact,
+            })
+        except Exception as e:
+            logger.error(f"Error finding actors by class: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def editor_list_blocking_dialogs(
+        ctx: Context,
+        process_name_contains: str = "UnrealEditor",
+        title_contains: str = "",
+    ) -> Dict[str, Any]:
+        """List visible Unreal/Windows dialogs that can block MCP automation.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            editor_list_blocking_dialogs()"""
+        try:
+            result = _list_windows(process_name_contains=process_name_contains)
+            if not result.get("success"):
+                return result
+            if title_contains:
+                needle = title_contains.lower()
+                result["windows"] = [
+                    window for window in result["windows"]
+                    if needle in window.get("title", "").lower()
+                    or any(needle in child.get("text", "").lower() for child in window.get("children", []))
+                ]
+                result["count"] = len(result["windows"])
+            return result
+        except Exception as e:
+            logger.error(f"Error listing blocking dialogs: {e}")
+            return {"success": False, "message": str(e), "windows": []}
+
+    @mcp.tool()
+    def editor_dismiss_blocking_dialog(
+        ctx: Context,
+        button_text: str,
+        process_name_contains: str = "UnrealEditor",
+        title_contains: str = "",
+        dry_run: bool = False,
+    ) -> Dict[str, Any]:
+        """Click a named button on a visible Unreal/Windows dialog, such as Yes, OK, Replace, or Cancel.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            editor_dismiss_blocking_dialog(button_text="Example")"""
+        if not button_text:
+            return {"success": False, "message": "button_text is required for safety"}
+        if sys.platform != "win32":
+            return {"success": False, "message": "Dialog dismissal is only available on Windows"}
+
+        try:
+            import ctypes
+
+            user32 = ctypes.WinDLL("user32", use_last_error=True)
+            BM_CLICK = 0x00F5
+
+            windows = editor_list_blocking_dialogs(
+                ctx=ctx,
+                process_name_contains=process_name_contains,
+                title_contains=title_contains,
+            )
+            if not windows.get("success"):
+                return windows
+
+            target = button_text.strip().lower()
+            candidates = []
+            for window in windows.get("windows", []):
+                for child in window.get("children", []):
+                    if child.get("class") == "Button" and child.get("text", "").strip().lower() == target:
+                        candidates.append({"window": window, "button": child})
+
+            if not candidates:
+                return {
+                    "success": False,
+                    "message": f"No matching '{button_text}' button found",
+                    "windows": windows.get("windows", []),
+                }
+
+            candidate = candidates[0]
+            if not dry_run:
+                user32.SendMessageW(candidate["button"]["hwnd"], BM_CLICK, 0, 0)
+
+            return {
+                "success": True,
+                "dry_run": dry_run,
+                "clicked_button": candidate["button"]["text"],
+                "window_title": candidate["window"]["title"],
+                "matched_count": len(candidates),
+            }
+        except Exception as e:
+            logger.error(f"Error dismissing blocking dialog: {e}")
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_phase1_readiness_report(
+        ctx: Context,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Run the Insanitii Phase 1 smoke-readiness checklist against the open editor.
+
+        The report prefers native bridge routes added for project smoke testing, then
+        falls back to read-only UE Python probes when the running editor has not yet
+        reloaded the latest UnrealMCP plugin binary.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_phase1_readiness_report()"""
+        expected_actor_labels = {
+            "INS_RuntimeBootstrap",
+            "INS_PostProcessController",
+            "INS_TestCube_PleasantMemory",
+            "INS_TestCube_BriefComfort",
+            "INS_TestCube_NeutralMoment",
+            "INS_TestCube_MinorSetback",
+            "INS_TestCube_BadMemory",
+        }
+        expected_actions = {
+            "IA_Focus",
+            "IA_Breathe",
+            "IA_Interact",
+            "IA_DebugDecreaseState",
+            "IA_DebugIncreaseState",
+            "IA_ToggleHUD",
+        }
+        expected_blueprints = [
+            "BP_InsanitiiGameMode",
+            "BP_InsanitiiPlayerController",
+            "BP_RuntimeBootstrap",
+            "BP_MentalStateComponent",
+            "BP_InteractionDetector",
+            "BP_TestInteractable",
+            "BP_PostProcessController",
+            "BP_InsanitiiHUD",
+        ]
+
+        warnings: List[str] = []
+        failures: List[str] = []
+        native_fallbacks: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            identity = _native_or_python_json(
+                "get_actor_identity",
+                {"actor_name_or_label": "INS_", "include_all": False},
+                _insanitii_actor_fallback_code("INS_"),
+            )
+            if identity.get("native_unavailable"):
+                native_fallbacks.append("get_actor_identity")
+            actors = identity.get("actors", []) if identity.get("success", identity.get("status") != "error") else []
+            actor_labels = {actor.get("label") or actor.get("name") for actor in actors}
+            missing_actors = sorted(expected_actor_labels - actor_labels)
+            if missing_actors:
+                failures.append(f"Missing expected Insanitii actors: {', '.join(missing_actors)}.")
+
+            bp_class = _native_or_python_json(
+                "find_actors_by_class",
+                {"class_name": "BP_TestInteractable", "exact": False},
+                _insanitii_class_fallback_code("BP_TestInteractable"),
+            )
+            if bp_class.get("native_unavailable"):
+                native_fallbacks.append("find_actors_by_class:BP_TestInteractable")
+            bp_class_count = int(bp_class.get("count") or len(bp_class.get("actors", [])))
+            if bp_class_count < 5:
+                failures.append(f"Expected 5 BP_TestInteractable actors; found {bp_class_count}.")
+
+            native_class = _native_or_python_json(
+                "find_actors_by_class",
+                {"class_name": "InsanitiiTestInteractable", "exact": False},
+                _insanitii_class_fallback_code("InsanitiiTestInteractable"),
+            )
+            if native_class.get("native_unavailable"):
+                native_fallbacks.append("find_actors_by_class:InsanitiiTestInteractable")
+            native_class_count = int(native_class.get("count") or len(native_class.get("actors", [])))
+            if native_class_count < 5:
+                warnings.append(
+                    "Native parent-class lookup for InsanitiiTestInteractable found fewer than 5 actors. "
+                    "This is expected until the editor reloads the latest UnrealMCP native routes."
+                )
+
+            blueprint_checks = []
+            for blueprint_name in expected_blueprints:
+                result = _native_or_python_json(
+                    "check_blueprint_generated_class",
+                    {"blueprint_path_or_name": blueprint_name},
+                    _insanitii_blueprint_fallback_code(blueprint_name),
+                )
+                if result.get("native_unavailable"):
+                    native_fallbacks.append(f"check_blueprint_generated_class:{blueprint_name}")
+                blueprint_checks.append(result)
+                if not result.get("success") or not result.get("has_generated_class"):
+                    failures.append(f"{blueprint_name} does not have a valid generated class.")
+
+            imc = _native_or_python_json(
+                "inspect_input_mapping_context",
+                {"imc_path_or_name": "/Game/Input/IMC_Default"},
+                _insanitii_imc_fallback_code("/Game/Input/IMC_Default"),
+            )
+            if imc.get("native_unavailable"):
+                native_fallbacks.append("inspect_input_mapping_context")
+            mappings = imc.get("mappings", [])
+            action_names = {
+                mapping.get("action_name") or str(mapping.get("action") or "").split(".")[-1].strip("'\"")
+                for mapping in mappings
+            }
+            missing_actions = sorted(expected_actions - action_names)
+            if missing_actions:
+                failures.append(f"Missing expected Enhanced Input actions: {', '.join(missing_actions)}.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            if native_fallbacks:
+                warnings.append(
+                    "Used exec_python fallback for commands not loaded in the active editor: "
+                    + ", ".join(sorted(set(native_fallbacks)))
+                )
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Phase 1 readiness",
+                "summary": {
+                    "bridge_ping": ping,
+                    "expected_actor_count": len(expected_actor_labels),
+                    "found_insanitii_actor_count": len(actors),
+                    "bp_test_interactable_count": bp_class_count,
+                    "native_test_interactable_count": native_class_count,
+                    "blueprints_checked": len(blueprint_checks),
+                    "input_mapping_count": imc.get("mapping_count", len(mappings)),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                    "native_fallback_count": len(set(native_fallbacks)),
+                },
+                "checks": {
+                    "actors": {
+                        "missing": missing_actors,
+                        "labels": sorted(label for label in actor_labels if label),
+                        "raw": identity,
+                    },
+                    "classes": {
+                        "bp_test_interactable": bp_class,
+                        "native_test_interactable": native_class,
+                    },
+                    "blueprints": blueprint_checks,
+                    "input": {
+                        "missing_actions": missing_actions,
+                        "action_names": sorted(action for action in action_names if action),
+                        "raw": imc,
+                    },
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "WASD movement works",
+                    "Mouse look works",
+                    "F activates Focus and consumes charges",
+                    "Tab triggers Breathe and observes cooldown",
+                    "- and = adjust Mental State with visible feedback",
+                    "E interacts with focused cubes and mutates Mental State",
+                    "~ toggles the HUD",
+                    "Post-process feedback responds to Mental State",
+                    "Consecutive failures increment cascade pressure",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii readiness report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_manual_control_readiness_report(
+        ctx: Context,
+        mode: str = "play",
+        wait_seconds: float = 10.0,
+        stop_after_probe: bool = True,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Launch PIE and verify possessed-player movement/look readiness for Insanitii.
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#complete-command-reference
+        Example:
+            insanitii_manual_control_readiness_report(mode="play", wait_seconds=10.0, stop_after_probe=True)
+
+        This is not a replacement for human feel testing. It proves the slice has a
+        possessed pawn, visible movement/look mappings, gameplay input components,
+        no obvious cursor trap, movement input response, and control rotation response.
+        """
+
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        def _mapping_identity(mapping: Dict[str, Any]) -> Dict[str, str]:
+            action = str(mapping.get("action_name") or mapping.get("action") or mapping.get("action_path") or "")
+            key = str(mapping.get("key") or mapping.get("key_name") or mapping.get("key_display_name") or "")
+            return {"action": action, "key": key}
+
+        def _collect_mapping_identities(report: Dict[str, Any]) -> List[Dict[str, str]]:
+            return [_mapping_identity(mapping) for mapping in report.get("mappings", []) if isinstance(mapping, dict)]
+
+        def _has_action_key(mappings: List[Dict[str, str]], action_fragment: str, key_fragment: str) -> bool:
+            action_fragment_lower = action_fragment.lower()
+            key_fragment_lower = key_fragment.lower()
+            for mapping in mappings:
+                if action_fragment_lower in mapping["action"].lower() and key_fragment_lower in mapping["key"].lower():
+                    return True
+            return False
+
+        def _has_action(mappings: List[Dict[str, str]], action_fragment: str) -> bool:
+            action_fragment_lower = action_fragment.lower()
+            return any(action_fragment_lower in mapping["action"].lower() for mapping in mappings)
+
+        def _angle_delta_degrees(before: Optional[List[float]], after: Optional[List[float]]) -> float:
+            if not before or not after or len(before) < 2 or len(after) < 2:
+                return 0.0
+            delta = abs(float(after[1]) - float(before[1]))
+            while delta > 180.0:
+                delta = abs(delta - 360.0)
+            return delta
+
+        def _distance(a: Optional[List[float]], b: Optional[List[float]]) -> float:
+            if not a or not b or len(a) < 3 or len(b) < 3:
+                return 0.0
+            return float(((float(a[0]) - float(b[0])) ** 2 + (float(a[1]) - float(b[1])) ** 2 + (float(a[2]) - float(b[2])) ** 2) ** 0.5)
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            imc_reports = []
+            for imc_path in ("/Game/FirstPerson/Input/IMC_Default", "/Game/Input/IMC_Default"):
+                imc_report = _native_or_python_json(
+                    "inspect_input_mapping_context",
+                    {"imc_path_or_name": imc_path},
+                    _insanitii_imc_fallback_code(imc_path),
+                )
+                imc_report["requested_path"] = imc_path
+                imc_reports.append(imc_report)
+
+            mapping_identities: List[Dict[str, str]] = []
+            for imc_report in imc_reports:
+                mapping_identities.extend(_collect_mapping_identities(imc_report))
+
+            missing_wasd = [key for key in ("W", "A", "S", "D") if not _has_action_key(mapping_identities, "Move", key)]
+            missing_mechanics = [
+                action for action in ("IA_Focus", "IA_Breathe", "IA_Interact", "IA_DebugDecreaseState", "IA_DebugIncreaseState", "IA_ToggleHUD")
+                if not _has_action(mapping_identities, action)
+            ]
+            has_mouse_look = any(
+                "Look" in mapping["action"] and ("Mouse" in mapping["key"] or "Turn" in mapping["key"] or "Look" in mapping["key"])
+                for mapping in mapping_identities
+            )
+
+            if missing_wasd:
+                failures.append("Missing First Person movement key mappings: " + ", ".join(missing_wasd) + ".")
+            if not has_mouse_look:
+                failures.append("Missing mouse look mapping for the First Person controller.")
+            if missing_mechanics:
+                failures.append("Missing Insanitii mechanic input mappings: " + ", ".join(missing_mechanics) + ".")
+
+            initial_status = _exec_python_json(_insanitii_pie_status_code())
+            launch_probe = _exec_python_json(_insanitii_pie_launch_request_code(mode))
+
+            deadline = time.time() + max(1.0, min(float(wait_seconds), 30.0))
+            ready_status: Dict[str, Any] = {}
+            while time.time() < deadline:
+                ready_status = _exec_python_json(_insanitii_pie_status_code())
+                if ready_status.get("is_in_play_in_editor") and int(ready_status.get("pie_world_count") or 0) > 0:
+                    break
+                time.sleep(0.25)
+
+            before = _exec_python_json(_insanitii_manual_control_runtime_read_code())
+            for _ in range(24):
+                _exec_python_json(_insanitii_manual_control_apply_move_code(1.0))
+                time.sleep(0.035)
+            after_move = _exec_python_json(_insanitii_manual_control_runtime_read_code())
+            look_apply = _exec_python_json(_insanitii_manual_control_apply_look_code(32.0))
+            time.sleep(0.05)
+            after_look = _exec_python_json(_insanitii_manual_control_runtime_read_code())
+
+            movement_distance = _distance(before.get("location"), after_move.get("location"))
+            control_rotation_delta = _angle_delta_degrees(before.get("control_rotation"), after_look.get("control_rotation"))
+
+            if not before.get("success"):
+                failures.append("Could not read PIE control state: " + "; ".join(str(error) for error in before.get("errors", [])))
+            if not before.get("controller_class"):
+                failures.append("No possessed player controller was found in PIE.")
+            if not before.get("pawn_class"):
+                failures.append("No possessed pawn was found in PIE.")
+            if not before.get("has_character_movement"):
+                failures.append("Possessed pawn did not expose a movement component.")
+            if before.get("show_mouse_cursor") is True:
+                failures.append("Player controller is showing the mouse cursor during gameplay control probe.")
+            if not before.get("has_mental_state"):
+                failures.append("Possessed pawn is missing Insanitii mental-state component.")
+            if not before.get("has_interaction_detector"):
+                failures.append("Possessed pawn is missing Insanitii interaction detector component.")
+            if movement_distance < 10.0:
+                failures.append(f"Movement input did not move the possessed pawn far enough: {movement_distance:.2f} cm.")
+            if control_rotation_delta < 10.0:
+                failures.append(f"Control rotation did not respond to look probe: {control_rotation_delta:.2f} degrees.")
+            if look_apply.get("success") is not True:
+                failures.append("Look probe failed: " + "; ".join(str(error) for error in look_apply.get("errors", [])))
+
+            stop_status: Dict[str, Any] = {}
+            if stop_after_probe:
+                _exec_python_json(_insanitii_pie_stop_request_code())
+                stop_deadline = time.time() + 5.0
+                while time.time() < stop_deadline:
+                    stop_status = _exec_python_json(_insanitii_pie_status_code())
+                    if not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0:
+                        break
+                    time.sleep(0.25)
+                if stop_status.get("is_in_play_in_editor") or int(stop_status.get("pie_world_count") or 0) > 0:
+                    failures.append("PIE did not stop cleanly after manual control readiness probe.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Manual control readiness",
+                "summary": {
+                    "bridge_ping": ping,
+                    "controller_class": before.get("controller_class"),
+                    "pawn_class": before.get("pawn_class"),
+                    "movement_component_class": before.get("movement_component_class"),
+                    "movement_distance_cm": movement_distance,
+                    "control_rotation_delta_degrees": control_rotation_delta,
+                    "has_mouse_look_mapping": has_mouse_look,
+                    "missing_wasd": missing_wasd,
+                    "missing_mechanics": missing_mechanics,
+                    "show_mouse_cursor": before.get("show_mouse_cursor"),
+                    "stopped_cleanly": bool(not stop_after_probe or (stop_status and not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0)),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "initial_status": initial_status,
+                    "launch_probe": launch_probe,
+                    "ready_status": ready_status,
+                    "input_mappings": {
+                        "reports": imc_reports,
+                        "flattened": mapping_identities,
+                    },
+                    "before": before,
+                    "after_move": after_move,
+                    "look_apply": look_apply,
+                    "after_look": after_look,
+                    "stop": stop_status,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "remaining_human_feel_checklist": [
+                    "Walk the full Day 1 route with WASD and mouse, not scripted station calls.",
+                    "Confirm mouse sensitivity and objective marker readability feel comfortable.",
+                    "Listen for station, voice, psychosis, and stabilization sounds in speakers/headphones.",
+                    "Confirm psychosis VFX are readable and not nauseating at default intensity.",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii manual control readiness report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_player_station_interaction_route_report(
+        ctx: Context,
+        mode: str = "play",
+        wait_seconds: float = 10.0,
+        stop_after_probe: bool = True,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Launch PIE and verify player-view interaction traces for every Day 1 task station.
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#complete-command-reference
+        Example:
+            insanitii_player_station_interaction_route_report(mode="play", wait_seconds=10.0, stop_after_probe=True)
+
+        This proves the possessed first-person pawn can be placed at each station approach,
+        look through its camera at the Tripo-backed station mesh, resolve the station through
+        the same visibility trace shape the detector uses, and complete through
+        UInsanitiiInteractionDetectorComponent::AttemptInteract.
+        """
+        warnings: List[str] = []
+        failures: List[str] = []
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            bounded_wait = max(0.5, min(float(wait_seconds), 15.0))
+            initial_status = _exec_python_json(_insanitii_pie_status_code())
+            launch_probe: Dict[str, Any] = {
+                "success": True,
+                "requested_mode": mode,
+                "launch_requested": False,
+                "was_in_pie": bool(initial_status.get("is_in_play_in_editor")),
+            }
+            if not initial_status.get("is_in_play_in_editor"):
+                launch_probe = _exec_python_json(_insanitii_pie_launch_request_code(mode))
+                time.sleep(bounded_wait)
+
+            station_labels = [
+                "INS_TaskStation_Food_Sandwich",
+                "INS_TaskStation_Medication",
+                "INS_TaskStation_Sleep_Bed",
+                "INS_TaskStation_Grocery_Corner",
+                "INS_TaskStation_Laundry_Washer",
+                "INS_TaskStation_Package_Dropoff",
+                "INS_TaskStation_Commute_Car",
+                "INS_TaskStation_Work_EmailTriage",
+                "INS_TaskStation_Stress_OverwhelmingNoise",
+                "INS_TaskStation_Grounding_Card",
+                "INS_TaskStation_Grounding_Snack",
+            ]
+            route: List[Dict[str, Any]] = []
+            controller_class = ""
+            pawn_class = ""
+            detector_class = ""
+            for station_label in station_labels:
+                prepare = _exec_python_json(_insanitii_player_station_prepare_focus_code(station_label))
+                time.sleep(0.55)
+                sample = _exec_python_json(_insanitii_player_station_read_and_interact_code(station_label))
+                row: Dict[str, Any] = {
+                    "label": station_label,
+                    "prepare": prepare,
+                    "sample": sample,
+                    "mesh_is_tripo": bool(prepare.get("mesh_is_tripo")),
+                    "focus_ready": bool(sample.get("focused_label") == station_label and sample.get("focused_prompt")),
+                    "interaction_succeeded": bool(sample.get("station_used_after") and sample.get("last_use_succeeded")),
+                    "focused_label": sample.get("focused_label", ""),
+                    "focused_prompt": sample.get("focused_prompt", ""),
+                    "prompt": prepare.get("prompt", ""),
+                    "pawn_location": prepare.get("pawn_location"),
+                    "target_location": prepare.get("target_location"),
+                    "control_rotation": prepare.get("control_rotation"),
+                }
+                route.append(row)
+                if not prepare.get("success"):
+                    failures.extend(str(error) for error in prepare.get("errors", []))
+                if not sample.get("success"):
+                    failures.extend(str(error) for error in sample.get("errors", []))
+
+            probe: Dict[str, Any] = {
+                "success": not any(not row.get("focus_ready") or not row.get("interaction_succeeded") or not row.get("mesh_is_tripo") for row in route),
+                "route": route,
+            }
+
+            stop_request: Dict[str, Any] = {}
+            stop_status: Dict[str, Any] = {}
+            if stop_after_probe:
+                stop_request = _exec_python_json(_insanitii_pie_stop_request_code())
+                stop_deadline = time.time() + 5.0
+                while time.time() < stop_deadline:
+                    stop_status = _exec_python_json(_insanitii_pie_status_code())
+                    if not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0:
+                        break
+                    time.sleep(0.25)
+                if stop_status.get("is_in_play_in_editor") or int(stop_status.get("pie_world_count") or 0) > 0:
+                    failures.append("PIE did not stop cleanly after player station interaction probe.")
+
+            route_count = len(route)
+            focus_success_count = sum(1 for row in route if row.get("focus_ready"))
+            prompt_success_count = sum(1 for row in route if row.get("focused_prompt"))
+            interaction_success_count = sum(1 for row in route if row.get("interaction_succeeded"))
+            tripo_success_count = sum(1 for row in route if row.get("mesh_is_tripo"))
+            for row in route:
+                prepare = row.get("prepare") if isinstance(row.get("prepare"), dict) else {}
+                sample = row.get("sample") if isinstance(row.get("sample"), dict) else {}
+                controller_class = controller_class or str(sample.get("controller_class") or prepare.get("controller_class") or "")
+                pawn_class = pawn_class or str(sample.get("pawn_class") or prepare.get("pawn_class") or "")
+                detector_class = detector_class or str(sample.get("detector_class") or prepare.get("detector_class") or "")
+
+            if route_count < 11:
+                failures.append(f"Expected 11 station interaction route samples; got {route_count}.")
+            if focus_success_count < route_count:
+                failures.append("Not every station became the detector's focused actor.")
+            if prompt_success_count < route_count:
+                failures.append("Not every station produced a detector prompt.")
+            if interaction_success_count < route_count:
+                failures.append("Not every station completed through detector AttemptInteract.")
+            if tripo_success_count < route_count:
+                failures.append("Not every station used a direct Tripo mesh.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Player station interaction route",
+                "summary": {
+                    "bridge_ping": ping,
+                    "controller_class": controller_class,
+                    "pawn_class": pawn_class,
+                    "detector_class": detector_class,
+                    "route_count": route_count,
+                    "focus_success_count": focus_success_count,
+                    "prompt_success_count": prompt_success_count,
+                    "interaction_success_count": interaction_success_count,
+                    "tripo_success_count": tripo_success_count,
+                    "stopped_cleanly": bool(not stop_after_probe or (stop_status and not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0)),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "initial_status": initial_status,
+                    "launch_probe": launch_probe,
+                    "probe": probe,
+                    "stop_request": stop_request,
+                    "stop_status": stop_status,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii player station interaction route report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_phase2_lifestyle_report(
+        ctx: Context,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Run the Insanitii Phase 2 lifestyle-framework readiness checklist.
+
+        This smoke workflow verifies that the native time, economy, and lifestyle
+        manager classes are visible to the editor, the Blueprint wrapper exists,
+        the manager actor is placed, and the manager can generate daily job
+        options for the current lifestyle.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_phase2_lifestyle_report()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            probe = _exec_python_json(_insanitii_phase2_lifestyle_fallback_code())
+            if not probe.get("success"):
+                failures.append(probe.get("message", "Phase 2 editor probe failed."))
+                class_checks = {}
+                blueprint = {}
+                actor = {}
+                manager_probe = {}
+            else:
+                class_checks = probe.get("class_checks", {})
+                blueprint = probe.get("blueprint", {})
+                actor = probe.get("actor", {})
+                manager_probe = probe.get("manager_probe", {})
+
+                missing_classes = [
+                    name for name, check in class_checks.items()
+                    if not check.get("success")
+                ]
+                if missing_classes:
+                    failures.append(
+                        "Native Phase 2 classes are not loaded in the editor: "
+                        + ", ".join(missing_classes)
+                        + ". Trigger Live Coding or restart the editor after compiling."
+                    )
+
+                if not blueprint.get("success"):
+                    failures.append("Missing BP_LifestyleManager wrapper at /Game/Insanitii/Gameplay/Lifestyles.")
+                elif not blueprint.get("has_generated_class"):
+                    failures.append("BP_LifestyleManager exists but has no valid generated class.")
+
+                if not actor.get("success"):
+                    failures.append("Missing placed INS_LifestyleManager actor in the current level.")
+
+                if actor.get("success") and not manager_probe.get("success"):
+                    failures.append("INS_LifestyleManager is placed but did not generate lifestyle tasks.")
+
+                if manager_probe.get("success") and manager_probe.get("task_count", 0) < 3:
+                    warnings.append("Lifestyle manager generated fewer than 3 daily task options.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Phase 2 lifestyle framework",
+                "summary": {
+                    "bridge_ping": ping,
+                    "native_class_count": sum(1 for check in class_checks.values() if check.get("success")),
+                    "blueprint_has_generated_class": bool(blueprint.get("has_generated_class")),
+                    "manager_actor_placed": bool(actor.get("success")),
+                    "generated_task_count": int(manager_probe.get("task_count") or 0),
+                    "cash_balance": manager_probe.get("economy", {}).get("cash_balance"),
+                    "formatted_time": manager_probe.get("time", {}).get("formatted_time"),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "classes": class_checks,
+                    "blueprint": blueprint,
+                    "actor": actor,
+                    "manager_probe": manager_probe,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "Clock advances while PIE is running",
+                    "Morning, work, evening, and sleep periods roll over at expected times",
+                    "Daily living cost applies once per new day",
+                    "Cash balance updates after task success and failure",
+                    "Lifestyle task options differ by selected lifestyle",
+                    "Transition checks prevent impossible lifestyle changes",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii Phase 2 lifestyle report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_phase3_objective_report(
+        ctx: Context,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Run the Insanitii Phase 3 objective-loop readiness checklist.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_phase3_objective_report()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            probe = _exec_python_json(_insanitii_phase3_objective_fallback_code())
+            if not probe.get("success"):
+                failures.append(probe.get("message", "Phase 3 objective probe failed."))
+                class_checks = {}
+                actor_checks = {}
+                objective_probe = {}
+                station_probe = {}
+            else:
+                class_checks = probe.get("class_checks", {})
+                actor_checks = probe.get("actors", {})
+                objective_probe = probe.get("objective_probe", {})
+                station_probe = probe.get("station_probe", {})
+
+                missing_classes = [
+                    name for name, check in class_checks.items()
+                    if not check.get("success")
+                ]
+                if missing_classes:
+                    failures.append(
+                        "Native Phase 3 classes are not loaded in the editor: "
+                        + ", ".join(missing_classes)
+                        + ". Run a closed-editor build and relaunch."
+                    )
+
+                missing_actors = [
+                    label for label, check in actor_checks.items()
+                    if not check.get("success")
+                ]
+                if missing_actors:
+                    failures.append("Missing Phase 3 objective actors: " + ", ".join(missing_actors) + ".")
+
+                if not objective_probe.get("success"):
+                    failures.append("INS_SliceObjectiveDirector did not return objective readback.")
+
+                if int(station_probe.get("count") or 0) < 5:
+                    failures.append("Expected at least 5 INS_TaskStation actors for the Day 1 loop.")
+
+                stress_station = None
+                for station in station_probe.get("stations", []):
+                    if station.get("label") == "INS_TaskStation_Stress_OverwhelmingNoise":
+                        stress_station = station
+                        break
+                if not stress_station:
+                    failures.append("Missing stress station readback.")
+                elif float(stress_station.get("mental_state_delta") or 0.0) < 0.70:
+                    warnings.append("Stress station mental-state delta is below the current one-interaction psychosis test target.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Phase 3 objective loop",
+                "summary": {
+                    "bridge_ping": ping,
+                    "native_class_count": sum(1 for check in class_checks.values() if check.get("success")),
+                    "objective_actor_placed": bool(actor_checks.get("INS_SliceObjectiveDirector", {}).get("success")),
+                    "task_station_count": int(station_probe.get("count") or 0),
+                    "current_objective": objective_probe.get("current_objective"),
+                    "completion_percent": objective_probe.get("completion_percent"),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "classes": class_checks,
+                    "actors": actor_checks,
+                    "objective_probe": objective_probe,
+                    "station_probe": station_probe,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "Interact with sandwich, medication, groceries, laundry, package delivery, commute, work, stress, and sleep stations in objective order",
+                    "Confirm HUD objective text advances after each station",
+                    "Confirm stress station pushes Mental State below the psychosis threshold",
+                    "Confirm a random psychosis event starts and then ends",
+                    "Confirm stabilization tools allow progress to the sleep objective",
+                    "Confirm sleep completes the Day 1 loop and applies living cost once",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii Phase 3 objective report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_place_ordinary_errand_stations(
+        ctx: Context,
+        load_level: bool = True,
+        save_level: bool = True,
+    ) -> Dict[str, Any]:
+        """Place Insanitii ordinary-errand stations using small, crash-resistant UE Python chunks.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_place_ordinary_errand_stations()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+        placements: List[Dict[str, Any]] = []
+        load_result: Dict[str, Any] = {}
+        save_result: Dict[str, Any] = {}
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            if load_level:
+                load_result = _exec_python_json(_insanitii_load_level_code())
+                if not load_result.get("success"):
+                    failures.append("Failed to load /Game/FirstPerson/Lvl_FirstPerson before placement.")
+
+            for spec in _insanitii_ordinary_errand_station_specs():
+                placement = _exec_python_json(_insanitii_place_task_station_code(spec))
+                placement["requested_spec"] = spec
+                placements.append(placement)
+                if not placement.get("success"):
+                    failures.append(f"Failed to place {spec['label']}: {placement.get('message') or placement.get('errors')}")
+
+            if save_level:
+                save_result = _exec_python_json(_insanitii_save_current_level_code())
+                if not save_result.get("success") or not save_result.get("saved_current_level"):
+                    failures.append("Failed to save current level after ordinary errand station placement.")
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Ordinary errand station placement",
+                "summary": {
+                    "bridge_ping": ping,
+                    "load_requested": load_level,
+                    "load_success": bool(load_result.get("success")) if load_level else None,
+                    "placement_count": len(placements),
+                    "placement_success_count": sum(1 for placement in placements if placement.get("success")),
+                    "save_requested": save_level,
+                    "save_success": bool(save_result.get("success") and save_result.get("saved_current_level")) if save_level else None,
+                },
+                "checks": {
+                    "load": load_result,
+                    "placements": placements,
+                    "save": save_result,
+                },
+                "warnings": warnings,
+                "failures": failures,
+            }
+        except Exception as e:
+            logger.error(f"Error placing Insanitii ordinary errand stations: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_place_day1_set_dressing(
+        ctx: Context,
+        load_level: bool = True,
+        save_level: bool = True,
+    ) -> Dict[str, Any]:
+        """Place readable Day 1 prototype set dressing in small UE Python chunks.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_place_day1_set_dressing()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+        placements: List[Dict[str, Any]] = []
+        load_result: Dict[str, Any] = {}
+        save_result: Dict[str, Any] = {}
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            if load_level:
+                load_result = _exec_python_json(_insanitii_load_level_code())
+                if not load_result.get("success"):
+                    failures.append("Failed to load /Game/FirstPerson/Lvl_FirstPerson before set dressing.")
+
+            for spec in _insanitii_day1_set_dressing_specs():
+                placement = _exec_python_json(_insanitii_place_set_dressing_actor_code(spec))
+                placement["requested_spec"] = {
+                    "label": spec.get("label"),
+                    "kind": spec.get("kind"),
+                }
+                placements.append(placement)
+                if not placement.get("success"):
+                    failures.append(f"Failed to place {spec['label']}: {placement.get('message') or placement.get('errors')}")
+
+            if save_level:
+                save_result = _exec_python_json(_insanitii_save_current_level_code())
+                if not save_result.get("success") or not save_result.get("saved_current_level"):
+                    failures.append("Failed to save current level after Day 1 set dressing.")
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            kind_counts: Dict[str, int] = {}
+            for placement in placements:
+                kind = str(placement.get("kind") or placement.get("requested_spec", {}).get("kind") or "unknown")
+                kind_counts[kind] = kind_counts.get(kind, 0) + 1
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Day 1 set dressing",
+                "summary": {
+                    "bridge_ping": ping,
+                    "load_requested": load_level,
+                    "load_success": bool(load_result.get("success")) if load_level else None,
+                    "placement_count": len(placements),
+                    "placement_success_count": sum(1 for placement in placements if placement.get("success")),
+                    "kind_counts": kind_counts,
+                    "save_requested": save_level,
+                    "save_success": bool(save_result.get("success") and save_result.get("saved_current_level")) if save_level else None,
+                },
+                "checks": {
+                    "load": load_result,
+                    "placements": placements,
+                    "save": save_result,
+                },
+                "warnings": warnings,
+                "failures": failures,
+            }
+        except Exception as e:
+            logger.error(f"Error placing Insanitii Day 1 set dressing: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_world_reactivity_report(ctx: Context) -> Dict[str, Any]:
+        """Verify Insanitii Day 1 reactive world actor tagging and director wiring.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_world_reactivity_report()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            probe = _exec_python_json(_insanitii_world_reactivity_probe_code())
+            class_check = probe.get("class", {}) if isinstance(probe, dict) else {}
+            director = probe.get("director", {}) if isinstance(probe, dict) else {}
+            reactive_actor_count = int(probe.get("reactive_actor_count") or 0) if isinstance(probe, dict) else 0
+            tracked_actor_count = int(director.get("tracked_actor_count") or 0) if isinstance(director, dict) else 0
+            pattern_flood_actor_count = int(director.get("pattern_flood_actor_count") or 0) if isinstance(director, dict) else 0
+
+            if not class_check.get("success"):
+                failures.append("InsanitiiWorldReactiveDirector native class is not visible to Unreal reflection.")
+            if not director.get("success"):
+                failures.append("INS_WorldReactiveDirector actor is not placed or could not be probed.")
+            if reactive_actor_count < 40:
+                failures.append("Expected at least 40 tagged Day 1 reactive set-dressing actors.")
+            if tracked_actor_count < 40:
+                failures.append("World reactive director did not bind at least 40 tagged actors.")
+            if pattern_flood_actor_count < 5:
+                failures.append("World reactive director did not bind at least five text actors for pattern flood.")
+
+            errors = probe.get("errors") or [] if isinstance(probe, dict) else []
+            if errors:
+                warnings.extend(str(error) for error in errors)
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "World reactivity",
+                "summary": {
+                    "bridge_ping": ping,
+                    "class_visible": bool(class_check.get("success")),
+                    "director_present": bool(director.get("success")),
+                    "reactive_actor_count": reactive_actor_count,
+                    "tracked_actor_count": tracked_actor_count,
+                    "pattern_flood_actor_count": pattern_flood_actor_count,
+                    "current_pattern_flood_intensity": director.get("current_pattern_flood_intensity"),
+                    "debug_summary": director.get("debug_summary", ""),
+                },
+                "checks": probe,
+                "warnings": warnings,
+                "failures": failures,
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii world reactivity report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_save_load_report(
+        ctx: Context,
+        mode: str = "play",
+        wait_seconds: float = 8.0,
+        stop_after_probe: bool = True,
+    ) -> Dict[str, Any]:
+        """Verify the Insanitii demo save/load skeleton restores day, cash, and mental state in PIE.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_save_load_report()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            bounded_wait = max(1.0, min(float(wait_seconds), 30.0))
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            initial_status = _exec_python_json(_insanitii_pie_status_code())
+            launch_probe = _exec_python_json(_insanitii_pie_launch_request_code(mode))
+            time.sleep(bounded_wait)
+            probe = _exec_python_json(_insanitii_save_load_runtime_probe_code())
+
+            stop_request: Dict[str, Any] = {}
+            stop_status: Dict[str, Any] = {}
+            if stop_after_probe:
+                stop_request = _exec_python_json(_insanitii_pie_stop_request_code())
+                time.sleep(min(2.0, bounded_wait))
+                stop_status = _exec_python_json(_insanitii_pie_status_code())
+
+            if not probe.get("success"):
+                failures.append("Save/load runtime probe did not report success.")
+            if not probe.get("save_success"):
+                failures.append("SaveDemoState did not succeed.")
+            if not probe.get("load_success"):
+                failures.append("LoadDemoState did not succeed.")
+            if not probe.get("save_exists"):
+                failures.append("Demo save slot does not exist after saving.")
+
+            restored_matches = probe.get("restored_matches") or {}
+            for key in ("day", "cash", "mental_state"):
+                if not restored_matches.get(key):
+                    failures.append(f"Saved {key} did not restore to its original value.")
+
+            if stop_after_probe and stop_status and (
+                stop_status.get("is_in_play_in_editor") or int(stop_status.get("pie_world_count") or 0) > 0
+            ):
+                failures.append("PIE was still active after the save/load stop request.")
+
+            errors = probe.get("errors") or []
+            if errors:
+                warnings.extend(str(error) for error in errors)
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Save/load skeleton",
+                "summary": {
+                    "bridge_ping": ping,
+                    "requested_mode": mode,
+                    "launch_requested": bool(launch_probe.get("launch_requested")),
+                    "save_success": bool(probe.get("save_success")),
+                    "load_success": bool(probe.get("load_success")),
+                    "save_exists": bool(probe.get("save_exists")),
+                    "restored_matches": restored_matches,
+                    "before": probe.get("before"),
+                    "mutated": probe.get("mutated"),
+                    "restored": probe.get("restored"),
+                    "stopped_cleanly": bool(stop_after_probe and stop_status and not stop_status.get("is_in_play_in_editor") and int(stop_status.get("pie_world_count") or 0) == 0),
+                },
+                "checks": {
+                    "initial_status": initial_status,
+                    "launch_probe": launch_probe,
+                    "probe": probe,
+                    "stop_request": stop_request,
+                    "stop_status": stop_status,
+                },
+                "warnings": warnings,
+                "failures": failures,
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii save/load report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_phase3_pie_runtime_report(
+        ctx: Context,
+        mode: str = "play",
+        wait_seconds: float = 4.0,
+        exercise_loop: bool = True,
+        stop_after_probe: bool = True,
+        include_dialogs: bool = True,
+    ) -> Dict[str, Any]:
+        """Launch PIE, probe Insanitii runtime systems, optionally exercise the Day 1 loop, and stop PIE.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_phase3_pie_runtime_report()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            normalized_mode = str(mode or "play").lower()
+            if normalized_mode in ("simulate", "sie"):
+                warnings.append("PIE was requested in simulate mode; possessed input and HUD behavior still need manual play-mode validation.")
+            elif normalized_mode != "play":
+                warnings.append(f"Unknown PIE mode '{mode}' was requested; probe will fall back to play mode.")
+
+            bounded_wait = max(0.5, min(float(wait_seconds), 15.0))
+            initial_status = _exec_python_json(_insanitii_pie_status_code())
+            launch_probe: Dict[str, Any] = {
+                "success": True,
+                "requested_mode": mode,
+                "launch_requested": False,
+                "was_in_pie": bool(initial_status.get("is_in_play_in_editor")),
+            }
+            if not initial_status.get("is_in_play_in_editor"):
+                launch_probe = _exec_python_json(_insanitii_pie_launch_request_code(mode))
+                time.sleep(bounded_wait)
+
+            probe = _exec_python_json(_insanitii_phase3_pie_runtime_probe_code(
+                mode=mode,
+                wait_seconds=0.5,
+                stop_after_probe=False,
+                exercise_loop=exercise_loop,
+                allow_launch=False,
+            ))
+            probe_attempts = [probe]
+            if not probe.get("success") and launch_probe.get("launch_requested"):
+                time.sleep(min(2.0, bounded_wait))
+                probe = _exec_python_json(_insanitii_phase3_pie_runtime_probe_code(
+                    mode=mode,
+                    wait_seconds=0.5,
+                    stop_after_probe=False,
+                    exercise_loop=exercise_loop,
+                    allow_launch=False,
+                ))
+                probe_attempts.append(probe)
+
+            stop_request: Dict[str, Any] = {}
+            if stop_after_probe:
+                stop_request = _exec_python_json(_insanitii_pie_stop_request_code())
+                time.sleep(min(2.0, bounded_wait))
+                stop_status = _exec_python_json(_insanitii_pie_status_code())
+                probe["stop"] = {
+                    "requested": bool(stop_request.get("stop_requested")),
+                    "is_in_play_in_editor": bool(stop_status.get("is_in_play_in_editor")),
+                    "pie_world_count": int(stop_status.get("pie_world_count") or 0),
+                    "pie_world_names": stop_status.get("pie_world_names") or [],
+                    "request": stop_request,
+                    "status": stop_status,
+                }
+
+            probe["initial_status"] = initial_status
+            probe["launch_probe"] = launch_probe
+            probe["probe_attempt_count"] = len(probe_attempts)
+            if not probe.get("success"):
+                failures.append(probe.get("message", "PIE runtime probe did not return a game world."))
+
+            runtime = probe.get("runtime", {}) if isinstance(probe, dict) else {}
+            before = runtime.get("before_exercise", {}) if isinstance(runtime, dict) else {}
+            after = runtime.get("after_exercise", {}) if isinstance(runtime, dict) else {}
+            exercise = probe.get("exercise", {}) if isinstance(probe, dict) else {}
+            stop = probe.get("stop", {}) if isinstance(probe, dict) else {}
+
+            pie_world_count = int(probe.get("pie_world_count") or 0) if isinstance(probe, dict) else 0
+            station_count = int(before.get("station_count") or after.get("station_count") or 0)
+            world_reactivity_tracked_count = max(
+                int(before.get("world_reactivity_tracked_count") or 0),
+                int(after.get("world_reactivity_tracked_count") or 0),
+            )
+            world_reactivity_pattern_actor_count = max(
+                int(before.get("world_reactivity_pattern_actor_count") or 0),
+                int(after.get("world_reactivity_pattern_actor_count") or 0),
+            )
+            controller_class = str(before.get("controller_class") or "")
+            pawn_class = str(before.get("pawn_class") or "")
+            hud_class = str(before.get("hud_class") or "")
+            mental_state = before.get("mental_state")
+            objective_text = str(after.get("objective_text") or before.get("objective_text") or "")
+            objective_marker_summary = str(after.get("objective_marker_summary") or before.get("objective_marker_summary") or "")
+            objective_anchor_samples = probe.get("objective_anchor_samples") if isinstance(probe, dict) else {}
+
+            if pie_world_count <= 0:
+                failures.append("No PIE world was available after the wait window.")
+            if not controller_class:
+                failures.append("No player controller was available in PIE.")
+            if not pawn_class:
+                failures.append("No player pawn was available in PIE.")
+            if "Spectator" in pawn_class or "Spectator" in controller_class:
+                warnings.append("PIE resolved to a spectator-style controller or pawn; possessed gameplay still needs manual validation.")
+            if not hud_class:
+                failures.append("No HUD was available from the PIE player controller.")
+            if mental_state is None:
+                failures.append("No Insanitii mental-state component readback was available from the PIE pawn.")
+            if not objective_text:
+                failures.append("No objective director readback was available in PIE.")
+            if station_count < 9:
+                failures.append("Expected at least 9 task stations in the PIE world.")
+            if not before.get("psychosis_summary") and not after.get("psychosis_summary"):
+                failures.append("No psychosis event director readback was available in PIE.")
+            if world_reactivity_tracked_count < 40:
+                failures.append("World reactivity director did not bind at least 40 Day 1 set-dressing actors in PIE.")
+            if world_reactivity_pattern_actor_count < 5:
+                failures.append("World reactivity director did not bind at least five text actors for pattern flood in PIE.")
+
+            exercise_errors = exercise.get("errors") or []
+            exercise_steps = exercise.get("steps") or []
+            friction_slip = exercise.get("friction_slip") or {}
+            friction_unrecovered_retry = exercise.get("friction_unrecovered_retry") or {}
+            friction_stabilized_retry = exercise.get("friction_stabilized_retry") or {}
+            stabilization_tools = exercise.get("stabilization_tools") or {}
+            if exercise_loop:
+                if exercise_errors:
+                    failures.append("Scripted PIE Day 1 loop reported errors: " + "; ".join(str(error) for error in exercise_errors))
+                breathe_after = stabilization_tools.get("breathe_after") or {}
+                focus_after = stabilization_tools.get("focus_after") or {}
+                if not stabilization_tools.get("breathe_result"):
+                    failures.append("Scripted PIE breathe stabilization did not succeed.")
+                elif "Breathing steadied" not in str(breathe_after.get("hud_status") or ""):
+                    failures.append("Scripted PIE breathe stabilization did not produce HUD feedback.")
+                elif float(breathe_after.get("task_feedback_pulse") or 0.0) >= 0.0:
+                    failures.append("Scripted PIE breathe stabilization did not produce a clarity pulse.")
+                elif float(breathe_after.get("task_feedback_color_shift") or 0.0) >= 0.0:
+                    failures.append("Scripted PIE breathe stabilization did not produce a cool color-shift pulse.")
+
+                if not stabilization_tools.get("focus_result"):
+                    failures.append("Scripted PIE focus stabilization did not succeed.")
+                elif "Focus anchor held" not in str(focus_after.get("hud_status") or ""):
+                    failures.append("Scripted PIE focus stabilization did not produce HUD feedback.")
+                elif float(focus_after.get("task_feedback_pulse") or 0.0) >= 0.0:
+                    failures.append("Scripted PIE focus stabilization did not produce a clarity pulse.")
+                elif float(focus_after.get("task_feedback_color_shift") or 0.0) >= 0.0:
+                    failures.append("Scripted PIE focus stabilization did not produce a cool color-shift pulse.")
+                if len(exercise_steps) < 9:
+                    failures.append("Scripted PIE Day 1 loop did not record all nine station interactions.")
+                task_hud_steps = [
+                    step for step in exercise_steps
+                    if "Task complete" in str((step.get("after") or {}).get("hud_status") or "")
+                ]
+                if len(task_hud_steps) < len(exercise_steps):
+                    failures.append("Scripted PIE task interactions did not all produce HUD task-complete feedback.")
+                stabilizing_task_pulse_steps = [
+                    step for step in exercise_steps
+                    if step.get("step") in ("food", "medication", "grocery", "laundry", "sleep")
+                    and float((step.get("after") or {}).get("task_feedback_pulse") or 0.0) < 0.0
+                    and float((step.get("after") or {}).get("task_feedback_color_shift") or 0.0) < 0.0
+                ]
+                if len(stabilizing_task_pulse_steps) < 5:
+                    failures.append("Scripted PIE stabilizing task interactions did not all produce clarity/cooling post-process pulses.")
+                friction_hud_status = str((friction_slip.get("after") or {}).get("hud_status") or "")
+                if not friction_slip:
+                    failures.append("Scripted PIE friction slip check did not run.")
+                elif friction_slip.get("station_used") or friction_slip.get("last_use_succeeded"):
+                    failures.append("Scripted PIE friction slip unexpectedly completed the station.")
+                elif float(friction_slip.get("friction_risk") or 0.0) <= 0.0:
+                    failures.append("Scripted PIE friction slip did not report positive friction risk.")
+                elif not friction_slip.get("requires_stabilized_retry"):
+                    failures.append("Scripted PIE friction slip did not require a stabilized retry.")
+                elif "Task slipped" not in friction_hud_status or "Friction risk" not in friction_hud_status:
+                    failures.append("Scripted PIE friction slip did not produce HUD slip feedback.")
+                elif float((friction_slip.get("after") or {}).get("task_feedback_pulse") or 0.0) <= 0.0:
+                    failures.append("Scripted PIE friction slip did not produce a distortion post-process pulse.")
+                elif float((friction_slip.get("after") or {}).get("task_feedback_color_shift") or 0.0) <= 0.0:
+                    failures.append("Scripted PIE friction slip did not produce a warm color-shift pulse.")
+                if not friction_unrecovered_retry:
+                    failures.append("Scripted PIE friction unrecovered retry check did not run.")
+                elif friction_unrecovered_retry.get("station_used") or friction_unrecovered_retry.get("last_use_succeeded"):
+                    failures.append("Scripted PIE unrecovered retry unexpectedly completed the station.")
+                elif not friction_unrecovered_retry.get("requires_stabilized_retry"):
+                    failures.append("Scripted PIE unrecovered retry cleared the stabilized retry requirement.")
+                elif "Breathe or focus" not in str(friction_unrecovered_retry.get("feedback") or ""):
+                    failures.append("Scripted PIE unrecovered retry did not direct the player to breathe or focus.")
+                if not friction_stabilized_retry:
+                    failures.append("Scripted PIE friction stabilized retry check did not run.")
+                elif not friction_stabilized_retry.get("station_used") or not friction_stabilized_retry.get("last_use_succeeded"):
+                    failures.append("Scripted PIE stabilized retry did not complete the station.")
+                elif friction_stabilized_retry.get("requires_stabilized_retry"):
+                    failures.append("Scripted PIE stabilized retry did not clear the retry requirement.")
+                elif not friction_stabilized_retry.get("used_stabilized_grace"):
+                    failures.append("Scripted PIE stabilized retry did not use the recovery grace path.")
+                completion = after.get("objective_completion_percent")
+                if completion is not None and float(completion) < 1.0:
+                    warnings.append("Scripted loop completed without errors but objective completion stayed below 100 percent.")
+                completion_summary = str(after.get("completion_summary") or "")
+                if completion is not None and float(completion) >= 1.0 and "Complete true" not in completion_summary:
+                    failures.append("Scripted PIE Day 1 loop reached 100 percent but the HUD completion readback did not report Complete true.")
+                stress_intensity = None
+                stress_pattern_intensity = None
+                for step in exercise_steps:
+                    if step.get("step") == "stress":
+                        stress_after = step.get("after") or {}
+                        stress_intensity = stress_after.get("world_reactivity_intensity")
+                        stress_pattern_intensity = stress_after.get("world_reactivity_pattern_intensity")
+                        break
+                if stress_intensity is not None and float(stress_intensity) <= 0.0:
+                    warnings.append("World reactivity intensity did not rise during the scripted stress beat.")
+                if stress_pattern_intensity is not None and float(stress_pattern_intensity) <= 0.0:
+                    warnings.append("Pattern flood intensity did not rise during the scripted stress beat.")
+
+            if stop_after_probe:
+                if stop and (stop.get("is_in_play_in_editor") or int(stop.get("pie_world_count") or 0) > 0):
+                    failures.append("PIE was still active after the stop request.")
+                elif not stop:
+                    warnings.append("PIE stop status was not returned by the runtime probe.")
+
+            if before.get("cash_balance") is None and after.get("cash_balance") is None:
+                warnings.append("Lifestyle/economy readback was not available in PIE.")
+
+            dialogs: Dict[str, Any] = {"success": True, "count": 0, "windows": []}
+            if include_dialogs:
+                dialogs = editor_list_blocking_dialogs(ctx=ctx)
+                if dialogs.get("success") and dialogs.get("count", 0) > 0:
+                    warnings.append(f"{dialogs.get('count')} visible Unreal/editor dialog(s) may block automation.")
+                elif not dialogs.get("success"):
+                    warnings.append(dialogs.get("message", "Could not inspect blocking dialogs."))
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Phase 3 PIE runtime loop",
+                "summary": {
+                    "bridge_ping": ping,
+                    "requested_mode": probe.get("requested_mode") if isinstance(probe, dict) else mode,
+                    "launch_requested": bool(launch_probe.get("launch_requested")) if isinstance(probe, dict) else False,
+                    "was_in_pie": bool(launch_probe.get("was_in_pie")) if isinstance(probe, dict) else False,
+                    "is_in_play_in_editor": bool(probe.get("is_in_play_in_editor")) if isinstance(probe, dict) else False,
+                    "pie_world_count": pie_world_count,
+                    "world_name": probe.get("world_name") if isinstance(probe, dict) else "",
+                    "controller_class": controller_class,
+                    "pawn_class": pawn_class,
+                    "hud_class": hud_class,
+                    "last_task_hud_status": after.get("hud_status", before.get("hud_status")),
+                    "friction_slip_hud_status": (friction_slip.get("after") or {}).get("hud_status") if isinstance(friction_slip, dict) else "",
+                    "friction_slip_task_pulse": (friction_slip.get("after") or {}).get("task_feedback_pulse") if isinstance(friction_slip, dict) else None,
+                    "friction_slip_task_color_shift": (friction_slip.get("after") or {}).get("task_feedback_color_shift") if isinstance(friction_slip, dict) else None,
+                    "breathe_hud_status": (stabilization_tools.get("breathe_after") or {}).get("hud_status") if isinstance(stabilization_tools, dict) else "",
+                    "focus_hud_status": (stabilization_tools.get("focus_after") or {}).get("hud_status") if isinstance(stabilization_tools, dict) else "",
+                    "mental_state": mental_state,
+                    "objective_text": objective_text,
+                    "objective_marker_summary": objective_marker_summary,
+                    "objective_anchor_samples": objective_anchor_samples if isinstance(objective_anchor_samples, dict) else {},
+                    "objective_completion_percent": after.get("objective_completion_percent", before.get("objective_completion_percent")),
+                    "completion_summary": after.get("completion_summary", before.get("completion_summary")),
+                    "psychosis_active": bool(after.get("psychosis_active", before.get("psychosis_active", False))),
+                    "station_count": station_count,
+                    "world_reactivity_tracked_count": world_reactivity_tracked_count,
+                    "world_reactivity_intensity": after.get("world_reactivity_intensity", before.get("world_reactivity_intensity")),
+                    "world_reactivity_pattern_actor_count": world_reactivity_pattern_actor_count,
+                    "world_reactivity_pattern_intensity": after.get("world_reactivity_pattern_intensity", before.get("world_reactivity_pattern_intensity")),
+                    "exercise_step_count": len(exercise_steps),
+                    "exercise_error_count": len(exercise_errors),
+                    "stopped_cleanly": bool(stop_after_probe and stop and not stop.get("is_in_play_in_editor") and int(stop.get("pie_world_count") or 0) == 0),
+                    "blocking_dialog_count": dialogs.get("count", 0),
+                },
+                "checks": {
+                    "initial_status": initial_status,
+                    "launch_probe": launch_probe,
+                    "probe_attempts": probe_attempts,
+                    "stop_request": stop_request,
+                    "probe": probe,
+                    "runtime_before_exercise": before,
+                    "runtime_after_exercise": after,
+                    "exercise": exercise,
+                    "stop": stop,
+                    "dialogs": dialogs,
+                },
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "Possess the player in Play mode and move through food, meds, groceries, laundry, delivery, commute, work, stress, and sleep using normal input",
+                    "Confirm HUD objective, mental state, and psychosis text remain readable during movement",
+                    "Confirm mouse/keyboard interaction prompts fire from player proximity",
+                    "Confirm psychosis visual effects feel engaging and do not permanently break the level",
+                    "Confirm audio assets play from authenticated generated content once ElevenLabs access is restored",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii Phase 3 PIE runtime report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    @mcp.tool()
+    def insanitii_audio_feedback_report(ctx: Context) -> Dict[str, Any]:
+        """Verify Insanitii generated SoundWave assets and the level audio feedback director wiring.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            insanitii_audio_feedback_report()"""
+        warnings: List[str] = []
+        failures: List[str] = []
+
+        try:
+            ping = _send_unreal_command("ping", {})
+            if ping.get("status") != "success" and ping.get("success") is not True and ping.get("message") != "pong":
+                failures.append("Unreal bridge ping did not report success.")
+
+            probe = _exec_python_json(_insanitii_audio_feedback_probe_code())
+            assets = probe.get("assets", {}) if isinstance(probe, dict) else {}
+            slots = probe.get("slot_assignments", {}) if isinstance(probe, dict) else {}
+            actor = probe.get("actor") if isinstance(probe, dict) else None
+            errors = probe.get("errors") or [] if isinstance(probe, dict) else []
+
+            if not actor:
+                failures.append("INS_AudioFeedbackDirector actor is not present in Lvl_FirstPerson.")
+
+            for key, info in assets.items():
+                if not info.get("exists"):
+                    failures.append(f"Missing generated audio asset: {key}")
+                elif info.get("class") not in ("SoundWave", "SoundCue", "MetaSoundSource"):
+                    warnings.append(f"Audio asset {key} loaded as {info.get('class')}, not a standard SoundWave/Cue.")
+
+            looping_expected = probe.get("looping_expected", {}) if isinstance(probe, dict) else {}
+            for key, expected in looping_expected.items():
+                info = assets.get(key, {})
+                if info.get("looping") is not None and bool(info.get("looping")) != bool(expected):
+                    warnings.append(f"Audio asset {key} looping={info.get('looping')} but expected {expected}.")
+
+            for key, info in slots.items():
+                if not info.get("assigned"):
+                    failures.append(f"Audio director slot {key} is not assigned.")
+                elif not info.get("matches_expected"):
+                    warnings.append(f"Audio director slot {key} points to {info.get('path')} instead of {info.get('expected')}.")
+
+            if errors:
+                warnings.extend(str(error) for error in errors)
+
+            status = "pass"
+            if failures:
+                status = "fail"
+            elif warnings:
+                status = "warn"
+
+            return {
+                "success": not failures,
+                "status": status,
+                "project": "Insanitii",
+                "phase": "Audio feedback slice",
+                "summary": {
+                    "bridge_ping": ping,
+                    "actor_present": bool(actor),
+                    "actor_class": actor.get("class") if isinstance(actor, dict) else "",
+                    "asset_count": sum(1 for item in assets.values() if item.get("exists")),
+                    "assigned_slot_count": sum(1 for item in slots.values() if item.get("assigned")),
+                    "looping_asset_count": sum(1 for item in assets.values() if item.get("looping") is True),
+                },
+                "checks": probe,
+                "warnings": warnings,
+                "failures": failures,
+                "next_manual_pie_checklist": [
+                    "Confirm room tone is audible after Play starts",
+                    "Drive mental state downward and confirm the stress layer fades in",
+                    "Use a stabilizing action and confirm the stabilization cue plays",
+                    "Trigger a psychosis event and confirm start/end one-shot cues fire",
+                    "Replace generated placeholders with ElevenLabs downloads when the account UI permits audio download",
+                ],
+            }
+        except Exception as e:
+            logger.error(f"Error building Insanitii audio feedback report: {e}")
+            return {"success": False, "status": "fail", "project": "Insanitii", "message": str(e)}
+
+    register_static_mesh_section_tools(mcp)
+
+    @mcp.tool()
     def get_actors_in_level(ctx: Context) -> str:
         """Get a list of all actors in the current UE5 level.
 
-        Returns a compact single-line JSON array of actor objects.
+        Returns a compact single-line JSON array of actor objects when the
+        editor is connected. When Unreal is unavailable, returns a structured
+        JSON error object instead of an empty array so audits do not mistake a
+        disconnected bridge for an empty level.
         Example: [{"name": "BP_MyActor", "type": "StaticMeshActor"}, ...]
 
         Bug #3 fix:
         - Returns a JSON *string* so FastMCP sends it verbatim as a single
           TextContent block (no pydantic_core indent=2 pretty-printing).
-        - Returns a top-level JSON array so json.loads(result) is a list,
-          satisfying test runners that check isinstance(result, list).
-        """
+        - Connected success responses keep the historical top-level JSON array.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            get_actors_in_level()"""
         import json as _json
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
             if not unreal:
-                return _json.dumps([])
+                return _json.dumps({
+                    "success": False,
+                    "error_code": "ERR_UNREAL_NOT_CONNECTED",
+                    "message": "Not connected to Unreal Engine"
+                })
             response = unreal.send_command("get_actors_in_level", {})
             if not response:
-                return _json.dumps([])
+                return _json.dumps({
+                    "success": False,
+                    "error_code": "ERR_UNREAL_NO_RESPONSE",
+                    "message": "No response from Unreal Engine"
+                })
             if "result" in response and "actors" in response["result"]:
                 actors = response["result"]["actors"]
             elif "actors" in response:
@@ -43,11 +4224,19 @@ def register_editor_tools(mcp: FastMCP):
             return _json.dumps(actors)
         except Exception as e:
             logger.error(f"Error getting actors: {e}")
-            return _json.dumps([])
+            return _json.dumps({
+                "success": False,
+                "error_code": "ERR_GET_ACTORS_FAILED",
+                "message": str(e)
+            })
 
     @mcp.tool()
     def find_actors_by_name(ctx: Context, pattern: str) -> List[str]:
-        """Find actors in the level by name pattern (supports wildcards)."""
+        """Find actors in the level by name pattern (supports wildcards).
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            find_actors_by_name(pattern="Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -69,15 +4258,17 @@ def register_editor_tools(mcp: FastMCP):
         location: List[float] = [0.0, 0.0, 0.0],
         rotation: List[float] = [0.0, 0.0, 0.0]
     ) -> Dict[str, Any]:
-        """
-        Spawn a new actor in the current level.
+        """Spawn a new actor in the current level.
 
         Args:
             name: Unique name for the actor
             type: Actor type (StaticMeshActor, PointLight, Camera, etc.)
             location: [X, Y, Z] world location
             rotation: [Pitch, Yaw, Roll] in degrees
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            spawn_actor(name="ExampleName", type="Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -96,7 +4287,11 @@ def register_editor_tools(mcp: FastMCP):
 
     @mcp.tool()
     def delete_actor(ctx: Context, name: str) -> Dict[str, Any]:
-        """Delete an actor from the level by name."""
+        """Delete an actor from the level by name.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            delete_actor(name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -114,7 +4309,11 @@ def register_editor_tools(mcp: FastMCP):
         rotation: List[float] = None,
         scale: List[float] = None
     ) -> Dict[str, Any]:
-        """Set the transform (location, rotation, scale) of an actor."""
+        """Set the transform (location, rotation, scale) of an actor.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            set_actor_transform(name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -133,7 +4332,11 @@ def register_editor_tools(mcp: FastMCP):
 
     @mcp.tool()
     def get_actor_properties(ctx: Context, name: str) -> Dict[str, Any]:
-        """Get all properties of an actor by name."""
+        """Get all properties of an actor by name.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            get_actor_properties(name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -150,7 +4353,11 @@ def register_editor_tools(mcp: FastMCP):
         property_name: str,
         property_value
     ) -> Dict[str, Any]:
-        """Set a specific property on an actor instance."""
+        """Set a specific property on an actor instance.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            set_actor_property(name="ExampleName", property_name="ExampleName", property_value="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -172,15 +4379,17 @@ def register_editor_tools(mcp: FastMCP):
         location: List[float] = [0.0, 0.0, 0.0],
         rotation: List[float] = [0.0, 0.0, 0.0]
     ) -> Dict[str, Any]:
-        """
-        Spawn an actor in the level from a Blueprint class.
+        """Spawn an actor in the level from a Blueprint class.
 
         Args:
             blueprint_name: Name of the Blueprint asset
             actor_name: Name to give the spawned actor
             location: [X, Y, Z] world location
             rotation: [Pitch, Yaw, Roll] in degrees
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            spawn_blueprint_actor(blueprint_name="/Game/MCP_Test/BP_Example", actor_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -203,7 +4412,14 @@ def register_editor_tools(mcp: FastMCP):
         show_ui: bool = False,
         resolution: List[int] = [1920, 1080]
     ) -> Dict[str, Any]:
-        """Take a screenshot of the Unreal Editor viewport."""
+        """Take a screenshot of the Unreal Editor viewport.
+
+        The native bridge expects ``filepath``; keep the public ``filename``
+        argument for compatibility and forward both names.
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            take_screenshot()"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -211,6 +4427,7 @@ def register_editor_tools(mcp: FastMCP):
                 return {"success": False, "message": "Not connected"}
             return unreal.send_command("take_screenshot", {
                 "filename": filename,
+                "filepath": filename,
                 "show_ui": show_ui,
                 "resolution": resolution
             }) or {}
@@ -218,9 +4435,172 @@ def register_editor_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def wp_load_region(
+        ctx: Context,
+        center: List[float] = [0.0, 0.0, 0.0],
+        extent: List[float] = [50000.0, 50000.0, 50000.0],
+        label: str = "MCP Loaded Region",
+    ) -> str:
+        """Load a World Partition editor region by bounding box.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            wp_load_region(center=[0, 0, 0], extent=[50000, 50000, 50000], label="Downtown Edit Window")"""
+        t0 = time.monotonic()
+        inputs = {
+            "center": [float(v) for v in center],
+            "extent": [float(v) for v in extent],
+            "label": label,
+        }
+        raw = _send_unreal_command("wp_load_region", inputs)
+        return _bridge_result(
+            stage="wp_load_region",
+            raw=raw,
+            inputs=inputs,
+            message="Loaded World Partition editor region",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def wp_unload_region(
+        ctx: Context,
+        label: str = "",
+        center: Optional[List[float]] = None,
+        extent: Optional[List[float]] = None,
+        min: Optional[List[float]] = None,
+        max: Optional[List[float]] = None,
+        exact: bool = False,
+    ) -> str:
+        """Unload matching World Partition editor region loaders.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            wp_unload_region(label="Downtown Edit Window")"""
+        t0 = time.monotonic()
+        inputs: Dict[str, Any] = {"label": label, "exact": exact}
+        if center is not None:
+            inputs["center"] = [float(v) for v in center]
+        if extent is not None:
+            inputs["extent"] = [float(v) for v in extent]
+        if min is not None:
+            inputs["min"] = [float(v) for v in min]
+        if max is not None:
+            inputs["max"] = [float(v) for v in max]
+        raw = _send_unreal_command("wp_unload_region", inputs)
+        return _bridge_result(
+            stage="wp_unload_region",
+            raw=raw,
+            inputs=inputs,
+            message="Unloaded matching World Partition editor regions",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def wp_create_data_layer(
+        ctx: Context,
+        name: str,
+        type: str = "runtime",
+        asset_path: str = "",
+        private: bool = False,
+        initially_visible: bool = True,
+        loaded_in_editor: bool = True,
+        initial_runtime_state: str = "unloaded",
+        save: bool = True,
+    ) -> str:
+        """Create or reuse a Data Layer asset and instance in the active editor world.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            wp_create_data_layer(name="Gameplay_POIs", type="runtime", asset_path="/Game/DataLayers/Gameplay_POIs")"""
+        t0 = time.monotonic()
+        inputs = {
+            "name": name,
+            "type": type,
+            "asset_path": asset_path,
+            "private": private,
+            "initially_visible": initially_visible,
+            "loaded_in_editor": loaded_in_editor,
+            "initial_runtime_state": initial_runtime_state,
+            "save": save,
+        }
+        raw = _send_unreal_command("wp_create_data_layer", inputs)
+        return _bridge_result(
+            stage="wp_create_data_layer",
+            raw=raw,
+            inputs=inputs,
+            message="Created or reused Data Layer",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def hlod_generate(
+        ctx: Context,
+        setup: bool = True,
+        build: bool = True,
+        delete: bool = False,
+        stats: bool = False,
+        force: bool = False,
+        report_only: bool = False,
+        layer: str = "",
+        actor: str = "",
+        extra_args: str = "",
+    ) -> str:
+        """Run the World Partition HLOD builder commandlet for the active map.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            hlod_generate(setup=True, build=True, layer="HLODLayer_Buildings")"""
+        t0 = time.monotonic()
+        inputs = {
+            "setup": setup,
+            "build": build,
+            "delete": delete,
+            "stats": stats,
+            "force": force,
+            "report_only": report_only,
+            "layer": layer,
+            "actor": actor,
+            "extra_args": extra_args,
+        }
+        raw = _send_unreal_command("hlod_generate", inputs)
+        return _bridge_result(
+            stage="hlod_generate",
+            raw=raw,
+            inputs=inputs,
+            message="Ran World Partition HLOD builder",
+            t0=t0,
+        )
+
+    @mcp.tool()
+    def hlod_assign_layer(
+        ctx: Context,
+        hlod_layer: str,
+        actors: Optional[List[str]] = None,
+        actor: str = "",
+    ) -> str:
+        """Assign an HLOD Layer asset to named actors or the current editor selection.
+
+        KB: see knowledge_base/25_WORLD_PARTITION_AND_HLOD.md#mcp-world-partition-and-hlod-tools
+        Example:
+            hlod_assign_layer(hlod_layer="/Game/HLOD/HLODLayer_Buildings", actors=["SM_Blockout_01"])"""
+        t0 = time.monotonic()
+        inputs = {
+            "hlod_layer": hlod_layer,
+            "actors": actors or [],
+            "actor": actor,
+        }
+        raw = _send_unreal_command("hlod_assign_layer", inputs)
+        return _bridge_result(
+            stage="hlod_assign_layer",
+            raw=raw,
+            inputs=inputs,
+            message="Assigned HLOD layer to actors",
+            t0=t0,
+        )
+
+    @mcp.tool()
     def exec_python(ctx: Context, code: str) -> Dict[str, Any]:
-        """
-        Execute arbitrary Python code inside Unreal Engine via the Python plugin.
+        """Execute arbitrary Python code inside Unreal Engine via the Python plugin.
 
         Use this tool when you need to:
         - Create assets in custom project folders (create_blueprint always uses /Game/Blueprints/)
@@ -244,7 +4624,10 @@ def register_editor_tools(mcp: FastMCP):
           - Behavior Trees / Blackboards (BehaviorTreeFactory / BlackboardDataFactory)
           - Animation Blueprints (AnimBlueprintFactory)
           - Checking existing assets before creating duplicates
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            exec_python(code="Example")"""
         from unreal_mcp_server import get_unreal_connection
         import traceback as _tb
 
@@ -278,149 +4661,49 @@ def register_editor_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
-    def save_blueprint(ctx: Context, blueprint_name: str) -> Dict[str, Any]:
-        """
-        Fully compile AND save a Blueprint asset so changes persist on disk.
+    def save_blueprint(
+        ctx: Context,
+        blueprint_name: str,
+        only_if_dirty: bool = False,
+    ) -> Dict[str, Any]:
+        """Persist a Blueprint package to disk using the UnrealMCP C++ bridge.
 
-        BACKGROUND — why this tool exists:
-          compile_blueprint only calls Blueprint->Modify() (marks the asset dirty)
-          due to a UE5.6 crash (EXCEPTION_ACCESS_VIOLATION in MassEntityEditor
-          observer) when FKismetEditorUtilities::CompileBlueprint is called from
-          inside the C++ AsyncTask GameThread lambda.
-          The UE5 Python plugin runs on a different call stack that does NOT
-          trigger the crashing observer chain, so compiling via exec_python is safe.
+        This invokes the native `save_blueprint` MCP command, which writes the
+        package via `UEditorLoadingAndSavingUtils::SavePackages` (UnrealEd). It
+        does **not** call Python `unreal.EditorAssetLibrary.save_asset` /
+        `save_loaded_asset`, which has crashed with EXCEPTION_ACCESS_VIOLATION in
+        EditorScriptingUtilities on some UE 5.6 sessions.
 
-        This tool does the real work:
-          1. Finds the Blueprint asset by name
-          2. Calls unreal.KismetEditorUtilities.compile_blueprint() — true bytecode compile
-          3. Calls unreal.EditorAssetLibrary.save_asset() — writes .uasset to disk
-          4. Returns compilation errors if any
+        Typical flow after editing a BP via MCP:
+          1. `compile_blueprint(blueprint_name=...)` — marks modified (plugin safe path)
+          2. `save_blueprint(blueprint_name=...)` — writes `.uasset`
 
-        USAGE PATTERN — always call save_blueprint after compile_blueprint:
-          compile_blueprint(blueprint_name="BP_MyActor")   # marks dirty (fast)
-          save_blueprint(blueprint_name="BP_MyActor")      # real compile + disk save
+        Optional: `only_if_dirty=True` maps to the engine's "only save dirty
+        packages" behavior; default False saves the listed package regardless.
 
         Args:
-            blueprint_name: Name of the Blueprint to compile and save (e.g. "BP_MyActor")
+            blueprint_name: Blueprint asset name (e.g. "BP_Cabal")
+            only_if_dirty: If True, only persist if the package is dirty
 
-        Returns:
-            dict with 'success', 'compiled', 'saved', 'had_errors', and 'errors' list.
-        """
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            save_blueprint(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
-        code = f"""
-import unreal
-
-bp_name = "{blueprint_name}"
-bp_asset = None
-
-# Method 1: asset registry search (UE5.5+ safe — use get_asset() not object_path string)
-try:
-    ar = unreal.AssetRegistryHelpers.get_asset_registry()
-    assets = ar.get_assets_by_class(unreal.TopLevelAssetPath("/Script/Engine", "Blueprint"))
-    for a in assets:
-        if str(a.asset_name) == bp_name:
-            bp_asset = a.get_asset()   # UE5.5+: get_asset() replaces object_path string load
-            break
-except Exception as _e:
-    pass
-
-# Method 2: try common content paths
-if bp_asset is None:
-    for path in [
-        f"/Game/Blueprints/{{bp_name}}",
-        f"/Game/{{bp_name}}",
-        f"/Game/Blueprints/Core/{{bp_name}}",
-        f"/Game/Blueprints/Player/{{bp_name}}",
-        f"/Game/Blueprints/AI/{{bp_name}}",
-        f"/Game/Blueprints/Enemies/{{bp_name}}",
-    ]:
-        try:
-            obj = unreal.EditorAssetLibrary.load_asset(path)
-            if obj:
-                bp_asset = obj
-                break
-        except Exception:
-            pass
-
-if bp_asset is None:
-    print(f"ERROR: Blueprint not found: {{bp_name}}")
-else:
-    # Step 1: Compile (always attempt, even on clean/unmodified Blueprints).
-    # UE5.4+: KismetEditorUtilities.compile_blueprint was moved to
-    #          BlueprintEditorLibrary.compile_blueprint.
-    # Try the new API first; fall back to the old name for older UE5 builds.
-    try:
-        if hasattr(unreal, 'BlueprintEditorLibrary'):
-            unreal.BlueprintEditorLibrary.compile_blueprint(bp_asset)
-        elif hasattr(unreal, 'KismetEditorUtilities'):
-            unreal.KismetEditorUtilities.compile_blueprint(bp_asset)
-        else:
-            raise AttributeError("Neither BlueprintEditorLibrary nor KismetEditorUtilities found in unreal module")
-        print(f"COMPILED: {{bp_name}}")
-    except Exception as e:
-        print(f"COMPILE_ERROR: {{e}}")
-
-    # Step 2: Force-mark the package dirty so save never skips a clean package
-    try:
-        pkg = bp_asset.get_outer()
-        if pkg:
-            pkg.mark_package_dirty()
-    except Exception:
-        pass
-
-    # Step 3: Save — save_asset returns True on success, False on skip (not an exception).
-    save_ok = False
-    try:
-        asset_path = bp_asset.get_path_name()
-        result = unreal.EditorAssetLibrary.save_asset(asset_path, only_if_is_dirty=False)
-        # In UE5.5+ save_asset returns bool; in older versions it returns None (assume success).
-        save_ok = (result is None) or bool(result)
-    except Exception as e:
-        print(f"SAVE_ERROR_PRIMARY: {{e}}")
-
-    if not save_ok:
-        # Fallback: save_packages_with_dialog (suppresses dialog in -unattended mode)
-        try:
-            pkg = bp_asset.get_outer()
-            unreal.EditorLoadingAndSavingUtils.save_packages_with_dialog([pkg], only_dirty=False)
-            save_ok = True
-        except Exception as e2:
-            print(f"SAVE_ERROR_FALLBACK: {{e2}}")
-
-    if save_ok:
-        print(f"SAVED: {{bp_name}}")
-    else:
-        print(f"SAVE_ERROR: all save methods failed for {{bp_name}}")
-"""
         try:
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected to Unreal Engine"}
-            response = unreal.send_command("exec_python", {"code": code}) or {}
-            output = response.get("output", response.get("result", ""))
-            if not isinstance(output, str):
-                output = str(output)
-
-            not_found      = "ERROR: Blueprint not found" in output
-            compile_error  = "COMPILE_ERROR" in output
-            save_error     = "SAVE_ERROR:" in output
-            had_errors     = compile_error or save_error or not_found
-
-            # compiled=True when "COMPILED:" present OR no compile error & not missing
-            compiled = "COMPILED:" in output or (not compile_error and not not_found)
-            # saved=True when "SAVED:" present OR (no save error and no not-found)
-            # The physical write can succeed even when save_asset returns False on UE5.6
-            # for an already-clean package — treat absence of SAVE_ERROR as success.
-            saved = "SAVED:" in output or (not save_error and not not_found and compiled)
-
-            errors = [ln for ln in output.splitlines() if "ERROR" in ln.upper()]
+            raw = unreal.send_command(
+                "save_blueprint",
+                {"blueprint_name": blueprint_name, "only_if_dirty": only_if_dirty},
+            ) or {}
+            saved = bool(raw.get("saved", raw.get("success")))
             return {
-                "success": compiled and saved and not had_errors,
-                "compiled": compiled,
+                "success": saved,
                 "saved": saved,
-                "had_errors": had_errors,
-                "errors": errors,
-                "output": output,
+                "blueprint": raw.get("blueprint", blueprint_name),
+                "package": raw.get("package"),
+                "raw": raw,
             }
         except Exception as e:
             logger.error(f"save_blueprint error: {e}")
@@ -432,13 +4715,15 @@ else:
         location: List[float] = [0.0, 0.0, 0.0],
         distance: float = 1000.0
     ) -> Dict[str, Any]:
-        """
-        Move the Unreal Editor viewport camera to focus on a world location.
+        """Move the Unreal Editor viewport camera to focus on a world location.
 
         Args:
             location: [X, Y, Z] world-space position to look at
             distance: How far back from the location to place the camera (cm)
-        """
+
+        KB: see knowledge_base/10_WORLD_BUILDING.md#overview
+        Example:
+            focus_viewport()"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()

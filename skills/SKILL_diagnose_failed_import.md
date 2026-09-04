@@ -46,7 +46,7 @@ connection issue.
 
 3. Step B — Connection check
    ue_exec_safe(code="_result['ping'] = 'pong'")
-   → If success=false: UE5 not connected. Restart the plugin on TCP 55557.
+   → If success=false: UE5 not connected. Restart the plugin on TCP 55655.
 
 4. Step C — Log check
    get_recent_output_log(filter_category="Error", lines=200)

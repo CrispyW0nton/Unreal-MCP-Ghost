@@ -38,10 +38,12 @@ import socket
 import argparse
 from typing import Any, Dict, Optional
 
+from bridge_auth import load_bridge_authentication
+
 # ─── Configuration ────────────────────────────────────────────────────────────
 # Priority: --host/--port flags  >  UNREAL_HOST/UNREAL_PORT env vars  >  defaults
 HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
-PORT = int(os.environ.get("UNREAL_PORT", "55557"))
+PORT = int(os.environ.get("UNREAL_PORT", "55655"))
 TIMEOUT = 15
 
 # ── command catalogue ─────────────────────────────────────────────────────────
@@ -289,7 +291,7 @@ def send_command(command: str, params: Dict[str, Any] = None) -> Optional[Dict]:
         return {"status": "error", "error": str(e)}
 
     try:
-        payload = json.dumps({"type": command, "params": params or {}}) + "\n"
+        payload = json.dumps(load_bridge_authentication().command_payload(command, params)) + "\n"
         sock.sendall(payload.encode("utf-8"))
         raw = _recv(sock)
         return json.loads(raw.decode("utf-8"))
@@ -354,7 +356,7 @@ def main():
 
     parser = argparse.ArgumentParser(
         prog="ue5cli",
-        description="One-shot CLI for Unreal Engine 5 via UnrealMCP (port 55557)",
+        description="One-shot CLI for Unreal Engine 5 via UnrealMCP (port 55655)",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="\n".join([
             "quick examples:",
@@ -394,7 +396,7 @@ def main():
         "--port", "-p",
         type=int,
         default=None,
-        help="UnrealMCP port — overrides UNREAL_PORT env var (default: 55557)",
+        help="UnrealMCP port — overrides UNREAL_PORT env var (default: 55655)",
     )
     parser.add_argument(
         "--raw", "-r",

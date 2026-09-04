@@ -180,7 +180,10 @@ def register_project_intelligence_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON StructuredResult with outputs.assets list.
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            project_find_assets()"""
         import textwrap
         t0 = time.monotonic()
         limit    = max(1, min(limit, 1000))
@@ -284,7 +287,10 @@ def register_project_intelligence_tools(mcp: FastMCP):  # noqa: C901
             JSON StructuredResult. Data keys present depend on direction:
               referencers  — packages that reference this asset   (direction in/both)
               dependencies — packages this asset depends on       (direction out/both)
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            project_get_references(package_name="ExampleName")"""
         import textwrap
         t0 = time.monotonic()
 
@@ -361,7 +367,10 @@ def register_project_intelligence_tools(mcp: FastMCP):  # noqa: C901
         Returns:
             JSON StructuredResult with outputs.nodes list:
               [{package, depth, via}] plus depth_reached, truncated.
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            project_trace_reference_chain(start_package="Example")"""
         import textwrap
         t0 = time.monotonic()
 
@@ -461,7 +470,10 @@ def register_project_intelligence_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON StructuredResult with outputs.assets (same shape as project_find_assets).
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            project_find_blueprint_by_parent(parent_class="Actor")"""
         import textwrap
         t0 = time.monotonic()
         limit = max(1, min(limit, 1000))
@@ -545,7 +557,10 @@ def register_project_intelligence_tools(mcp: FastMCP):  # noqa: C901
 
         Returns:
             JSON StructuredResult with outputs matching the category filter.
-        """
+
+        KB: see knowledge_base/12_MCP_TOOL_USAGE_GUIDE.md#overview
+        Example:
+            project_list_subsystems()"""
         global _SUBSYSTEM_CACHE, _SUBSYSTEM_CACHE_TS
         t0 = time.monotonic()
 

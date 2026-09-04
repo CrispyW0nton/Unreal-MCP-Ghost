@@ -1,5 +1,5 @@
 // Copyright 2024 CrispyW0nton. All Rights Reserved.
-// UnrealMCP.Build.cs ? Standalone plugin for Unreal Engine 5.6
+// UnrealMCP.Build.cs - Standalone plugin compatible with Unreal Engine 5.6-5.8.
 // Merges base unreal-mcp dependencies with extended Blueprint Visual Scripting tools.
 
 using UnrealBuildTool;
@@ -11,12 +11,39 @@ public class UnrealMCP : ModuleRules
         PCHUsage = ModuleRules.PCHUsageMode.UseExplicitOrSharedPCHs;
         IWYUSupport = IWYUSupport.Full;
 
+        // Production qualification embeds the exact MCPStudio-approved source
+        // inventory digest into the compiled module. Ordinary local builds are
+        // deliberately marked unqualified and cannot pass the live gate.
+        string ApprovedSourceSha256 = System.Environment.GetEnvironmentVariable(
+            "MCPSTUDIO_UNREAL_SOURCE_SHA256"
+        );
+        if (string.IsNullOrEmpty(ApprovedSourceSha256) ||
+            !System.Text.RegularExpressions.Regex.IsMatch(
+                ApprovedSourceSha256,
+                "^[a-f0-9]{64}$"
+            ))
+        {
+            ApprovedSourceSha256 = "unqualified";
+        }
+        PublicDefinitions.Add(
+            "MCPSTUDIO_UNREAL_SOURCE_SHA256=\"" +
+            ApprovedSourceSha256 +
+            "\""
+        );
+
         PublicIncludePaths.AddRange(
             new string[] { }
         );
 
         PrivateIncludePaths.AddRange(
-            new string[] { }
+            new string[]
+            {
+                // AnimGraphNodeBinding_Base.h (Private) includes AnimGraphNodeBinding.h (UE 5.6+: Internal/).
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/AnimGraph/Private"),
+                System.IO.Path.Combine(EngineDirectory, "Source/Editor/AnimGraph/Internal"),
+                // UChooserTable and FAssetChooser live in the Chooser plugin's internal headers.
+                System.IO.Path.Combine(EngineDirectory, "Plugins/Chooser/Source/Chooser/Internal"),
+            }
         );
 
         // ?? Public dependencies (available to dependent modules) ?????????????
@@ -68,7 +95,14 @@ public class UnrealMCP : ModuleRules
                 "AIModule",
                 "NavigationSystem",
                 "BehaviorTreeEditor",
+                "AIGraph",           // UAIGraph, UAIGraphNode, FGraphNodeClassData
                 "GameplayTasks",
+                "GameplayAbilities",
+                "GameplayTags",
+
+                // Online Subsystem / EOS configuration - required for B.12 tools
+                "OnlineSubsystem",
+                "OnlineSubsystemUtils",
 
                 // Animation Blueprint (extended ? Chapter 17)
                 "AnimGraph",
@@ -80,9 +114,47 @@ public class UnrealMCP : ModuleRules
 
                 // Physics / Collision (extended ? Chapter 14)
                 "PhysicsCore",
+                "RHI",
+                "RenderCore",
 
                 // Procedural Mesh (extended ? Chapter 19)
                 "ProceduralMeshComponent",
+                "GeometryCore",
+                "MeshDescription",
+                "StaticMeshDescription",
+                "GeometryFramework",
+                "DynamicMesh",
+                "GeometryScriptingCore",
+                "GeometryScriptingEditor",
+
+                // MassEntity / StateTree / SmartObject authoring - required for B.7 tools
+                "MassEntity",
+                "MassSpawner",
+                "MassActors",
+                "MassLOD",
+                "MassSmartObjects",
+                "StateTreeModule",
+                "StateTreeEditorModule",
+                "GameplayStateTreeModule",
+                "SmartObjectsModule",
+                "PropertyBindingUtils",
+
+                // Motion Matching / Pose Search / Chooser authoring - required for B.8 tools
+                "PoseSearch",
+                "PoseSearchEditor",
+                "Chooser",
+                "ChooserEditor",
+
+                // World Partition / Data Layer / HLOD authoring - required for B.9 tools
+                "WorldPartitionEditor",
+                "DataLayerEditor",
+
+                // Chaos destruction / cloth authoring - required for B.10 tools
+                "Chaos",
+                "ChaosSolverEngine",
+                "GeometryCollectionEngine",
+                "FieldSystemEngine",
+                "ClothingSystemRuntimeInterface",
 
                 // Python scripting ? required for exec_python command
                 // Provides IPythonScriptPlugin, FPythonCommandEx, EPythonCommandExecutionMode, etc.
@@ -93,12 +165,23 @@ public class UnrealMCP : ModuleRules
                 "Niagara",
                 "NiagaraEditor",
 
+                // Audio / MetaSound authoring - required for B.5 audio tools
+                "AudioEditor",
+                "MetasoundEngine",
+                "MetasoundEditor",
+                "MetasoundFrontend",
+                "MetasoundGraphCore",
+
                 // Sequencer / Level Sequence - required for set_sequencer_track
                 "MovieScene",
                 "MovieSceneTracks",
                 "LevelSequence",
                 "Sequencer",
                 "MovieSceneTools",
+                "MovieRenderPipelineCore",
+                "MovieRenderPipelineEditor",
+                "MovieRenderPipelineRenderPasses",
+                "MovieRenderPipelineSettings",
 
                 // Material editing - required for set_material_instance_parameter
                 "MaterialEditor",

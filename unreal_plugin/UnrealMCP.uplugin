@@ -3,7 +3,7 @@
 	"Version": 1,
 	"VersionName": "1.0.0",
 	"FriendlyName": "UnrealMCP",
-	"Description": "Model Context Protocol (MCP) bridge for Unreal Engine 5.6. Enables AI assistants (Claude, Cursor, etc.) to create and manipulate Blueprints, actors, materials, AI, UMG widgets, save systems, VR, procedural generation, and more via 283 registered tools covering all 20 chapters of Blueprints Visual Scripting for UE5.",
+	"Description": "Model Context Protocol (MCP) bridge for Unreal Engine 5.6. Enables AI assistants (Claude, Cursor, etc.) to manipulate Blueprints, actors, materials, AI, UMG widgets, animation, imports, diagnostics, repair workflows, and an in-editor MCP Chat panel backed by the Python FastMCP server.",
 	"Category": "AI Tools",
 	"CreatedBy": "CrispyW0nton",
 	"CreatedByURL": "https://github.com/CrispyW0nton/Unreal-MCP-Ghost",
@@ -35,6 +35,54 @@
 		{
 			"Name": "Niagara",
 			"Enabled": true
+		},
+		{
+			"Name": "GameplayAbilities",
+			"Enabled": true
+		},
+		{
+			"Name": "Metasound",
+			"Enabled": true
+		},
+		{
+			"Name": "GeometryScripting",
+			"Enabled": true
+		},
+		{
+			"Name": "MassGameplay",
+			"Enabled": true
+		},
+		{
+			"Name": "StateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "GameplayStateTree",
+			"Enabled": true
+		},
+		{
+			"Name": "SmartObjects",
+			"Enabled": true
+		},
+		{
+			"Name": "PoseSearch",
+			"Enabled": true
+		},
+		{
+			"Name": "Chooser",
+			"Enabled": true
+		},
+		{
+			"Name": "MovieRenderPipeline",
+			"Enabled": true
+		},
+		{
+			"Name": "OnlineSubsystem",
+			"Enabled": true
+		},
+		{
+			"Name": "OnlineSubsystemEOS",
+			"Enabled": true
 		}
 	],
 	"Modules": [
@@ -46,6 +94,17 @@
 				"CoreUObject",
 				"Engine",
 				"UnrealEd"
+			]
+		},
+		{
+			"Name": "UnrealMCPEditor",
+			"Type": "Editor",
+			"LoadingPhase": "PostEngineInit",
+			"AdditionalDependencies": [
+				"CoreUObject",
+				"Engine",
+				"UnrealEd",
+				"UnrealMCP"
 			]
 		}
 	]

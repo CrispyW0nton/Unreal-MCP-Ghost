@@ -40,30 +40,32 @@ def register_library_tools(mcp: FastMCP):
         functions: List[Dict[str, Any]] = None,
         folder_path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a Blueprint Function Library with shared utility functions.
+        """Create a Blueprint Function Library with shared utility functions.
 
         From Ch. 18: Create a Function Library (e.g., BP_DiceLibrary) whose functions
         are available globally in every Blueprint of the project. No instantiation needed.
 
         Functions are defined as a list of dicts with:
           - name: function name
-          - inputs: [{\"name\": str, \"type\": str, \"default_value\": any}]
-          - outputs: [{\"name\": str, \"type\": str}]
+          - inputs: [{"name": str, "type": str, "default_value": any}]
+          - outputs: [{"name": str, "type": str}]
           - description: optional description
 
         Args:
-            name: Library Blueprint name (e.g., \"BP_DiceLibrary\", \"BP_MathUtils\")
+            name: Library Blueprint name (e.g., "BP_DiceLibrary", "BP_MathUtils")
             functions: List of function definitions
             folder_path: Content browser folder
 
         Example - dice roll library from the book:
             functions=[
-              {\"name\": \"RollOneDie\",
-               \"inputs\": [{\"name\": \"NumberOfFaces\", \"type\": \"Integer\", \"default_value\": 6}],
-               \"outputs\": [{\"name\": \"Result\", \"type\": \"Integer\"}]},
+              {"name": "RollOneDie",
+               "inputs": [{"name": "NumberOfFaces", "type": "Integer", "default_value": 6}],
+               "outputs": [{"name": "Result", "type": "Integer"}]},
             ]
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            create_blueprint_function_library(name="ExampleName")"""
         if functions is None:
             functions = []
 
@@ -94,18 +96,20 @@ def register_library_tools(mcp: FastMCP):
         parent_class: str = "Actor",
         folder_path: str = "/Game/Blueprints"
     ) -> Dict[str, Any]:
-        """
-        Create a Blueprint Macro Library for shared macros across Blueprints.
+        """Create a Blueprint Macro Library for shared macros across Blueprints.
 
         From Ch. 18: Macro Libraries gather macros that can be shared between all
         Blueprints of the parent class. Unlike Function Libraries, Macro Libraries
         require a parent class and can only be used in subclasses of that parent.
 
         Args:
-            name: Macro Library Blueprint name (e.g., \"BP_MacroLibrary\")
-            parent_class: Parent class restriction (\"Actor\" works for most cases)
+            name: Macro Library Blueprint name (e.g., "BP_MacroLibrary")
+            parent_class: Parent class restriction ("Actor" works for most cases)
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            create_blueprint_macro_library(name="ExampleName")"""
         return _send("create_blueprint_macro_library", {
             "name": name,
             "parent_class": parent_class,
@@ -120,14 +124,13 @@ def register_library_tools(mcp: FastMCP):
         functions: List[Dict[str, Any]] = None,
         folder_path: str = "/Game/Components"
     ) -> Dict[str, Any]:
-        """
-        Create an Actor Component Blueprint for encapsulated gameplay behaviour.
+        """Create an Actor Component Blueprint for encapsulated gameplay behaviour.
 
         From Ch. 18: Actor Components are reusable behaviour modules that can be added
         to any Actor. The book example creates BP_ExpLevelComp for experience/leveling.
 
         An Actor Component has no Transform (unlike Scene Component). It can access
-        its owning Actor via the \"Get Owner\" node.
+        its owning Actor via the "Get Owner" node.
 
         Example use cases:
         - Experience/leveling system (BP_ExpLevelComp from the book)
@@ -136,11 +139,14 @@ def register_library_tools(mcp: FastMCP):
         - Status effect manager
 
         Args:
-            name: Component Blueprint name (e.g., \"BP_ExpLevelComp\")
-            variables: List of variable definitions [{\"name\", \"type\", \"default_value\", \"is_array\"}]
-            functions: List of function definitions [{\"name\", \"inputs\", \"outputs\"}]
+            name: Component Blueprint name (e.g., "BP_ExpLevelComp")
+            variables: List of variable definitions [{"name", "type", "default_value", "is_array"}]
+            functions: List of function definitions [{"name", "inputs", "outputs"}]
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            create_actor_component(name="ExampleName")"""
         if variables is None:
             variables = []
         if functions is None:
@@ -183,8 +189,7 @@ def register_library_tools(mcp: FastMCP):
         xp_per_level: List[int] = None,
         folder_path: str = "/Game/Components"
     ) -> Dict[str, Any]:
-        """
-        Create the complete experience/level-up Actor Component from Ch. 18.
+        """Create the complete experience/level-up Actor Component from Ch. 18.
 
         Creates BP_ExpLevelComp with:
         - CurrentLevel (Integer)
@@ -199,7 +204,10 @@ def register_library_tools(mcp: FastMCP):
             max_level: Maximum number of levels
             xp_per_level: XP required for each level up. Defaults to [10,20,40,80,...]
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            create_experience_level_component()"""
         if xp_per_level is None:
             xp_per_level = [10 * (2 ** i) for i in range(max_level)]
 
@@ -217,8 +225,7 @@ def register_library_tools(mcp: FastMCP):
         variables: List[Dict[str, Any]] = None,
         folder_path: str = "/Game/Components"
     ) -> Dict[str, Any]:
-        """
-        Create a Scene Component Blueprint (has Transform - location/rotation/scale).
+        """Create a Scene Component Blueprint (has Transform - location/rotation/scale).
 
         From Ch. 18: Scene Components can be attached to other Scene Components,
         creating a hierarchy. The book creates BP_CircularMovComp that orbits
@@ -232,10 +239,13 @@ def register_library_tools(mcp: FastMCP):
         - Socket attachment points
 
         Args:
-            name: Component Blueprint name (e.g., \"BP_CircularMovComp\")
-            variables: Variable definitions [{\"name\", \"type\", \"default_value\"}]
+            name: Component Blueprint name (e.g., "BP_CircularMovComp")
+            variables: Variable definitions [{"name", "type", "default_value"}]
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            create_scene_component(name="ExampleName")"""
         if variables is None:
             variables = []
 
@@ -273,8 +283,7 @@ def register_library_tools(mcp: FastMCP):
         orbit_radius: float = 70.0,
         folder_path: str = "/Game/Components"
     ) -> Dict[str, Any]:
-        """
-        Create the orbiting Scene Component from Ch. 18 of the book.
+        """Create the orbiting Scene Component from Ch. 18 of the book.
 
         Creates BP_CircularMovComp that:
         - Uses Event Tick + Delta Seconds to calculate per-frame delta angle
@@ -289,7 +298,10 @@ def register_library_tools(mcp: FastMCP):
             rotation_per_second: Orbit speed in degrees per second
             orbit_radius: Radius of the circular orbit in Unreal units
             folder_path: Content browser folder
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            create_circular_movement_component()"""
         return _send("create_circular_movement_component", {
             "name": name,
             "rotation_per_second": rotation_per_second,
@@ -305,8 +317,7 @@ def register_library_tools(mcp: FastMCP):
         attach_to_component: str = "",
         component_location: List[float] = [0.0, 0.0, 0.0]
     ) -> Dict[str, Any]:
-        """
-        Add a custom Blueprint Component to an existing Blueprint Actor.
+        """Add a custom Blueprint Component to an existing Blueprint Actor.
 
         From Ch. 18: Adding BP_ExpLevelComp or BP_CircularMovComp to
         ThirdPersonCharacter. The component's events and functions become
@@ -317,7 +328,10 @@ def register_library_tools(mcp: FastMCP):
             component_blueprint_name: Component Blueprint to add
             attach_to_component: Parent component name to attach to (empty = root)
             component_location: Relative location for the component
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            add_component_to_blueprint_actor(blueprint_name="/Game/MCP_Test/BP_Example", component_blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_custom_component_to_blueprint", {
             "blueprint_name": blueprint_name,
             "component_blueprint_name": component_blueprint_name,
@@ -335,8 +349,7 @@ def register_library_tools(mcp: FastMCP):
         trigger_event: str = "ReceiveBeginPlay",
         node_position: List[int] = [300, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a SetTimerByEvent node with a connected Custom Event.
+        """Add a SetTimerByEvent node with a connected Custom Event.
 
         From Ch. 18 (Actor Component testing): Set Timer by Event calls a custom
         event on a regular interval. Used in the book to trigger GainXP every second.
@@ -346,9 +359,12 @@ def register_library_tools(mcp: FastMCP):
             time_seconds: Timer interval in seconds
             looping: True for repeating timer
             custom_event_name: Name of the custom event that gets called
-            trigger_event: Event that starts the timer (e.g., \"ReceiveBeginPlay\")
+            trigger_event: Event that starts the timer (e.g., "ReceiveBeginPlay")
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            add_set_timer_by_event_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_set_timer_by_event_node", {
             "blueprint_name": blueprint_name,
             "time_seconds": time_seconds,
@@ -365,8 +381,7 @@ def register_library_tools(mcp: FastMCP):
         cast_to_class: str = "",
         node_position: List[int] = [200, 0]
     ) -> Dict[str, Any]:
-        """
-        Add a GetOwner node to retrieve the Actor that owns this component.
+        """Add a GetOwner node to retrieve the Actor that owns this component.
 
         From Ch. 18: When scripting inside a component Blueprint, GetOwner
         returns a reference to the Actor that has this component added to it.
@@ -374,9 +389,12 @@ def register_library_tools(mcp: FastMCP):
 
         Args:
             blueprint_name: Component Blueprint to add the node to
-            cast_to_class: Class to cast the owner to (e.g., \"BP_Character\"). Empty = no cast.
+            cast_to_class: Class to cast the owner to (e.g., "BP_Character"). Empty = no cast.
             node_position: [X, Y] graph position
-        """
+
+        KB: see knowledge_base/11_BLUEPRINT_LIBRARIES_AND_COMPONENTS.md#overview
+        Example:
+            add_get_owner_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         return _send("add_get_owner_node", {
             "blueprint_name": blueprint_name,
             "cast_to_class": cast_to_class,

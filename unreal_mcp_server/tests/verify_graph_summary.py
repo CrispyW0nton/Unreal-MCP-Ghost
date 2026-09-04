@@ -20,7 +20,7 @@ import socket
 import argparse
 
 DEFAULT_HOST = "127.0.0.1"
-DEFAULT_PORT = 55557
+DEFAULT_PORT = 55655
 
 
 def _parse_args():

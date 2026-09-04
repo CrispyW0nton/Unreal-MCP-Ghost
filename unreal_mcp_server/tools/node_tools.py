@@ -22,8 +22,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         include_hidden_pins: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Return every node in a Blueprint graph with full pin data.
+        """Return every node in a Blueprint graph with full pin data.
 
         Use this before editing a graph — it gives you node_id (GUID),
         node_name (short object name like 'K2Node_CallFunction_40'),
@@ -48,7 +47,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             Single-graph: Dict with 'nodes' list and 'count'.
             All-graphs:   Dict with 'graphs' list (each has graph_name,
                           nodes, count) and 'total_count'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_blueprint_nodes(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -70,8 +72,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         include_hidden_pins: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Fast single-node lookup — returns full pin data for exactly one node.
+        """Fast single-node lookup — returns full pin data for exactly one node.
 
         Use this instead of get_blueprint_nodes when you already know a node's
         ID or name and just need its current pin state (e.g. to verify a
@@ -91,7 +92,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             node_id:             GUID or short object name of the node.
             graph_name:          Graph to search. Default 'EventGraph'.
             include_hidden_pins: Include hidden/internal pins. Default False.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_node_by_id(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -118,8 +122,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         input_action_name: str = "",
         node_name: str = "",
     ) -> Dict[str, Any]:
-        """
-        Find nodes in a Blueprint graph filtered by type and/or name.
+        """Find nodes in a Blueprint graph filtered by type and/or name.
 
         node_type values:
           'all'                — every node
@@ -142,7 +145,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'nodes' (full objects) and 'node_guids' (legacy GUID list).
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            find_blueprint_nodes(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -178,8 +184,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         source_pin_name: str = "",
         target_pin_name: str = "",
     ) -> Dict[str, Any]:
-        """
-        Connect an output pin on one node to an input pin on another.
+        """Connect an output pin on one node to an input pin on another.
 
         source_node_id / target_node_id can be:
           - A GUID string (from get_blueprint_nodes / add_* commands)
@@ -208,7 +213,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             target_pin:      Input pin name on the target node (alias: target_pin_name).
             source_pin_name: Alias for source_pin (BUG-NEW compatibility).
             target_pin_name: Alias for target_pin (BUG-NEW compatibility).
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            connect_blueprint_nodes(blueprint_name="/Game/MCP_Test/BP_Example", source_node_id="Example", target_node_id="Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             # BUG-NEW: accept both source_pin/target_pin AND source_pin_name/target_pin_name
@@ -248,8 +256,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         target_node_id: str = "",
         target_pin: str = "",
     ) -> Dict[str, Any]:
-        """
-        Break pin connections in a Blueprint graph.
+        """Break pin connections in a Blueprint graph.
 
         Two modes:
           A) Break ALL links on a single pin:
@@ -266,7 +273,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             source_pin: (Mode B) Output pin on source.
             target_node_id: (Mode B) Target node GUID or name.
             target_pin: (Mode B) Input pin on target.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            disconnect_blueprint_nodes(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -297,8 +307,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         value: str,
         graph_name: str = "EventGraph",
     ) -> Dict[str, Any]:
-        """
-        Set a literal default value on an unconnected pin.
+        """Set a literal default value on an unconnected pin.
 
         This is equivalent to typing a value into an exposed pin field in
         the Blueprint editor. The pin must NOT be connected to another node.
@@ -317,7 +326,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             pin_name: Pin name to set.
             value: New literal value as a string.
             graph_name: Graph to operate on. Default 'EventGraph'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            set_node_pin_value(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example", pin_name="Exec", value=0.0)"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -333,6 +345,40 @@ def register_blueprint_node_tools(mcp: FastMCP):
         except Exception as e:
             return {"success": False, "message": str(e)}
 
+    @mcp.tool()
+    def reconstruct_blueprint_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        graph_name: str = "EventGraph",
+    ) -> Dict[str, Any]:
+        """Force a Blueprint node to reconstruct after pin/default mutation.
+
+        Use this repair primitive after setting defaults or wiring wildcard
+        nodes so UE can regenerate pins and propagate concrete types. Follow
+        with graph readback and Blueprint compile diagnostics.
+
+        Args:
+            blueprint_name: Asset name.
+            node_id: Node GUID or short object name.
+            graph_name: Graph containing the node. Default 'EventGraph'.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#node-repair
+        Example:
+            reconstruct_blueprint_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="K2Node_CallFunction_40")"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("reconstruct_blueprint_node", {
+                "blueprint_name": blueprint_name,
+                "graph_name": graph_name,
+                "node_id": node_id,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
     # ------------------------------------------------------------------
     # NODE DELETION
     # ------------------------------------------------------------------
@@ -344,8 +390,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         node_id: str,
         graph_name: str = "EventGraph",
     ) -> Dict[str, Any]:
-        """
-        Delete a node from a Blueprint graph (breaks all its connections first).
+        """Delete a node from a Blueprint graph (breaks all its connections first).
 
         Args:
             blueprint_name: Asset name.
@@ -354,7 +399,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'deleted_node_id' and 'deleted_node_name'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            delete_blueprint_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -380,8 +428,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add an event node to a Blueprint graph.
+        """Add an event node to a Blueprint graph.
 
         Common event names:
           ReceiveBeginPlay, ReceiveTick, ReceiveEndPlay,
@@ -395,7 +442,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id' and 'node_name'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_event_node(blueprint_name="/Game/MCP_Test/BP_Example", event_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -423,8 +473,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         node_position: List[float] = None,
         allow_duplicates: bool = False,
     ) -> Dict[str, Any]:
-        """
-        Add a function-call node to a Blueprint graph.
+        """Add a function-call node to a Blueprint graph.
 
         function_name can be:
           • Short name: 'K2_GetActorLocation', 'SetActorLocation', 'PrintString'
@@ -457,7 +506,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'pins', 'was_existing'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_function_node(blueprint_name="/Game/MCP_Test/BP_Example", function_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if params is None:
@@ -480,25 +532,79 @@ def register_blueprint_node_tools(mcp: FastMCP):
             return {"success": False, "message": str(e)}
 
     @mcp.tool()
+    def add_blueprint_function_with_pins(
+        ctx: Context,
+        blueprint_name: str,
+        function_name: str,
+        inputs: Optional[List[Dict[str, Any]]] = None,
+        outputs: Optional[List[Dict[str, Any]]] = None,
+        is_pure: bool = False,
+    ) -> Dict[str, Any]:
+        """Create or update a Blueprint function graph with typed signature pins.
+
+        Use this when an agent needs a reusable gameplay function, not a call
+        node in an existing graph. Each pin entry supports name, type, and an
+        optional sub_type for object/class-backed pins.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            function_name: Function graph to create or update.
+            inputs: Function input pins, e.g. [{"name": "Amount", "type": "float"}].
+            outputs: Function output pins, e.g. [{"name": "Success", "type": "bool"}].
+            is_pure: Whether to mark the function as pure when supported.
+
+        Returns:
+            Dict with graph_name, entry_node_id, result_node_id, inputs, and outputs.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#function-signature-authoring
+        Example:
+            add_blueprint_function_with_pins(
+                blueprint_name="/Game/MCP_Test/BP_Example",
+                function_name="ComputeDamage",
+                inputs=[{"name": "BaseDamage", "type": "float"}],
+                outputs=[{"name": "FinalDamage", "type": "float"}],
+            )"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("add_blueprint_function_with_pins", {
+                "blueprint_name": blueprint_name,
+                "function_name": function_name,
+                "inputs": inputs or [],
+                "outputs": outputs or [],
+                "is_pure": is_pure,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
     def add_blueprint_variable_get_node(
         ctx: Context,
         blueprint_name: str,
         variable_name: str,
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
+        target_class: str = "",
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get Variable' node for a Blueprint variable.
+        """Add a 'Get Variable' node for a Blueprint variable.
 
         Args:
             blueprint_name: Asset name.
             variable_name:  Name of the variable to get.
             graph_name:     Graph to add node to. Default 'EventGraph'.
             node_position:  Optional [X, Y] canvas position.
+            target_class:   Optional owning class (e.g. 'BP_SithSoldier' or
+                            'BP_SithSoldier_C') when reading a variable from a
+                            cast pawn instead of the AnimBP self.
 
         Returns:
             Dict with 'node_id', 'node_name', 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_variable_get_node(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -506,12 +612,15 @@ def register_blueprint_node_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_blueprint_variable_get_node", {
+            p = {
                 "blueprint_name": blueprint_name,
                 "variable_name":  variable_name,
                 "graph_name":     graph_name,
                 "node_position":  node_position,
-            }) or {}
+            }
+            if target_class:
+                p["target_class"] = target_class
+            return unreal.send_command("add_blueprint_variable_get_node", p) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -522,19 +631,24 @@ def register_blueprint_node_tools(mcp: FastMCP):
         variable_name: str,
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
+        target_class: str = "",
     ) -> Dict[str, Any]:
-        """
-        Add a 'Set Variable' node for a Blueprint variable.
+        """Add a 'Set Variable' node for a Blueprint variable.
 
         Args:
             blueprint_name: Asset name.
             variable_name:  Name of the variable to set.
             graph_name:     Graph to add node to. Default 'EventGraph'.
             node_position:  Optional [X, Y] canvas position.
+            target_class:   Optional owning class when setting an external
+                            member (same resolution as native bridge).
 
         Returns:
             Dict with 'node_id', 'node_name', 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_variable_set_node(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -542,12 +656,15 @@ def register_blueprint_node_tools(mcp: FastMCP):
             unreal = get_unreal_connection()
             if not unreal:
                 return {"success": False, "message": "Not connected"}
-            return unreal.send_command("add_blueprint_variable_set_node", {
+            p = {
                 "blueprint_name": blueprint_name,
                 "variable_name":  variable_name,
                 "graph_name":     graph_name,
                 "node_position":  node_position,
-            }) or {}
+            }
+            if target_class:
+                p["target_class"] = target_class
+            return unreal.send_command("add_blueprint_variable_set_node", p) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -560,8 +677,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         is_exposed: bool = False,
         default_value: str = "",
     ) -> Dict[str, Any]:
-        """
-        Add a member variable to a Blueprint.
+        """Add a member variable to a Blueprint.
 
         Supported variable_type values:
           Boolean, Integer, Integer64, Float, Double,
@@ -580,7 +696,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'variable_name' and 'variable_type'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_variable(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", variable_type="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -606,8 +725,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add a legacy Input Action event node (non-Enhanced Input).
+        """Add a legacy Input Action event node (non-Enhanced Input).
 
         For Enhanced Input actions that already exist in the graph use
         find_blueprint_nodes with node_type='input_action'.
@@ -620,7 +738,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_input_action_node(blueprint_name="/Game/MCP_Test/BP_Example", action_name="ExampleName")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -644,8 +765,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add a 'Get a reference to self' node (returns this actor/object).
+        """Add a 'Get a reference to self' node (returns this actor/object).
 
         Args:
             blueprint_name: Asset name.
@@ -654,7 +774,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_self_reference(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -678,8 +801,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add a node that gets a reference to one of the Blueprint's own components.
+        """Add a node that gets a reference to one of the Blueprint's own components.
         Equivalent to dragging a component from the Components panel into the graph.
 
         Args:
@@ -690,7 +812,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_get_self_component_reference(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -712,8 +837,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
     ) -> Dict[str, Any]:
-        """
-        List every graph inside a Blueprint: EventGraph(s), function graphs,
+        """List every graph inside a Blueprint: EventGraph(s), function graphs,
         macro graphs, and delegate graphs.
 
         Use this to discover graph names before calling get_blueprint_nodes
@@ -727,7 +851,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
               graph_name  - name to pass as graph_name to other tools
               graph_type  - 'EventGraph', 'Function', 'Macro', or 'Delegate'
               node_count  - number of nodes currently in the graph
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_blueprint_graphs(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -756,8 +883,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add an Enhanced Input Action event node (K2Node_EnhancedInputAction) to a
+        """Add an Enhanced Input Action event node (K2Node_EnhancedInputAction) to a
         Blueprint graph, wired to the specified UInputAction asset.
 
         This is the correct node type for projects using Unreal Engine's Enhanced
@@ -783,7 +909,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id', 'node_name', 'input_action', 'input_action_path',
             and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_enhanced_input_action_node(blueprint_name="/Game/MCP_Test/BP_Example", action_asset="/Game/MCP_Test/Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -808,8 +937,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: List[float] = None,
     ) -> Dict[str, Any]:
-        """
-        Add a node that gets a reference to one of the Blueprint's SCS components.
+        """Add a node that gets a reference to one of the Blueprint's SCS components.
 
         Unlike add_blueprint_get_self_component_reference (which blindly trusts
         the component name), this command validates the component against the
@@ -830,7 +958,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id', 'node_name', 'component_name',
             'component_class' (if found), and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_get_component_node(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -867,7 +998,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id', 'node_name', and 'pins'
             (execute, Condition, True, False).
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_branch_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -904,7 +1038,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id', 'node_name', 'cast_class', and 'pins'
             (execute, Object, then/cast-success, CastFailed, As<ClassName>).
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_cast_node(blueprint_name="/Game/MCP_Test/BP_Example", cast_target_class="Actor")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -948,7 +1085,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_for_loop_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -985,7 +1125,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_for_each_loop_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1020,7 +1163,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_sequence_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1055,7 +1201,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_do_once_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1093,7 +1242,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_gate_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1129,7 +1281,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_flip_flop_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1163,7 +1318,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_switch_on_int_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1202,7 +1360,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'node_type', 'actor_class', and 'pins'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_spawn_actor_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1215,6 +1376,50 @@ def register_blueprint_node_tools(mcp: FastMCP):
                 "actor_class":    actor_class,
                 "graph_name":     graph_name,
                 "node_position":  node_position,
+            }) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    # ===================================================================
+    @mcp.tool()
+    def set_spawn_actor_class(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        actor_class: str,
+        graph_name: str = "EventGraph",
+    ) -> Dict[str, Any]:
+        """Set the Class pin on an existing SpawnActorFromClass node.
+
+        Class pins use object defaults in UE 5.6, so use this helper after
+        add_blueprint_spawn_actor_node instead of set_node_pin_value.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            node_id: SpawnActor node GUID or node name.
+            actor_class: Actor class name to assign, e.g. "BP_Projectile_C".
+            graph_name: Graph containing the node. Default "EventGraph".
+
+        Returns:
+            Dict with node_id and actor_class.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#spawnactor-class-pins
+        Example:
+            set_spawn_actor_class(
+                blueprint_name="/Game/MCP_Test/BP_Example",
+                node_id="9C2E...",
+                actor_class="BP_Projectile_C",
+            )"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("set_spawn_actor_class", {
+                "blueprint_name": blueprint_name,
+                "graph_name": graph_name,
+                "node_id": node_id,
+                "actor_class": actor_class,
             }) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
@@ -1252,7 +1457,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'node_id', 'node_name', 'comment_text',
             'pos_x', 'pos_y', 'width', 'height'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_blueprint_comment_node(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:
@@ -1271,6 +1479,90 @@ def register_blueprint_node_tools(mcp: FastMCP):
             if not unreal:
                 return {"success": False, "message": "Not connected"}
             return unreal.send_command("add_blueprint_comment_node", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def create_comment_box(
+        ctx: Context,
+        blueprint_name: str,
+        comment_text: str,
+        graph_name: str = "EventGraph",
+        node_position: Optional[List[float]] = None,
+        width: float = 400.0,
+        height: float = 200.0,
+        color: Optional[List[float]] = None,
+    ) -> Dict:
+        """Create a color-coded Blueprint comment box.
+
+        This is a standards-friendly alias for add_blueprint_comment_node.
+        Use it before placing nodes for a functional block.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            create_comment_box(blueprint_name="/Game/MCP_Test/BP_Example", comment_text="Example")"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            if node_position is None:
+                node_position = [0, 0]
+            params: Dict = {
+                "blueprint_name": blueprint_name,
+                "comment_text": comment_text,
+                "graph_name": graph_name,
+                "node_position": node_position,
+                "width": width,
+                "height": height,
+            }
+            if color is not None:
+                params["color"] = color
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("create_comment_box", params) or {}
+        except Exception as e:
+            return {"success": False, "message": str(e)}
+
+    @mcp.tool()
+    def rename_blueprint_comment_node(
+        ctx: Context,
+        blueprint_name: str,
+        node_id: str,
+        comment_text: str,
+        graph_name: str = "EventGraph",
+        color: Optional[List[float]] = None,
+    ) -> Dict:
+        """Rename and optionally recolor an existing Blueprint comment box.
+
+        Use this for graph polish after programmatic node creation. The node_id
+        can be the comment GUID or node object name returned by graph inspection.
+
+        Args:
+            blueprint_name: Asset name of the Blueprint.
+            node_id: GUID or node name of the comment box.
+            comment_text: New visible comment header text.
+            graph_name: Graph containing the comment. Default 'EventGraph'.
+            color: Optional [R, G, B, A] color in 0..1 range.
+
+        Returns:
+            Dict with node_id, node_name, comment_text, and layout bounds.
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#graph-readability-and-layout
+        Example:
+            rename_blueprint_comment_node(blueprint_name="/Game/BP_Door", node_id="COMMENT-NODE", comment_text="Interact Flow")"""
+        from unreal_mcp_server import get_unreal_connection
+        try:
+            params: Dict[str, Any] = {
+                "blueprint_name": blueprint_name,
+                "graph_name": graph_name,
+                "node_id": node_id,
+                "comment_text": comment_text,
+            }
+            if color is not None:
+                params["color"] = color
+            unreal = get_unreal_connection()
+            if not unreal:
+                return {"success": False, "message": "Not connected"}
+            return unreal.send_command("rename_blueprint_comment_node", params) or {}
         except Exception as e:
             return {"success": False, "message": str(e)}
 
@@ -1294,7 +1586,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'node_id', 'node_name', 'new_pos_x', 'new_pos_y'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            move_blueprint_node(blueprint_name="/Game/MCP_Test/BP_Example", node_id="Example", node_position=[0.0, 0.0, 0.0])"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1333,7 +1628,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             Dict with 'blueprint', 'count', and 'variables' array.
             Each variable entry has: 'variable_name', 'variable_type',
             'default_value', 'tooltip', and optionally 'cdo_value'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_blueprint_variable_defaults(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1367,7 +1665,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
 
         Returns:
             Dict with 'blueprint', 'variable_name', 'default_value', 'success'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            set_blueprint_variable_default(blueprint_name="/Game/MCP_Test/BP_Example", variable_name="ExampleName", default_value=0.0)"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1402,7 +1703,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             Dict with 'blueprint', 'count', and 'components' array.
             Each component entry has: 'name', 'source' ('SCS' or 'NativeC++'),
             'class', and optionally 'modified_properties' (dict of prop -> value).
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_blueprint_components(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1441,7 +1745,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'action' ('created' or 'resized_existing'),
             'actor' (volume name), 'rebuilt', 'success'.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            setup_navmesh()"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if extent is None:
@@ -1465,8 +1772,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         blueprint_name: str,
         category: str = ""
     ) -> Dict[str, Any]:
-        """
-        List all member variables defined in a Blueprint class.
+        """List all member variables defined in a Blueprint class.
 
         Returns each variable's name, type, default value, and category.
         Use this to inspect existing variables before adding new ones.
@@ -1478,7 +1784,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'variables' list. Each entry has:
               name, type, default_value, category, is_exposed, is_read_only
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_blueprint_variables(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1496,8 +1805,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
     ) -> Dict[str, Any]:
-        """
-        List all function graphs defined inside a Blueprint class.
+        """List all function graphs defined inside a Blueprint class.
 
         Returns each function's name, input pins, and output pins.
         Use this before calling add_blueprint_function_node on a custom function,
@@ -1509,7 +1817,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with 'functions' list. Each entry has:
               name, inputs (list of {name, type}), outputs (list of {name, type})
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_blueprint_functions(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1530,8 +1841,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         ctx: Context,
         blueprint_name: str,
     ) -> Dict[str, Any]:
-        """
-        List every SimpleConstructionScript (SCS) component in a Blueprint.
+        """List every SimpleConstructionScript (SCS) component in a Blueprint.
 
         Returns name, component_class, variable_guid, parent_name, is_root,
         and supports_overlap_events (True for PrimitiveComponent subclasses).
@@ -1548,7 +1858,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
             Dict with 'scs_nodes' list. Each entry has:
               name, component_class, variable_guid, parent_name,
               is_root, supports_overlap_events
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            get_scs_nodes(blueprint_name="/Game/MCP_Test/BP_Example")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             unreal = get_unreal_connection()
@@ -1573,8 +1886,7 @@ def register_blueprint_node_tools(mcp: FastMCP):
         graph_name: str = "EventGraph",
         node_position: Optional[List[float]] = None,
     ) -> Dict[str, Any]:
-        """
-        Add a K2Node_ComponentBoundEvent for a specific SCS component.
+        """Add a K2Node_ComponentBoundEvent for a specific SCS component.
 
         This is the programmatic equivalent of clicking the [+] button next to
         an event in the component's Details panel.  Unlike add_overlap_event
@@ -1598,7 +1910,10 @@ def register_blueprint_node_tools(mcp: FastMCP):
         Returns:
             Dict with node_id, node_name, component_name, event_name,
             component_guid, already_existed, and pins list.
-        """
+
+        KB: see knowledge_base/01_BLUEPRINT_FUNDAMENTALS.md#overview
+        Example:
+            add_component_overlap_event(blueprint_name="/Game/MCP_Test/BP_Example", component_name="ExampleComponent")"""
         from unreal_mcp_server import get_unreal_connection
         try:
             if node_position is None:

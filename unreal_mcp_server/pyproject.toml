@@ -2,15 +2,17 @@
 name = "unreal-mcp-server"
 version = "2.0.0"
 description = "Full Unreal Engine 5 Blueprint Visual Scripting MCP Server"
-readme = "README.md"
+readme = { text = "Python MCP server for Unreal-MCP-Ghost.", content-type = "text/markdown" }
 requires-python = ">=3.10"
 dependencies = [
-    "mcp>=1.2.0",
+    "mcp>=1.2.0,<2",
     # fastmcp 2.x renamed description= to instructions= (already patched in server).
     "fastmcp>=2.0.0",
     # pydantic-core >=2.28.0 ships pre-built wheels for Python 3.14.
     # 2.27.x tries to compile via Rust/PyO3 which caps at Python 3.13.
     "pydantic-core>=2.28.0",
+    # Required by the bounded screenshot crop-manifest spatial tools.
+    "Pillow>=10.0",
 ]
 
 [build-system]
