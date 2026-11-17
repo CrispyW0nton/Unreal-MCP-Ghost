@@ -108,6 +108,12 @@
     "status": "live",
     "coverage_note": "Toolset-like descriptors and dry-run-first guarded command calls over the existing Ghost TCP bridge command registry for future Unreal-native adapter work."
   },
+  "instance_tools": {
+    "category": "native_mcp_bridge_descriptors",
+    "roadmap_phase": "native_mcp_alignment",
+    "status": "live",
+    "coverage_note": "Several Unreal editors side by side: list the editors running the bridge (project, pid, port) and pin this session to one project so commands never reach another project's editor."
+  },
   "tools.communication_tools": {
     "category": "blueprint_communication",
     "roadmap_phase": "baseline",

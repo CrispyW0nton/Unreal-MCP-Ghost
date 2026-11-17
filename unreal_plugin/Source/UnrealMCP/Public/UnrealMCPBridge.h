@@ -124,6 +124,12 @@ private:
 	// Server configuration
 	FIPv4Address ServerAddress;
 	uint16 Port;
+	// Multi-project: how the port was chosen (a pinned port is never moved) and this editor's discovery record
+	bool bPortPinned = false;
+	FString PortSource;
+	FString InstanceRecordPath;
+	void WriteInstanceRecord();
+	void RemoveInstanceRecord();
 	bool bRequireAuthentication;
 	FString BridgeAuthToken;
 	bool LoadAuthenticationConfiguration();

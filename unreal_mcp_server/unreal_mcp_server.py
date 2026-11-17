@@ -49,6 +49,7 @@ from mcp.server.fastmcp import FastMCP
 from chat.routes import register_chat_routes
 from server_runtime import bridge_response_succeeded, is_loopback_http_host, runtime_state
 from bridge_auth import load_bridge_authentication
+import instance_registry
 
 # ─── Async thread-offload patch ─────────────────────────────────────────────
 # Problem: FastMCP calls sync tool functions with a plain `return fn(**args)`,
@@ -121,6 +122,9 @@ logger = logging.getLogger("UnrealMCP")
 # Priority: CLI flags > environment variables > defaults
 UNREAL_HOST = os.environ.get("UNREAL_HOST", "127.0.0.1")
 UNREAL_PORT = int(os.environ.get("UNREAL_PORT", "55655"))
+# Several editors can run the bridge (one per project). UNREAL_MCP_PROJECT (or select_unreal_instance) names ours;
+# a port is only used blindly when pinned (--unreal-port or UNREAL_MCP_PORT_PINNED=1). See instance_registry.py.
+UNREAL_PORT_PINNED = os.environ.get("UNREAL_MCP_PORT_PINNED", "").strip() == "1"
 
 # MCP HTTP server settings (used for sse / streamable-http transports)
 MCP_SERVER_HOST = os.environ.get("MCP_SERVER_HOST", "127.0.0.1")
@@ -135,6 +139,30 @@ class UnrealConnection:
         self.socket = None
         self.connected = False
         self.authentication = load_bridge_authentication()
+        self.target = None                 # (host, port, UnrealInstance or None) of the last connection
+        self.last_error = ""
+        self._verified = set()             # (host, port, pid) whose ping named our project
+
+    def _identify(self, host: str, port: int) -> dict:
+        """Ping an editor on its own short connection and return the parsed reply (identity fields included)."""
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(5)
+        try:
+            s.connect((host, port))
+            s.sendall((json.dumps(self.authentication.command_payload("ping", {})) + "\n").encode("utf-8"))
+            return json.loads(self.receive_full_response(s, timeout=5).decode("utf-8"))
+        finally:
+            s.close()
+
+    def _resolve(self):
+        """Pick the editor for this session's project and confirm it with ping (once per editor)."""
+        project = instance_registry.selected_project()
+        host, port, inst = instance_registry.resolve_target(project, UNREAL_HOST, UNREAL_PORT, UNREAL_PORT_PINNED)
+        key = (host, port, inst.pid if inst else None)
+        if project and key not in self._verified:
+            instance_registry.check_identity(self._identify(host, port), project)
+            self._verified.add(key)
+        return host, port, inst
 
     def connect(self) -> bool:
         try:
@@ -145,19 +173,23 @@ class UnrealConnection:
                     pass
                 self.socket = None
 
-            logger.info(f"Connecting to Unreal at {UNREAL_HOST}:{UNREAL_PORT}...")
+            host, port, inst = self._resolve()
+            logger.info(f"Connecting to Unreal at {host}:{port}" + (f" ({inst.describe()})" if inst else "") + "...")
             self.socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             self.socket.settimeout(10)
             self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 131072)
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_SNDBUF, 131072)
-            self.socket.connect((UNREAL_HOST, UNREAL_PORT))
+            self.socket.connect((host, port))
             self.connected = True
+            self.target = (host, port, inst)
+            self.last_error = ""
             logger.info("Connected to Unreal Engine")
             return True
         except Exception as e:
             logger.error(f"Failed to connect to Unreal: {e}")
+            self.last_error = str(e)
             self.connected = False
             return False
 
@@ -736,6 +768,7 @@ from tools.chat_tools import register_chat_tools
 from tools.generative_tools import register_generative_tools
 from client_config_tools import register_client_config_tools
 from bridge_descriptor_tools import register_bridge_descriptor_tools
+from instance_tools import register_instance_tools
 from server_runtime_tools import register_server_runtime_tools
 
 register_chat_routes(mcp)
@@ -838,6 +871,8 @@ register_generative_tools(tool_mcp)
 register_client_config_tools(tool_mcp)
 # Native-alignment bridge command descriptors
 register_bridge_descriptor_tools(tool_mcp)
+# Several Unreal editors side by side: list them and choose this session's project
+register_instance_tools(tool_mcp)
 
 toolset_registry.register_meta_tools(mcp)
 
@@ -1297,6 +1332,7 @@ Environment variable equivalents:
         UNREAL_HOST = args.unreal_host
     if args.unreal_port is not None:
         UNREAL_PORT = args.unreal_port
+        UNREAL_PORT_PINNED = True
     if args.mcp_host is not None:
         MCP_SERVER_HOST = args.mcp_host
     if args.mcp_port is not None:

@@ -105,6 +105,12 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 #include "Misc/FileHelper.h"
 #include "Misc/Parse.h"
 #include "Misc/Paths.h"
+#include "Misc/App.h"
+#include "Misc/ConfigCacheIni.h"
+#include "Misc/DateTime.h"
+#include "Misc/EngineVersion.h"
+#include "HAL/FileManager.h"
+#include "HAL/PlatformProcess.h"
 #include "Modules/ModuleManager.h"
 #include "UnrealMCPModule.h"
 
@@ -114,6 +120,8 @@ PRAGMA_ENABLE_DEPRECATION_WARNINGS
 
 // Default settings
 #define MCP_SERVER_HOST "127.0.0.1"
+// Unpinned editors take the first free port from MCP_SERVER_PORT upward, so several projects can run side by side
+#define MCP_AUTO_PORT_RANGE 20
 #define MCP_SERVER_PORT 55655
 
 namespace
@@ -1074,12 +1082,16 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
     ConnectionSocket = nullptr;
     ServerThread = nullptr;
     Port = MCP_SERVER_PORT;
+    PortSource = TEXT("default");
+    bPortPinned = false;
     int32 CommandLinePort = 0;
     if (FParse::Value(FCommandLine::Get(), TEXT("UnrealMCPPort="), CommandLinePort))
     {
         if (CommandLinePort > 0 && CommandLinePort <= 65535)
         {
             Port = CommandLinePort;
+            PortSource = TEXT("command-line");
+            bPortPinned = true;
             UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Using command-line port override %d"), Port);
         }
         else
@@ -1090,6 +1102,22 @@ void UUnrealMCPBridge::Initialize(FSubsystemCollectionBase& Collection)
                 TEXT("UnrealMCPBridge: Ignoring invalid command-line port override %d; using %d"),
                 CommandLinePort,
                 MCP_SERVER_PORT);
+        }
+    }
+    // A project can pin its own port in Config/DefaultEngine.ini:  [UnrealMCP]  BridgePort=55656
+    int32 ConfigPort = 0;
+    if (!bPortPinned && GConfig && GConfig->GetInt(TEXT("UnrealMCP"), TEXT("BridgePort"), ConfigPort, GEngineIni))
+    {
+        if (ConfigPort > 0 && ConfigPort <= 65535)
+        {
+            Port = ConfigPort;
+            PortSource = TEXT("project-config");
+            bPortPinned = true;
+            UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Using project port %d from [UnrealMCP] BridgePort"), Port);
+        }
+        else
+        {
+            UE_LOG(LogMCP, Warning, TEXT("UnrealMCPBridge: Ignoring invalid [UnrealMCP] BridgePort %d"), ConfigPort);
         }
     }
     FIPv4Address::Parse(MCP_SERVER_HOST, ServerAddress);
@@ -2558,36 +2586,63 @@ void UUnrealMCPBridge::StartServer()
         return;
     }
 
-    // Create listener socket
-    TSharedPtr<FSocket> NewListenerSocket = MakeShareable(SocketSubsystem->CreateSocket(NAME_Stream, TEXT("UnrealMCPListener"), false));
-    if (!NewListenerSocket.IsValid())
+    // Bind exclusively. On Windows SO_REUSEADDR lets a second editor bind the same port and share its connections,
+    // so a busy port must fail here; an unpinned editor then moves on to the next port.
+    const int32 FirstPort = Port;
+    const int32 Attempts = bPortPinned ? 1 : MCP_AUTO_PORT_RANGE;
+    TSharedPtr<FSocket> BoundSocket;
+    for (int32 Offset = 0; Offset < Attempts && !BoundSocket.IsValid(); ++Offset)
     {
-        UE_LOG(LogTemp, Error, TEXT("UnrealMCPBridge: Failed to create listener socket"));
+        const int32 Candidate = FirstPort + Offset;
+        if (Candidate > 65535)
+        {
+            break;
+        }
+        TSharedPtr<FSocket> NewListenerSocket = MakeShareable(SocketSubsystem->CreateSocket(NAME_Stream, TEXT("UnrealMCPListener"), false));
+        if (!NewListenerSocket.IsValid())
+        {
+            UE_LOG(LogTemp, Error, TEXT("UnrealMCPBridge: Failed to create listener socket"));
+            return;
+        }
+#if !PLATFORM_WINDOWS
+        // Quick restarts on POSIX; there it does not let two live listeners share a port.
+        NewListenerSocket->SetReuseAddr(true);
+#endif
+        NewListenerSocket->SetNonBlocking(true);
+        FIPv4Endpoint Endpoint(ServerAddress, Candidate);
+        if (!NewListenerSocket->Bind(*Endpoint.ToInternetAddr()))
+        {
+            UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Port %d is in use by another process"), Candidate);
+            continue;
+        }
+        if (!NewListenerSocket->Listen(5))
+        {
+            UE_LOG(LogMCP, Warning, TEXT("UnrealMCPBridge: Failed to listen on port %d"), Candidate);
+            continue;
+        }
+        BoundSocket = NewListenerSocket;
+        Port = static_cast<uint16>(Candidate);
+    }
+    if (!BoundSocket.IsValid())
+    {
+        UE_LOG(
+            LogTemp,
+            Error,
+            TEXT("UnrealMCPBridge: No free bridge port in %d-%d (%s); the TCP bridge will not start"),
+            FirstPort,
+            FirstPort + Attempts - 1,
+            *PortSource);
         return;
     }
-
-    // Allow address reuse for quick restarts
-    NewListenerSocket->SetReuseAddr(true);
-    NewListenerSocket->SetNonBlocking(true);
-
-    // Bind to address
-    FIPv4Endpoint Endpoint(ServerAddress, Port);
-    if (!NewListenerSocket->Bind(*Endpoint.ToInternetAddr()))
+    if (Port != FirstPort)
     {
-        UE_LOG(LogTemp, Error, TEXT("UnrealMCPBridge: Failed to bind listener socket to %s:%d"), *ServerAddress.ToString(), Port);
-        return;
+        PortSource = PortSource + TEXT("+next-free");
     }
 
-    // Start listening
-    if (!NewListenerSocket->Listen(5))
-    {
-        UE_LOG(LogTemp, Error, TEXT("UnrealMCPBridge: Failed to start listening"));
-        return;
-    }
-
-    ListenerSocket = NewListenerSocket;
+    ListenerSocket = BoundSocket;
     bIsRunning = true;
-    UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Server started on %s:%d"), *ServerAddress.ToString(), Port);
+    UE_LOG(LogTemp, Display, TEXT("UnrealMCPBridge: Server started on %s:%d (%s) for %s"), *ServerAddress.ToString(), Port, *PortSource, FApp::GetProjectName());
+    WriteInstanceRecord();
 
     // Start server thread
     ServerThread = FRunnableThread::Create(
@@ -2613,6 +2668,7 @@ void UUnrealMCPBridge::StopServer()
     }
 
     bIsRunning = false;
+    RemoveInstanceRecord();
 
     // Clean up thread
     if (ServerThread)
@@ -2710,6 +2766,12 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
                     TEXT("loaded_plugin_binary_path"),
                     FPaths::ConvertRelativePathToFull(
                         FModuleManager::Get().GetModuleFilename(TEXT("UnrealMCP"))));
+                // Identity, so clients can refuse an editor that is open on another project
+                ResultJson->SetStringField(TEXT("project_file"), FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()));
+                ResultJson->SetStringField(TEXT("project_name"), FApp::GetProjectName());
+                ResultJson->SetNumberField(TEXT("pid"), static_cast<double>(FPlatformProcess::GetCurrentProcessId()));
+                ResultJson->SetNumberField(TEXT("port"), Port);
+                ResultJson->SetStringField(TEXT("port_source"), PortSource);
             }
             // Editor Commands (including actor manipulation)
             else if (CommandType == TEXT("get_actors_in_level") ||
@@ -3212,4 +3274,51 @@ FString UUnrealMCPBridge::ExecuteCommand(const FString& CommandType, const TShar
         return TimeoutResultString;
     }
     return Future.Get();
+}
+
+
+// Discovery record for this editor: %LOCALAPPDATA%/UnrealMCP/instances/<pid>.json. Clients pick the editor that is
+// open on their project from these records and confirm it with ping; stale records (dead pids) are ignored by them.
+void UUnrealMCPBridge::WriteInstanceRecord()
+{
+    const FString Directory = FPaths::Combine(FPlatformProcess::UserSettingsDir(), TEXT("UnrealMCP"), TEXT("instances"));
+    IFileManager::Get().MakeDirectory(*Directory, true);
+    const uint32 ProcessId = FPlatformProcess::GetCurrentProcessId();
+    const FString FinalPath = FPaths::Combine(Directory, FString::Printf(TEXT("%u.json"), ProcessId));
+    const FString TempPath = FinalPath + TEXT(".tmp");
+
+    TSharedPtr<FJsonObject> Record = MakeShareable(new FJsonObject);
+    Record->SetStringField(TEXT("schema"), TEXT("unreal-mcp-instance-v1"));
+    Record->SetNumberField(TEXT("pid"), static_cast<double>(ProcessId));
+    Record->SetStringField(TEXT("host"), TEXT(MCP_SERVER_HOST));
+    Record->SetNumberField(TEXT("port"), Port);
+    Record->SetStringField(TEXT("port_source"), PortSource);
+    Record->SetStringField(TEXT("project_file"), FPaths::ConvertRelativePathToFull(FPaths::GetProjectFilePath()));
+    Record->SetStringField(TEXT("project_name"), FApp::GetProjectName());
+    Record->SetStringField(TEXT("engine_version"), FEngineVersion::Current().ToString());
+    Record->SetStringField(TEXT("started_utc"), FDateTime::UtcNow().ToIso8601());
+    Record->SetBoolField(TEXT("authentication_required"), bRequireAuthentication);
+
+    FString Text;
+    TSharedRef<TJsonWriter<>> Writer = TJsonWriterFactory<>::Create(&Text);
+    FJsonSerializer::Serialize(Record.ToSharedRef(), Writer);
+    if (FFileHelper::SaveStringToFile(Text, *TempPath, FFileHelper::EEncodingOptions::ForceUTF8WithoutBOM) &&
+        IFileManager::Get().Move(*FinalPath, *TempPath, true, true))
+    {
+        InstanceRecordPath = FinalPath;
+        UE_LOG(LogMCP, Display, TEXT("UnrealMCPBridge: Instance record %s"), *InstanceRecordPath);
+    }
+    else
+    {
+        UE_LOG(LogMCP, Warning, TEXT("UnrealMCPBridge: Could not write instance record %s"), *FinalPath);
+    }
+}
+
+void UUnrealMCPBridge::RemoveInstanceRecord()
+{
+    if (!InstanceRecordPath.IsEmpty())
+    {
+        IFileManager::Get().Delete(*InstanceRecordPath, false, true, true);
+        InstanceRecordPath.Empty();
+    }
 }
