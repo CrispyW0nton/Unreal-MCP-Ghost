@@ -64,6 +64,11 @@ public class UnrealMCP : ModuleRules
         );
 
         // ?? Private dependencies (internal to this plugin) ???????????????????
+#if UE_5_9_OR_LATER
+        // UE 5.9 moved Cascade (Particles/ParticleSystem.h) out of Engine into the Cascade plugin.
+        PrivateDependencyModuleNames.Add("CascadeRuntime");
+#endif
+
         PrivateDependencyModuleNames.AddRange(
             new string[]
             {

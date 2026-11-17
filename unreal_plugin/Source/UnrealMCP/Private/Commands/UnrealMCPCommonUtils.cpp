@@ -1550,7 +1550,7 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
                     UE_LOG(LogTemp, Warning, TEXT("Could not find enum value for '%s'. Available options:"), *EnumValueName);
                     for (int32 i = 0; i < EnumDef->NumEnums(); i++)
                     {
-                        UE_LOG(LogTemp, Warning, TEXT("  - %s (value: %d)"), 
+                        UE_LOG(LogTemp, Warning, TEXT("  - %s (value: %lld)"), 
                                *EnumDef->GetNameStringByIndex(i), EnumDef->GetValueByIndex(i));
                     }
                     
@@ -1628,7 +1628,7 @@ bool FUnrealMCPCommonUtils::SetObjectProperty(UObject* Object, const FString& Pr
                     UE_LOG(LogTemp, Warning, TEXT("Could not find enum value for '%s'. Available options:"), *EnumValueName);
                     for (int32 i = 0; i < EnumDef->NumEnums(); i++)
                     {
-                        UE_LOG(LogTemp, Warning, TEXT("  - %s (value: %d)"), 
+                        UE_LOG(LogTemp, Warning, TEXT("  - %s (value: %lld)"), 
                                *EnumDef->GetNameStringByIndex(i), EnumDef->GetValueByIndex(i));
                     }
                     

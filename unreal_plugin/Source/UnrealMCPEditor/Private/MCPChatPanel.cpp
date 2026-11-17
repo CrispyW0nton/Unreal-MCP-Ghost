@@ -5941,7 +5941,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 				}
 				if (BlueprintMissingCount > 0.0)
 				{
-					BlueprintSummaryParts.Add(FString::Printf(TEXT("%d missing"), FMath::Max(0, FMath::RoundToInt(BlueprintMissingCount))));
+					BlueprintSummaryParts.Add(FString::Printf(TEXT("%lld missing"), FMath::Max(0, FMath::RoundToInt(BlueprintMissingCount))));
 				}
 				if (!BlueprintNextGate.IsEmpty())
 				{
@@ -5980,7 +5980,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 			const FString GateSuffix = Gate.IsEmpty() ? FString() : FString::Printf(TEXT(", gate %s"), *Gate);
 			const FString ToolSuffix = RecommendedTool.IsEmpty() ? FString() : FString::Printf(TEXT(", via %s"), *RecommendedTool);
 			OutOverview.ReadinessRepairSummary = TruncateForCard(FString::Printf(
-				TEXT("next repair %s%s%s, %d action(s)"),
+				TEXT("next repair %s%s%s, %lld action(s)"),
 				*DisplayAction,
 				*GateSuffix,
 				*ToolSuffix,
@@ -6203,7 +6203,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 				? FString()
 				: FString::Printf(TEXT(", %s"), *FString::Join(EvidenceHints, TEXT(" + ")));
 			OutOverview.EvidenceRecordingSummary = TruncateForCard(FString::Printf(
-				TEXT("%d item(s), %d pending, %d blocked, %d recorded%s"),
+				TEXT("%d item(s), %lld pending, %lld blocked, %lld recorded%s"),
 				DisplayItemCount,
 				FMath::Max(0, FMath::RoundToInt(PendingCount)),
 				FMath::Max(0, FMath::RoundToInt(BlockedCount)),
@@ -6299,7 +6299,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 				{
 					const FString StateSuffix = TargetState.IsEmpty() ? FString() : FString::Printf(TEXT(" %s"), *TargetState);
 					const FString ArtifactSuffix = ArtifactCount > 0.0
-						? FString::Printf(TEXT(", %d artifact(s)"), FMath::Max(0, FMath::RoundToInt(ArtifactCount)))
+						? FString::Printf(TEXT(", %lld artifact(s)"), FMath::Max(0, FMath::RoundToInt(ArtifactCount)))
 						: FString();
 					const FString DetailSource = !AssetHint.IsEmpty() ? AssetHint : ArtifactHint;
 					const FString DetailSuffix = DetailSource.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *DetailSource);
@@ -6423,7 +6423,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 		if (DisplayAssetCount > 0)
 		{
 			OutOverview.AssetQualitySummary = TruncateForCard(FString::Printf(
-				TEXT("%s: %d asset(s), %d provider, %d import, %d quality, %d ready, %d placeholders"),
+				TEXT("%s: %d asset(s), %lld provider, %lld import, %lld quality, %lld ready, %lld placeholders"),
 				*(State.IsEmpty() ? FString(TEXT("review")) : State),
 				DisplayAssetCount,
 				FMath::Max(0, FMath::RoundToInt(ProviderPendingCount)),
@@ -6569,10 +6569,10 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					(*TargetObject)->TryGetNumberField(TEXT("queue_count"), QueueCount);
 					(*TargetObject)->TryGetNumberField(TEXT("generated_asset_count"), GeneratedAssetCount);
 					const FString ReadinessText = ReadinessState.IsEmpty() ? FString(TEXT("readiness")) : ReadinessState;
-					const FString LedgerText = bHasExistingLedger ? FString::Printf(TEXT("%d event(s)"), FMath::Max(0, FMath::RoundToInt(EventCount))) : FString(TEXT("new ledger"));
+					const FString LedgerText = bHasExistingLedger ? FString::Printf(TEXT("%lld event(s)"), FMath::Max(0, FMath::RoundToInt(EventCount))) : FString(TEXT("new ledger"));
 					const FString NextSuffix = RecommendedNext.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *RecommendedNext);
 					OutOverview.StartTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %s, %d policy blocker(s), %d queue(s), %d asset(s)%s"),
+						TEXT("%s, %s, %lld policy blocker(s), %lld queue(s), %lld asset(s)%s"),
 						*ReadinessText,
 						*LedgerText,
 						FMath::Max(0, FMath::RoundToInt(BlockedPolicyCount)),
@@ -6605,7 +6605,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString PhaseSuffix = NextPhase.IsEmpty() ? FString() : FString::Printf(TEXT(", next %s"), *NextPhase);
 					const FString ToolSuffix = NextTool.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *NextTool);
 					OutOverview.StatusTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %s, %d complete, %d blocker(s), %d evidence, %d queue(s)%s%s"),
+						TEXT("%s, %s, %lld complete, %lld blocker(s), %lld evidence, %lld queue(s)%s%s"),
 						*ReadinessText,
 						*PlanText,
 						FMath::Max(0, FMath::RoundToInt(CompletedPhaseCount)),
@@ -6647,7 +6647,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString TemplateText = !DisplayName.IsEmpty() ? DisplayName : TemplateName;
 					const FString TemplateSuffix = TemplateText.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TemplateText);
 					OutOverview.WorkOrderTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %s/%s, %d blocker(s), %d op(s), %d checklist, %d compile, %d evidence%s%s"),
+						TEXT("%s, %s/%s, %lld blocker(s), %lld op(s), %lld checklist, %lld compile, %lld evidence%s%s"),
 						*PhaseText,
 						*PlanText,
 						*StatusStateText,
@@ -6693,16 +6693,16 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					(*TargetObject)->TryGetNumberField(TEXT("generated_animation_paid_missing_gate_count"), GeneratedAnimationPaidMissingGateCount);
 					const FString ReviewName = TemplateText.IsEmpty() ? FString(TEXT("template")) : TemplateText;
 					const FString SwapSuffix = GeneratedAssetReplacementOperationCount > 0.0
-						? FString::Printf(TEXT(", %d swap"), FMath::Max(0, FMath::RoundToInt(GeneratedAssetReplacementOperationCount)))
+						? FString::Printf(TEXT(", %lld swap"), FMath::Max(0, FMath::RoundToInt(GeneratedAssetReplacementOperationCount)))
 						: FString();
 					const FString AnimationSuffix = GeneratedAnimationPromptCount > 0.0
-						? FString::Printf(TEXT(", %d anim"), FMath::Max(0, FMath::RoundToInt(GeneratedAnimationPromptCount)))
+						? FString::Printf(TEXT(", %lld anim"), FMath::Max(0, FMath::RoundToInt(GeneratedAnimationPromptCount)))
 						: FString();
 					const FString AnimationGateSuffix = GeneratedAnimationPaidMissingGateCount > 0.0
-						? FString::Printf(TEXT(", %d anim gate"), FMath::Max(0, FMath::RoundToInt(GeneratedAnimationPaidMissingGateCount)))
+						? FString::Printf(TEXT(", %lld anim gate"), FMath::Max(0, FMath::RoundToInt(GeneratedAnimationPaidMissingGateCount)))
 						: FString();
 					OutOverview.GameplayTemplateTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d asset(s), %d op(s), %d checklist/%d bridge, %d compile, %d PIE, %d evidence, %d repair%s%s%s"),
+						TEXT("%s, %lld asset(s), %lld op(s), %lld checklist/%lld bridge, %lld compile, %lld PIE, %lld evidence, %lld repair%s%s%s"),
 						*ReviewName,
 						FMath::Max(0, FMath::RoundToInt(AssetCount)),
 						FMath::Max(0, FMath::RoundToInt(OperationCount)),
@@ -6750,7 +6750,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString ReadinessSuffix = ReadinessState.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *ReadinessState);
 					const FString TargetSuffix = TargetName.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TargetName);
 					OutOverview.PlaceholderTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %s, %d asset(s), %d provider, %d placeholder(s), %d blocker(s)%s%s"),
+						TEXT("%s, %s, %lld asset(s), %lld provider, %lld placeholder(s), %lld blocker(s)%s%s"),
 						*StateText,
 						*PlanText,
 						FMath::Max(0, FMath::RoundToInt(AssetCount)),
@@ -6824,7 +6824,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 						? FString::Printf(TEXT(", %s"), *FString::Join(MissingGatePreview, TEXT(", ")))
 						: FString();
 					OutOverview.ReadinessTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d policy area(s), %d missing gate(s)%s"),
+						TEXT("%s, %lld policy area(s), %lld missing gate(s)%s"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(BlockedPolicyCount)),
 						FMath::Max(0, FMath::RoundToInt(MissingGateCount)),
@@ -6857,7 +6857,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString PolicySuffix = PriorityPolicy.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *PriorityPolicy);
 					const FString SafetySuffix = bStopBeforeRunningRepair ? FString(TEXT(", review-only")) : FString();
 					OutOverview.ReadinessRepairTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s%s, %d action(s), %d blocker(s)%s%s"),
+						TEXT("%s%s%s, %lld action(s), %lld blocker(s)%s%s"),
 						*TargetName,
 						*GateSuffix,
 						*ToolSuffix,
@@ -6904,7 +6904,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString BranchLabel = CurrentBranch.IsEmpty() ? FString(TEXT("unknown")) : CurrentBranch;
 					const FString BranchRoleLabel = BranchRole.IsEmpty() ? FString(TEXT("unknown")) : BranchRole;
 					OutOverview.PlatformPreflightTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, branch %s/%s, tools %d/%d, dirty %s, bridge %s, chat %s, platform %s, wrapper %s/%s, missing %d, build %s, warnings %d/%s"),
+						TEXT("%s, branch %s/%s, tools %lld/%lld, dirty %s, bridge %s, chat %s, platform %s, wrapper %s/%s, missing %lld, build %s, warnings %lld/%s"),
 						*ReviewState,
 						*BranchLabel,
 						*BranchRoleLabel,
@@ -6949,7 +6949,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("bridge")) : State;
 					const FString ToolSuffix = NextTool.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *NextTool);
 					OutOverview.LiveEditorBridgeTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, bridge %s, %d gate(s), %d queued, %d executable, %d blocked, exec %s, PIE %s, %d proof"),
+						TEXT("%s%s, bridge %s, %lld gate(s), %lld queued, %lld executable, %lld blocked, exec %s, PIE %s, %lld proof"),
 						*ReviewState,
 						*ToolSuffix,
 						bBridgeReady ? TEXT("ready") : TEXT("blocked"),
@@ -7005,7 +7005,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString BranchRoleLabel = BranchRole.IsEmpty() ? FString(TEXT("unknown")) : BranchRole;
 					const FString TargetSuffix = TargetReviewGroup.IsEmpty() ? FString() : FString::Printf(TEXT(", target %s"), *TargetReviewGroup);
 					OutOverview.WipPromotionTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, branch %s/%s, %d/%d gate(s), dirty %s%s, tracked %d, batch %d, evidence %d/%d open, tests %d, lane %d, wrapper %d, build %s/%s, refs %d, last %s"),
+						TEXT("%s, branch %s/%s, %lld/%lld gate(s), dirty %s%s, tracked %lld, batch %lld, evidence %lld/%lld open, tests %lld, lane %lld, wrapper %lld, build %s/%s, refs %lld, last %s"),
 						*ReviewState,
 						*BranchLabel,
 						*BranchRoleLabel,
@@ -7047,7 +7047,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					(*TargetObject)->TryGetNumberField(TEXT("failing_capability_count"), FailingCapabilityCount);
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("coverage")) : State;
 					OutOverview.BridgeWrapperTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d/%d capability, %d command(s), schema %d/%d, %d issue(s)"),
+						TEXT("%s, %lld/%lld capability, %lld command(s), schema %lld/%lld, %lld issue(s)"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(CoveredCapabilityCount)),
 						FMath::Max(0, FMath::RoundToInt(CapabilityCount)),
@@ -7082,7 +7082,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("blueprint")) : State;
 					const FString TemplateSuffix = TemplateName.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TemplateName);
 					OutOverview.BlueprintMutationTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d gate(s), %d evidence, %d op(s), %d checklist, %d compile, %d queued"),
+						TEXT("%s%s, %lld gate(s), %lld evidence, %lld op(s), %lld checklist, %lld compile, %lld queued"),
 						*ReviewState,
 						*TemplateSuffix,
 						FMath::Max(0, FMath::RoundToInt(MissingGateCount)),
@@ -7114,7 +7114,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					(*TargetObject)->TryGetNumberField(TEXT("violation_count"), ViolationCount);
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("lanes")) : State;
 					OutOverview.TestLaneTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d offline, %d live, %d paid, %d manual, %d violation(s)"),
+						TEXT("%s, %lld offline, %lld live, %lld paid, %lld manual, %lld violation(s)"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(OfflineCount)),
 						FMath::Max(0, FMath::RoundToInt(LiveBridgeCount + LiveBridgeManualCount)),
@@ -7143,7 +7143,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString PhaseSuffix = TargetPhase.IsEmpty() ? FString() : FString::Printf(TEXT(", next %s"), *TargetPhase);
 					const FString ToolSuffix = NextTool.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *NextTool);
 					OutOverview.ResumeTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%d event(s), %d complete, %d blocker(s)%s%s"),
+						TEXT("%lld event(s), %lld complete, %lld blocker(s)%s%s"),
 						FMath::Max(0, FMath::RoundToInt(EventCount)),
 						FMath::Max(0, FMath::RoundToInt(CompletedPhaseCount)),
 						FMath::Max(0, FMath::RoundToInt(BlockingGateCount)),
@@ -7176,7 +7176,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString RuntimeSuffix = RuntimeState.IsEmpty() ? FString() : FString::Printf(TEXT(", runtime %s"), *RuntimeState);
 					const FString RepairSuffix = RepairState.IsEmpty() ? FString() : FString::Printf(TEXT(", repair %s"), *RepairState);
 					OutOverview.DashboardTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d event(s), %d blocker(s), %d queued, %d evidence, %d asset(s)%s%s%s"),
+						TEXT("%s, %lld event(s), %lld blocker(s), %lld queued, %lld evidence, %lld asset(s)%s%s%s"),
 						*ReadinessText,
 						FMath::Max(0, FMath::RoundToInt(EventCount)),
 						FMath::Max(0, FMath::RoundToInt(BlockingGateCount)),
@@ -7243,7 +7243,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 							? FString::Printf(TEXT(", %s"), *AssetName)
 							: FString::Printf(TEXT(", %s %s"), *AssetName, *AssetState));
 					OutOverview.GeneratedAssetReviewTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d asset(s), %d provider, %d import, %d quality, %d placeholder(s)"),
+						TEXT("%s%s, %lld asset(s), %lld provider, %lld import, %lld quality, %lld placeholder(s)"),
 						*ReviewState,
 						*AssetSuffix,
 						FMath::Max(0, FMath::RoundToInt(AssetCount)),
@@ -7295,7 +7295,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 							? FString::Printf(TEXT(", %s"), *AssetName)
 							: FString::Printf(TEXT(", %s %s"), *AssetName, *AssetState));
 					OutOverview.GeneratedAssetLifecycleTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d manifest(s), %d asset(s), %d provider, %d import, %d quality, %d placeholder, %d stage(s), %d stop"),
+						TEXT("%s%s, %lld manifest(s), %lld asset(s), %lld provider, %lld import, %lld quality, %lld placeholder, %lld stage(s), %lld stop"),
 						*ReviewState,
 						*AssetSuffix,
 						FMath::Max(0, FMath::RoundToInt(ManifestCount)),
@@ -7340,10 +7340,10 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString PlanText = bHasSessionPlan ? FString(TEXT("plan")) : FString(TEXT("plan needed"));
 					const FString WriteSuffix = bWriteManifestRecommended ? FString(TEXT(", write")) : FString();
 					const FString UthanaSuffix = EstimatedUthanaSeconds > 0.0
-						? FString::Printf(TEXT(", %ds motion"), FMath::Max(0, FMath::RoundToInt(EstimatedUthanaSeconds)))
+						? FString::Printf(TEXT(", %llds motion"), FMath::Max(0, FMath::RoundToInt(EstimatedUthanaSeconds)))
 						: FString();
 					OutOverview.AssetLifecycleCompileTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %s, %d mesh, %d anim, %d manifest(s), %d pending, %d future gate(s)%s%s"),
+						TEXT("%s, %s, %lld mesh, %lld anim, %lld manifest(s), %lld pending, %d future gate(s)%s%s"),
 						*ReviewState,
 						*PlanText,
 						FMath::Max(0, FMath::RoundToInt(PlannedAssetPromptCount)),
@@ -7418,7 +7418,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 							? FString::Printf(TEXT(", next %s%s"), *NextActionLabel, *NextActionStateSuffix)
 							: FString::Printf(TEXT(", next %s%s via %s"), *NextActionLabel, *NextActionStateSuffix, *NextActionTool));
 					OutOverview.GeneratedAnimationLifecycleTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s%s%s%s, %d motion(s), %d pending, proof %d/%d, %d stage(s), %d paid, %d editor"),
+						TEXT("%s%s%s%s%s, %lld motion(s), %lld pending, proof %lld/%lld, %lld stage(s), %lld paid, %lld editor"),
 						*ReviewState,
 						*ProviderSuffix,
 						*AnimationSuffix,
@@ -7471,7 +7471,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString MotionSuffix = MotionId.IsEmpty() ? FString(TEXT(", no motion id")) : FString::Printf(TEXT(", %s"), *MotionId);
 					const FString SkeletonSuffix = TargetSkeleton.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TargetSkeleton);
 					OutOverview.GeneratedAnimationCompileTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s%s%s%s, proof %d/%d, %d stage(s), %d paid, %d editor"),
+						TEXT("%s%s%s%s%s, proof %lld/%lld, %lld stage(s), %lld paid, %lld editor"),
 						*ReviewState,
 						*ProviderSuffix,
 						*AnimationSuffix,
@@ -7522,7 +7522,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 							? FString::Printf(TEXT(", %s"), *AssetName)
 							: FString::Printf(TEXT(", %s %s"), *AssetName, *AssetState));
 					OutOverview.GeneratedAssetImportTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d gate(s), %d import, %d quality, proof %d/%d, placeholder %s"),
+						TEXT("%s%s, %lld gate(s), %lld import, %lld quality, proof %lld/%lld, placeholder %s"),
 						*ReviewState,
 						*AssetSuffix,
 						FMath::Max(0, FMath::RoundToInt(MissingGateCount)),
@@ -7575,7 +7575,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 							? FString::Printf(TEXT(", %s"), *AssetName)
 							: FString::Printf(TEXT(", %s %s"), *AssetName, *AssetState));
 					OutOverview.GeneratedAssetQualityProofTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d candidate(s), proof %d/%d, %d missing, %d gate(s), %d stage(s), import %s, ready %s"),
+						TEXT("%s%s, %lld candidate(s), proof %lld/%lld, %lld missing, %lld gate(s), %lld stage(s), import %s, ready %s"),
 						*ReviewState,
 						*AssetSuffix,
 						FMath::Max(0, FMath::RoundToInt(QualityCandidateCount)),
@@ -7625,7 +7625,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString AssetSuffix = AssetName.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *AssetName);
 					const FString PlaceholderSuffix = PlaceholderPath.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *PlaceholderPath);
 					OutOverview.GeneratedAssetReplacementTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s%s, %d placeholder(s), %d pending, %d gate(s), %d stage(s), proof %d/%d, ready %s"),
+						TEXT("%s%s%s, %lld placeholder(s), %lld pending, %lld gate(s), %lld stage(s), proof %lld/%lld, ready %s"),
 						*ReviewState,
 						*AssetSuffix,
 						*PlaceholderSuffix,
@@ -7689,7 +7689,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 						bUsageApprovalRecorded ? TEXT("ok") : TEXT("need")
 					);
 					OutOverview.ProviderSpendTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s%s, %d provider, %d gate(s), %d evidence, %d placeholder(s)%s%s"),
+						TEXT("%s%s%s, %lld provider, %lld gate(s), %lld evidence, %lld placeholder(s)%s%s"),
 						*ReviewState,
 						*ProviderSuffix,
 						*AssetSuffix,
@@ -7741,7 +7741,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString StatusSuffix = TaskStatus.IsEmpty() ? FString() : FString::Printf(TEXT(" %s"), *TaskStatus);
 					const FString TaskSuffix = TaskId.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TaskId);
 					OutOverview.GeneratedAssetProviderTaskTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s%s%s, %d pending, %d success, %d task id, %d download, %d import, %d stage(s), ready %s"),
+						TEXT("%s%s%s%s, %lld pending, %lld success, %lld task id, %lld download, %lld import, %lld stage(s), ready %s"),
 						*ReviewState,
 						*AssetSuffix,
 						*StatusSuffix,
@@ -7770,7 +7770,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString LatestName = LatestType.IsEmpty() ? LatestPhase : FString::Printf(TEXT("%s/%s"), *LatestPhase, *LatestType);
 					const FString LatestSuffix = LatestName.IsEmpty() ? FString() : FString::Printf(TEXT(", latest %s"), *LatestName);
 					OutOverview.EvidenceLedgerTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("target %d event(s), %d artifact(s)%s"),
+						TEXT("target %lld event(s), %lld artifact(s)%s"),
 						FMath::Max(0, FMath::RoundToInt(EventCount)),
 						FMath::Max(0, FMath::RoundToInt(ArtifactCount)),
 						*LatestSuffix
@@ -7801,7 +7801,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString NextAction = NextTool.IsEmpty() ? NextActionId : NextTool;
 					const FString NextSuffix = NextAction.IsEmpty() ? FString() : FString::Printf(TEXT(", next %s"), *NextAction);
 					OutOverview.QueueReviewTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d queue(s), %d action(s), %d executable, %d blocked, %d bridge, %d evidence%s"),
+						TEXT("%s, %lld queue(s), %lld action(s), %lld executable, %lld blocked, %lld bridge, %lld evidence%s"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(QueueCount)),
 						FMath::Max(0, FMath::RoundToInt(QueuedActionCount)),
@@ -7831,7 +7831,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					if (!TargetName.IsEmpty())
 					{
 						OutOverview.QueueTargetSummary = TruncateForCard(FString::Printf(
-							TEXT("target %s, %d op(s), %d checklist, %d compile check(s)"),
+							TEXT("target %s, %lld op(s), %lld checklist, %lld compile check(s)"),
 							*TargetName,
 							FMath::Max(0, FMath::RoundToInt(OperationCount)),
 							FMath::Max(0, FMath::RoundToInt(EditorOperationCount)),
@@ -7857,7 +7857,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					}
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("review")) : State;
 					OutOverview.RepairReviewTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d signal(s), %d evidence item(s)"),
+						TEXT("%s, %lld signal(s), %lld evidence item(s)"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(FailureSignalCount)),
 						FMath::Max(0, FMath::RoundToInt(EvidenceCount))
@@ -7895,7 +7895,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					(*ReviewObject)->TryGetNumberField(TEXT("runtime_evidence_event_count"), RuntimeEvidenceEventCount);
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("review")) : State;
 					OutOverview.RuntimeReviewTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d PIE step(s), %d proof item(s), %d recorded"),
+						TEXT("%s, %lld PIE step(s), %lld proof item(s), %lld recorded"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(PieValidationCount)),
 						FMath::Max(0, FMath::RoundToInt(EvidenceRequirementCount)),
@@ -7930,7 +7930,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString TargetName = TargetEvidenceType.IsEmpty() ? TargetLabel : TargetEvidenceType;
 					const FString TargetSuffix = TargetName.IsEmpty() ? FString() : FString::Printf(TEXT(", target %s"), *TargetName);
 					OutOverview.EvidenceReviewTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d item(s), %d pending, %d blocked, %d recorded, %d artifact(s)%s"),
+						TEXT("%s, %lld item(s), %lld pending, %lld blocked, %lld recorded, %lld artifact(s)%s"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(ItemCount)),
 						FMath::Max(0, FMath::RoundToInt(PendingCount)),
@@ -7959,7 +7959,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					}
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("runtime")) : State;
 					OutOverview.RuntimeEvidenceTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d artifact(s), %d PIE step(s), %d proof item(s)"),
+						TEXT("%s, %lld artifact(s), %lld PIE step(s), %lld proof item(s)"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(ArtifactCount)),
 						FMath::Max(0, FMath::RoundToInt(PieValidationCount)),
@@ -7993,7 +7993,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString ActionSuffix = DisplayAction.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *DisplayAction);
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("queue")) : State;
 					OutOverview.QueuedEvidenceTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d artifact(s), %d arg(s)"),
+						TEXT("%s%s, %lld artifact(s), %lld arg(s)"),
 						*ReviewState,
 						*ActionSuffix,
 						FMath::Max(0, FMath::RoundToInt(ArtifactCount)),
@@ -8030,7 +8030,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 						const FString StateSuffix = ReviewState.IsEmpty() ? FString() : FString::Printf(TEXT(" %s"), *ReviewState);
 						const FString ProviderSuffix = Provider.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *Provider);
 						OutOverview.GeneratedAssetEvidenceTargetSummary = TruncateForCard(FString::Printf(
-							TEXT("%s%s%s, %d gate(s), %d artifact(s)"),
+							TEXT("%s%s%s, %lld gate(s), %lld artifact(s)"),
 							*TargetName,
 							*StateSuffix,
 							*ProviderSuffix,
@@ -8079,7 +8079,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 						bUsageApprovalRecorded ? TEXT("ok") : TEXT("need")
 					);
 					OutOverview.PaidGenerationEvidenceTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d gate(s), %d artifact(s)%s%s%s"),
+						TEXT("%s%s, %lld gate(s), %lld artifact(s)%s%s%s"),
 						*ReviewState,
 						*ProviderSuffix,
 						FMath::Max(0, FMath::RoundToInt(MissingGateCount)),
@@ -8126,7 +8126,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 						const FString ProviderSuffix = Provider.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *Provider);
 						const FString SkeletonSuffix = TargetSkeleton.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TargetSkeleton);
 						OutOverview.GeneratedAnimationEvidenceTargetSummary = TruncateForCard(FString::Printf(
-							TEXT("%s%s%s%s, proof %d/%d, %d missing, %d artifact(s)"),
+							TEXT("%s%s%s%s, proof %lld/%lld, %lld missing, %lld artifact(s)"),
 							*TargetName,
 							*StateSuffix,
 							*ProviderSuffix,
@@ -8165,7 +8165,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					const FString ReviewState = State.IsEmpty() ? FString(TEXT("pending")) : State;
 					const FString TargetSuffix = TargetName.IsEmpty() ? FString() : FString::Printf(TEXT(", %s"), *TargetName);
 					OutOverview.FeatureCompletionContractTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s%s, %d proof gate(s), %d evidence, %d stop(s), %d artifact(s)"),
+						TEXT("%s%s, %lld proof gate(s), %lld evidence, %lld stop(s), %lld artifact(s)"),
 						*ReviewState,
 						*TargetSuffix,
 						FMath::Max(0, FMath::RoundToInt(ProofGateCount)),
@@ -8190,7 +8190,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					(*ReviewObject)->TryGetBoolField(TEXT("can_execute_now"), bCanExecuteNow);
 					const FString ReviewState = bCanExecuteNow ? FString(TEXT("ready")) : (State.IsEmpty() ? FString(TEXT("blocked")) : State);
 					OutOverview.ExecutionReviewTargetSummary = TruncateForCard(FString::Printf(
-						TEXT("%s, %d gate(s), %d evidence item(s)"),
+						TEXT("%s, %lld gate(s), %lld evidence item(s)"),
 						*ReviewState,
 						FMath::Max(0, FMath::RoundToInt(MissingGateCount)),
 						FMath::Max(0, FMath::RoundToInt(EvidenceCount))
@@ -8212,7 +8212,7 @@ bool SMCPChatPanel::ParseCockpitOverviewResponse(const FString& JsonText, FCockp
 					{
 						const FString ToolSuffix = Tool.IsEmpty() || Tool == TargetName ? FString() : FString::Printf(TEXT(", %s"), *Tool);
 						OutOverview.ExecuteTargetSummary = TruncateForCard(FString::Printf(
-							TEXT("target %s%s, %d arg(s)"),
+							TEXT("target %s%s, %lld arg(s)"),
 							*TargetName,
 							*ToolSuffix,
 							FMath::Max(0, FMath::RoundToInt(ArgumentCount))
