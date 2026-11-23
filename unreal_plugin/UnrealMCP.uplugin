@@ -17,6 +17,11 @@
 	"Installed": false,
 	"Plugins": [
 		{
+			"Name": "Cascade",
+			"Enabled": true,
+			"Optional": true
+		},
+		{
 			"Name": "EditorScriptingUtilities",
 			"Enabled": true
 		},
